@@ -72,7 +72,7 @@ python scripts/pddlrun_llmseparate.py --floor-plan <floor_plan_no>
 ```
 
 Additional parameters:
-- `--gpt-version`: Choose between 'gpt-3.5-turbo', 'gpt-4o', 'gpt-3.5-turbo-16k' (default: 'gpt-4o')
+- `--model`: Choose between 'MiniMax-M2.7', 'deepseek-chat', 'deepseek-reasoner' (default: 'MiniMax-M2.7')
 - `--prompt-decompse-set`: Set decomposition prompt set (default: 'pddl_train_task_decomposesep')
 - `--prompt-allocation-set`: Set allocation prompt set (default: 'pddl_train_task_allocationsep')
 

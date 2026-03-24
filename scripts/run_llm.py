@@ -82,7 +82,7 @@ def get_ai2_thor_objects(floor_plan_id):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--floor-plan", type=int, required=True)
-    parser.add_argument("--model", type=str, default="deepseek-chat", 
+    parser.add_argument("--model", type=str, default="MiniMax-M2.7", 
                         choices = get_models())
     
     parser.add_argument("--prompt-decompse-set", type=str, default="train_task_decompose", 
@@ -149,13 +149,9 @@ if __name__ == "__main__":
     decomposed_plan = []
     for task in test_tasks:
         curr_prompt =  f"{prompt}\n\n# Task Description: {task}"
-        
-        if "gpt" not in args.model:
-            # older gpt versions
-            _, text = LM(curr_prompt, args.model, max_tokens=1000, stop=["def"], frequency_penalty=0.15)
-        else:            
-            messages = [{"role": "user", "content": curr_prompt}]
-            _, text = LM(messages,args.model, max_tokens=1300, frequency_penalty=0.0)
+                  
+        messages = [{"role": "user", "content": curr_prompt}]
+        _, text = LM(messages,args.model, max_tokens=1300, frequency_penalty=0.0)
 
         decomposed_plan.append(text)
         
@@ -192,19 +188,8 @@ if __name__ == "__main__":
         curr_prompt += f"\n\n# IMPORTANT: The AI should ensure that the robots assigned to the tasks have all the necessary skills to perform the tasks. IMPORTANT: Determine whether the subtasks must be performed sequentially or in parallel, or a combination of both and allocate robots based on availablitiy. "
         curr_prompt += f"\n# SOLUTION  \n"
 
-        if "gpt" not in args.model:
-            # older versions of GPT
-            _, text = LM(curr_prompt, args.model, max_tokens=1000, stop=["def"], frequency_penalty=0.65)
-        
-        elif "gpt-3.5" in args.model:
-            # gpt 3.5 and its variants
-            messages = [{"role": "user", "content": curr_prompt}]
-            _, text = LM(messages, args.model, max_tokens=1500, frequency_penalty=0.35)
-        
-        else:          
-            # gpt 4.0
-            messages = [{"role": "system", "content": "You are a Robot Task Allocation Expert. Determine whether the subtasks must be performed sequentially or in parallel, or a combination of both based on your reasoning. In the case of Task Allocation based on Robot Skills alone - First check if robot teams are required. Then Ensure that robot skills or robot team skills match the required skills for the subtask when allocating. Make sure that condition is met. In the case of Task Allocation based on Mass alone - First check if robot teams are required. Then Ensure that robot mass capacity or robot team combined mass capacity is greater than or equal to the mass for the object when allocating. Make sure that condition is met. In both the Task Task Allocation based on Mass alone and Task Allocation based on Skill alone, if there are multiple options for allocation, pick the best available option by reasoning to the best of your ability."},{"role": "system", "content": "You are a Robot Task Allocation Expert"},{"role": "user", "content": curr_prompt}]
-            _, text = LM(messages, args.model, max_tokens=400, frequency_penalty=0.69)
+        messages = [{"role": "system", "content": "You are a Robot Task Allocation Expert. Determine whether the subtasks must be performed sequentially or in parallel, or a combination of both based on your reasoning. In the case of Task Allocation based on Robot Skills alone - First check if robot teams are required. Then Ensure that robot skills or robot team skills match the required skills for the subtask when allocating. Make sure that condition is met. In the case of Task Allocation based on Mass alone - First check if robot teams are required. Then Ensure that robot mass capacity or robot team combined mass capacity is greater than or equal to the mass for the object when allocating. Make sure that condition is met. In both the Task Task Allocation based on Mass alone and Task Allocation based on Skill alone, if there are multiple options for allocation, pick the best available option by reasoning to the best of your ability."},{"role": "system", "content": "You are a Robot Task Allocation Expert"},{"role": "user", "content": curr_prompt}]
+        _, text = LM(messages, args.model, max_tokens=400, frequency_penalty=0.69)
 
         allocated_plan.append(text)
     
@@ -232,14 +217,10 @@ if __name__ == "__main__":
         curr_prompt += f"\n\nrobots = {available_robots[i]}"
         curr_prompt += solution
         curr_prompt += f"\n# CODE Solution  \n"
-        
-        if "gpt" not in args.model:
-            # older versions of GPT
-            _, text = LM(curr_prompt, args.model, max_tokens=1000, stop=["def"], frequency_penalty=0.30)
-        else:            
-            # using variants of gpt 4 or 3.5
-            messages = [{"role": "system", "content": "You are a Robot Task Allocation Expert"},{"role": "user", "content": curr_prompt}]
-            _, text = LM(messages, args.model, max_tokens=1400, frequency_penalty=0.4)
+                  
+        # using variants of gpt 4 or 3.5
+        messages = [{"role": "system", "content": "You are a Robot Task Allocation Expert"},{"role": "user", "content": curr_prompt}]
+        _, text = LM(messages, args.model, max_tokens=1400, frequency_penalty=0.4)
 
         code_plan.append(text)
     
@@ -260,7 +241,7 @@ if __name__ == "__main__":
      
             with open(f"./logs/{folder_name}/log.txt", 'w') as f:
                 f.write(task)
-                f.write(f"\n\nGPT Version: {args.model}")
+                f.write(f"\n\nModel: {args.model}")
                 f.write(f"\n\nFloor Plan: {args.floor_plan}")
                 f.write(f"\n{objects_ai}")
                 f.write(f"\nrobots = {available_robots[idx]}")

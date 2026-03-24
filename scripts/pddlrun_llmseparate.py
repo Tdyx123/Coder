@@ -226,7 +226,7 @@ class FileProcessor:
         self,
         content: str,
         llm: Optional['LLMHandler'] = None,
-        gpt_version: Optional[str] = None
+        model: Optional[str] = None
     ) -> Tuple[List[str], str]:
         """Split and store tasks from content.
 
@@ -288,7 +288,7 @@ class FileProcessor:
                 fixed_subtasks.append(subtask)
                 continue
 
-            if llm and gpt_version:
+            if llm and model:
                 fix_prompt = (
                     "The following subtask description needs to be reformatted. Please reformat it to strictly follow this structure:\n\n"
                     "#SubTask [number]: [Task Name]\n\n"
@@ -307,16 +307,12 @@ class FileProcessor:
                     "Please provide ONLY the reformatted version following the structure above. Do not add any explanations or additional text."
                 )
 
-                if "gpt" not in gpt_version:
-                    _, fixed_subtask = llm.query_model(
-                        fix_prompt, gpt_version, max_tokens=1000, stop=["def"], frequency_penalty=0.30
-                    )
-                else:
-                    messages = [
-                        {"role": "system", "content": "You are a Robot PDDL problem Expert. Your task is to reformat subtask descriptions to match a specific structure. Do not add any explanations or additional text."},
-                        {"role": "user", "content": fix_prompt}
-                    ]
-                    _, fixed_subtask = llm.query_model(messages, gpt_version, max_tokens=1400, frequency_penalty=0.4)
+                messages = [
+                    {"role": "system", "content": "You are a Robot PDDL problem Expert. Your task is to reformat subtask descriptions to match a specific structure. Do not add any explanations or additional text."},
+                    {"role": "user", "content": fix_prompt}
+                ]
+                _, fixed_subtask = llm.query_model(messages, model, max_tokens=1400, frequency_penalty=0.4)
+                    
 
                 #print("=== Testing match on fixed subtask ===")
                 #print("Fixed subtask:", repr(fixed_subtask))
@@ -340,7 +336,7 @@ class FileProcessor:
 
 
     '''
-    def split_and_store_tasks(self, content: str, llm: Optional['LLMHandler'] = None, gpt_version: Optional[str] = None) -> Tuple[List[str], str]:
+    def split_and_store_tasks(self, content: str, llm: Optional['LLMHandler'] = None, model: Optional[str] = None) -> Tuple[List[str], str]:
         """Split and store tasks from content.
         
         Returns:
@@ -420,7 +416,7 @@ class FileProcessor:
             #print("pattern", pattern)
             #print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
             if not pattern.search(subtask):
-                if llm and gpt_version:
+                if llm and model:
                     #print("Fixing structure of subtask with LLM")
                     fix_prompt = (
                         "The following subtask description needs to be reformatted. Please reformat it to strictly follow this structure:\n\n"
@@ -443,14 +439,14 @@ class FileProcessor:
                     #print("Fixed prompt", fix_prompt)
                     #print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
                     
-                    if "gpt" not in gpt_version:
-                        _, fixed_subtask = llm.query_model(fix_prompt, gpt_version, max_tokens=1000, stop=["def"], frequency_penalty=0.30)
+                    if "gpt" not in model:
+                        _, fixed_subtask = llm.query_model(fix_prompt, model, max_tokens=1000, stop=["def"], frequency_penalty=0.30)
                     else:
                         messages = [
                             {"role": "system", "content": "You are a Robot PDDL problem Expert. Your task is to reformat subtask descriptions to match a specific structure. Do not add any explanations or additional text."},
                             {"role": "user", "content": fix_prompt}
                         ]
-                        _, fixed_subtask = llm.query_model(messages, gpt_version, max_tokens=1400, frequency_penalty=0.4)
+                        _, fixed_subtask = llm.query_model(messages, model, max_tokens=1400, frequency_penalty=0.4)
                     
                     #print("Fixed subtask", fixed_subtask)
                     #print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
@@ -644,7 +640,7 @@ class LLMHandler:
     def query_model(
         self, 
         prompt: Union[str, List[Dict]], 
-        gpt_version: str, 
+        model: str, 
         max_tokens: int = DEFAULT_MAX_TOKENS,
         temperature: float = DEFAULT_TEMPERATURE,
         stop: Optional[List[str]] = None,
@@ -655,7 +651,7 @@ class LLMHandler:
         
         Args:
             prompt: Either a string or a list of message dicts
-            gpt_version: The model version to use
+            model: The model to use
             max_tokens: Maximum number of tokens in the response
             temperature: Sampling temperature
             stop: Optional list of stop sequences
@@ -667,30 +663,18 @@ class LLMHandler:
             
         """
         retry_delay = DEFAULT_RETRY_DELAY
-        client = self._get_client_for_model(gpt_version)
+        client = self._get_client_for_model(model)
         
         for attempt in range(MAX_RETRIES):
             try:
-                if "gpt" not in gpt_version:
-                    response = client.completions.create(
-                        model=gpt_version, 
-                        prompt=prompt, 
-                        max_tokens=max_tokens, 
-                        temperature=temperature, 
-                        stop=stop, 
-                        logprobs=logprobs, 
-                        frequency_penalty=frequency_penalty
-                    )
-                    return response, response.choices[0].text.strip()
-                else:
-                    response = client.chat.completions.create(
-                        model=gpt_version, 
-                        messages=prompt, 
-                        max_tokens=max_tokens, 
-                        temperature=temperature, 
-                        frequency_penalty=frequency_penalty
-                    )
-                    return response, response.choices[0].message.content.strip()
+                response = client.chat.completions.create(
+                    model=model, 
+                    messages=prompt, 
+                    max_tokens=max_tokens, 
+                    temperature=temperature, 
+                    frequency_penalty=frequency_penalty
+                )
+                return response, response.choices[0].message.content.strip()
                     
             except openai.RateLimitError:
                 if attempt < MAX_RETRIES - 1:
@@ -721,7 +705,7 @@ class PDDLValidator:
         self.llm = llm_handler
         self.file_processor = file_processor
     
-    def validate_problem(self, domain_file: str, problem_file: str, gpt_version: str) -> None:
+    def validate_problem(self, domain_file: str, problem_file: str, model: str) -> None:
         """Validate a PDDL problem file against its domain.
 
 
@@ -737,20 +721,12 @@ class PDDLValidator:
 
             )
             
-            if "gpt" not in gpt_version:
-                _, validated_text = self.llm.query_model(
-                    prompt=prompt,
-                    gpt_version=gpt_version,
-                    max_tokens=1000,
-                    stop=["def"],
-                    frequency_penalty=0.30
-                )
-            else:
-                messages = [
-                    {"role": "system", "content": "You are a Robot PDDL problem Expert"},
-                    {"role": "user", "content": prompt}
-                ]
-                _, validated_text = self.llm.query_model(messages, self.gpt_version, max_tokens=1400, frequency_penalty=0.4)
+
+            messages = [
+                {"role": "system", "content": "You are a Robot PDDL problem Expert"},
+                {"role": "user", "content": prompt}
+            ]
+            _, validated_text = self.llm.query_model(messages, self.model, max_tokens=1400, frequency_penalty=0.4)
             
             # Save the validated content back to the problem file
             self.file_processor.write_file(problem_file, validated_text)
@@ -830,17 +806,17 @@ class TaskManager:
  result logging.
     """
     
-    def __init__(self, base_path: str, gpt_version: str, prompt_decompse_set: str = "pddl_train_task_decomposesep", prompt_allocation_set: str = "pddl_train_task_allocationsep"):
+    def __init__(self, base_path: str, model: str, prompt_decompse_set: str = "pddl_train_task_decomposesep", prompt_allocation_set: str = "pddl_train_task_allocationsep"):
         """Initialize the task manager.
         
         Args:
             base_path (str): Base path for all operations
-            gpt_version (str): Version of GPT to use
+            model (str): Model to use
             prompt_decompse_set (str): Name of the decomposition prompt set
             prompt_allocation_set (str): Name of the allocation prompt set
         """
         self.base_path = base_path
-        self.gpt_version = gpt_version
+        self.model = model
         self.prompt_decompse_set = prompt_decompse_set
         self.prompt_allocation_set = prompt_allocation_set
         
@@ -983,7 +959,7 @@ class TaskManager:
 
             with open(os.path.join(log_folder, "log.txt"), 'w') as f:
                 f.write(task)
-                f.write(f"\n\nGPT Version: {self.gpt_version}")
+                f.write(f"\n\nModel: {self.model}")
                 f.write(f"\n{objects_ai}")
                 f.write(f"\nrobots = {available_robots[idx]}")
                 f.write(f"\nground_truth = {gt_test_tasks[idx]}")
@@ -1154,11 +1130,8 @@ class TaskManager:
             prompt += "Decompose and parallel subtasks where ever possible.\n\n"
             prompt += f"# Task Description: {task}"
             
-            if "gpt" not in self.gpt_version:
-                _, text = self.llm.query_model(prompt, self.gpt_version, max_tokens=1000, stop=["def"], frequency_penalty=0.15)
-            else:
-                messages = [{"role": "user", "content": prompt}]
-                _, text = self.llm.query_model(messages, self.gpt_version, max_tokens=1300, frequency_penalty=0.0)
+            messages = [{"role": "user", "content": prompt}]
+            _, text = self.llm.query_model(messages, self.model, max_tokens=1300, frequency_penalty=0.0)
             
             return text
             
@@ -1187,17 +1160,8 @@ class TaskManager:
             prompt += f"\n# SOLUTION\n"
             
             # Handle different GPT versions like the original
-            if "gpt" not in self.gpt_version:
-                # older versions of GPT
-                _, text = self.llm.query_model(prompt, self.gpt_version, max_tokens=1000, stop=["def"], frequency_penalty=0.65)
-            elif "gpt-3.5" in self.gpt_version:
-                # gpt 3.5 and its variants
-                messages = [{"role": "user", "content": prompt}]
-                _, text = self.llm.query_model(messages, self.gpt_version, max_tokens=1500, frequency_penalty=0.35)
-            else:          
-                # gpt 4.0o
-                messages = [{"role": "user", "content": prompt}]
-                _, text = self.llm.query_model(messages, self.gpt_version, max_tokens=1500, frequency_penalty=0.69)
+            messages = [{"role": "user", "content": prompt}]
+            _, text = self.llm.query_model(messages, self.model, max_tokens=1500, frequency_penalty=0.69)
             
             return text
             
@@ -1241,17 +1205,12 @@ class TaskManager:
                 prompt += f"\n\nrobots = {available_robots[i]}"
                 prompt += solution
                 prompt += f"\n# problem content summary  \n"
-                
-                if "gpt" not in self.gpt_version:
-                    # older versions of GPT
-                    _, text = self.llm.query_model(prompt, self.gpt_version, max_tokens=1000, stop=["def"], frequency_penalty=0.30)
-                else:            
-                    # using variants of gpt 4 or 3.5
-                    messages = [
-                        {"role": "system", "content": "You are a Robot PDDL problem Expert"},
-                        {"role": "user", "content": prompt}
-                    ]
-                    _, text = self.llm.query_model(messages, self.gpt_version, max_tokens=1400, frequency_penalty=0.4)
+
+                messages = [
+                    {"role": "system", "content": "You are a Robot PDDL problem Expert"},
+                    {"role": "user", "content": prompt}
+                ]
+                _, text = self.llm.query_model(messages, self.model, max_tokens=1400, frequency_penalty=0.4)
                 
                 code_plan.append(text)
             
@@ -1274,7 +1233,7 @@ class TaskManager:
         subtasks, sequence_operations = self.file_processor.split_and_store_tasks(
             problem_summary,
             llm=self.llm,
-            gpt_version=self.gpt_version
+            model=self.model
         )
 
         # print("subtasks", subtasks)
@@ -1290,7 +1249,7 @@ class TaskManager:
         problem_pddl = self.problemextracting(
             subtasks=subtasks,
             llm=self.llm,
-            gpt_version=self.gpt_version,
+            model=self.model,
             file_processor=self.file_processor,
             objects_ai=self.objects_ai,
             prompt_allocation_set=self.prompt_allocation_set
@@ -1303,7 +1262,7 @@ class TaskManager:
             self,
             subtasks: List[str],
             llm: 'LLMHandler',
-            gpt_version: str,
+            model: str,
             file_processor: 'FileProcessor',
             objects_ai: str,
             prompt_allocation_set: str
@@ -1397,14 +1356,11 @@ class TaskManager:
                     "#IMPORTANT, strictly follow the structure, stop generating after the Problem file generation is done."
                 )
 
-                if "gpt" not in gpt_version:
-                    _, text = llm.query_model(prompt, gpt_version, max_tokens=1000, stop=["def"], frequency_penalty=0.30)
-                else:
-                    messages = [
-                        {"role": "system", "content": "You are a Robot PDDL problem Expert"},
-                        {"role": "user", "content": prompt}
-                    ]
-                    _, text = llm.query_model(messages, gpt_version, max_tokens=1000, frequency_penalty=0.4)
+                messages = [
+                    {"role": "system", "content": "You are a Robot PDDL problem Expert"},
+                    {"role": "user", "content": prompt}
+                ]
+                _, text = llm.query_model(messages, model, max_tokens=1000, frequency_penalty=0.4)
 
                 problem_pddl.append(text)
 
@@ -1450,15 +1406,12 @@ class TaskManager:
                     "(which includes location)\n"
                     "#IMPORTANT, strictly follow the structure, stop generating after the Problem file generation is done."
                 )
-
-                if "gpt" not in gpt_version:
-                    _, text = llm.query_model(prompt, gpt_version, max_tokens=1000, stop=["def"], frequency_penalty=0.30)
-                else:
-                    messages = [
-                        {"role": "system", "content": "You are a Robot PDDL problem Expert"},
-                        {"role": "user", "content": prompt}
-                    ]
-                    _, text = llm.query_model(messages, gpt_version, max_tokens=1400, frequency_penalty=0.4)
+            
+                messages = [
+                    {"role": "system", "content": "You are a Robot PDDL problem Expert"},
+                    {"role": "user", "content": prompt}
+                ]
+                _, text = llm.query_model(messages, model, max_tokens=1400, frequency_penalty=0.4)
 
                 problem_pddl.append(text)
 
@@ -1472,7 +1425,7 @@ class TaskManager:
         self,
         subtasks: List[str],
         llm: 'LLMHandler',
-        gpt_version: str,
+        model: str,
         file_processor: 'FileProcessor',
         objects_ai: str,
         prompt_allocation_set: str
@@ -1549,14 +1502,14 @@ class TaskManager:
                     "#IMPORTANT, strictly follow the structure ,stop generate after the Problem file generation is done."
                 )
 
-                if "gpt" not in gpt_version:
-                    _, text = llm.query_model(prompt, gpt_version, max_tokens=1000, stop=["def"], frequency_penalty=0.30)
+                if "gpt" not in model:
+                    _, text = llm.query_model(prompt, model, max_tokens=1000, stop=["def"], frequency_penalty=0.30)
                 else:
                     messages = [
                         {"role": "system", "content": "You are a Robot PDDL problem Expert"},
                         {"role": "user", "content": prompt}
                     ]
-                    _, text = llm.query_model(messages, gpt_version, max_tokens=1000, frequency_penalty=0.4)
+                    _, text = llm.query_model(messages, model, max_tokens=1000, frequency_penalty=0.4)
 
                 # print("Text", text)
                 # print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
@@ -1597,14 +1550,14 @@ class TaskManager:
                     "#IMPORTANT, strictly follow the structure ,stop generate after the Problem file generation is done."
                 )
 
-                if "gpt" not in gpt_version:
-                    _, text = llm.query_model(prompt, gpt_version, max_tokens=1000, stop=["def"], frequency_penalty=0.30)
+                if "gpt" not in model:
+                    _, text = llm.query_model(prompt, model, max_tokens=1000, stop=["def"], frequency_penalty=0.30)
                 else:
                     messages = [
                         {"role": "system", "content": "You are a Robot PDDL problem Expert"},
                         {"role": "user", "content": prompt}
                     ]
-                    _, text = llm.query_model(messages, gpt_version, max_tokens=1400, frequency_penalty=0.4)
+                    _, text = llm.query_model(messages, model, max_tokens=1400, frequency_penalty=0.4)
 
                 #print("Text", text)
                 #print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
@@ -1620,7 +1573,7 @@ class TaskManager:
         self,
         subtasks: List[str],
         llm: LLMHandler,
-        gpt_version: str,
+        model: str,
         file_processor: FileProcessor,
         objects_ai: str,
         prompt_allocation_set: str
@@ -1677,14 +1630,14 @@ class TaskManager:
                     "#IMPORTANT, strictly follow the structure ,stop generate after the Problem file generation is done."
                 )
 
-                if "gpt" not in gpt_version:
-                    _, text = llm.query_model(prompt, gpt_version, max_tokens=1000, stop=["def"], frequency_penalty=0.30)
-                else:            
+if "gpt" not in model:
+                    _, text = llm.query_model(prompt, model, max_tokens=1000, stop=["def"], frequency_penalty=0.30)
+                else:
                     messages = [
                         {"role": "system", "content": "You are a Robot PDDL problem Expert"},
                         {"role": "user", "content": prompt}
                     ]
-                    _, text = llm.query_model(messages, gpt_version, max_tokens=1400, frequency_penalty=0.4)
+                    _, text = llm.query_model(messages, model, max_tokens=1400, frequency_penalty=0.4)
 
 
                 print("Text", text)
@@ -1723,14 +1676,14 @@ class TaskManager:
                         "#IMPORTANT, strictly follow the structure ,stop generate after the Problem file generation is done."
                     )
 
-                    if "gpt" not in gpt_version:
-                        _, text = llm.query_model(prompt, gpt_version, max_tokens=1000, stop=["def"], frequency_penalty=0.30)
+                    if "gpt" not in model:
+                        _, text = llm.query_model(prompt, model, max_tokens=1000, stop=["def"], frequency_penalty=0.30)
                     else:            
                         messages = [
                             {"role": "system", "content": "You are a Robot PDDL problem Expert"},
                             {"role": "user", "content": prompt}
                         ]
-                        _, text = llm.query_model(messages, gpt_version, max_tokens=1400, frequency_penalty=0.4)
+                        _, text = llm.query_model(messages, model, max_tokens=1400, frequency_penalty=0.4)
                     
                     print("Text", text)
                     print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
@@ -1789,13 +1742,10 @@ class TaskManager:
                             "Validate the preconditions in problem file to ensure all precondition listed object "
                             "is included and also in domain file, and go over structure to check the parenthesis "
                             "and syntext. Check and return only the validated problem file.")
-
-                    if "gpt" not in self.gpt_version:
-                        _, text = self.llm.query_model(prompt, self.gpt_version, max_tokens=1000, stop=["def"], frequency_penalty=0.30)
-                    else:
-                        messages = [{"role": "system", "content": "You are a Robot PDDL problem Expert"},
-                                {"role": "user", "content": prompt}]
-                        _, text = self.llm.query_model(messages, self.gpt_version, max_tokens=1400, frequency_penalty=0.4)
+                
+                    messages = [{"role": "system", "content": "You are a Robot PDDL problem Expert"},
+                            {"role": "user", "content": prompt}]
+                    _, text = self.llm.query_model(messages, self.model, max_tokens=1400, frequency_penalty=0.4)
 
                     self.validated_plan.append(text)  #PG: Store validated plan
                     code_plan = [text]
@@ -1892,11 +1842,8 @@ class TaskManager:
                   "corrected to variable itself, since variable itself includes location. and result "
                   "must be in PDDL plan format.")
         
-        if "gpt" not in self.gpt_version:
-            _, text = self.llm.query_model(prompt, self.gpt_version, max_tokens=1000, stop=["def"], frequency_penalty=0.15)
-        else:
-            messages = [{"role": "user", "content": prompt}]
-            _, text = self.llm.query_model(messages, self.gpt_version, max_tokens=1300, frequency_penalty=0.0)
+        messages = [{"role": "user", "content": prompt}]
+        _, text = self.llm.query_model(messages, self.model, max_tokens=1300, frequency_penalty=0.0)
         
         return text
 
@@ -1911,11 +1858,8 @@ class TaskManager:
             f"{plan}"
         )
         
-        if "gpt" not in self.gpt_version:
-            _, text = self.llm.query_model(prompt, self.gpt_version, max_tokens=1000, stop=["def"], frequency_penalty=0.15)
-        else:
-            messages = [{"role": "user", "content": prompt}]
-            _, text = self.llm.query_model(messages, self.gpt_version, max_tokens=1300, frequency_penalty=0.0)
+        messages = [{"role": "user", "content": prompt}]
+        _, text = self.llm.query_model(messages, self.model, max_tokens=1300, frequency_penalty=0.0)
         
         return text
 
@@ -1971,9 +1915,9 @@ def parse_arguments() -> argparse.Namespace:
         help="Required unless --bddl-file is provided"
     )
     parser.add_argument(
-        "--gpt-version",
+        "--model",
         type=str,
-        default="deepseek-chat",
+        default="MiniMax-M2.7",
         choices=get_available_models()
     )
     parser.add_argument(
@@ -2013,7 +1957,7 @@ def main():
         # Initialize task manager
         task_manager = TaskManager(
             base_path=os.getcwd(),
-            gpt_version=args.gpt_version,
+            model=args.model,
             prompt_decompse_set=args.prompt_decompse_set,
             prompt_allocation_set=args.prompt_allocation_set
         )

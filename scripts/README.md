@@ -80,7 +80,7 @@ logs/                      # Generated logs and results
 python pddlrun_llmseparate.py \
     --floor-plan <number> \
     --openai-api-key-file <path> \
-    --gpt-version <version> \
+    --model <model> \
     --prompt-decompse-set <set> \
     --prompt-allocation-set <set> \
     --test-set <set> \

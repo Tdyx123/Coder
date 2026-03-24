@@ -18,19 +18,19 @@ def find_bddl_files(base_dir: str) -> list:
     bddl_pattern = os.path.join(base_dir, "data", "activity_definitions", "**", "problem*.bddl")
     return sorted(glob.glob(bddl_pattern, recursive=True))
 
-def process_bddl_file(bddl_file: str, gpt_version: str) -> None:
+def process_bddl_file(bddl_file: str, model: str) -> None:
     """Process a single BDDL file using pddlrun_llmseparate.py.
     
     Args:
         bddl_file (str): Path to BDDL file
-        gpt_version (str): GPT version to use
+        model (str): Model to use
     """
     script_dir = os.path.dirname(os.path.abspath(__file__))
     cmd = [
         "python",
         os.path.join(script_dir, "pddlrun_llmseparate.py"),
         "--bddl-file", os.path.abspath(bddl_file),
-        "--gpt-version", gpt_version
+        "--model", model
     ]
     
     print(f"\n{'='*50}")
@@ -46,9 +46,9 @@ def process_bddl_file(bddl_file: str, gpt_version: str) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description="Process all BDDL files in activity_definitions directory")
-    parser.add_argument("--gpt-version", type=str, default="deepseek-chat",
-                      choices=['deepseek-chat', 'deepseek-coder', 'MiniMax-01', 'MiniMax-01-Function-Calling'],
-                      help="Model version to use")
+    parser.add_argument("--model", type=str, default="MiniMax-M2.7",
+                      choices=['deepseek-chat', 'deepseek-reasoner', 'MiniMax-01', 'MiniMax-01-Function-Calling'],
+                      help="Model to use")
     parser.add_argument("--activity", type=str, default=None,
                       help="Process specific activity directory only")
     
@@ -76,7 +76,7 @@ def main():
     # Process each BDDL file
     for i, bddl_file in enumerate(bddl_files, 1):
         print(f"\nProcessing file {i}/{len(bddl_files)}")
-        process_bddl_file(bddl_file, args.gpt_version)
+        process_bddl_file(bddl_file, args.model)
     
     print("\nAll BDDL files processed!")
 

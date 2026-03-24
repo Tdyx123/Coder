@@ -67,7 +67,7 @@ class LLMHandler:
     def query_model(
         self, 
         prompt: Union[str, List[Dict]], 
-        gpt_version: str, 
+        model: str, 
         max_tokens: int = DEFAULT_MAX_TOKENS,
         temperature: float = DEFAULT_TEMPERATURE,
         stop: Optional[List[str]] = None,
@@ -77,30 +77,18 @@ class LLMHandler:
         """Query the language model using OpenAI API.
         """
         retry_delay = DEFAULT_RETRY_DELAY
-        client = self._get_client_for_model(gpt_version)
+        client = self._get_client_for_model(model)
         
         for attempt in range(MAX_RETRIES):
             try:
-                if "gpt" not in gpt_version:
-                    response = client.completions.create(
-                        model=gpt_version, 
-                        prompt=prompt, 
-                        max_tokens=max_tokens, 
-                        temperature=temperature, 
-                        stop=stop, 
-                        logprobs=logprobs, 
-                        frequency_penalty=frequency_penalty
-                    )
-                    return response, response.choices[0].text.strip()
-                else:
-                    response = client.chat.completions.create(
-                        model=gpt_version, 
-                        messages=prompt, 
-                        max_tokens=max_tokens, 
-                        temperature=temperature, 
-                        frequency_penalty=frequency_penalty
-                    )
-                    return response, response.choices[0].message.content.strip()
+                response = client.chat.completions.create(
+                    model=model, 
+                    messages=prompt, 
+                    max_tokens=max_tokens, 
+                    temperature=temperature, 
+                    frequency_penalty=frequency_penalty
+                )
+                return response, response.choices[0].message.content.strip()
                     
             except openai.RateLimitError:
                 if attempt < MAX_RETRIES - 1:
@@ -121,10 +109,10 @@ class LLMHandler:
 class MimicFormatTranslator:
     """Translates complete PDDL plans to mimic format using OpenAI API."""
     
-    def __init__(self, gpt_version: str = "deepseek-chat"):
-        self.gpt_version = gpt_version
+    def __init__(self, model: str = "MiniMax-M2.7"):
+        self.model = model
         self.llm = LLMHandler()
-        print(f"Initialized MimicFormatTranslator with {gpt_version}")
+        print(f"Initialized MimicFormatTranslator with {model}")
     
     def validate_mimic_code(self, mimic_code: str, task_description: str) -> Tuple[bool, str]:
         """Validate if the generated mimic code would be executable by execute_plan.py.
@@ -188,29 +176,18 @@ SUGGESTIONS:
 - Fix 2: specific suggestion
 """
 
-            # Query the model for validation - use proper message format for GPT models
-            if "gpt" not in self.gpt_version:
-                # For older models, use string prompt
-                _, validation_response = self.llm.query_model(
-                    prompt=validation_prompt,
-                    gpt_version=self.gpt_version,
-                    max_tokens=512,
-                    temperature=0.0,  # Use 0 temperature for consistent validation
-                    frequency_penalty=0.0
-                )
-            else:
-                # For GPT models, use message format
-                messages = [
-                    {"role": "system", "content": "You are a Python code validator for AI2-THOR robot execution. Your task is to validate if code would be executable by execute_plan.py."},
-                    {"role": "user", "content": validation_prompt}
-                ]
-                _, validation_response = self.llm.query_model(
-                    prompt=messages,
-                    gpt_version=self.gpt_version,
-                    max_tokens=512,
-                    temperature=0.0,  # Use 0 temperature for consistent validation
-                    frequency_penalty=0.0
-                )
+            # Query the model for validation - use proper message format for models
+            messages = [
+                {"role": "system", "content": "You are a Python code validator for AI2-THOR robot execution. Your task is to validate if code would be executable by execute_plan.py."},
+                {"role": "user", "content": validation_prompt}
+            ]
+            _, validation_response = self.llm.query_model(
+                prompt=messages,
+                model=self.model,
+                max_tokens=512,
+                temperature=0.0,  # Use 0 temperature for consistent validation
+                frequency_penalty=0.0
+            )
             
             # Parse validation response
             is_valid = False
@@ -321,29 +298,17 @@ Please analyze this code and:
 Return ONLY the corrected code that follows the template structure exactly.
 """
 
-            # Query the model for fixing
-            if "gpt" not in self.gpt_version:
-                # For older models, use string prompt
-                _, corrected_code = self.llm.query_model(
-                    prompt=fix_prompt,
-                    gpt_version=self.gpt_version,
-                    max_tokens=2048,
-                    temperature=0.0,
-                    frequency_penalty=0.0
-                )
-            else:
-                # For GPT models, use message format
-                messages = [
-                    {"role": "system", "content": "You are a Python code fixer for AI2-THOR robot execution. Fix the code to match the exact template structure."},
-                    {"role": "user", "content": fix_prompt}
-                ]
-                _, corrected_code = self.llm.query_model(
-                    prompt=messages,
-                    gpt_version=self.gpt_version,
-                    max_tokens=2048,
-                    temperature=0.0,
-                    frequency_penalty=0.0
-                )
+            messages = [
+                {"role": "system", "content": "You are a Python code fixer for AI2-THOR robot execution. Fix the code to match the exact template structure."},
+                {"role": "user", "content": fix_prompt}
+            ]
+            _, corrected_code = self.llm.query_model(
+                prompt=messages,
+                model=self.model,
+                max_tokens=2048,
+                temperature=0.0,
+                frequency_penalty=0.0
+            )
             
             # Clean up the corrected code (remove markdown if present)
             corrected_code = corrected_code.strip()
@@ -520,14 +485,10 @@ def execute_task():
     # Complete plan execution for: {task_description}
 """
         
-        # Return as string for older GPT models, or as messages for newer ones
-        if "gpt" not in self.gpt_version:
-            return few_shot_examples
-        else:
-            return [
-                {"role": "system", "content": "You are a Robot PDDL to Mimic Format Translator. Your task is to translate complete PDDL plans into executable Python code following the AI2-THOR controller format. Translate the entire plan as a single coherent function."},
-                {"role": "user", "content": few_shot_examples}
-            ]
+        return [
+            {"role": "system", "content": "You are a Robot PDDL to Mimic Format Translator. Your task is to translate complete PDDL plans into executable Python code following the AI2-THOR controller format. Translate the entire plan as a single coherent function."},
+            {"role": "user", "content": few_shot_examples}
+        ]
     
     def translate_to_mimic_format(self, task_description: str, combined_plan: str,
                                 max_tokens: int = 2048,  # Increased for complete plans
@@ -542,7 +503,7 @@ def execute_task():
             start_time = time.time()
             _, response = self.llm.query_model(
                 prompt=prompt,
-                gpt_version=self.gpt_version,
+                model=self.model,
                 max_tokens=max_tokens,
                 temperature=temperature,
                 frequency_penalty=frequency_penalty
@@ -898,9 +859,9 @@ def generate_summary(processed_results: List[Dict[str, Any]], output_dir: str):
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='Translate complete PDDL plans to AI2-THOR executable code using OpenAI API. Can load from JSON files or PDDL log directories created by pddlrun_llmseparate.py')
-    parser.add_argument('--gpt-version', type=str, default="deepseek-chat",
+    parser.add_argument('--model', type=str, default="MiniMax-M2.7",
                        choices=get_available_models(),
-                       help='Model version to use')
+                       help='Model to use')
     parser.add_argument('--input-source', type=str, choices=['json', 'pddl_logs'], default='pddl_logs',
                        help='Input source type: json file or pddl_logs directory')
     parser.add_argument('--input-file', type=str, 
@@ -959,7 +920,7 @@ def main():
         
         # Initialize translator with OpenAI API
         translator = MimicFormatTranslator(
-            gpt_version=args.gpt_version
+            model=args.model
         )
         
         # Process results for mimic translation
