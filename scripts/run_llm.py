@@ -9,8 +9,10 @@ from datetime import datetime
 import random
 import subprocess
 
-import openai
+from openai import OpenAI
 import ai2thor.controller
+
+client = None
 
 import sys
 sys.path.append(".")
@@ -20,23 +22,24 @@ import resources.robots as robots
 
 def LM(prompt, model, max_tokens=128, temperature=0, stop=None, logprobs=1, frequency_penalty=0):
     
-    response = openai.ChatCompletion.create(model=model, 
+    response = client.chat.completions.create(model=model, 
                                         messages=prompt, 
                                         max_tokens=max_tokens, 
                                         temperature=temperature, 
                                         frequency_penalty = frequency_penalty)
     
-    return response, response["choices"][0]["message"]["content"].strip()
+    return response, response.choices[0].message.content.strip()
 
 def set_api_key(openai_api_key):
-    openai.api_key = Path(openai_api_key + '.txt').read_text()
+    global client
+    client = OpenAI(api_key=Path(openai_api_key + '.txt').read_text())
 
-def get_providers:
+def get_providers():
     with open('providers.yaml', 'r', encoding='utf-8') as f:
         providers = yaml.safe_load(f)
     return providers
 
-def get_models:
+def get_models():
     return [model for item in get_providers() for model in item['models']]
 
 def get_base_url(providers, model):

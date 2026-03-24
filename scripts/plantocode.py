@@ -10,6 +10,7 @@ from datetime import datetime
 import time
 from typing import Dict, List, Any, Optional, Union, Tuple
 
+from openai import OpenAI
 import openai
 
 # Constants
@@ -44,7 +45,7 @@ class LLMHandler:
                 api_key = Path(api_key_file + '.txt').read_text().strip()
                 if not api_key:
                     raise ValueError("API key file is empty")
-                openai.api_key = api_key
+                self.client = OpenAI(api_key=api_key)
                 print("Successfully loaded API key from", api_key_file + '.txt')
             except FileNotFoundError:
                 # Try without .txt extension
@@ -52,7 +53,7 @@ class LLMHandler:
                     api_key = Path(api_key_file).read_text().strip()
                     if not api_key:
                         raise ValueError("API key file is empty")
-                    openai.api_key = api_key
+                    self.client = OpenAI(api_key=api_key)
                     print("Successfully loaded API key from", api_key_file)
                 except FileNotFoundError:
                     raise LLMError(f"API key file not found: {api_key_file} or {api_key_file}.txt")
@@ -76,7 +77,7 @@ class LLMHandler:
         for attempt in range(MAX_RETRIES):
             try:
                 if "gpt" not in gpt_version:
-                    response = openai.completions.create(
+                    response = self.client.completions.create(
                         model=gpt_version, 
                         prompt=prompt, 
                         max_tokens=max_tokens, 
@@ -87,7 +88,7 @@ class LLMHandler:
                     )
                     return response, response.choices[0].text.strip()
                 else:
-                    response = openai.chat.completions.create(
+                    response = self.client.chat.completions.create(
                         model=gpt_version, 
                         messages=prompt, 
                         max_tokens=max_tokens, 
