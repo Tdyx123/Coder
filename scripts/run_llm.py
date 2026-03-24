@@ -1,6 +1,7 @@
 import copy
 import glob
 import json
+import pyyaml
 import os
 import argparse
 from pathlib import Path
@@ -17,31 +18,32 @@ sys.path.append(".")
 import resources.actions as actions
 import resources.robots as robots
 
-
-def LM(prompt, gpt_version, max_tokens=128, temperature=0, stop=None, logprobs=1, frequency_penalty=0):
+def LM(prompt, model, max_tokens=128, temperature=0, stop=None, logprobs=1, frequency_penalty=0):
     
-    if "gpt" not in gpt_version:
-        response = openai.Completion.create(model=gpt_version, 
-                                            prompt=prompt, 
-                                            max_tokens=max_tokens, 
-                                            temperature=temperature, 
-                                            stop=stop, 
-                                            logprobs=logprobs, 
-                                            frequency_penalty = frequency_penalty)
-        
-        return response, response["choices"][0]["text"].strip()
+    response = openai.ChatCompletion.create(model=model, 
+                                        messages=prompt, 
+                                        max_tokens=max_tokens, 
+                                        temperature=temperature, 
+                                        frequency_penalty = frequency_penalty)
     
-    else:
-        response = openai.ChatCompletion.create(model=gpt_version, 
-                                            messages=prompt, 
-                                            max_tokens=max_tokens, 
-                                            temperature=temperature, 
-                                            frequency_penalty = frequency_penalty)
-        
-        return response, response["choices"][0]["message"]["content"].strip()
+    return response, response["choices"][0]["message"]["content"].strip()
 
 def set_api_key(openai_api_key):
     openai.api_key = Path(openai_api_key + '.txt').read_text()
+
+def get_providers:
+    with open('providers.yaml', 'r', encoding='utf-8') as f:
+        providers = yaml.safe_load(f)
+    return providers
+
+def get_models:
+    return [model for item in get_providers() for model in item['models']]
+
+def get_base_url(providers, model):
+    for provider in providers:
+        if model in item['models']:
+            return item['base_url']
+    return None  # 没找到返回 None
 
 # Function returns object list with name and properties.
 def convert_to_dict_objprop(objs, obj_mass):
@@ -65,8 +67,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--floor-plan", type=int, required=True)
     parser.add_argument("--openai-api-key-file", type=str, default="api_key")
-    parser.add_argument("--gpt-version", type=str, default="gpt-4", 
-                        choices=['gpt-3.5-turbo', 'gpt-4', 'gpt-3.5-turbo-16k'])
+    parser.add_argument("--models", type=str, default="K2.7", 
+                        choices = get_models())
     
     parser.add_argument("--prompt-decompse-set", type=str, default="train_task_decompose", 
                         choices=['train_task_decompose'])
@@ -82,6 +84,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     set_api_key(args.openai_api_key_file)
+
+
     
     if not os.path.isdir(f"./logs/"):
         os.makedirs(f"./logs/")
@@ -135,12 +139,12 @@ if __name__ == "__main__":
     for task in test_tasks:
         curr_prompt =  f"{prompt}\n\n# Task Description: {task}"
         
-        if "gpt" not in args.gpt_version:
+        if "gpt" not in args.model:
             # older gpt versions
-            _, text = LM(curr_prompt, args.gpt_version, max_tokens=1000, stop=["def"], frequency_penalty=0.15)
+            _, text = LM(curr_prompt, args.model, max_tokens=1000, stop=["def"], frequency_penalty=0.15)
         else:            
             messages = [{"role": "user", "content": curr_prompt}]
-            _, text = LM(messages,args.gpt_version, max_tokens=1300, frequency_penalty=0.0)
+            _, text = LM(messages,args.model, max_tokens=1300, frequency_penalty=0.0)
 
         decomposed_plan.append(text)
         
@@ -177,19 +181,19 @@ if __name__ == "__main__":
         curr_prompt += f"\n\n# IMPORTANT: The AI should ensure that the robots assigned to the tasks have all the necessary skills to perform the tasks. IMPORTANT: Determine whether the subtasks must be performed sequentially or in parallel, or a combination of both and allocate robots based on availablitiy. "
         curr_prompt += f"\n# SOLUTION  \n"
 
-        if "gpt" not in args.gpt_version:
+        if "gpt" not in args.model:
             # older versions of GPT
-            _, text = LM(curr_prompt, args.gpt_version, max_tokens=1000, stop=["def"], frequency_penalty=0.65)
+            _, text = LM(curr_prompt, args.model, max_tokens=1000, stop=["def"], frequency_penalty=0.65)
         
-        elif "gpt-3.5" in args.gpt_version:
+        elif "gpt-3.5" in args.model:
             # gpt 3.5 and its variants
             messages = [{"role": "user", "content": curr_prompt}]
-            _, text = LM(messages, args.gpt_version, max_tokens=1500, frequency_penalty=0.35)
+            _, text = LM(messages, args.model, max_tokens=1500, frequency_penalty=0.35)
         
         else:          
             # gpt 4.0
             messages = [{"role": "system", "content": "You are a Robot Task Allocation Expert. Determine whether the subtasks must be performed sequentially or in parallel, or a combination of both based on your reasoning. In the case of Task Allocation based on Robot Skills alone - First check if robot teams are required. Then Ensure that robot skills or robot team skills match the required skills for the subtask when allocating. Make sure that condition is met. In the case of Task Allocation based on Mass alone - First check if robot teams are required. Then Ensure that robot mass capacity or robot team combined mass capacity is greater than or equal to the mass for the object when allocating. Make sure that condition is met. In both the Task Task Allocation based on Mass alone and Task Allocation based on Skill alone, if there are multiple options for allocation, pick the best available option by reasoning to the best of your ability."},{"role": "system", "content": "You are a Robot Task Allocation Expert"},{"role": "user", "content": curr_prompt}]
-            _, text = LM(messages, args.gpt_version, max_tokens=400, frequency_penalty=0.69)
+            _, text = LM(messages, args.model, max_tokens=400, frequency_penalty=0.69)
 
         allocated_plan.append(text)
     
@@ -218,13 +222,13 @@ if __name__ == "__main__":
         curr_prompt += solution
         curr_prompt += f"\n# CODE Solution  \n"
         
-        if "gpt" not in args.gpt_version:
+        if "gpt" not in args.model:
             # older versions of GPT
-            _, text = LM(curr_prompt, args.gpt_version, max_tokens=1000, stop=["def"], frequency_penalty=0.30)
+            _, text = LM(curr_prompt, args.model, max_tokens=1000, stop=["def"], frequency_penalty=0.30)
         else:            
             # using variants of gpt 4 or 3.5
             messages = [{"role": "system", "content": "You are a Robot Task Allocation Expert"},{"role": "user", "content": curr_prompt}]
-            _, text = LM(messages, args.gpt_version, max_tokens=1400, frequency_penalty=0.4)
+            _, text = LM(messages, args.model, max_tokens=1400, frequency_penalty=0.4)
 
         code_plan.append(text)
     
@@ -245,7 +249,7 @@ if __name__ == "__main__":
      
             with open(f"./logs/{folder_name}/log.txt", 'w') as f:
                 f.write(task)
-                f.write(f"\n\nGPT Version: {args.gpt_version}")
+                f.write(f"\n\nGPT Version: {args.model}")
                 f.write(f"\n\nFloor Plan: {args.floor_plan}")
                 f.write(f"\n{objects_ai}")
                 f.write(f"\nrobots = {available_robots[idx]}")
@@ -261,7 +265,3 @@ if __name__ == "__main__":
                 
             with open(f"./logs/{folder_name}/code_plan.py", 'w') as x:
                 x.write(code_plan[idx])
-            
-
-
-

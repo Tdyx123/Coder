@@ -1,6 +1,7 @@
-openai
+openai>=1.0.0
 ai2thor
 scipy
 numpy
 opencv-python
 pathlib
+pyyaml
