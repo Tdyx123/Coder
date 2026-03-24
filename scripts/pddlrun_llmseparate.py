@@ -16,6 +16,8 @@ from typing import List, Dict, Tuple, Optional, Union, Any
 
 from openai import OpenAI
 import openai
+
+from llm_logger import log_llm_call, get_llm_logger
 import ai2thor.controller
 
 import difflib  #PG: Added
@@ -634,7 +636,7 @@ class LLMHandler:
                         api_key=provider['api_key'],
                         base_url=provider['base_url']
                     )
-                return self.clients[provider_name]
+                return self.clients[provider_name], provider_name
         raise LLMError(f"Model {model} not found in any provider")
     
     def query_model(
@@ -663,10 +665,11 @@ class LLMHandler:
             
         """
         retry_delay = DEFAULT_RETRY_DELAY
-        client = self._get_client_for_model(model)
+        client, provider = self._get_client_for_model(model)
         
         for attempt in range(MAX_RETRIES):
             try:
+                start_time = time.time()
                 response = client.chat.completions.create(
                     model=model, 
                     messages=prompt, 
@@ -674,7 +677,32 @@ class LLMHandler:
                     temperature=temperature, 
                     frequency_penalty=frequency_penalty
                 )
-                return response, response.choices[0].message.content.strip()
+                duration_ms = (time.time() - start_time) * 1000
+                text = response.choices[0].message.content.strip()
+                
+                usage = None
+                if hasattr(response, 'usage') and response.usage is not None:
+                    usage = {
+                        'prompt_tokens': response.usage.prompt_tokens,
+                        'completion_tokens': response.usage.completion_tokens,
+                        'total_tokens': response.usage.total_tokens
+                    }
+                
+                log_llm_call(
+                    model=model,
+                    provider=provider,
+                    messages=prompt if isinstance(prompt, list) else [{'role': 'user', 'content': prompt}],
+                    params={
+                        'max_tokens': max_tokens,
+                        'temperature': temperature,
+                        'frequency_penalty': frequency_penalty
+                    },
+                    response_text=text,
+                    usage=usage,
+                    duration_ms=duration_ms
+                )
+                
+                return response, text
                     
             except openai.RateLimitError:
                 if attempt < MAX_RETRIES - 1:
