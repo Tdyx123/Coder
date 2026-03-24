@@ -12,7 +12,7 @@ import subprocess
 from openai import OpenAI
 import ai2thor.controller
 
-client = None
+clients = {}
 
 import sys
 sys.path.append(".")
@@ -20,8 +20,26 @@ sys.path.append(".")
 import resources.actions as actions
 import resources.robots as robots
 
+def get_client_for_model(model):
+    provider = None
+    for p in get_providers():
+        if model in p['models']:
+            provider = p
+            break
+    if not provider:
+        raise ValueError(f"Model {model} not found in any provider")
+    
+    provider_name = provider['name']
+    if provider_name not in clients:
+        clients[provider_name] = OpenAI(
+            api_key=provider['api_key'],
+            base_url=provider['base_url']
+        )
+    return clients[provider_name]
+
 def LM(prompt, model, max_tokens=128, temperature=0, stop=None, logprobs=1, frequency_penalty=0):
     
+    client = get_client_for_model(model)
     response = client.chat.completions.create(model=model, 
                                         messages=prompt, 
                                         max_tokens=max_tokens, 
@@ -30,23 +48,18 @@ def LM(prompt, model, max_tokens=128, temperature=0, stop=None, logprobs=1, freq
     
     return response, response.choices[0].message.content.strip()
 
-def set_api_key(openai_api_key):
-    global client
-    client = OpenAI(api_key=Path(openai_api_key + '.txt').read_text())
-
 def get_providers():
     with open('providers.yaml', 'r', encoding='utf-8') as f:
-        providers = yaml.safe_load(f)
-    return providers
+        return yaml.safe_load(f)['providers']
 
 def get_models():
-    return [model for item in get_providers() for model in item['models']]
+    return [model for provider in get_providers() for model in provider['models']]
 
 def get_base_url(providers, model):
     for provider in providers:
-        if model in item['models']:
-            return item['base_url']
-    return None  # 没找到返回 None
+        if model in provider['models']:
+            return provider['base_url']
+    return None
 
 # Function returns object list with name and properties.
 def convert_to_dict_objprop(objs, obj_mass):
@@ -69,8 +82,7 @@ def get_ai2_thor_objects(floor_plan_id):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--floor-plan", type=int, required=True)
-    parser.add_argument("--openai-api-key-file", type=str, default="api_key")
-    parser.add_argument("--models", type=str, default="K2.7", 
+    parser.add_argument("--model", type=str, default="deepseek-chat", 
                         choices = get_models())
     
     parser.add_argument("--prompt-decompse-set", type=str, default="train_task_decompose", 
@@ -86,10 +98,6 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
 
-    set_api_key(args.openai_api_key_file)
-
-
-    
     if not os.path.isdir(f"./logs/"):
         os.makedirs(f"./logs/")
         

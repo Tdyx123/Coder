@@ -5,6 +5,7 @@ import os
 import re
 import sys
 import glob
+import yaml
 from pathlib import Path
 from datetime import datetime
 import time
@@ -19,6 +20,13 @@ DEFAULT_TEMPERATURE = 0.1
 DEFAULT_RETRY_DELAY = 20
 MAX_RETRIES = 3
 
+def get_available_models():
+    """Get list of available models from providers.yaml"""
+    providers_file = Path(__file__).parent / 'providers.yaml'
+    with open(providers_file, 'r', encoding='utf-8') as f:
+        providers = yaml.safe_load(f)['providers']
+    return [model for provider in providers for model in provider['models']]
+
 class LLMError(Exception):
     """Exception raised for Language Model related errors."""
     pass
@@ -30,35 +38,31 @@ class MimicTranslationError(Exception):
 class LLMHandler:
     """Handles interactions with Language Models (LLMs) using OpenAI API."""
     
-    def __init__(self, api_key_file: str):
-        """Initialize the LLM handler.
-        
-        Args:
-            api_key_file (str): Path to the API key file
-        """
-        self.setup_api(api_key_file)
+    def __init__(self):
+        """Initialize the LLM handler."""
+        self.clients = {}
+        self.providers = None
     
-    def setup_api(self, api_key_file: str) -> None:
-        """Set up the OpenAI API key."""
-        try:
-            try:
-                api_key = Path(api_key_file + '.txt').read_text().strip()
-                if not api_key:
-                    raise ValueError("API key file is empty")
-                self.client = OpenAI(api_key=api_key)
-                print("Successfully loaded API key from", api_key_file + '.txt')
-            except FileNotFoundError:
-                # Try without .txt extension
-                try:
-                    api_key = Path(api_key_file).read_text().strip()
-                    if not api_key:
-                        raise ValueError("API key file is empty")
-                    self.client = OpenAI(api_key=api_key)
-                    print("Successfully loaded API key from", api_key_file)
-                except FileNotFoundError:
-                    raise LLMError(f"API key file not found: {api_key_file} or {api_key_file}.txt")
-        except Exception as e:
-            raise LLMError(f"Error reading API key file: {str(e)}")
+    def _load_providers(self):
+        """Load providers from yaml file."""
+        if self.providers is None:
+            providers_file = Path(__file__).parent / 'providers.yaml'
+            with open(providers_file, 'r', encoding='utf-8') as f:
+                self.providers = yaml.safe_load(f)['providers']
+        return self.providers
+    
+    def _get_client_for_model(self, model):
+        """Get or create OpenAI client for the provider of the given model."""
+        for provider in self._load_providers():
+            if model in provider['models']:
+                provider_name = provider['name']
+                if provider_name not in self.clients:
+                    self.clients[provider_name] = OpenAI(
+                        api_key=provider['api_key'],
+                        base_url=provider['base_url']
+                    )
+                return self.clients[provider_name]
+        raise LLMError(f"Model {model} not found in any provider")
     
     def query_model(
         self, 
@@ -73,11 +77,12 @@ class LLMHandler:
         """Query the language model using OpenAI API.
         """
         retry_delay = DEFAULT_RETRY_DELAY
+        client = self._get_client_for_model(gpt_version)
         
         for attempt in range(MAX_RETRIES):
             try:
                 if "gpt" not in gpt_version:
-                    response = self.client.completions.create(
+                    response = client.completions.create(
                         model=gpt_version, 
                         prompt=prompt, 
                         max_tokens=max_tokens, 
@@ -88,7 +93,7 @@ class LLMHandler:
                     )
                     return response, response.choices[0].text.strip()
                 else:
-                    response = self.client.chat.completions.create(
+                    response = client.chat.completions.create(
                         model=gpt_version, 
                         messages=prompt, 
                         max_tokens=max_tokens, 
@@ -116,9 +121,9 @@ class LLMHandler:
 class MimicFormatTranslator:
     """Translates complete PDDL plans to mimic format using OpenAI API."""
     
-    def __init__(self, api_key_file: str, gpt_version: str = "gpt-4o"):
+    def __init__(self, gpt_version: str = "deepseek-chat"):
         self.gpt_version = gpt_version
-        self.llm = LLMHandler(api_key_file)
+        self.llm = LLMHandler()
         print(f"Initialized MimicFormatTranslator with {gpt_version}")
     
     def validate_mimic_code(self, mimic_code: str, task_description: str) -> Tuple[bool, str]:
@@ -893,11 +898,9 @@ def generate_summary(processed_results: List[Dict[str, Any]], output_dir: str):
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='Translate complete PDDL plans to AI2-THOR executable code using OpenAI API. Can load from JSON files or PDDL log directories created by pddlrun_llmseparate.py')
-    parser.add_argument('--openai-api-key-file', type=str, default="api_key",
-                       help='Path to OpenAI API key file')
-    parser.add_argument('--gpt-version', type=str, default="gpt-4o",
-                       choices=['gpt-3.5-turbo', 'gpt-4o', 'gpt-3.5-turbo-16k'],
-                       help='GPT model version to use')
+    parser.add_argument('--gpt-version', type=str, default="deepseek-chat",
+                       choices=get_available_models(),
+                       help='Model version to use')
     parser.add_argument('--input-source', type=str, choices=['json', 'pddl_logs'], default='pddl_logs',
                        help='Input source type: json file or pddl_logs directory')
     parser.add_argument('--input-file', type=str, 
@@ -956,7 +959,6 @@ def main():
         
         # Initialize translator with OpenAI API
         translator = MimicFormatTranslator(
-            api_key_file=args.openai_api_key_file,
             gpt_version=args.gpt_version
         )
         

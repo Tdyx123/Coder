@@ -3,6 +3,7 @@ import glob
 import json
 import os
 import argparse
+import yaml
 from pathlib import Path
 from datetime import datetime
 import random
@@ -24,6 +25,13 @@ sys.path.append(".")
 
 import resources.actions as actions
 import resources.robots as robots
+
+def get_available_models():
+    """Get list of available models from providers.yaml"""
+    providers_file = Path(__file__).parent / 'providers.yaml'
+    with open(providers_file, 'r', encoding='utf-8') as f:
+        providers = yaml.safe_load(f)['providers']
+    return [model for provider in providers for model in provider['models']]
 
 # Constants
 DEFAULT_MAX_TOKENS = 128
@@ -607,36 +615,31 @@ class LLMHandler:
 
     """
     
-    def __init__(self, api_key_file: str):
-        """Initialize the LLM handler.
-        
-        Args:
-            api_key_file (str): Path to the API key file
-        """
-        self.setup_api(api_key_file)
+    def __init__(self):
+        """Initialize the LLM handler."""
+        self.clients = {}
+        self.providers = None
     
-    def setup_api(self, api_key_file: str) -> None:
-        """Set up the OpenAI API key."""
-        try:
-            
-            try:
-                api_key = Path(api_key_file + '.txt').read_text().strip()
-                if not api_key:
-                    raise ValueError("API key file is empty")
-                self.client = OpenAI(api_key=api_key)
-                print("Successfully loaded API key from", api_key_file + '.txt')
-            except FileNotFoundError:
-                # Try without .txt extension
-                try:
-                    api_key = Path(api_key_file).read_text().strip()
-                    if not api_key:
-                        raise ValueError("API key file is empty")
-                    self.client = OpenAI(api_key=api_key)
-                    print("Successfully loaded API key from", api_key_file)
-                except FileNotFoundError:
-                    raise LLMError(f"API key file not found: {api_key_file} or {api_key_file}.txt")
-        except Exception as e:
-            raise LLMError(f"Error reading API key file: {str(e)}")
+    def _load_providers(self):
+        """Load providers from yaml file."""
+        if self.providers is None:
+            providers_file = Path(__file__).parent / 'providers.yaml'
+            with open(providers_file, 'r', encoding='utf-8') as f:
+                self.providers = yaml.safe_load(f)['providers']
+        return self.providers
+    
+    def _get_client_for_model(self, model):
+        """Get or create OpenAI client for the provider of the given model."""
+        for provider in self._load_providers():
+            if model in provider['models']:
+                provider_name = provider['name']
+                if provider_name not in self.clients:
+                    self.clients[provider_name] = OpenAI(
+                        api_key=provider['api_key'],
+                        base_url=provider['base_url']
+                    )
+                return self.clients[provider_name]
+        raise LLMError(f"Model {model} not found in any provider")
     
     def query_model(
         self, 
@@ -664,11 +667,12 @@ class LLMHandler:
             
         """
         retry_delay = DEFAULT_RETRY_DELAY
+        client = self._get_client_for_model(gpt_version)
         
         for attempt in range(MAX_RETRIES):
             try:
                 if "gpt" not in gpt_version:
-                    response = self.client.completions.create(
+                    response = client.completions.create(
                         model=gpt_version, 
                         prompt=prompt, 
                         max_tokens=max_tokens, 
@@ -679,7 +683,7 @@ class LLMHandler:
                     )
                     return response, response.choices[0].text.strip()
                 else:
-                    response = self.client.chat.completions.create(
+                    response = client.chat.completions.create(
                         model=gpt_version, 
                         messages=prompt, 
                         max_tokens=max_tokens, 
@@ -826,13 +830,12 @@ class TaskManager:
  result logging.
     """
     
-    def __init__(self, base_path: str, gpt_version: str, api_key_file: str, prompt_decompse_set: str = "pddl_train_task_decomposesep", prompt_allocation_set: str = "pddl_train_task_allocationsep"):
+    def __init__(self, base_path: str, gpt_version: str, prompt_decompse_set: str = "pddl_train_task_decomposesep", prompt_allocation_set: str = "pddl_train_task_allocationsep"):
         """Initialize the task manager.
         
         Args:
             base_path (str): Base path for all operations
             gpt_version (str): Version of GPT to use
-            api_key_file (str): Path to the API key file
             prompt_decompse_set (str): Name of the decomposition prompt set
             prompt_allocation_set (str): Name of the allocation prompt set
         """
@@ -842,7 +845,7 @@ class TaskManager:
         self.prompt_allocation_set = prompt_allocation_set
         
         # Initialize components
-        self.llm = LLMHandler(api_key_file)
+        self.llm = LLMHandler()
         self.file_processor = FileProcessor(base_path)
         self.validator = PDDLValidator(self.llm, self.file_processor)
         self.planner = PDDLPlanner(base_path, self.file_processor)
@@ -1967,12 +1970,11 @@ def parse_arguments() -> argparse.Namespace:
         required=False,  # Changed from True
         help="Required unless --bddl-file is provided"
     )
-    parser.add_argument("--openai-api-key-file", type=str, default="api_key")
     parser.add_argument(
         "--gpt-version",
         type=str,
-        default="gpt-4o",
-        choices=['gpt-3.5-turbo', 'gpt-4o', 'gpt-3.5-turbo-16k']
+        default="deepseek-chat",
+        choices=get_available_models()
     )
     parser.add_argument(
         "--prompt-decompse-set",
@@ -2012,7 +2014,6 @@ def main():
         task_manager = TaskManager(
             base_path=os.getcwd(),
             gpt_version=args.gpt_version,
-            api_key_file=args.openai_api_key_file,
             prompt_decompse_set=args.prompt_decompse_set,
             prompt_allocation_set=args.prompt_allocation_set
         )

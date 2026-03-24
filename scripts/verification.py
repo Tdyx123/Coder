@@ -11,37 +11,6 @@ class VerificationError(InitializationError):
     """Exception raised for verification failures."""
     pass
 
-def verify_api_key(api_key_file: str) -> bool:
-    """Verify the OpenAI API key file exists and is valid.
-    
-    Args:
-        api_key_file (str): Path to the API key file
-        
-    Returns:
-        bool: True if API key is valid, False otherwise
-        
-    Raises:
-        VerificationError: If API key verification fails
-    """
-    try:
-        # Try with .txt extension first
-        key_path = Path(api_key_file + '.txt')
-        if not key_path.exists():
-            # Try without extension
-            key_path = Path(api_key_file)
-            if not key_path.exists():
-                raise VerificationError(f"API key file not found: {api_key_file}")
-        
-        # Read and validate key
-        key = key_path.read_text().strip()
-        if not key:
-            raise VerificationError("API key file is empty")
-            
-        return True
-        
-    except Exception as e:
-        raise VerificationError(f"Error verifying API key: {str(e)}")
-
 def verify_directories(base_path: str) -> bool:
     """Verify and create required directories.
     
@@ -153,12 +122,11 @@ def verify_robot_pddl_files(base_path: str, robot_ids: List[int]) -> bool:
     except Exception as e:
         raise VerificationError(f"Error verifying robot PDDL files: {str(e)}")
 
-def verify_all(base_path: str, api_key_file: str, prompt_sets: List[str], test_file: str, robot_ids: List[int]) -> Tuple[bool, Optional[str]]:
+def verify_all(base_path: str, prompt_sets: List[str], test_file: str, robot_ids: List[int]) -> Tuple[bool, Optional[str]]:
     """Verify all initialization requirements.
     
     Args:
         base_path (str): Base path for all operations
-        api_key_file (str): Path to API key file
         prompt_sets (List[str]): List of prompt set names
         test_file (str): Path to test file
         robot_ids (List[int]): List of robot IDs to verify
@@ -167,9 +135,6 @@ def verify_all(base_path: str, api_key_file: str, prompt_sets: List[str], test_f
         Tuple[bool, Optional[str]]: (success status, error message if any)
     """
     try:
-        # Verify API key
-        verify_api_key(api_key_file)
-        
         # Verify directories
         verify_directories(base_path)
         
