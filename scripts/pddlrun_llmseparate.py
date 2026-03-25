@@ -1945,7 +1945,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--model",
         type=str,
-        default="MiniMax-M2.7",
+        default="gpt-4o",
         choices=get_available_models()
     )
     parser.add_argument(

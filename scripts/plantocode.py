@@ -887,7 +887,7 @@ def generate_summary(processed_results: List[Dict[str, Any]], output_dir: str):
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='Translate complete PDDL plans to AI2-THOR executable code using OpenAI API. Can load from JSON files or PDDL log directories created by pddlrun_llmseparate.py')
-    parser.add_argument('--model', type=str, default="MiniMax-M2.7",
+    parser.add_argument('--model', type=str, default="gpt-4o",
                        choices=get_available_models(),
                        help='Model to use')
     parser.add_argument('--input-source', type=str, choices=['json', 'pddl_logs'], default='pddl_logs',

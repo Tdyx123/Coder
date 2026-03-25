@@ -46,8 +46,7 @@ def process_bddl_file(bddl_file: str, model: str) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description="Process all BDDL files in activity_definitions directory")
-    parser.add_argument("--model", type=str, default="MiniMax-M2.7",
-                      choices=['deepseek-chat', 'deepseek-reasoner', 'MiniMax-01', 'MiniMax-01-Function-Calling'],
+    parser.add_argument("--model", type=str, default="gpt-4o",
                       help="Model to use")
     parser.add_argument("--activity", type=str, default=None,
                       help="Process specific activity directory only")

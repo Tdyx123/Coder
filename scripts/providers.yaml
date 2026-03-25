@@ -11,3 +11,9 @@ providers:
     models:
       - deepseek-chat
       - deepseek-reasoner
+
+  - name: poloapi
+    base_url: https://poloapi.top/v1
+    api_key: your_deepseek_api_key_here
+    models:
+      - gpt-4o

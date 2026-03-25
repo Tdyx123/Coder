@@ -105,7 +105,7 @@ def get_ai2_thor_objects(floor_plan_id):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--floor-plan", type=int, required=True)
-    parser.add_argument("--model", type=str, default="MiniMax-M2.7", 
+    parser.add_argument("--model", type=str, default="gpt-4o", 
                         choices = get_models())
     
     parser.add_argument("--prompt-decompse-set", type=str, default="train_task_decompose", 
