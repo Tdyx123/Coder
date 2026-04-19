@@ -1,4 +1,6 @@
 import argparse
+import contextlib
+import io
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -20,7 +22,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Parallel wrapper for pddlrun_llmseparate.py. "
-            "The underlying module is responsible for thread-safe execution."
+            "Runs multiple floor plans and multiple task indices in parallel."
         )
     )
     parser.add_argument("--floor-plans", nargs="+", required=True, help="Floor plans to execute")
@@ -49,7 +51,11 @@ def floor_plan_sort_key(value: str) -> tuple:
     return (number, "".join(suffix))
 
 
-def load_jobs(repo_root: Path, test_set: str, floor_plan: str) -> List[TaskJob]:
+def load_jobs(
+    repo_root: Path,
+    test_set: str,
+    floor_plan: str,
+) -> List[TaskJob]:
     normalized = normalize_floor_plan(floor_plan)
     dataset_file = repo_root / "data" / test_set / f"FloorPlan{normalized}.jsonl"
     if not dataset_file.exists():
@@ -76,16 +82,17 @@ def run_single_job(
     error_message = None
 
     try:
-        result = run_single_floor_plan_task(
-            base_path=str(repo_root),
-            model=args.model,
-            floor_plan=job.floor_plan,
-            task_record=job.record,
-            prompt_decompse_set=args.prompt_decompse_set,
-            prompt_allocation_set=args.prompt_allocation_set,
-            objects_ai=objects_ai,
-            log_results=not args.disable_log_results,
-        )
+        with contextlib.redirect_stdout(io.StringIO()):
+            result = run_single_floor_plan_task(
+                base_path=str(repo_root),
+                model=args.model,
+                floor_plan=job.floor_plan,
+                task_record=job.record,
+                prompt_decompse_set=args.prompt_decompse_set,
+                prompt_allocation_set=args.prompt_allocation_set,
+                objects_ai=objects_ai,
+                log_results=not args.disable_log_results,
+            )
     except Exception as exc:
         status = "error"
         result = {}

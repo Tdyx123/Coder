@@ -1938,6 +1938,23 @@ def run_single_floor_plan_task(
 
     return task_manager.task_results[0]
 
+def load_dataset_records(test_file: str) -> List[Dict[str, Any]]:
+    """Load raw dataset records from a JSONL file."""
+    records: List[Dict[str, Any]] = []
+    try:
+        with open(test_file, "r", encoding="utf-8") as handle:
+            for raw_line in handle:
+                line = raw_line.strip()
+                if not line:
+                    continue
+                records.append(json.loads(line))
+    except FileNotFoundError:
+        raise PDDLError(f"Test file not found: {test_file}")
+    except json.JSONDecodeError as exc:
+        raise PDDLError(f"Invalid JSON in test file {test_file}: {str(exc)}")
+
+    return records
+
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--bddl-file", type=str, help="Path to BDDL file")
@@ -1970,6 +1987,12 @@ def parse_arguments() -> argparse.Namespace:
         type=str,
         default="final_test",
         choices=['final_test']
+    )
+    parser.add_argument(
+        "--task-index",
+        type=int,
+        default=0,
+        help="Zero-based task index to run from the selected floor plan dataset."
     )
     parser.add_argument("--log-results", dest="log_results", action="store_true")
     parser.add_argument("--no-log-results", dest="log_results", action="store_false")
@@ -2039,32 +2062,37 @@ def main():
                     bddl_file_path=args.bddl_file
                 )
         else:
-            # Original workflow
+            # Dataset workflow: run a single task selected by task index
             test_file = os.path.join("data", args.test_set, f"FloorPlan{args.floor_plan}.jsonl")
-            test_tasks, available_robots, gt_test_tasks, trans_cnt_tasks, min_trans_cnt_tasks = \
-                task_manager.load_dataset(test_file)
-            
-            print(f"\n----Test set tasks----\n{test_tasks}\nTotal: {len(test_tasks)} tasks\n")
+            task_records = load_dataset_records(test_file)
+            if not task_records:
+                raise PDDLError(f"No tasks found in dataset: {test_file}")
+            if args.task_index < 0 or args.task_index >= len(task_records):
+                raise PDDLError(
+                    f"Task index {args.task_index} is out of range for {test_file}. "
+                    f"Valid range: 0 to {len(task_records) - 1}"
+                )
+
+            selected_record = task_records[args.task_index]
+            selected_task = selected_record.get("task", f"task_{args.task_index}")
+
+            print(f"\n----Test set tasks----\nTotal: {len(task_records)} tasks\n")
+            print(f"Selected task index: {args.task_index}")
+            print(f"Selected task: {selected_task}\n")
             
             # Get AI2thor objects 
             scene_floor_plan = int(PDDLUtils.extract_floor_plan_number(args.floor_plan))
             objects_ai = f"\n\nobjects = {PDDLUtils.get_ai2_thor_objects(scene_floor_plan)}"
-            
-            # Process tasks with objects_ai
-            task_manager.process_tasks(test_tasks, available_robots, objects_ai)
-            
-            # Log results if enabled
-            if args.log_results:
-                for idx, task in enumerate(test_tasks):
-                    task_manager.log_results(
-                        task=task,
-                        idx=idx,
-                        available_robots=available_robots,
-                        gt_test_tasks=gt_test_tasks,
-                        trans_cnt_tasks=trans_cnt_tasks,
-                        min_trans_cnt_tasks=min_trans_cnt_tasks,
-                        objects_ai=objects_ai
-                    )
+            run_single_floor_plan_task(
+                base_path=os.getcwd(),
+                model=args.model,
+                floor_plan=args.floor_plan,
+                task_record=selected_record,
+                prompt_decompse_set=args.prompt_decompse_set,
+                prompt_allocation_set=args.prompt_allocation_set,
+                objects_ai=objects_ai,
+                log_results=args.log_results,
+            )
         
     except Exception as e:
         print(f"Error in main execution: {str(e)}")
