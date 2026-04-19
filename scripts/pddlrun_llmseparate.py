@@ -899,8 +899,17 @@ class TaskManager:
             "model": self.model,
             "created_at": timestamp,
             "storage_base_dir": self.intermediate_base_path,
-            "artifacts": {}
+            "artifacts": {},
+            "llm": {
+                "task_log": "00_llm/llm_calls.jsonl"
+            }
         }
+        get_llm_logger().set_context(
+            instance_id=self.instance_id,
+            task_index=task_idx,
+            task=task,
+            task_run_dir=self.current_task_run_dir,
+        )
 
         inputs = {
             "task": task,
@@ -914,6 +923,7 @@ class TaskManager:
         self._record_artifact("inputs", "task_context", "inputs/task_context.json")
         self._write_text_artifact("inputs/domain_content.pddl", domain_content)
         self._record_artifact("inputs", "domain_content", "inputs/domain_content.pddl")
+        self._record_artifact("llm", "calls", "00_llm/llm_calls.jsonl")
         self._persist_manifest()
 
     def clean_generated_subtask_directory(self, isValidated: bool = False) -> None:
@@ -1250,6 +1260,8 @@ class TaskManager:
             print(f"Error message: {str(e)}")
             print(f"Current task index: {task_idx if 'task_idx' in locals() else 'Not started'}")
             raise
+        finally:
+            get_llm_logger().clear_context()
 
     def _generate_decomposed_plan(self, task: str, domain_content: str, robots: List[dict], objects_ai: str) -> str:
         """Generate decomposed plan for a task."""

@@ -2,6 +2,7 @@
 
 import json
 import os
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional
@@ -9,7 +10,8 @@ from typing import Dict, List, Any, Optional
 
 class LLMCallLogger:
     _instance: Optional['LLMCallLogger'] = None
-    _log_file: Optional[Path] = None
+    _write_lock = threading.Lock()
+    _thread_local = threading.local()
 
     def __new__(cls):
         if cls._instance is None:
@@ -18,22 +20,52 @@ class LLMCallLogger:
         return cls._instance
 
     def _initialize(self):
-        logs_dir = Path(__file__).parent.parent / 'logs'
-        logs_dir.mkdir(exist_ok=True)
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        self._log_file = logs_dir / f'llm_calls_{timestamp}.jsonl'
+        return None
 
     def log(self, log_entry: Dict[str, Any]) -> None:
-        if self._log_file is None:
-            self._initialize()
-        with open(self._log_file, 'a', encoding='utf-8') as f:
-            f.write(json.dumps(log_entry, ensure_ascii=False) + '\n')
+        entry = dict(log_entry)
+        context = self.get_context()
+        if context:
+            entry["context"] = context
+            for key in ("instance_id", "task_index", "task", "task_run_dir"):
+                if key in context:
+                    entry[key] = context[key]
+        entry.setdefault("thread_name", threading.current_thread().name)
+
+        task_log_file = self._resolve_task_log_file(context)
+        if task_log_file is None:
+            return
+        serialized = json.dumps(entry, ensure_ascii=False) + '\n'
+
+        with self._write_lock:
+            task_log_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(task_log_file, 'a', encoding='utf-8') as f:
+                f.write(serialized)
+
+    def set_context(self, **context: Any) -> None:
+        current = getattr(self._thread_local, "context", {}).copy()
+        current.update({key: value for key, value in context.items() if value is not None})
+        self._thread_local.context = current
+
+    def clear_context(self) -> None:
+        self._thread_local.context = {}
+
+    def get_context(self) -> Dict[str, Any]:
+        return getattr(self._thread_local, "context", {}).copy()
+
+    def _resolve_task_log_file(self, context: Dict[str, Any]) -> Optional[Path]:
+        task_run_dir = context.get("task_run_dir")
+        if not task_run_dir:
+            return None
+        return Path(task_run_dir) / "00_llm" / "llm_calls.jsonl"
 
     @property
     def log_file(self) -> Path:
-        if self._log_file is None:
-            self._initialize()
-        return self._log_file
+        context = self.get_context()
+        log_file = self._resolve_task_log_file(context)
+        if log_file is None:
+            raise RuntimeError("LLM logger task context is not set")
+        return log_file
 
 
 def log_llm_call(
