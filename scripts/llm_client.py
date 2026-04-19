@@ -70,6 +70,7 @@ def complete_with_provider(
         "max_tokens": max_tokens,
         "temperature": temperature,
         "frequency_penalty": frequency_penalty,
+        "custom_llm_provider": "openai"
     }
     if stop:
         kwargs["stop"] = stop
