@@ -113,6 +113,19 @@ class PDDLUtils:
             List[Dict[str, Union[str, float]]]: List of dictionaries containing object properties
         """
         return [{'name': obj, 'mass': mass} for obj, mass in zip(objs, obj_mass)]
+
+    @staticmethod
+    def extract_floor_plan_number(floor_plan: Union[int, str]) -> str:
+        """Extract the numeric scene identifier from a floor plan value."""
+        floor_plan_str = str(floor_plan)
+        if floor_plan_str.startswith("FloorPlan"):
+            floor_plan_str = floor_plan_str[len("FloorPlan"):]
+
+        match = re.match(r"(\d+)", floor_plan_str)
+        if not match:
+            raise ValidationError(f"Invalid floor plan value: {floor_plan}")
+
+        return match.group(1)
     
     @staticmethod
     def get_ai2_thor_objects(floor_plan: int) -> List[Dict[str, Any]]:
@@ -2194,7 +2207,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--bddl-file", type=str, help="Path to BDDL file")
     parser.add_argument(
         "--floor-plan", 
-        type=int, 
+        type=str, 
         required=False,  # Changed from True
         help="Required unless --bddl-file is provided"
     )
@@ -2296,7 +2309,8 @@ def main():
             print(f"\n----Test set tasks----\n{test_tasks}\nTotal: {len(test_tasks)} tasks\n")
             
             # Get AI2thor objects 
-            objects_ai = f"\n\nobjects = {PDDLUtils.get_ai2_thor_objects(args.floor_plan)}"
+            scene_floor_plan = int(PDDLUtils.extract_floor_plan_number(args.floor_plan))
+            objects_ai = f"\n\nobjects = {PDDLUtils.get_ai2_thor_objects(scene_floor_plan)}"
             
             # Process tasks with objects_ai
             task_manager.process_tasks(test_tasks, available_robots, objects_ai)

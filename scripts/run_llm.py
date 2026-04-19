@@ -9,6 +9,7 @@ from datetime import datetime
 import random
 import subprocess
 import time
+import re
 
 import ai2thor.controller
 
@@ -81,6 +82,17 @@ def convert_to_dict_objprop(objs, obj_mass):
         objs_dict.append(obj_dict)
     return objs_dict
 
+def extract_floor_plan_number(floor_plan):
+    floor_plan_str = str(floor_plan)
+    if floor_plan_str.startswith("FloorPlan"):
+        floor_plan_str = floor_plan_str[len("FloorPlan"):]
+
+    match = re.match(r"(\d+)", floor_plan_str)
+    if not match:
+        raise ValueError(f"Invalid floor_plan value: {floor_plan}")
+
+    return match.group(1)
+
 def get_ai2_thor_objects(floor_plan_id):
     # connector to ai2thor to get object list
     controller = ai2thor.controller.Controller(scene="FloorPlan"+str(floor_plan_id))
@@ -116,7 +128,7 @@ def load_test_tasks(test_set, floor_plan):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--floor-plan", type=int, required=True)
+    parser.add_argument("--floor-plan", type=str, required=True)
     parser.add_argument("--model", type=str, default="gpt-4o", 
                         choices = get_models())
     
@@ -159,7 +171,8 @@ if __name__ == "__main__":
     prompt = f"from skills import " + actions.ai2thor_actions
     prompt += f"\nimport time"
     prompt += f"\nimport threading"
-    objects_ai = f"\n\nobjects = {get_ai2_thor_objects(args.floor_plan)}"
+    scene_floor_plan = int(extract_floor_plan_number(args.floor_plan))
+    objects_ai = f"\n\nobjects = {get_ai2_thor_objects(scene_floor_plan)}"
     prompt += objects_ai
     
     # read input train prompts
