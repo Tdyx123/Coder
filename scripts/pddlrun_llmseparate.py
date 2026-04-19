@@ -13,6 +13,7 @@ import re
 import shutil
 import sys
 from typing import List, Dict, Tuple, Optional, Union, Any
+import uuid
 
 from llm_client import (
     complete_with_provider,
@@ -36,6 +37,14 @@ import resources.actions as actions
 import resources.robots as robots
 
 CONFIG_FILE_NAME = "pddlrun_llmseparate_config.yaml"
+
+
+def normalize_floor_plan(value: str) -> str:
+    """Normalize FloorPlan-style identifiers to their suffix form."""
+    text = str(value).strip()
+    if text.startswith("FloorPlan"):
+        text = text[len("FloorPlan"):]
+    return text
 
 def get_available_models():
     """Get list of available models from providers.yaml"""
@@ -98,6 +107,11 @@ class LLMError(Exception):
     """Exception raised for Language Model related errors."""
     pass
 
+
+class TaskProcessingResult(Dict[str, Any]):
+    """Typed dictionary-like container for per-task execution results."""
+    pass
+
 class PDDLUtils:
     """Utility functions for PDDL operations."""
     
@@ -155,18 +169,40 @@ class FileProcessor:
     specific to PDDL task processing.
     """
     
-    def __init__(self, base_path: str):
+    def __init__(
+        self,
+        base_path: str,
+        subtask_path: Optional[str] = None,
+        validated_subtask_path: Optional[str] = None,
+        each_run_path: Optional[str] = None,
+    ):
         """Initialize the file processor.
         
         Args:
             base_path (str): Base path for file operations
         """
         self.base_path = base_path
-        self.subtask_path = os.path.join(base_path, "resources", "generated_subtask")
-        self.validated_subtask_path = os.path.join(base_path, "resources", "validated_subtask")  #PG: Added for validation
-        self.each_run_path = os.path.join(base_path, "resources", "each_run")
+        self.subtask_path = ""
+        self.validated_subtask_path = ""
+        self.each_run_path = ""
+        self.configure_workspace(
+            subtask_path=subtask_path or os.path.join(base_path, "resources", "generated_subtask"),
+            validated_subtask_path=validated_subtask_path or os.path.join(base_path, "resources", "validated_subtask"),
+            each_run_path=each_run_path or os.path.join(base_path, "resources", "each_run"),
+        )
+
+    def configure_workspace(
+        self,
+        subtask_path: str,
+        validated_subtask_path: str,
+        each_run_path: str,
+    ) -> None:
+        """Configure the active workspace directories for generated artifacts."""
+        self.subtask_path = subtask_path
+        self.validated_subtask_path = validated_subtask_path
+        self.each_run_path = each_run_path
         os.makedirs(self.subtask_path, exist_ok=True)
-        os.makedirs(self.validated_subtask_path, exist_ok=True)  #PG: Added for validation
+        os.makedirs(self.validated_subtask_path, exist_ok=True)
         os.makedirs(self.each_run_path, exist_ok=True)
     
     def read_file(self, file_path: str) -> str:
@@ -916,6 +952,7 @@ class TaskManager:
         self.prompt_decompse_set = prompt_decompse_set
         self.prompt_allocation_set = prompt_allocation_set
         self.runtime_config = load_run_storage_config(base_path)
+        self.instance_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_{uuid.uuid4().hex[:8]}"
         
         # Initialize components
         self.llm = LLMHandler()
@@ -925,14 +962,10 @@ class TaskManager:
         
         # Initialize paths
         self.resources_path = os.path.join(base_path, "resources")
-        self.logs_path = os.path.join(".", "logs")  
+        self.logs_path = os.path.join(base_path, "logs", "task_manager_runs", self.instance_id)
         self.intermediate_base_path = self.runtime_config["storage"]["base_dir"]
         os.makedirs(self.logs_path, exist_ok=True)
         os.makedirs(self.intermediate_base_path, exist_ok=True)
-        
-        # Clean generated subtask directory
-        self.clean_generated_subtask_directory(False)
-        self.clean_generated_subtask_directory(True)  #PG: Added for validation
         
         # Initialize result storage
         self.decomposed_plan: List[str] = []
@@ -944,6 +977,7 @@ class TaskManager:
         self.sequence_operations: str = ""  # Initialize sequence_operations
         self.tc: List[int] = []
         self.total_subtasks: List[int] = []
+        self.task_results: List[TaskProcessingResult] = []
         
         # Get action mapping from actions module
         
@@ -951,6 +985,9 @@ class TaskManager:
         self.objects_ai = None
         self.current_task_run_dir: Optional[str] = None
         self.current_task_manifest: Dict[str, Any] = {}
+        self.current_generated_subtask_dir: Optional[str] = None
+        self.current_validated_subtask_dir: Optional[str] = None
+        self.current_each_run_dir: Optional[str] = None
 
     def _sanitize_filename(self, value: str) -> str:
         """Convert a value into a filesystem-safe filename fragment."""
@@ -996,10 +1033,18 @@ class TaskManager:
 
     def _prepare_task_run_dir(self, task_idx: int, task: str, robots: List[dict], objects_ai: str, domain_content: str) -> None:
         """Create and initialize the storage directory for the current task."""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        folder_name = f"{task_idx + 1:03d}_{self._sanitize_filename(task)[:80]}_{timestamp}"
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        folder_name = f"{task_idx + 1:03d}_{self._sanitize_filename(task)[:80]}_{self.instance_id}_{timestamp}"
         self.current_task_run_dir = os.path.join(self.intermediate_base_path, folder_name)
         os.makedirs(self.current_task_run_dir, exist_ok=True)
+        self.current_generated_subtask_dir = os.path.join(self.current_task_run_dir, "06_split", "generated_subtask")
+        self.current_validated_subtask_dir = os.path.join(self.current_task_run_dir, "07_validate", "validated_subtask")
+        self.current_each_run_dir = os.path.join(self.current_task_run_dir, "artifacts", "each_run")
+        self.file_processor.configure_workspace(
+            subtask_path=self.current_generated_subtask_dir,
+            validated_subtask_path=self.current_validated_subtask_dir,
+            each_run_path=self.current_each_run_dir,
+        )
         self.current_task_manifest = {
             "task_index": task_idx,
             "task": task,
@@ -1026,9 +1071,9 @@ class TaskManager:
     def clean_generated_subtask_directory(self, isValidated: bool = False) -> None:
         """Clean the generated subtask directory."""
         if isValidated:
-            directory = os.path.join(self.resources_path, "validated_subtask")  #PG: Changed for validation
+            directory = self.file_processor.validated_subtask_path
         else:
-            directory = os.path.join(self.resources_path, "generated_subtask")
+            directory = self.file_processor.subtask_path
         try:
             if os.path.exists(directory):
                 for filename in os.listdir(directory):
@@ -1077,7 +1122,7 @@ class TaskManager:
             for robots_list in robots_test_tasks:
                 task_robots = []
                 for i, r_id in enumerate(robots_list):
-                    rob = robots.robots[r_id-1]  # Direct reference like original
+                    rob = copy.deepcopy(robots.robots[r_id-1])
                     rob['name'] = f'robot{i+1}'  # Use f-string for consistency
                     task_robots.append(rob)
                 available_robots.append(task_robots)
@@ -1109,27 +1154,32 @@ class TaskManager:
         task_name = "_".join(task.split()).replace('\n', '')
         folder_name = f"{task_name}_plans_{date_time}"
         log_folder = os.path.join(self.logs_path, folder_name)
+        task_result = self.task_results[idx] if idx < len(self.task_results) else None
         
         #print(f"Creating log folder: {log_folder}")
         os.makedirs(log_folder)
         
         try:
             print(f"Writing plans for task {idx + 1}")
-            self._write_plan(log_folder, "code_planpddl.py", self.code_planpddl[idx])
+            self._write_plan(log_folder, "code_planpddl.py", task_result["code_planpddl"] if task_result else self.code_planpddl[idx])
             #print(f"Successfully wrote code_planpddl for task {idx + 1}")
-            self._write_plan(log_folder, "combined_plan.py", self.combined_plan[idx])
+            self._write_plan(log_folder, "combined_plan.py", task_result["combined_plan"] if task_result else self.combined_plan[idx])
             #print(f"Successfully wrote combined_plan for task {idx + 1}")
-            self._write_plan(log_folder, "decomposed_plan.py", self.decomposed_plan[idx])
+            self._write_plan(log_folder, "decomposed_plan.py", task_result["decomposed_plan"] if task_result else self.decomposed_plan[idx])
             #print(f"Successfully wrote decomposed_plan for task {idx + 1}")
-            self._write_plan(log_folder, "allocated_plan.py", self.allocated_plan[idx])
+            self._write_plan(log_folder, "allocated_plan.py", task_result["allocated_plan"] if task_result else self.allocated_plan[idx])
             #print(f"Successfully wrote allocated_plan for task {idx + 1}")
-            self._write_plan(log_folder, "code_plan.py", self.code_plan[idx])
+            self._write_plan(log_folder, "code_plan.py", task_result["code_plan"] if task_result else self.code_plan[idx])
             #print(f"Successfully wrote code_plan for task {idx + 1}")
-            self._write_plan(log_folder, "validated_plan.py", self.validated_plan[idx])  #PG: Added for validation
+            self._write_plan(log_folder, "validated_plan.py", task_result["validated_plan"] if task_result else self.validated_plan[idx])  #PG: Added for validation
             #print(f"Successfully wrote validated_plan for task {idx + 1}")
             
             # Log main information
-            TC, total_subtasks = self.tc[idx], self.total_subtasks[idx]
+            if task_result:
+                TC = task_result["successful_subtasks"]
+                total_subtasks = task_result["total_subtasks"]
+            else:
+                TC, total_subtasks = self.tc[idx], self.total_subtasks[idx]
             print(f"Task {idx + 1} - TC: {TC}, Total Subtasks: {total_subtasks}")
 
 
@@ -1147,7 +1197,7 @@ class TaskManager:
             # Copy generated subtasks
             subtask_folder = os.path.join(log_folder, "generated_subtask")
             os.makedirs(subtask_folder)
-            source_folder = os.path.join(self.resources_path, "generated_subtask")
+            source_folder = task_result["generated_subtask_dir"] if task_result else self.file_processor.subtask_path
             for file_name in os.listdir(source_folder):
                 full_file_name = os.path.join(source_folder, file_name)
                 if os.path.isfile(full_file_name):
@@ -1157,7 +1207,7 @@ class TaskManager:
             # Copy validated subtasks
             validated_subtask_folder = os.path.join(log_folder, "validated_subtask")
             os.makedirs(validated_subtask_folder)
-            source_validated_folder = os.path.join(self.resources_path, "validated_subtask")
+            source_validated_folder = task_result["validated_subtask_dir"] if task_result else self.file_processor.validated_subtask_path
             for file_name in os.listdir(source_validated_folder):
                 full_file_name = os.path.join(source_validated_folder, file_name)
                 if os.path.isfile(full_file_name):
@@ -1199,6 +1249,9 @@ class TaskManager:
             self.validated_plan = []  #PG: Added for validation
             self.combined_plan = []
             self.code_planpddl = []
+            self.tc = []
+            self.total_subtasks = []
+            self.task_results = []
             
             # Get domain content
             allaction_domain_path = os.path.join(self.resources_path, "allactionrobot.pddl")
@@ -1289,6 +1342,23 @@ class TaskManager:
                     "total_subtasks": total
                 }
                 self._persist_manifest()
+                validated_count = len(split_manifest)
+                self.task_results.append({
+                    "task_index": task_idx,
+                    "task": task,
+                    "task_run_dir": self.current_task_run_dir,
+                    "generated_subtask_dir": self.file_processor.subtask_path,
+                    "validated_subtask_dir": self.file_processor.validated_subtask_path,
+                    "decomposed_plan": decomposed_plan,
+                    "allocated_plan": allocated_plan,
+                    "code_plan": code_plan,
+                    "validated_plan": list(self.validated_plan[-validated_count:]) if validated_count else [],
+                    "combined_plan": combined_plan,
+                    "code_planpddl": matched_plan,
+                    "successful_subtasks": tc,
+                    "total_subtasks": total,
+                    "manifest": copy.deepcopy(self.current_task_manifest),
+                })
                 print(f"Task {task_idx + 1} completion rate: {tc}/{total}")
                 
             print(f"\n{'='*50}")
@@ -2202,6 +2272,61 @@ if "gpt" not in model:
             output_path = os.path.join(output_dir, f"problem{i}.bddl")
             self.file_processor.write_file(output_path, bddl_content)
 
+
+def build_robot_team(robot_ids: List[int]) -> List[dict]:
+    """Build a task-local robot team definition from dataset robot ids."""
+    task_robots: List[dict] = []
+    for index, robot_id in enumerate(robot_ids):
+        robot_def = copy.deepcopy(robots.robots[robot_id - 1])
+        robot_def["name"] = f"robot{index + 1}"
+        task_robots.append(robot_def)
+    return task_robots
+
+
+def run_single_floor_plan_task(
+    base_path: str,
+    model: str,
+    floor_plan: str,
+    task_record: Dict[str, Any],
+    prompt_decompse_set: str = "pddl_train_task_decomposesep",
+    prompt_allocation_set: str = "pddl_train_task_allocationsep",
+    objects_ai: Optional[str] = None,
+    log_results: bool = True,
+) -> TaskProcessingResult:
+    """Run a single dataset record as an isolated task-safe execution unit."""
+    task_manager = TaskManager(
+        base_path=base_path,
+        model=model,
+        prompt_decompse_set=prompt_decompse_set,
+        prompt_allocation_set=prompt_allocation_set,
+    )
+    floor_plan_id = PDDLUtils.extract_floor_plan_number(floor_plan)
+    objects_description = objects_ai or f"\n\nobjects = {PDDLUtils.get_ai2_thor_objects(int(floor_plan_id))}"
+    task = task_record["task"]
+    robot_team = build_robot_team(task_record["robot list"])
+    gt_test_tasks = [task_record.get("object_states", "")]
+    trans_cnt_tasks = [task_record.get("trans", 0)]
+    min_trans_cnt_tasks = [task_record.get("min_trans", task_record.get("max_trans", 0))]
+
+    task_manager.process_tasks(
+        test_tasks=[task],
+        available_robots=[robot_team],
+        objects_ai=objects_description,
+    )
+
+    if log_results:
+        task_manager.log_results(
+            task=task,
+            idx=0,
+            available_robots=[robot_team],
+            gt_test_tasks=gt_test_tasks,
+            trans_cnt_tasks=trans_cnt_tasks,
+            min_trans_cnt_tasks=min_trans_cnt_tasks,
+            objects_ai=objects_description,
+        )
+
+    return task_manager.task_results[0]
+
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--bddl-file", type=str, help="Path to BDDL file")
@@ -2221,13 +2346,13 @@ def parse_arguments() -> argparse.Namespace:
         "--prompt-decompse-set",
         type=str,
         default="pddl_train_task_decomposesep",
-        choices=['pddl_train_task_decompose']
+        choices=['pddl_train_task_decomposesep']
     )
     parser.add_argument(
         "--prompt-allocation-set",
         type=str,
         default="pddl_train_task_allocationsep",
-        choices=['pddl_train_task_allocation']
+        choices=['pddl_train_task_allocationsep']
     )
     parser.add_argument(
         "--test-set",
