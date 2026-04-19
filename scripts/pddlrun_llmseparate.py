@@ -1033,7 +1033,7 @@ class TaskManager:
 
 
     def load_dataset(self, test_file: str) -> Tuple[List[str], List[List[dict]], List[str], List[int], List[int]]:
-        """Load dataset from JSON file.
+        """Load dataset from a JSONL file.
         
         Args:
             test_file (str): Path to the test file
@@ -1046,14 +1046,18 @@ class TaskManager:
         min_trans_cnt_tasks = []
         
         try:
-            with open(test_file, "r") as f:
-                for line in f.readlines():
-                    values = list(json.loads(line).values())
-                    test_tasks.append(values[0])
-                    robots_test_tasks.append(values[1])
-                    gt_test_tasks.append(values[2])
-                    trans_cnt_tasks.append(values[3])
-                    min_trans_cnt_tasks.append(values[4])
+            with open(test_file, "r", encoding="utf-8") as f:
+                for raw_line in f:
+                    line = raw_line.strip()
+                    if not line:
+                        continue
+
+                    record = json.loads(line)
+                    test_tasks.append(record["task"])
+                    robots_test_tasks.append(record["robot list"])
+                    gt_test_tasks.append(record["object_states"])
+                    trans_cnt_tasks.append(record["trans"])
+                    min_trans_cnt_tasks.append(record.get("min_trans", record.get("max_trans")))
             
             # Prepare robot configurations
             available_robots = []
@@ -2285,7 +2289,7 @@ def main():
                 )
         else:
             # Original workflow
-            test_file = os.path.join("data", args.test_set, f"FloorPlan{args.floor_plan}.json")
+            test_file = os.path.join("data", args.test_set, f"FloorPlan{args.floor_plan}.jsonl")
             test_tasks, available_robots, gt_test_tasks, trans_cnt_tasks, min_trans_cnt_tasks = \
                 task_manager.load_dataset(test_file)
             

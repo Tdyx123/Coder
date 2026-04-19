@@ -90,6 +90,30 @@ def get_ai2_thor_objects(floor_plan_id):
     obj = convert_to_dict_objprop(obj, obj_mass)
     return obj
 
+
+def load_test_tasks(test_set, floor_plan):
+    test_file = Path(f"./data/{test_set}/FloorPlan{floor_plan}.jsonl")
+    test_tasks = []
+    robots_test_tasks = []
+    gt_test_tasks = []
+    trans_cnt_tasks = []
+    max_trans_cnt_tasks = []
+
+    with open(test_file, "r", encoding="utf-8") as f:
+        for raw_line in f:
+            line = raw_line.strip()
+            if not line:
+                continue
+
+            record = json.loads(line)
+            test_tasks.append(record["task"])
+            robots_test_tasks.append(record["robot list"])
+            gt_test_tasks.append(record["object_states"])
+            trans_cnt_tasks.append(record["trans"])
+            max_trans_cnt_tasks.append(record.get("max_trans", record.get("min_trans")))
+
+    return test_tasks, robots_test_tasks, gt_test_tasks, trans_cnt_tasks, max_trans_cnt_tasks
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--floor-plan", type=int, required=True)
@@ -113,18 +137,8 @@ if __name__ == "__main__":
         os.makedirs(f"./logs/")
         
     # read the tasks        
-    test_tasks = []
-    robots_test_tasks = []  
-    gt_test_tasks = []    
-    trans_cnt_tasks = []
-    max_trans_cnt_tasks = []  
-    with open (f"./data/{args.test_set}/FloorPlan{args.floor_plan}.json", "r") as f:
-        for line in f.readlines():
-            test_tasks.append(list(json.loads(line).values())[0])
-            robots_test_tasks.append(list(json.loads(line).values())[1])
-            gt_test_tasks.append(list(json.loads(line).values())[2])
-            trans_cnt_tasks.append(list(json.loads(line).values())[3])
-            max_trans_cnt_tasks.append(list(json.loads(line).values())[4])
+    test_tasks, robots_test_tasks, gt_test_tasks, trans_cnt_tasks, max_trans_cnt_tasks = \
+        load_test_tasks(args.test_set, args.floor_plan)
                     
     print(f"\n----Test set tasks----\n{test_tasks}\nTotal: {len(test_tasks)} tasks\n")
     # prepare list of robots for the tasks
