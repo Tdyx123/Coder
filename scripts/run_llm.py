@@ -11,7 +11,7 @@ import subprocess
 import time
 import re
 
-import ai2thor.controller
+from ai2thor_object_cache import get_ai2_thor_objects_cached
 
 from llm_client import (
     complete_with_provider,
@@ -27,8 +27,6 @@ sys.path.append(".")
 
 import resources.actions as actions
 import resources.robots as robots
-
-AI2THOR_OBJECTS_CACHE_DIR = Path(__file__).resolve().parent.parent / "data" / "ai2thor_objects_cache"
 
 def get_client_for_model(model):
     provider = get_provider_for_model(model, get_providers())
@@ -95,33 +93,8 @@ def extract_floor_plan_number(floor_plan):
 
     return match.group(1)
 
-def get_ai2_thor_objects_cache_path(floor_plan_id):
-    floor_plan_number = extract_floor_plan_number(floor_plan_id)
-    return AI2THOR_OBJECTS_CACHE_DIR / f"FloorPlan{floor_plan_number}.json"
-
 def get_ai2_thor_objects(floor_plan_id):
-    cache_path = get_ai2_thor_objects_cache_path(floor_plan_id)
-    if cache_path.exists():
-        with open(cache_path, "r", encoding="utf-8") as cache_file:
-            return json.load(cache_file)
-
-    floor_plan_number = extract_floor_plan_number(floor_plan_id)
-    controller = None
-    try:
-        # Fall back to AI2-THOR only when the per-floor cache does not exist yet.
-        controller = ai2thor.controller.Controller(scene="FloorPlan" + floor_plan_number)
-        obj = [item["objectType"] for item in controller.last_event.metadata["objects"]]
-        obj_mass = [item["mass"] for item in controller.last_event.metadata["objects"]]
-        objects = convert_to_dict_objprop(obj, obj_mass)
-    finally:
-        if controller is not None:
-            controller.stop()
-
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(cache_path, "w", encoding="utf-8") as cache_file:
-        json.dump(objects, cache_file, ensure_ascii=False, indent=2)
-
-    return objects
+    return get_ai2_thor_objects_cached(int(extract_floor_plan_number(floor_plan_id)), convert_to_dict_objprop)
 
 
 def load_test_tasks(test_set, floor_plan):

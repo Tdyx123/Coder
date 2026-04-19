@@ -15,6 +15,7 @@ import sys
 from typing import List, Dict, Tuple, Optional, Union, Any
 import uuid
 
+from ai2thor_object_cache import get_ai2_thor_objects_cached
 from llm_client import (
     complete_with_provider,
     extract_text,
@@ -26,8 +27,6 @@ from llm_client import (
     load_providers,
 )
 from llm_logger import log_llm_call, get_llm_logger
-import ai2thor.controller
-
 import difflib  #PG: Added
 
 import sys
@@ -37,7 +36,6 @@ import resources.actions as actions
 import resources.robots as robots
 
 CONFIG_FILE_NAME = "pddlrun_llmseparate_config.yaml"
-AI2THOR_OBJECTS_CACHE_DIR = Path(__file__).resolve().parent.parent / "data" / "ai2thor_objects_cache"
 
 
 def normalize_floor_plan(value: str) -> str:
@@ -46,11 +44,6 @@ def normalize_floor_plan(value: str) -> str:
     if text.startswith("FloorPlan"):
         text = text[len("FloorPlan"):]
     return text
-
-def get_ai2_thor_objects_cache_path(floor_plan: Union[int, str]) -> Path:
-    """Return the cache file path for a floor plan's object metadata."""
-    floor_plan_number = normalize_floor_plan(str(floor_plan))
-    return AI2THOR_OBJECTS_CACHE_DIR / f"FloorPlan{floor_plan_number}.json"
 
 def get_available_models():
     """Get list of available models from providers.yaml"""
@@ -157,27 +150,7 @@ class PDDLUtils:
         Returns:
             List[Dict[str, Any]]: List of objects with their properties
         """
-        cache_path = get_ai2_thor_objects_cache_path(floor_plan)
-        if cache_path.exists():
-            with open(cache_path, "r", encoding="utf-8") as cache_file:
-                return json.load(cache_file)
-
-        controller = None
-        try:
-            floor_plan_number = PDDLUtils.extract_floor_plan_number(floor_plan)
-            controller = ai2thor.controller.Controller(scene=f"FloorPlan{floor_plan_number}")
-            obj = [obj["objectType"] for obj in controller.last_event.metadata["objects"]]
-            obj_mass = [obj["mass"] for obj in controller.last_event.metadata["objects"]]
-            objects = PDDLUtils.convert_to_dict_objprop(obj, obj_mass)
-        finally:
-            if controller:
-                controller.stop()
-
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(cache_path, "w", encoding="utf-8") as cache_file:
-            json.dump(objects, cache_file, ensure_ascii=False, indent=2)
-
-        return objects
+        return get_ai2_thor_objects_cached(floor_plan, PDDLUtils.convert_to_dict_objprop)
 
 class FileProcessor:
     """Handles file operations and text processing for PDDL files.
