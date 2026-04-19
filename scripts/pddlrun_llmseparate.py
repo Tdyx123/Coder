@@ -35,10 +35,44 @@ sys.path.append(".")
 import resources.actions as actions
 import resources.robots as robots
 
+CONFIG_FILE_NAME = "pddlrun_llmseparate_config.yaml"
+
 def get_available_models():
     """Get list of available models from providers.yaml"""
     providers_file = Path(__file__).parent / 'providers.yaml'
     return get_litellm_models(providers_file)
+
+
+def load_run_storage_config(base_path: str) -> Dict[str, Any]:
+    """Load runtime storage configuration for intermediate artifacts."""
+    config_path = Path(__file__).parent / CONFIG_FILE_NAME
+    default_base_dir = os.path.join(base_path, "logs", "intermediate_runs")
+    config = {
+        "storage": {
+            "base_dir": default_base_dir
+        }
+    }
+
+    if not config_path.exists():
+        return config
+
+    with open(config_path, "r", encoding="utf-8") as file:
+        loaded = yaml.safe_load(file) or {}
+
+    if not isinstance(loaded, dict):
+        raise PDDLError(f"Invalid config format in {config_path}")
+
+    storage = loaded.get("storage", {})
+    if not isinstance(storage, dict):
+        raise PDDLError(f"Invalid 'storage' section in {config_path}")
+
+    configured_base_dir = storage.get("base_dir")
+    if configured_base_dir:
+        if not os.path.isabs(configured_base_dir):
+            configured_base_dir = os.path.join(base_path, configured_base_dir)
+        config["storage"]["base_dir"] = configured_base_dir
+
+    return config
 
 # Constants
 DEFAULT_MAX_TOKENS = 128
@@ -151,8 +185,21 @@ class FileProcessor:
                 file.write(content)
         except Exception as e:
             raise PDDLError(f"Error writing to file {file_path}: {str(e)}")
+
+    def write_json(self, file_path: str, content: Any) -> None:
+        """Write JSON content to a file."""
+        try:
+            with open(file_path, 'w', encoding='utf-8') as file:
+                json.dump(content, file, indent=2, ensure_ascii=False)
+        except Exception as e:
+            raise PDDLError(f"Error writing JSON to file {file_path}: {str(e)}")
     
-    def split_pddl_tasks(self, code_plan: Union[str, List[str]], isValidated: bool) -> None:
+    def split_pddl_tasks(
+        self,
+        code_plan: Union[str, List[str]],
+        isValidated: bool,
+        output_directory: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
         """Split PDDL tasks and save them to files.
         
         Args:
@@ -162,11 +209,15 @@ class FileProcessor:
             # Convert single plan to list
             if isinstance(code_plan, str):
                 code_plan = [code_plan]
+
+            saved_tasks: List[Dict[str, Any]] = []
             
             # Create timestamped directory
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             timestamp_directory = os.path.join(self.each_run_path, timestamp)
             os.makedirs(timestamp_directory, exist_ok=True)
+            if output_directory:
+                os.makedirs(output_directory, exist_ok=True)
             
             for i, plan in enumerate(code_plan):
                 tasks = re.split(r"\s*\(define\s*\(problem", plan)
@@ -186,6 +237,11 @@ class FileProcessor:
                     # Save to both timestamped directory and generated_subtask
                     filepath = os.path.join(timestamp_directory, filename)
                     self.write_file(filepath, task)
+
+                    custom_output_path = None
+                    if output_directory:
+                        custom_output_path = os.path.join(output_directory, filename)
+                        self.write_file(custom_output_path, task)
                     
                     # Also save to generated_subtask for compatibility
                     if isValidated:
@@ -194,6 +250,15 @@ class FileProcessor:
                         subtask_filepath = os.path.join(self.subtask_path, filename)
                     #print("Saving pddl at path:", subtask_filepath)
                     self.write_file(subtask_filepath, task)
+                    saved_tasks.append({
+                        "source_plan_index": i,
+                        "task_index": j,
+                        "filename": filename,
+                        "timestamp_copy": filepath,
+                        "custom_output_copy": custom_output_path,
+                        "compatibility_copy": subtask_filepath,
+                    })
+            return saved_tasks
             
         except Exception as e:
             raise PDDLError(f"Error splitting PDDL tasks: {str(e)}")
@@ -837,6 +902,7 @@ class TaskManager:
         self.model = model
         self.prompt_decompse_set = prompt_decompse_set
         self.prompt_allocation_set = prompt_allocation_set
+        self.runtime_config = load_run_storage_config(base_path)
         
         # Initialize components
         self.llm = LLMHandler()
@@ -847,7 +913,9 @@ class TaskManager:
         # Initialize paths
         self.resources_path = os.path.join(base_path, "resources")
         self.logs_path = os.path.join(".", "logs")  
+        self.intermediate_base_path = self.runtime_config["storage"]["base_dir"]
         os.makedirs(self.logs_path, exist_ok=True)
+        os.makedirs(self.intermediate_base_path, exist_ok=True)
         
         # Clean generated subtask directory
         self.clean_generated_subtask_directory(False)
@@ -868,6 +936,79 @@ class TaskManager:
         
         # Initialize objects_ai as None, will be set in process_tasks
         self.objects_ai = None
+        self.current_task_run_dir: Optional[str] = None
+        self.current_task_manifest: Dict[str, Any] = {}
+
+    def _sanitize_filename(self, value: str) -> str:
+        """Convert a value into a filesystem-safe filename fragment."""
+        sanitized = re.sub(r'[<>:"/\\|?*\s]+', '_', value.strip())
+        sanitized = sanitized.strip('._')
+        return sanitized or "task"
+
+    def _write_text_artifact(self, relative_path: str, content: Any) -> Optional[str]:
+        """Write a text artifact under the current task run directory."""
+        if not self.current_task_run_dir:
+            return None
+
+        artifact_path = os.path.join(self.current_task_run_dir, relative_path)
+        os.makedirs(os.path.dirname(artifact_path), exist_ok=True)
+        self.file_processor.write_file(artifact_path, str(content))
+        return artifact_path
+
+    def _write_json_artifact(self, relative_path: str, content: Any) -> Optional[str]:
+        """Write a JSON artifact under the current task run directory."""
+        if not self.current_task_run_dir:
+            return None
+
+        artifact_path = os.path.join(self.current_task_run_dir, relative_path)
+        os.makedirs(os.path.dirname(artifact_path), exist_ok=True)
+        self.file_processor.write_json(artifact_path, content)
+        return artifact_path
+
+    def _record_artifact(self, section: str, key: str, relative_path: str) -> None:
+        """Record an artifact in the current task manifest."""
+        if not self.current_task_manifest:
+            return
+
+        if "artifacts" not in self.current_task_manifest:
+            self.current_task_manifest["artifacts"] = {}
+        if section not in self.current_task_manifest["artifacts"]:
+            self.current_task_manifest["artifacts"][section] = {}
+        self.current_task_manifest["artifacts"][section][key] = relative_path
+
+    def _persist_manifest(self) -> None:
+        """Persist the current task manifest to disk."""
+        if self.current_task_run_dir and self.current_task_manifest:
+            self._write_json_artifact("run_manifest.json", self.current_task_manifest)
+
+    def _prepare_task_run_dir(self, task_idx: int, task: str, robots: List[dict], objects_ai: str, domain_content: str) -> None:
+        """Create and initialize the storage directory for the current task."""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        folder_name = f"{task_idx + 1:03d}_{self._sanitize_filename(task)[:80]}_{timestamp}"
+        self.current_task_run_dir = os.path.join(self.intermediate_base_path, folder_name)
+        os.makedirs(self.current_task_run_dir, exist_ok=True)
+        self.current_task_manifest = {
+            "task_index": task_idx,
+            "task": task,
+            "model": self.model,
+            "created_at": timestamp,
+            "storage_base_dir": self.intermediate_base_path,
+            "artifacts": {}
+        }
+
+        inputs = {
+            "task": task,
+            "robots": robots,
+            "objects_ai": objects_ai,
+            "model": self.model,
+            "prompt_decompose_set": self.prompt_decompse_set,
+            "prompt_allocation_set": self.prompt_allocation_set
+        }
+        self._write_json_artifact("inputs/task_context.json", inputs)
+        self._record_artifact("inputs", "task_context", "inputs/task_context.json")
+        self._write_text_artifact("inputs/domain_content.pddl", domain_content)
+        self._record_artifact("inputs", "domain_content", "inputs/domain_content.pddl")
+        self._persist_manifest()
 
     def clean_generated_subtask_directory(self, isValidated: bool = False) -> None:
         """Clean the generated subtask directory."""
@@ -1051,6 +1192,7 @@ class TaskManager:
                 print(f"\n{'='*50}")
                 print(f"Processing Task: {task}: {task_idx + 1}/{len(test_tasks)}")
                 print(f"{'='*50}")
+                self._prepare_task_run_dir(task_idx, task, robots, objects_ai, domain_content)
                 
                 # Clean generated subtask directory before starting new task
                 self.clean_generated_subtask_directory()
@@ -1091,7 +1233,14 @@ class TaskManager:
                 # print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
 
                 # Split into subtasks
-                self.file_processor.split_pddl_tasks(code_plan, False)
+                split_manifest = self.file_processor.split_pddl_tasks(
+                    code_plan,
+                    False,
+                    output_directory=os.path.join(self.current_task_run_dir, "06_split/generated_subtask")
+                )
+                self._write_json_artifact("06_split/generated_subtask_manifest.json", split_manifest)
+                self._record_artifact("split", "generated_subtask_manifest", "06_split/generated_subtask_manifest.json")
+                self._persist_manifest()
                 print("✓ Split into subtasks complete")
                 #input("Press Enter to continue")
                 #print("Waiting for files to be processed...")
@@ -1118,6 +1267,11 @@ class TaskManager:
                 tc, total = self.planner.calculate_completion_rate()
                 self.tc.append(tc)
                 self.total_subtasks.append(total)
+                self.current_task_manifest["completion"] = {
+                    "successful_subtasks": tc,
+                    "total_subtasks": total
+                }
+                self._persist_manifest()
                 print(f"Task {task_idx + 1} completion rate: {tc}/{total}")
                 
             print(f"\n{'='*50}")
@@ -1147,9 +1301,14 @@ class TaskManager:
             prompt += "# GENERAL TASK DECOMPOSITION \n"
             prompt += "Decompose and parallel subtasks where ever possible.\n\n"
             prompt += f"# Task Description: {task}"
+            self._write_text_artifact("01_decompose/01_decompose_prompt.txt", prompt)
+            self._record_artifact("decompose", "prompt", "01_decompose/01_decompose_prompt.txt")
             
             messages = [{"role": "user", "content": prompt}]
             _, text = self.llm.query_model(messages, self.model, max_tokens=1300, frequency_penalty=0.0)
+            self._write_text_artifact("01_decompose/02_decompose_output.txt", text)
+            self._record_artifact("decompose", "output", "01_decompose/02_decompose_output.txt")
+            self._persist_manifest()
             
             return text
             
@@ -1176,10 +1335,15 @@ class TaskManager:
             prompt += f"\n{objects_ai}"
             prompt += f"\n\n# IMPORTANT: The AI should ensure that the robots assigned to the tasks have all the necessary skills to perform the tasks. IMPORTANT: Determine whether the subtasks must be performed sequentially or in parallel, or a combination of both and allocate robots based on availability. "
             prompt += f"\n# SOLUTION\n"
+            self._write_text_artifact("02_allocate/01_allocate_prompt.txt", prompt)
+            self._record_artifact("allocate", "prompt", "02_allocate/01_allocate_prompt.txt")
             
             # Handle different GPT versions like the original
             messages = [{"role": "user", "content": prompt}]
             _, text = self.llm.query_model(messages, self.model, max_tokens=1500, frequency_penalty=0.69)
+            self._write_text_artifact("02_allocate/02_allocate_output.txt", text)
+            self._record_artifact("allocate", "output", "02_allocate/02_allocate_output.txt")
+            self._persist_manifest()
             
             return text
             
@@ -1223,6 +1387,10 @@ class TaskManager:
                 prompt += f"\n\nrobots = {available_robots[i]}"
                 prompt += solution
                 prompt += f"\n# problem content summary  \n"
+                prompt_path = f"03_summary/summary_prompt_{i + 1:02d}.txt"
+                output_path = f"03_summary/summary_output_{i + 1:02d}.txt"
+                self._write_text_artifact(prompt_path, prompt)
+                self._record_artifact("summary", f"prompt_{i + 1:02d}", prompt_path)
 
                 messages = [
                     {"role": "system", "content": "You are a Robot PDDL problem Expert"},
@@ -1231,6 +1399,9 @@ class TaskManager:
                 _, text = self.llm.query_model(messages, self.model, max_tokens=1400, frequency_penalty=0.4)
                 
                 code_plan.append(text)
+                self._write_text_artifact(output_path, text)
+                self._record_artifact("summary", f"output_{i + 1:02d}", output_path)
+            self._persist_manifest()
             
             return code_plan
             
@@ -1246,6 +1417,8 @@ class TaskManager:
             problem_summary = problem_summary[0]
         
         problem_pddl = []
+        self._write_text_artifact("04_problem_files/01_problem_summary_raw.txt", problem_summary)
+        self._record_artifact("problem_files", "problem_summary", "04_problem_files/01_problem_summary_raw.txt")
         
         # Split into subtasks and sequence operations
         subtasks, sequence_operations = self.file_processor.split_and_store_tasks(
@@ -1262,6 +1435,18 @@ class TaskManager:
 
         # Store sequence operations for later use
         self.sequence_operations = sequence_operations
+        self._write_text_artifact("04_problem_files/02_sequence_operations.txt", sequence_operations)
+        self._record_artifact("problem_files", "sequence_operations", "04_problem_files/02_sequence_operations.txt")
+        subtask_entries = []
+        for idx, subtask in enumerate(subtasks, start=1):
+            relative_path = f"04_problem_files/subtasks/subtask_{idx:02d}.txt"
+            self._write_text_artifact(relative_path, subtask)
+            subtask_entries.append({
+                "index": idx,
+                "path": relative_path
+            })
+        self._write_json_artifact("04_problem_files/03_subtasks.json", subtask_entries)
+        self._record_artifact("problem_files", "subtasks_index", "04_problem_files/03_subtasks.json")
         
         # Process each subtask using the class method
         problem_pddl = self.problemextracting(
@@ -1272,6 +1457,12 @@ class TaskManager:
             objects_ai=self.objects_ai,
             prompt_allocation_set=self.prompt_allocation_set
         )
+        self._write_json_artifact(
+            "04_problem_files/04_generated_problem_files.json",
+            [{"index": idx + 1, "content": content} for idx, content in enumerate(problem_pddl)]
+        )
+        self._record_artifact("problem_files", "generated_problem_files", "04_problem_files/04_generated_problem_files.json")
+        self._persist_manifest()
         
         return problem_pddl
     
@@ -1307,7 +1498,7 @@ class TaskManager:
             re.IGNORECASE
         )
 
-        for subtask in subtasks:
+        for subtask_idx, subtask in enumerate(subtasks, start=1):
             m = assigned_block_re.search(subtask) or assigned_block_fallback.search(subtask)
             if not m:
                 print("Invalid subtask structure, skipping")
@@ -1373,6 +1564,9 @@ class TaskManager:
                     "the preconditions, actions, and subtask examination.\n"
                     "#IMPORTANT, strictly follow the structure, stop generating after the Problem file generation is done."
                 )
+                prompt_path = f"05_problem_generation/prompts/subtask_{subtask_idx:02d}_prompt.txt"
+                output_path = f"05_problem_generation/outputs/subtask_{subtask_idx:02d}_problem.pddl"
+                self._write_text_artifact(prompt_path, prompt)
 
                 messages = [
                     {"role": "system", "content": "You are a Robot PDDL problem Expert"},
@@ -1381,6 +1575,7 @@ class TaskManager:
                 _, text = llm.query_model(messages, model, max_tokens=1000, frequency_penalty=0.4)
 
                 problem_pddl.append(text)
+                self._write_text_artifact(output_path, text)
 
             else:
                 # Single-robot case
@@ -1424,6 +1619,9 @@ class TaskManager:
                     "(which includes location)\n"
                     "#IMPORTANT, strictly follow the structure, stop generating after the Problem file generation is done."
                 )
+                prompt_path = f"05_problem_generation/prompts/subtask_{subtask_idx:02d}_prompt.txt"
+                output_path = f"05_problem_generation/outputs/subtask_{subtask_idx:02d}_problem.pddl"
+                self._write_text_artifact(prompt_path, prompt)
             
                 messages = [
                     {"role": "system", "content": "You are a Robot PDDL problem Expert"},
@@ -1432,6 +1630,7 @@ class TaskManager:
                 _, text = llm.query_model(messages, model, max_tokens=1400, frequency_penalty=0.4)
 
                 problem_pddl.append(text)
+                self._write_text_artifact(output_path, text)
 
         return problem_pddl
 
@@ -1737,6 +1936,7 @@ if "gpt" not in model:
         """Run LLM validation on problem files."""
         try:
             problem_files = [f for f in os.listdir(self.file_processor.subtask_path) if f.endswith('.pddl')]
+            validation_records = []
             for problem_file in problem_files:
                 try:
                     problem_file_full = os.path.join(self.file_processor.subtask_path, problem_file)
@@ -1760,6 +1960,12 @@ if "gpt" not in model:
                             "Validate the preconditions in problem file to ensure all precondition listed object "
                             "is included and also in domain file, and go over structure to check the parenthesis "
                             "and syntext. Check and return only the validated problem file.")
+                    safe_name = self._sanitize_filename(problem_file.replace(".pddl", ""))
+                    input_path = f"07_validate/inputs/{safe_name}_input.pddl"
+                    prompt_path = f"07_validate/prompts/{safe_name}_prompt.txt"
+                    output_path = f"07_validate/outputs/{safe_name}_validated.pddl"
+                    self._write_text_artifact(input_path, problem_content)
+                    self._write_text_artifact(prompt_path, prompt)
                 
                     messages = [{"role": "system", "content": "You are a Robot PDDL problem Expert"},
                             {"role": "user", "content": prompt}]
@@ -1767,11 +1973,26 @@ if "gpt" not in model:
 
                     self.validated_plan.append(text)  #PG: Store validated plan
                     code_plan = [text]
-                    self.file_processor.split_pddl_tasks(code_plan, True)  #PG: Use True to indicate validated
+                    self._write_text_artifact(output_path, text)
+                    validation_manifest = self.file_processor.split_pddl_tasks(
+                        code_plan,
+                        True,
+                        output_directory=os.path.join(self.current_task_run_dir, "07_validate", "validated_subtask")
+                    )  #PG: Use True to indicate validated
+                    validation_records.append({
+                        "problem_file": problem_file,
+                        "input_path": input_path,
+                        "prompt_path": prompt_path,
+                        "output_path": output_path,
+                        "validated_split_files": validation_manifest,
+                    })
                     
                 except Exception as e:
                     print(f"Error processing file {problem_file}: {str(e)}")
                     continue
+            self._write_json_artifact("07_validate/validation_manifest.json", validation_records)
+            self._record_artifact("validate", "manifest", "07_validate/validation_manifest.json")
+            self._persist_manifest()
                     
         except Exception as e:
             print(f"Error in run_llmvalidator: {str(e)}")
@@ -1782,6 +2003,7 @@ if "gpt" not in model:
         try:
             planner_path = os.path.join(self.base_path, "downward", "fast-downward.py")
             problem_files = [f for f in os.listdir(self.file_processor.validated_subtask_path) if f.endswith('.pddl')]  #PG: Changed to validated_subtask_path
+            planner_records = []
             for problem_file in problem_files:
                 try:
                     problem_file_full = os.path.join(self.file_processor.validated_subtask_path, problem_file) #PG: Changed to validated_subtask_path
@@ -1802,6 +2024,7 @@ if "gpt" not in model:
                         domain_file,
                         problem_file_full
                     ]
+                    started_at = time.time()
 
                     result = subprocess.run(
                         command,
@@ -1813,15 +2036,44 @@ if "gpt" not in model:
                     
                     output_file = os.path.join(self.file_processor.validated_subtask_path, problem_file.replace('.pddl', '_plan.txt')) #PG: Changed to validated_subtask_path from subtask_path
                     self.file_processor.write_file(output_file, result.stdout)
+                    safe_name = self._sanitize_filename(problem_file.replace(".pddl", ""))
+                    command_path = f"08_planner/commands/{safe_name}_command.txt"
+                    stdout_path = f"08_planner/stdout/{safe_name}_stdout.txt"
+                    stderr_path = f"08_planner/stderr/{safe_name}_stderr.txt"
+                    self._write_text_artifact(command_path, " ".join(command))
+                    self._write_text_artifact(stdout_path, result.stdout)
+                    self._write_text_artifact(stderr_path, result.stderr)
+                    planner_records.append({
+                        "problem_file": problem_file,
+                        "domain_file": domain_file,
+                        "command_path": command_path,
+                        "stdout_path": stdout_path,
+                        "stderr_path": stderr_path,
+                        "return_code": result.returncode,
+                        "duration_seconds": round(time.time() - started_at, 3),
+                        "compatibility_output": output_file,
+                    })
 
                     if result.stderr:
                         print(f"Warnings/Errors for {problem_file}:", result.stderr)
                         
                 except subprocess.TimeoutExpired:
                     print(f"Planner timed out for {problem_file}")
+                    planner_records.append({
+                        "problem_file": problem_file,
+                        "status": "timeout"
+                    })
                 except Exception as e:
                     print(f"Error processing file {problem_file}: {str(e)}")
+                    planner_records.append({
+                        "problem_file": problem_file,
+                        "status": "error",
+                        "error": str(e)
+                    })
                     continue
+            self._write_json_artifact("08_planner/planner_manifest.json", planner_records)
+            self._record_artifact("planner", "manifest", "08_planner/planner_manifest.json")
+            self._persist_manifest()
                     
         except Exception as e:
             print(f"Error in run_planners: {str(e)}")
@@ -1859,9 +2111,14 @@ if "gpt" not in model:
                   "tasks are performed at the same time. IMPORTANT: all 'variablelocation' should be "
                   "corrected to variable itself, since variable itself includes location. and result "
                   "must be in PDDL plan format.")
+        self._write_text_artifact("09_combine/01_combine_prompt.txt", prompt)
+        self._record_artifact("combine", "prompt", "09_combine/01_combine_prompt.txt")
         
         messages = [{"role": "user", "content": prompt}]
         _, text = self.llm.query_model(messages, self.model, max_tokens=1300, frequency_penalty=0.0)
+        self._write_text_artifact("09_combine/02_combined_plan.txt", text)
+        self._record_artifact("combine", "output", "09_combine/02_combined_plan.txt")
+        self._persist_manifest()
         
         return text
 
@@ -1875,9 +2132,14 @@ if "gpt" not in model:
             "IMPORTANT: the only parenthesis usage should be for the correct PDDL plan, no exception.\n\n"
             f"{plan}"
         )
+        self._write_text_artifact("10_final_match/01_match_prompt.txt", prompt)
+        self._record_artifact("final_match", "prompt", "10_final_match/01_match_prompt.txt")
         
         messages = [{"role": "user", "content": prompt}]
         _, text = self.llm.query_model(messages, self.model, max_tokens=1300, frequency_penalty=0.0)
+        self._write_text_artifact("10_final_match/02_final_plan.txt", text)
+        self._record_artifact("final_match", "output", "10_final_match/02_final_plan.txt")
+        self._persist_manifest()
         
         return text
 
