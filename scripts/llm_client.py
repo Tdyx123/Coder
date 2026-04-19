@@ -9,6 +9,22 @@ from litellm.exceptions import APIError, RateLimitError, Timeout
 MessageInput = Union[str, List[Dict[str, Any]]]
 
 
+def _sanitize_litellm_error(exc: Exception) -> Exception:
+    """Strip noisy LiteLLM help text from exception messages."""
+    message = str(exc)
+    filtered_lines = []
+
+    for line in message.splitlines():
+        if "Provider List:" in line:
+            continue
+        filtered_lines.append(line)
+
+    cleaned = "\n".join(filtered_lines).strip() or message
+    if cleaned != message:
+        exc.args = (cleaned,)
+    return exc
+
+
 def load_providers(providers_file: Optional[Union[str, Path]] = None) -> List[Dict[str, Any]]:
     if providers_file is None:
         providers_file = Path(__file__).parent / "providers.yaml"
@@ -57,7 +73,10 @@ def complete_with_provider(
     }
     if stop:
         kwargs["stop"] = stop
-    return completion(**kwargs)
+    try:
+        return completion(**kwargs)
+    except Exception as exc:
+        raise _sanitize_litellm_error(exc)
 
 
 def extract_text(response: Any) -> str:
