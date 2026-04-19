@@ -1,115 +1,153 @@
-# Scripts Directory Path Requirements
+# Scripts Directory Notes
 
-This document outlines the key path requirements and directory structure needed for the PDDL planning system.
+This document summarizes the current script entry points, required paths, and output locations used by the repository.
 
-## Directory Structure
+## Directory Expectations
 
-```
-scripts/
-├── pddlrun_llmseparate.py    # Main PDDL planning script
-├── execute_plan.py           # Plan execution script
-└── ai2_thor_controller.py    # AI2Thor controller script
+The scripts are expected to be launched from the project root.
 
-resources/
-├── actions.py               # Action definitions
-├── robots.py               # Robot configurations
-├── generated_subtask/      # Generated PDDL subtasks
-└── *.pddl                  # PDDL domain files
-
-data/
-├── aithor_connect/         # AI2Thor connection utilities
-├── pythonic_plans/         # Example PDDL plans
-└── final_test/            # Test data
-
-downward/                   # PDDL planner
-└── fast-downward.py       # Fast Downward planner executable
-
-logs/                      # Generated logs and results
+```text
+LaMMA-P/
+├── data/
+│   ├── aithor_connect/
+│   └── final_test/
+├── downward/
+├── logs/
+├── resources/
+└── scripts/
 ```
 
-## Key Path Requirements
+Important runtime locations:
 
-### 1. Base Directory Structure
-- The system expects to be run from the root directory of the project
-- All relative paths are constructed using `os.getcwd()`
-- Required directories must exist or be created:
-  - `resources/`
-  - `resources/generated_subtask/`
-  - `logs/`
-  - `data/`
-  - `downward/`
+- `scripts/providers.yaml`: LiteLLM provider and model definitions
+- `scripts/pddlrun_llmseparate_config.yaml`: runtime storage configuration
+- `resources/generated_subtask/`: generated PDDL subtasks
+- `logs/task_manager_runs/`: planner outputs
+- `logs/intermediate_runs/`: intermediate artifacts
 
-### 2. Resource Files
-- PDDL domain files must be present in `resources/`
-- Required files:
-  - `allactionrobot.pddl`
-  - `robot1.pddl`, `robot2.pddl`, etc. (based on available robots)
-  - `actions.py` with action definitions
-  - `robots.py` with robot configurations
+## Main Scripts
 
-### 3. Planner Requirements
-- Fast Downward planner must be installed in the `downward/` directory
-- The planner executable must be accessible at `downward/fast-downward.py`
+### `pddlrun_llmseparate.py`
 
-### 4. Test Data
-- Test data should be placed in `data/final_test/`
-- Expected format: JSON files named `FloorPlan{N}.json`
-- Each JSON file should contain:
-  - `task`: Task description
-  - `robot list`: List of robot IDs
-  - `object_states`: Ground truth object states
-  - `trans`: Transaction counts
-  - `max_trans`: Maximum transaction counts
-
-### 5. Prompt Template
-- Template should be in `data/pythonic_plans/`
-- Required files:
-  - `pddl_train_task_decomposesep_teamproblem.py`
-  - `pddl_train_task_decomposesep_problem.py`
-  - `pddl_train_task_allocationsep_teamproblem.py`
-  - `pddl_train_task_allocationsep_problem.py`
-
-### 6. Provider Configuration
-- LiteLLM provider settings are stored in `scripts/providers.yaml`
-- Each provider entry should define `name`, `base_url`, `api_key`, and `models`
-- Update the provider entry that matches the model you want to run
-
-## Command Line Arguments
+Main planner entry point.
 
 ```bash
-python pddlrun_llmseparate.py \
-    --floor-plan <number> \
-    --model <model> \
-    --prompt-decompse-set <set> \
-    --prompt-allocation-set <set> \
-    --test-set <set> \
-    --log-results <boolean>
+python scripts/pddlrun_llmseparate.py --floor-plan 1
 ```
 
-### Plan-to-Code 
+Arguments currently supported by the script:
 
+- `--bddl-file`
+- `--floor-plan`
+- `--model`
+- `--prompt-decompse-set`
+- `--prompt-allocation-set`
+- `--test-set`
+- `--log-results`
+- `--no-log-results`
+
+Current defaults in code:
+
+- model: `deepseek-chat`
+- prompt decomposition set: `pddl_train_task_decomposesep`
+- prompt allocation set: `pddl_train_task_allocationsep`
+- test set: `final_test`
+
+### `run_pddlrun_llmseparate_parallel.py`
+
+Parallel wrapper for launching multiple floor plans and tasks.
 
 ```bash
-# Enable validation (default)
-python plantocode.py --logs-dir ./logs --validate-code
-
-# Disable validation for faster processing
-python plantocode.py --logs-dir ./logs --no-validate-code
+python scripts/run_pddlrun_llmseparate_parallel.py --floor-plans 1 2 3
 ```
 
+Arguments:
 
-## Error Handling
+- `--floor-plans`
+- `--model`
+- `--test-set`
+- `--max-floor-plan-workers`
+- `--max-task-workers`
+- `--output-root`
+- `--prompt-decompse-set`
+- `--prompt-allocation-set`
+- `--disable-log-results`
 
-The system will raise the following exceptions if path requirements are not met:
-- `PDDLError`: For PDDL-related file operations
-- `ValidationError`: For PDDL validation issues
-- `PlanningError`: For planner execution issues
-- `LLMError`: For API and model-related issues
+If `--output-root` is not provided, summary files are written under:
 
-## Notes
+```text
+parallel_runs/pddlrun_llmseparate_<timestamp>/
+```
 
-- All paths are constructed relative to the current working directory
-- The system will attempt to create missing directories when possible
-- File permissions must allow read/write access to all required directories
-- Temporary files are stored in `resources/generated_subtask/`
-- Results and logs are saved in `logs/` with timestamp-based subdirectories 
+### `plantocode.py`
+
+Translates planning outputs into AI2-THOR-executable code using LiteLLM.
+
+```bash
+python scripts/plantocode.py --logs-dir ./logs/task_manager_runs --validate-code
+```
+
+Arguments:
+
+- `--model`
+- `--input-source`
+- `--input-file`
+- `--logs-dir`
+- `--output-dir`
+- `--batch-size`
+- `--max-tokens`
+- `--temperature`
+- `--frequency-penalty`
+- `--validate-code`
+- `--no-validate-code`
+
+Behavior worth knowing:
+
+- `--input-source` defaults to `pddl_logs`
+- `--validate-code` is enabled by default
+- the script scans folders matching `*_plans_*`
+- it writes summary files to `--output-dir`
+- it also writes `code_plan.py` into each original log folder for execution compatibility
+
+### `execute_plan.py`
+
+Executes a generated `code_plan.py` by assembling an `executable_plan.py`.
+
+```bash
+python scripts/execute_plan.py --command <log_folder_name>
+```
+
+The script currently resolves the target folder as:
+
+```text
+logs/<log_folder_name>/
+```
+
+So the command value should be a directory name directly inside `logs/`.
+
+## Dataset Format
+
+The parallel runner currently loads task files from:
+
+```text
+data/<test_set>/FloorPlan{N}.jsonl
+```
+
+Each line is expected to be a JSON object describing one task.
+
+## Provider and Storage Configuration
+
+### Provider File
+
+`scripts/providers.yaml` should define the LiteLLM providers and model names you want exposed to the scripts.
+
+### Storage File
+
+`scripts/pddlrun_llmseparate_config.yaml` currently contains:
+
+```yaml
+storage:
+  base_dir: logs/intermediate_runs
+```
+
+Update this file if you want to redirect intermediate artifacts to another location.
