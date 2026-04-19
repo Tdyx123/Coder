@@ -1,1 +1,0 @@
-{"task": "Put the watch and Keychain inside the drawer, and turn on TV", "robot list" : [2,3,5], "object_states" : [{"name": "Drawer", "contains": ["Watch","KeyChain"], "state": None}], "trans":0, "max_trans":0}

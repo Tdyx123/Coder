@@ -1,4 +1,0 @@
-{"task": "Slice lettuce and put in fridge", "robot list": [26,25,27], "object_states":[{"name": "Fridge", "contains":["lettuce"],"state": "None"},{"name": "Lettuce", "contains": [], "state": "SLICED"}],"trans":1, "min_trans": 6}
-{"task": "Slice apple and lettuce parallelly, and throw them in the trash", "robot list" : [26,25,27], "object_states" : [{"name": "Apple", "contains": [], "state": "SLICED"},{"name": "GarbageCan", "contains": ["Apple"], "state": None}], "trans":0, "min_trans":6} 
-{"task": "Wash the fork and put it in the bowl, and turn off the light", "robot list" : [27,24,25], "object_states" : [{"name": "Bowl", "contains": ["Fork"], "state": None}], "trans":1, "min_trans":6}
-{"task": "Wash the knife and put it in the bowl, and slice lettuce", "robot list" : [27,24,25], "object_states" : [{"name": "Bowl", "contains": ["Fork"], "state": None}], "trans":1, "min_trans":6}

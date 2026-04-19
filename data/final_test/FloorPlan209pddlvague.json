@@ -1,4 +1,0 @@
-{"task": "Execute a chaotic living room reset", "robot list": [2, 3, 4], "object_states": [{"name": "Vase", "contains": [], "state": "BROKEN"}, {"name": "Television", "contains": [], "state": "ON"}], "trans": 0, "max_trans": 1} 
-{"task": "Organize personal inventory and garden tools", "robot list": [6, 7], "object_states": [{"name": "Box", "contains": ["Watch"], "state": null}, {"name": "CoffeeTable", "contains": ["WateringCan"], "state": null}], "trans": 0, "max_trans": 1} 
-{"task": "De-clutter the reading area", "robot list": [8, 9, 10, 28], "object_states": [{"name": "GarbageCan", "contains": ["Book", "Newspaper"], "state": null}], "trans": 0, "max_trans": 1} 
-{"task": "Stage the furniture for a home staging photoshoot", "robot list": [8, 28], "object_states": [{"name": "Sofa", "contains": ["Vase"], "state": null}], "trans": 0, "max_trans": 1}

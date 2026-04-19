@@ -1,2 +1,0 @@
-{"task": "prepare hot water for shower and put toilet paper in the trash", "robot list" : [23,24,25,26], "object_states" : [{"name": "Faucet", "contains": [], "state": "ON"},{"name": "GarbageCan ", "contains": ["ToiletPaper"], "state": "None"}], "trans":0, "max_trans":0} 
-

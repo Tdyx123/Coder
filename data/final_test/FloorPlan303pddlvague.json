@@ -1,4 +1,0 @@
-{"task": "Demonstrate the  living status of working software engineer", "robot list": [1,22],"object_states": [{"name": "Labtop", "contains": [], "state": "OPENED"}], "trans": 0 , "min_trans": 17}
-{"task": "Break all the high tech electronics", "robot list" : [23,15,26], "object_states" : [{"name": "CellPhone", "contains": [], "state": "BROKEN"},{"name": "Blinds", "contains": [], "state": "CLOSED"}, "trans":0, "max_trans":0}
-{"task": "Place all high tech electronics on the bed", "robot list" : [9,8,7], "object_states" : [{"name": "Bed", "contains": ["Laptop"], "state": None}, "trans":0, "max_trans":0}
-{"task": "Parallely gather up 3 school supplies on the bed", "robot list": [11, 17 ,25], "object_states" : [{"name": "Bed", "contains": ["Pen", "Pensil"], "state": "None"}], "trans": 0, "min_trans": 17}
