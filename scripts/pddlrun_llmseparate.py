@@ -215,7 +215,7 @@ class FileProcessor:
             str: Contents of the file
         """
         try:
-            with open(file_path, 'r') as file:
+            with open(file_path, 'r', encoding='utf-8') as file:
                 return file.read()
         except FileNotFoundError:
             raise PDDLError(f"File not found: {file_path}")
@@ -230,7 +230,7 @@ class FileProcessor:
             content (str): Content to write
         """
         try:
-            with open(file_path, 'w') as file:
+            with open(file_path, 'w', encoding='utf-8') as file:
                 file.write(content)
         except Exception as e:
             raise PDDLError(f"Error writing to file {file_path}: {str(e)}")
@@ -450,150 +450,7 @@ class FileProcessor:
                 fixed_subtasks.append(subtask)
 
         return fixed_subtasks, sequence_operations
-
-
-
-
-
-
-    '''
-    def split_and_store_tasks(self, content: str, llm: Optional['LLMHandler'] = None, model: Optional[str] = None) -> Tuple[List[str], str]:
-        """Split and store tasks from content.
-        
-        Returns:
-            Tuple[List[str], str]: Tuple of (subtasks list, sequence operations)
-        """
-
-        #print("Split and store tasks")
-        #print("Content", content)
-
-        #PG: Edited
-        summary_match = re.search( r'(?:#?\s*)?Problem\s*content\s*summary\s*:?(.*?)(?=(?:#?\s*)?Sequence\s*of\s*Operations?\s*:?)', content, re.DOTALL | re.IGNORECASE )
-        if summary_match:
-            problem_summary = summary_match.group(1).strip()
-        else:
-            # fallback to "everything before sequence section"
-            split_marker = re.search(r'(?:#?\s*)?Sequence\s*of\s*Operations?\s*:', content, re.IGNORECASE)
-            if split_marker:
-                problem_summary = content[:split_marker.start()].strip()
-                sequence_operations = content[split_marker.end():].strip()
-            else:
-                problem_summary = content.strip()
-                sequence_operations = "failed to extract2"
-
-        #print("Summary_match:", summary_match)
-
-        #print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-        #print("Problem summary:", problem_summary)
-        #print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-
-        #print("Sequence operations:", sequence_operations)
-        #print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-
-        #PG: Commented the following in original
-        
-        # More flexible pattern for summary and sequence
-        summary_pattern = re.compile(r'(?:#?\s*)?Problem\s*content\s*summary\s*:?(.*?)(?=(?:#?\s*)?Sequence\s*of\s*Operations?\s*:?)', re.DOTALL | re.IGNORECASE)
-        sequence_pattern = re.compile(r'(?:#?\s*)?Sequence\s*of\s*Operations?\s*:\s*(.*)', re.DOTALL | re.IGNORECASE)
-        
-        summary_match = summary_pattern.search(content)
-        problem_summary = summary_match.group(1).strip() if summary_match else "failed to extract1"
-        print("Summary match", summary_match)
-        print("problem_summary", problem_summary)
-
-
-        sequence_match = sequence_pattern.search(content)
-        sequence_operations = sequence_match.group(1).strip() if sequence_match else "failed to extract2"
-        
-        print("Sequence match", sequence_match)
-        print("sequence Operation", sequence_operations)
-        
-        
-        # More flexible pattern for splitting subtasks
-        subtasks = re.split(r'(?:#?\s*)?subtask\s*:?\s*', problem_summary, flags=re.IGNORECASE)
-        subtasks = [subtask.strip() for subtask in subtasks if subtask.strip()]
-        print("Subtasks", subtasks)
-        print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-        # Fix structure of each subtask if needed
-        fixed_subtasks = []
-        for subtask in subtasks:
-            print("Subtask:", subtask)
-            print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-            # Pattern to match the format expected by problemextracting
-
-            #Pg:Edited
-            pattern = re.compile(
-                r'\*\*Assigned\s*Robots?\*\*\s*:\s*.*?\n\*\*Objects\s*Involved\*\*\s*:\s*.*',
-                re.DOTALL | re.IGNORECASE
-            )
-
-            #PG: Following is commented from original
-            
-            pattern = re.compile(
-                r'\s*\*{0,2}\s*Assigned\s*Robot\s*\??:?\*{0,2}\s*\??(.*?)\s*\*{0,2}\s*Objects\s*Involved\s*:\??\*{0,2}', 
-                re.DOTALL | re.IGNORECASE
-            )
-            
-            #print("pattern", pattern)
-            #print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-            if not pattern.search(subtask):
-                if llm and model:
-                    #print("Fixing structure of subtask with LLM")
-                    fix_prompt = (
-                        "The following subtask description needs to be reformatted. Please reformat it to strictly follow this structure:\n\n"
-                        "#SubTask [number]: [Task Name]\n\n"
-                        "# Initial Precondition analyze due to previous subtask:\n"
-                        "#1. [precondition description]\n\n"
-                        "[Action descriptions with Parameters, Preconditions, and Effects]\n\n"
-                        "**Assigned Robot**: [robot number or 'team']\n"
-                        "**Objects Involved**: [list of objects]\n\n"
-                        "Important formatting rules:\n"
-                        "1. Each section must start with the exact headers shown above\n"
-                        "2. The order must be: SubTask header, Preconditions, Action descriptions, Assigned Robot, Objects Involved\n"
-                        "3. Use '**Assigned Robot**:' and '**Objects Involved**:' exactly as shown with double asterisks\n"
-                        "4. Include all action descriptions with their Parameters, Preconditions, and Effects\n"
-                        "5. Keep the original action descriptions if they exist\n\n"
-                        "Original subtask:\n" + subtask + "\n\n"
-                        "Please provide ONLY the reformatted version following the structure above. Do not add any explanations or additional text."
-                    )
-
-                    #print("Fixed prompt", fix_prompt)
-                    #print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-                    
-                    if "gpt" not in model:
-                        _, fixed_subtask = llm.query_model(fix_prompt, model, max_tokens=1000, stop=["def"], frequency_penalty=0.30)
-                    else:
-                        messages = [
-                            {"role": "system", "content": "You are a Robot PDDL problem Expert. Your task is to reformat subtask descriptions to match a specific structure. Do not add any explanations or additional text."},
-                            {"role": "user", "content": fix_prompt}
-                        ]
-                        _, fixed_subtask = llm.query_model(messages, model, max_tokens=1400, frequency_penalty=0.4)
-                    
-                    #print("Fixed subtask", fixed_subtask)
-                    #print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-
-                    print("=== Testing match on fixed subtask ===")
-                    print("Fixed subtask:", repr(fixed_subtask))
-                    print("Match result:", pattern.search(fixed_subtask))
-                    # Verify the fix worked
-                    if pattern.search(fixed_subtask):
-                        fixed_subtasks.append(fixed_subtask)
-                    else:
-                        print("LLM structure fix failed, using original subtask")
-                        print("\n".join(difflib.ndiff(fixed_subtask.splitlines(), pattern.pattern.splitlines())))  #PG: Added
-                        fixed_subtasks.append(subtask)
-                else:
-                    print("LLM handler not provided, using original subtask")
-                    fixed_subtasks.append(subtask)
-            else:
-                fixed_subtasks.append(subtask)
-        
-        return fixed_subtasks, sequence_operations
-    '''
-
-
-
-        
+    
     def extract_domain_name(self, problem_file_path: str) -> Optional[str]:
         """Extract the domain name from a problem PDDL file.
         
@@ -1183,7 +1040,31 @@ class TaskManager:
             print(f"Task {idx + 1} - TC: {TC}, Total Subtasks: {total_subtasks}")
 
 
-            with open(os.path.join(log_folder, "log.txt"), 'w') as f:
+            generated_subtask_dir = task_result["generated_subtask_dir"] if task_result else self.file_processor.subtask_path
+            validated_subtask_dir = task_result["validated_subtask_dir"] if task_result else self.file_processor.validated_subtask_path
+            artifact_map = task_result.get("manifest", {}).get("artifacts", {}) if task_result else {}
+            task_summary = {
+                "task": task,
+                "task_index": idx,
+                "model": self.model,
+                "objects_ai": objects_ai,
+                "robots": available_robots[idx],
+                "ground_truth": gt_test_tasks[idx],
+                "trans": trans_cnt_tasks[idx],
+                "min_trans": min_trans_cnt_tasks[idx],
+                "successful_subtasks": TC,
+                "total_subtasks": total_subtasks,
+                "completion_rate": (TC / total_subtasks) if total_subtasks else 0.0,
+                "task_run_dir": task_result["task_run_dir"] if task_result else None,
+                "generated_subtask_dir": generated_subtask_dir,
+                "validated_subtask_dir": validated_subtask_dir,
+                "generated_subtasks": sorted(os.listdir(generated_subtask_dir)) if os.path.exists(generated_subtask_dir) else [],
+                "validated_subtasks": sorted(os.listdir(validated_subtask_dir)) if os.path.exists(validated_subtask_dir) else [],
+                "artifacts": artifact_map,
+            }
+            self.file_processor.write_json(os.path.join(log_folder, "task_summary.json"), task_summary)
+
+            with open(os.path.join(log_folder, "log.txt"), 'w', encoding='utf-8') as f:
                 f.write(task)
                 f.write(f"\n\nModel: {self.model}")
                 f.write(f"\n{objects_ai}")
@@ -1193,11 +1074,18 @@ class TaskManager:
                 f.write(f"\nmin_trans = {min_trans_cnt_tasks[idx]}")
                 f.write(f"\nTotalsuccesssubtask = {TC}")
                 f.write(f"\nTotalsubtask = {total_subtasks}")
+                f.write(f"\nTaskRunDir = {task_result['task_run_dir'] if task_result else ''}")
+                f.write(f"\nGeneratedSubtaskDir = {generated_subtask_dir}")
+                f.write(f"\nValidatedSubtaskDir = {validated_subtask_dir}")
+                f.write(f"\nValidationManifest = {artifact_map.get('validate', {}).get('manifest')}")
+                f.write(f"\nPlannerManifest = {artifact_map.get('planner', {}).get('manifest')}")
+                f.write(f"\nCombinePrompt = {artifact_map.get('combine', {}).get('prompt')}")
+                f.write(f"\nCombineOutput = {artifact_map.get('combine', {}).get('output')}")
             
             # Copy generated subtasks
             subtask_folder = os.path.join(log_folder, "generated_subtask")
             os.makedirs(subtask_folder)
-            source_folder = task_result["generated_subtask_dir"] if task_result else self.file_processor.subtask_path
+            source_folder = generated_subtask_dir
             for file_name in os.listdir(source_folder):
                 full_file_name = os.path.join(source_folder, file_name)
                 if os.path.isfile(full_file_name):
@@ -1207,7 +1095,7 @@ class TaskManager:
             # Copy validated subtasks
             validated_subtask_folder = os.path.join(log_folder, "validated_subtask")
             os.makedirs(validated_subtask_folder)
-            source_validated_folder = task_result["validated_subtask_dir"] if task_result else self.file_processor.validated_subtask_path
+            source_validated_folder = validated_subtask_dir
             for file_name in os.listdir(source_validated_folder):
                 full_file_name = os.path.join(source_validated_folder, file_name)
                 if os.path.isfile(full_file_name):
@@ -1227,10 +1115,10 @@ class TaskManager:
         """Write a plan to a file."""
         if isinstance(content, list):
             for i, item in enumerate(content):
-                with open(os.path.join(folder, f"{filename}.{i}"), 'w') as f:
+                with open(os.path.join(folder, f"{filename}.{i}"), 'w', encoding='utf-8') as f:
                     f.write(str(item))
         else:
-            with open(os.path.join(folder, filename), 'w') as f:
+            with open(os.path.join(folder, filename), 'w', encoding='utf-8') as f:
                 f.write(content)
 
     def process_tasks(self, test_tasks: List[str], available_robots: List[dict], objects_ai: str) -> None:
@@ -1425,7 +1313,6 @@ class TaskManager:
             self._write_text_artifact("02_allocate/01_allocate_prompt.txt", prompt)
             self._record_artifact("allocate", "prompt", "02_allocate/01_allocate_prompt.txt")
             
-            # Handle different GPT versions like the original
             messages = [{"role": "user", "content": prompt}]
             _, text = self.llm.query_model(messages, self.model, max_tokens=1500, frequency_penalty=0.69)
             self._write_text_artifact("02_allocate/02_allocate_output.txt", text)
@@ -1720,285 +1607,6 @@ class TaskManager:
                 self._write_text_artifact(output_path, text)
 
         return problem_pddl
-
-
-
-    #PG: Edited the following function
-    '''
-    def problemextracting(
-        self,
-        subtasks: List[str],
-        llm: 'LLMHandler',
-        model: str,
-        file_processor: 'FileProcessor',
-        objects_ai: str,
-        prompt_allocation_set: str
-    ) -> List[str]:
-        """Extract problem files from subtasks."""
-        import os, re
-
-        problem_pddl: List[str] = []
-
-        # Same robust matchers used in split_and_store_tasks
-        assigned_block_re = re.compile(
-            r'(?is)\*\*Assigned\s*Robots?\*\*\s*:\s*(.*?)\n\*\*Objects\s*Involved\*\*\s*:',
-            re.IGNORECASE | re.DOTALL
-        )
-        assigned_block_fallback = re.compile(
-            r'(?is)\bAssigned\s*Robots?\b\s*:\s*(.*?)\n\bObjects\s*Involved\b\s*:',
-            re.IGNORECASE | re.DOTALL
-        )
-
-        # Replace the robot_num_re with plural support
-        robot_num_re = re.compile(r'\brobot\s*(\d+)\b', re.IGNORECASE)
-
-        #print("Extracting problems")
-        for subtask in subtasks:
-            # print("subtasks are:")
-            # print("Subtask:", subtask)
-            # print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-
-            m = assigned_block_re.search(subtask) or assigned_block_fallback.search(subtask)
-            # print("assigned_robots_match is")
-            # print(m)
-            # print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-
-            if not m:
-                print("Invalid subtask structure, skipping")
-                continue
-
-            assigned_robots = m.group(1).strip()
-
-            # Team detection
-            is_team = ("team" in assigned_robots.lower()) or ("allactionrobot" in assigned_robots.lower())
-            robot_numbers = robot_num_re.findall(assigned_robots)
-            normalized_robot_numbers = [f"robot{num}" for num in robot_numbers]
-
-            if is_team or len(normalized_robot_numbers) > 1:
-                # print("this is a team task")
-                # print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-                # print("Normalized robot numbers", normalized_robot_numbers)
-                # print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-
-                # Concatenate all team domains
-                all_domain_contents = ""
-                for robot in normalized_robot_numbers:
-                    domain_path = os.path.join(self.base_path, "resources", f"{robot}.pddl")
-                    all_domain_contents += file_processor.read_file(domain_path)
-
-                if not all_domain_contents:
-                    print("No team robot domains found; skipping team prompt.")
-                    continue
-
-                problem_fileexamplepath = os.path.join(
-                    self.base_path, "data", "pythonic_plans", f"{prompt_allocation_set}_teamproblem.py"
-                )
-                problem_examplecontent = file_processor.read_file(problem_fileexamplepath)
-
-                prompt = (
-                    "\n" + problem_examplecontent +
-                    "Strictly follow the structure and finish the tasks like example\n"
-                    "Subtask examination from action perspective:" + subtask +
-                    "\nDomain file content:" + all_domain_contents +
-                    "\n based on the objects availiable below." + objects_ai +
-                    "Task description: extract out the problem files, based on the objects above, "
-                    "the precondition, actions and subtask examination.\n"
-                    "#IMPORTANT, strictly follow the structure ,stop generate after the Problem file generation is done."
-                )
-
-                if "gpt" not in model:
-                    _, text = llm.query_model(prompt, model, max_tokens=1000, stop=["def"], frequency_penalty=0.30)
-                else:
-                    messages = [
-                        {"role": "system", "content": "You are a Robot PDDL problem Expert"},
-                        {"role": "user", "content": prompt}
-                    ]
-                    _, text = llm.query_model(messages, model, max_tokens=1000, frequency_penalty=0.4)
-
-                # print("Text", text)
-                # print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-                problem_pddl.append(text)
-
-            else:
-                # Single-robot case
-                # print("Normalized robot numbers", normalized_robot_numbers)
-                # print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-
-                if not normalized_robot_numbers:
-                    print("No robot number found in Assigned Robot; skipping.")
-                    print("Assigned Robots content:", assigned_robots)
-                    continue
-
-                robotassignnumber = f"{normalized_robot_numbers[0].replace(' ', '')}.pddl"
-                domain_path = os.path.join(self.base_path, "resources", robotassignnumber)
-                print("this is a solo work")
-                print(domain_path)
-                #print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-
-                domain_content = file_processor.read_file(domain_path)
-                problem_fileexamplepath = os.path.join(
-                    self.base_path, "data", "pythonic_plans", f"{prompt_allocation_set}_problem.py"
-                )
-                problem_examplecontent = file_processor.read_file(problem_fileexamplepath)
-
-                prompt = (
-                    "\n" + problem_examplecontent +
-                    " Finish the tasks like example\n"
-                    "Subtask examination from action perspective:" + subtask +
-                    "\nDomain file content:" + domain_content +
-                    "\n based on the objects availiable for potential usage below." + objects_ai +
-                    "Task description: generate the problem file. Based on the objects above, "
-                    "the domain file precondition, actions and subtask examination. "
-                    "IMPORTANT the robot initate strictly as not inaction and robot "
-                    "(which includes location)\n"
-                    "#IMPORTANT, strictly follow the structure ,stop generate after the Problem file generation is done."
-                )
-
-                if "gpt" not in model:
-                    _, text = llm.query_model(prompt, model, max_tokens=1000, stop=["def"], frequency_penalty=0.30)
-                else:
-                    messages = [
-                        {"role": "system", "content": "You are a Robot PDDL problem Expert"},
-                        {"role": "user", "content": prompt}
-                    ]
-                    _, text = llm.query_model(messages, model, max_tokens=1400, frequency_penalty=0.4)
-
-                #print("Text", text)
-                #print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-                problem_pddl.append(text)
-
-        # print("the problem_pddl is")
-        # print(problem_pddl)
-        return problem_pddl
-
-    #PG: Commented the following
- 
-    def problemextracting(
-        self,
-        subtasks: List[str],
-        llm: LLMHandler,
-        model: str,
-        file_processor: FileProcessor,
-        objects_ai: str,
-        prompt_allocation_set: str
-        ) -> List[str]:
-        """Extract problem files from subtasks."""
-        problem_pddl: List[str] = []
-        
-        print("Extracting problems")
-        for subtask in subtasks:
-            print("subtasks are:")
-            print(subtask)
-            print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-
-
-            # Extract assigned robots using regex
-            pattern = re.compile(r"\s*\*{0,2}\s*Assigned\s*Robot\s*\??:?\*{0,2}\s*\??(.*?)\s*\*{0,2}\s*Objects\s*Involved\s*:\??\*{0,2}", re.DOTALL | re.IGNORECASE)
-            assigned_robots_match = pattern.search(subtask)
-            print("assigned_robots_match is")
-            print(assigned_robots_match)
-            print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-
-            if not assigned_robots_match:
-                print("Invalid subtask structure, skipping")
-                continue
-
-            assigned_robots = assigned_robots_match.group(1).strip()
-            if "team" in assigned_robots.lower() or "allactionrobot" in assigned_robots.lower():
-                print("this is a team task")
-                print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-                # Handle team robots
-                all_domain_contents = ""
-                team_pattern = re.compile(r"\s*\*{0,2}\s*robot\s*\??\s*(\d+)\*{0,2}", re.IGNORECASE)
-                robot_numbers = team_pattern.findall(assigned_robots)
-                normalized_robot_numbers = [f"robot{num}" for num in robot_numbers]
-                print("Normalized robot numbers", normalized_robot_numbers)
-                print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-
-                for robot in normalized_robot_numbers:
-                    domain_path = os.path.join(self.base_path, "resources", f"{robot}.pddl")
-                    domain_content = file_processor.read_file(domain_path)
-                    all_domain_contents += domain_content
-
-                problem_fileexamplepath = os.path.join(self.base_path, "data", "pythonic_plans", f"{prompt_allocation_set}_teamproblem.py")
-                problem_examplecontent = file_processor.read_file(problem_fileexamplepath)
-
-                prompt = (
-                    "\n" + problem_examplecontent +
-                    "Strictly follow the structure and finish the tasks like example\n"
-                    "Subtask examination from action perspective:" + subtask +
-                    "\nDomain file content:" + domain_content +
-                    "\n based on the objects availiable below." + objects_ai +
-                    "Task description: extract out the problem files, based on the objects above, "
-                    "the precondition, actions and subtask examination.\n"
-                    "#IMPORTANT, strictly follow the structure ,stop generate after the Problem file generation is done."
-                )
-
-if "gpt" not in model:
-                    _, text = llm.query_model(prompt, model, max_tokens=1000, stop=["def"], frequency_penalty=0.30)
-                else:
-                    messages = [
-                        {"role": "system", "content": "You are a Robot PDDL problem Expert"},
-                        {"role": "user", "content": prompt}
-                    ]
-                    _, text = llm.query_model(messages, model, max_tokens=1400, frequency_penalty=0.4)
-
-
-                print("Text", text)
-                print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-                problem_pddl.append(text)
-
-            else:
-                # Handle single robot
-                robot_pattern = re.compile(r"\s*\*{0,2}\s*robot\s*\??\s*(\d+)\*{0,2}", re.IGNORECASE)
-                robot_numbers = robot_pattern.findall(assigned_robots)
-                normalized_robot_numbers = [f"robot{num}" for num in robot_numbers]
-                print("Normalized robot numbers", normalized_robot_numbers)
-                print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-                
-                if robot_numbers:
-                    robotassignnumber = f"{normalized_robot_numbers[0].replace(' ', '')}.pddl"
-                    domain_path = os.path.join(self.base_path, "resources", robotassignnumber)
-                    print("this is a solo work")
-                    print(domain_path)
-                    print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-
-                    domain_content = file_processor.read_file(domain_path)
-                    problem_fileexamplepath = os.path.join(self.base_path, "data", "pythonic_plans", f"{prompt_allocation_set}_problem.py")
-                    problem_examplecontent = file_processor.read_file(problem_fileexamplepath)
-
-                    prompt = (
-                        "\n" + problem_examplecontent +
-                        " Finish the tasks like example\n"
-                        "Subtask examination from action perspective:" + subtask +
-                        "\nDomain file content:" + domain_content +
-                        "\n based on the objects availiable for potential usage below." + objects_ai +
-                        "Task description: generate the problem file. Based on the objects above, "
-                        "the domain file precondition, actions and subtask examination. "
-                        "IMPORTANT the robot initate strictly as not inaction and robot "
-                        "(which includes location)\n"
-                        "#IMPORTANT, strictly follow the structure ,stop generate after the Problem file generation is done."
-                    )
-
-                    if "gpt" not in model:
-                        _, text = llm.query_model(prompt, model, max_tokens=1000, stop=["def"], frequency_penalty=0.30)
-                    else:            
-                        messages = [
-                            {"role": "system", "content": "You are a Robot PDDL problem Expert"},
-                            {"role": "user", "content": prompt}
-                        ]
-                        _, text = llm.query_model(messages, model, max_tokens=1400, frequency_penalty=0.4)
-                    
-                    print("Text", text)
-                    print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-                    problem_pddl.append(text)
-                    
-        print("the problem_pddl is")
-        print(problem_pddl)
-        return problem_pddl
-    '''
-    
-    
     
     def _validate_and_plan(self) -> None:
         """Validate and plan all problem files."""
@@ -2174,7 +1782,7 @@ if "gpt" not in model:
         if isinstance(decomposed_plan, list):
             decomposed_plan = decomposed_plan[0]
         
-        base_path = os.path.join(self.resources_path, "validated_subtask")  #PG: Changed to validated_subtask from generated_subtask
+        base_path = self.file_processor.validated_subtask_path
         plan_files = [f for f in os.listdir(base_path) if f.endswith('_plan.txt')]
         prompt = ""
         # Add plans from files if they exist
@@ -2339,7 +1947,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--model",
         type=str,
-        default="gpt-4o",
+        default="deepseek-chat",
         choices=get_available_models()
     )
     parser.add_argument(
@@ -2360,7 +1968,9 @@ def parse_arguments() -> argparse.Namespace:
         default="final_test",
         choices=['final_test']
     )
-    parser.add_argument("--log-results", type=bool, default=True)
+    parser.add_argument("--log-results", dest="log_results", action="store_true")
+    parser.add_argument("--no-log-results", dest="log_results", action="store_false")
+    parser.set_defaults(log_results=True)
     
     args = parser.parse_args()
     
