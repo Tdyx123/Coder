@@ -56,12 +56,12 @@ cd downward
 ./fast-downward.py --help
 ```
 
-### 3. OpenAI API Setup
-The code relies on OpenAI's API for LLM functionality. To set this up:
+### 3. LiteLLM Provider Setup
+The code uses LiteLLM as the LLM SDK and loads provider settings from `scripts/providers.yaml`.
 
-1. Create an API Key at https://platform.openai.com/
-2. Create a file named `api_key.txt` in the root folder
-3. Paste your OpenAI API Key in the file
+1. Open `scripts/providers.yaml`
+2. Fill in each provider's `api_key`
+3. Update `base_url` or `models` as needed for your endpoint
 
 ## Quickstart
 

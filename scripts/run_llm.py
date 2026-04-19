@@ -1,7 +1,7 @@
 import copy
 import glob
 import json
-import pyyaml
+import yaml
 import os
 import argparse
 from pathlib import Path
@@ -10,12 +10,16 @@ import random
 import subprocess
 import time
 
-from openai import OpenAI
 import ai2thor.controller
 
+from llm_client import (
+    complete_with_provider,
+    extract_text,
+    extract_usage,
+    get_provider_for_model,
+    load_providers,
+)
 from llm_logger import log_llm_call
-
-clients = {}
 
 import sys
 sys.path.append(".")
@@ -24,40 +28,24 @@ import resources.actions as actions
 import resources.robots as robots
 
 def get_client_for_model(model):
-    provider = None
-    for p in get_providers():
-        if model in p['models']:
-            provider = p
-            break
-    if not provider:
-        raise ValueError(f"Model {model} not found in any provider")
-    
-    provider_name = provider['name']
-    if provider_name not in clients:
-        clients[provider_name] = OpenAI(
-            api_key=provider['api_key'],
-            base_url=provider['base_url']
-        )
-    return clients[provider_name], provider_name
+    provider = get_provider_for_model(model, get_providers())
+    return provider, provider['name']
 
 def LM(prompt, model, max_tokens=128, temperature=0, stop=None, logprobs=1, frequency_penalty=0):
-    client, provider = get_client_for_model(model)
+    provider_config, provider = get_client_for_model(model)
     start_time = time.time()
-    response = client.chat.completions.create(model=model, 
-                                        messages=prompt, 
-                                        max_tokens=max_tokens, 
-                                        temperature=temperature, 
-                                        frequency_penalty = frequency_penalty)
+    response = complete_with_provider(
+        model=model,
+        prompt=prompt,
+        provider=provider_config,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        stop=stop,
+        frequency_penalty=frequency_penalty,
+    )
     duration_ms = (time.time() - start_time) * 1000
-    text = response.choices[0].message.content.strip()
-    
-    usage = None
-    if hasattr(response, 'usage') and response.usage is not None:
-        usage = {
-            'prompt_tokens': response.usage.prompt_tokens,
-            'completion_tokens': response.usage.completion_tokens,
-            'total_tokens': response.usage.total_tokens
-        }
+    text = extract_text(response)
+    usage = extract_usage(response)
     
     log_llm_call(
         model=model,
@@ -72,8 +60,8 @@ def LM(prompt, model, max_tokens=128, temperature=0, stop=None, logprobs=1, freq
     return response, text
 
 def get_providers():
-    with open('providers.yaml', 'r', encoding='utf-8') as f:
-        return yaml.safe_load(f)['providers']
+    providers_file = Path(__file__).parent / 'providers.yaml'
+    return load_providers(providers_file)
 
 def get_models():
     return [model for provider in get_providers() for model in provider['models']]

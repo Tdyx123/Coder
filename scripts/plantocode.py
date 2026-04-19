@@ -11,9 +11,16 @@ from datetime import datetime
 import time
 from typing import Dict, List, Any, Optional, Union, Tuple
 
-from openai import OpenAI
-import openai
-
+from llm_client import (
+    complete_with_provider,
+    extract_text,
+    extract_usage,
+    get_available_models as get_litellm_models,
+    get_provider_for_model,
+    is_rate_limit_error,
+    is_retryable_error,
+    load_providers,
+)
 from llm_logger import log_llm_call, get_llm_logger
 
 # Constants
@@ -25,9 +32,7 @@ MAX_RETRIES = 3
 def get_available_models():
     """Get list of available models from providers.yaml"""
     providers_file = Path(__file__).parent / 'providers.yaml'
-    with open(providers_file, 'r', encoding='utf-8') as f:
-        providers = yaml.safe_load(f)['providers']
-    return [model for provider in providers for model in provider['models']]
+    return get_litellm_models(providers_file)
 
 class LLMError(Exception):
     """Exception raised for Language Model related errors."""
@@ -38,33 +43,23 @@ class MimicTranslationError(Exception):
     pass
 
 class LLMHandler:
-    """Handles interactions with Language Models (LLMs) using OpenAI API."""
+    """Handles interactions with Language Models (LLMs) using LiteLLM."""
     
     def __init__(self):
         """Initialize the LLM handler."""
-        self.clients = {}
         self.providers = None
     
     def _load_providers(self):
         """Load providers from yaml file."""
         if self.providers is None:
             providers_file = Path(__file__).parent / 'providers.yaml'
-            with open(providers_file, 'r', encoding='utf-8') as f:
-                self.providers = yaml.safe_load(f)['providers']
+            self.providers = load_providers(providers_file)
         return self.providers
     
-    def _get_client_for_model(self, model):
-        """Get or create OpenAI client for the provider of the given model."""
-        for provider in self._load_providers():
-            if model in provider['models']:
-                provider_name = provider['name']
-                if provider_name not in self.clients:
-                    self.clients[provider_name] = OpenAI(
-                        api_key=provider['api_key'],
-                        base_url=provider['base_url']
-                    )
-                return self.clients[provider_name], provider_name
-        raise LLMError(f"Model {model} not found in any provider")
+    def _get_provider_for_model(self, model):
+        """Get provider configuration for the given model."""
+        provider = get_provider_for_model(model, self._load_providers())
+        return provider, provider['name']
     
     def query_model(
         self, 
@@ -76,31 +71,26 @@ class LLMHandler:
         logprobs: Optional[int] = 1,
         frequency_penalty: float = 0
     ) -> Tuple[dict, str]:
-        """Query the language model using OpenAI API.
+        """Query the language model using LiteLLM.
         """
         retry_delay = DEFAULT_RETRY_DELAY
-        client, provider = self._get_client_for_model(model)
+        provider_config, provider = self._get_provider_for_model(model)
         
         for attempt in range(MAX_RETRIES):
             try:
                 start_time = time.time()
-                response = client.chat.completions.create(
-                    model=model, 
-                    messages=prompt, 
-                    max_tokens=max_tokens, 
-                    temperature=temperature, 
-                    frequency_penalty=frequency_penalty
+                response = complete_with_provider(
+                    model=model,
+                    prompt=prompt,
+                    provider=provider_config,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    stop=stop,
+                    frequency_penalty=frequency_penalty,
                 )
                 duration_ms = (time.time() - start_time) * 1000
-                text = response.choices[0].message.content.strip()
-                
-                usage = None
-                if hasattr(response, 'usage') and response.usage is not None:
-                    usage = {
-                        'prompt_tokens': response.usage.prompt_tokens,
-                        'completion_tokens': response.usage.completion_tokens,
-                        'total_tokens': response.usage.total_tokens
-                    }
+                text = extract_text(response)
+                usage = extract_usage(response)
                 
                 log_llm_call(
                     model=model,
@@ -118,24 +108,24 @@ class LLMHandler:
                 
                 return response, text
                     
-            except openai.RateLimitError:
-                if attempt < MAX_RETRIES - 1:
-                    time.sleep(retry_delay)
-                    retry_delay *= 2  # Exponential backoff
-                    continue
-                raise LLMError("Rate limit exceeded")
-                
-            except (openai.APIError, openai.APITimeoutError) as e:
-                if attempt < MAX_RETRIES - 1:
-                    time.sleep(retry_delay)
-                    continue
-                raise LLMError(f"API Error after all retries: {str(e)}")
-                
             except Exception as e:
+                if is_rate_limit_error(e):
+                    if attempt < MAX_RETRIES - 1:
+                        time.sleep(retry_delay)
+                        retry_delay *= 2
+                        continue
+                    raise LLMError("Rate limit exceeded")
+
+                if is_retryable_error(e):
+                    if attempt < MAX_RETRIES - 1:
+                        time.sleep(retry_delay)
+                        continue
+                    raise LLMError(f"API Error after all retries: {str(e)}")
+
                 raise LLMError(f"Unexpected error in LLM query: {str(e)}")
 
 class MimicFormatTranslator:
-    """Translates complete PDDL plans to mimic format using OpenAI API."""
+    """Translates complete PDDL plans to mimic format using LiteLLM."""
     
     def __init__(self, model: str = "MiniMax-M2.7"):
         self.model = model
@@ -522,7 +512,7 @@ def execute_task():
                                 max_tokens: int = 2048,  # Increased for complete plans
                                 temperature: float = 0.1,
                                 frequency_penalty: float = 0.0) -> str:
-        """Translate complete PDDL plan to mimic format using OpenAI API."""
+        """Translate complete PDDL plan to mimic format using LiteLLM."""
         try:
             # Create few-shot prompt
             prompt = self.create_few_shot_prompt(task_description, combined_plan)
@@ -674,7 +664,7 @@ def process_results_for_plan_to_code(results: List[Dict[str, Any]], translator: 
                     processed_results.append(processed_result)
                     continue
                 
-                # Translate to mimic format using OpenAI API
+                # Translate to mimic format using LiteLLM
                 start_time = time.time()
                 mimic_code = translator.translate_to_mimic_format(task_description, combined_plan)
                 translation_time = time.time() - start_time
@@ -886,7 +876,7 @@ def generate_summary(processed_results: List[Dict[str, Any]], output_dir: str):
     print(f"Individual plan-to-code files saved in their respective log folders")
 
 def parse_arguments() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description='Translate complete PDDL plans to AI2-THOR executable code using OpenAI API. Can load from JSON files or PDDL log directories created by pddlrun_llmseparate.py')
+    parser = argparse.ArgumentParser(description='Translate complete PDDL plans to AI2-THOR executable code using LiteLLM. Can load from JSON files or PDDL log directories created by pddlrun_llmseparate.py')
     parser.add_argument('--model', type=str, default="gpt-4o",
                        choices=get_available_models(),
                        help='Model to use')
@@ -946,7 +936,7 @@ def main():
         output_path = Path(args.output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
         
-        # Initialize translator with OpenAI API
+        # Initialize translator with LiteLLM
         translator = MimicFormatTranslator(
             model=args.model
         )

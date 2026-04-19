@@ -69,17 +69,16 @@ logs/                      # Generated logs and results
   - `pddl_train_task_allocationsep_teamproblem.py`
   - `pddl_train_task_allocationsep_problem.py`
 
-### 6. API Key
-- OpenAI API key file should be named `api_key.txt`
-- Default location: root directory
-- Can be specified via command line argument `--openai-api-key-file`
+### 6. Provider Configuration
+- LiteLLM provider settings are stored in `scripts/providers.yaml`
+- Each provider entry should define `name`, `base_url`, `api_key`, and `models`
+- Update the provider entry that matches the model you want to run
 
 ## Command Line Arguments
 
 ```bash
 python pddlrun_llmseparate.py \
     --floor-plan <number> \
-    --openai-api-key-file <path> \
     --model <model> \
     --prompt-decompse-set <set> \
     --prompt-allocation-set <set> \

@@ -14,9 +14,16 @@ import shutil
 import sys
 from typing import List, Dict, Tuple, Optional, Union, Any
 
-from openai import OpenAI
-import openai
-
+from llm_client import (
+    complete_with_provider,
+    extract_text,
+    extract_usage,
+    get_available_models as get_litellm_models,
+    get_provider_for_model,
+    is_rate_limit_error,
+    is_retryable_error,
+    load_providers,
+)
 from llm_logger import log_llm_call, get_llm_logger
 import ai2thor.controller
 
@@ -31,9 +38,7 @@ import resources.robots as robots
 def get_available_models():
     """Get list of available models from providers.yaml"""
     providers_file = Path(__file__).parent / 'providers.yaml'
-    with open(providers_file, 'r', encoding='utf-8') as f:
-        providers = yaml.safe_load(f)['providers']
-    return [model for provider in providers for model in provider['models']]
+    return get_litellm_models(providers_file)
 
 # Constants
 DEFAULT_MAX_TOKENS = 128
@@ -615,29 +620,19 @@ class LLMHandler:
     
     def __init__(self):
         """Initialize the LLM handler."""
-        self.clients = {}
         self.providers = None
     
     def _load_providers(self):
         """Load providers from yaml file."""
         if self.providers is None:
             providers_file = Path(__file__).parent / 'providers.yaml'
-            with open(providers_file, 'r', encoding='utf-8') as f:
-                self.providers = yaml.safe_load(f)['providers']
+            self.providers = load_providers(providers_file)
         return self.providers
     
-    def _get_client_for_model(self, model):
-        """Get or create OpenAI client for the provider of the given model."""
-        for provider in self._load_providers():
-            if model in provider['models']:
-                provider_name = provider['name']
-                if provider_name not in self.clients:
-                    self.clients[provider_name] = OpenAI(
-                        api_key=provider['api_key'],
-                        base_url=provider['base_url']
-                    )
-                return self.clients[provider_name], provider_name
-        raise LLMError(f"Model {model} not found in any provider")
+    def _get_provider_for_model(self, model):
+        """Get provider configuration for the given model."""
+        provider = get_provider_for_model(model, self._load_providers())
+        return provider, provider['name']
     
     def query_model(
         self, 
@@ -665,28 +660,23 @@ class LLMHandler:
             
         """
         retry_delay = DEFAULT_RETRY_DELAY
-        client, provider = self._get_client_for_model(model)
+        provider_config, provider = self._get_provider_for_model(model)
         
         for attempt in range(MAX_RETRIES):
             try:
                 start_time = time.time()
-                response = client.chat.completions.create(
-                    model=model, 
-                    messages=prompt, 
-                    max_tokens=max_tokens, 
-                    temperature=temperature, 
-                    frequency_penalty=frequency_penalty
+                response = complete_with_provider(
+                    model=model,
+                    prompt=prompt,
+                    provider=provider_config,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    stop=stop,
+                    frequency_penalty=frequency_penalty,
                 )
                 duration_ms = (time.time() - start_time) * 1000
-                text = response.choices[0].message.content.strip()
-                
-                usage = None
-                if hasattr(response, 'usage') and response.usage is not None:
-                    usage = {
-                        'prompt_tokens': response.usage.prompt_tokens,
-                        'completion_tokens': response.usage.completion_tokens,
-                        'total_tokens': response.usage.total_tokens
-                    }
+                text = extract_text(response)
+                usage = extract_usage(response)
                 
                 log_llm_call(
                     model=model,
@@ -704,20 +694,20 @@ class LLMHandler:
                 
                 return response, text
                     
-            except openai.RateLimitError:
-                if attempt < MAX_RETRIES - 1:
-                    time.sleep(retry_delay)
-                    retry_delay *= 2  # Exponential backoff
-                    continue
-                raise LLMError("Rate limit exceeded")
-                
-            except (openai.APIError, openai.APITimeoutError) as e:
-                if attempt < MAX_RETRIES - 1:
-                    time.sleep(retry_delay)
-                    continue
-                raise LLMError(f"API Error after all retries: {str(e)}")
-                
             except Exception as e:
+                if is_rate_limit_error(e):
+                    if attempt < MAX_RETRIES - 1:
+                        time.sleep(retry_delay)
+                        retry_delay *= 2
+                        continue
+                    raise LLMError("Rate limit exceeded")
+
+                if is_retryable_error(e):
+                    if attempt < MAX_RETRIES - 1:
+                        time.sleep(retry_delay)
+                        continue
+                    raise LLMError(f"API Error after all retries: {str(e)}")
+
                 raise LLMError(f"Unexpected error in LLM query: {str(e)}")
 
 class PDDLValidator:
