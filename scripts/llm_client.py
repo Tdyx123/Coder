@@ -1,3 +1,4 @@
+import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -7,6 +8,41 @@ from litellm.exceptions import APIError, RateLimitError, Timeout
 
 
 MessageInput = Union[str, List[Dict[str, Any]]]
+ProviderConfig = Dict[str, Any]
+
+
+class ProviderConfigError(ValueError):
+    """Raised when a provider entry is missing required configuration."""
+
+
+class _ApiKeyRotationPool:
+    """Thread-safe round-robin cursor storage for provider API keys."""
+
+    def __init__(self) -> None:
+        self._registry_lock = threading.Lock()
+        self._states: Dict[Tuple[str, str], Dict[str, Any]] = {}
+
+    def reserve_start_index(self, provider: ProviderConfig) -> int:
+        provider_key = (provider["name"], provider["base_url"])
+        api_keys = tuple(provider["api_keys"])
+
+        with self._registry_lock:
+            state = self._states.get(provider_key)
+            if state is None or state["api_keys"] != api_keys:
+                state = {
+                    "api_keys": api_keys,
+                    "next_index": 0,
+                    "lock": threading.Lock(),
+                }
+                self._states[provider_key] = state
+
+        with state["lock"]:
+            start_index = state["next_index"]
+            state["next_index"] = (start_index + 1) % len(api_keys)
+            return start_index
+
+
+_api_key_rotation_pool = _ApiKeyRotationPool()
 
 
 def _sanitize_litellm_error(exc: Exception) -> Exception:
@@ -25,12 +61,79 @@ def _sanitize_litellm_error(exc: Exception) -> Exception:
     return exc
 
 
-def load_providers(providers_file: Optional[Union[str, Path]] = None) -> List[Dict[str, Any]]:
+def _normalize_provider(provider: Dict[str, Any]) -> ProviderConfig:
+    if not isinstance(provider, dict):
+        raise ProviderConfigError("Each provider entry must be a mapping")
+
+    name = str(provider.get("name", "")).strip()
+    base_url = str(provider.get("base_url", "")).strip()
+    models = provider.get("models")
+    api_keys = provider.get("api_keys")
+
+    if not name:
+        raise ProviderConfigError("Provider is missing a non-empty 'name'")
+    if not base_url:
+        raise ProviderConfigError(
+            f"Provider '{name}' is missing a non-empty 'base_url'"
+        )
+    if not isinstance(models, list) or not models:
+        raise ProviderConfigError(
+            f"Provider '{name}' must define a non-empty 'models' list"
+        )
+    normalized_models = [str(model).strip() for model in models if str(model).strip()]
+    if len(normalized_models) != len(models):
+        raise ProviderConfigError(
+            f"Provider '{name}' has empty model names in 'models'"
+        )
+    if not isinstance(api_keys, list) or not api_keys:
+        raise ProviderConfigError(
+            f"Provider '{name}' must define a non-empty 'api_keys' list"
+        )
+    normalized_api_keys = [str(key).strip() for key in api_keys if str(key).strip()]
+    if len(normalized_api_keys) != len(api_keys):
+        raise ProviderConfigError(
+            f"Provider '{name}' has empty values in 'api_keys'"
+        )
+
+    normalized_provider = dict(provider)
+    normalized_provider["name"] = name
+    normalized_provider["base_url"] = base_url
+    normalized_provider["models"] = normalized_models
+    normalized_provider["api_keys"] = normalized_api_keys
+    return normalized_provider
+
+
+def _normalize_providers(raw_config: Any) -> List[ProviderConfig]:
+    if not isinstance(raw_config, dict):
+        raise ProviderConfigError("providers.yaml must contain a top-level mapping")
+
+    providers = raw_config.get("providers")
+    if not isinstance(providers, list) or not providers:
+        raise ProviderConfigError(
+            "providers.yaml must define a non-empty top-level 'providers' list"
+        )
+
+    normalized_providers = [_normalize_provider(provider) for provider in providers]
+    provider_names = [provider["name"] for provider in normalized_providers]
+    duplicate_names = {
+        name for name in provider_names if provider_names.count(name) > 1
+    }
+    if duplicate_names:
+        duplicates = ", ".join(sorted(duplicate_names))
+        raise ProviderConfigError(
+            f"Provider names must be unique, found duplicates: {duplicates}"
+        )
+    return normalized_providers
+
+
+def load_providers(
+    providers_file: Optional[Union[str, Path]] = None,
+) -> List[ProviderConfig]:
     if providers_file is None:
         providers_file = Path(__file__).parent / "providers.yaml"
 
     with open(providers_file, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)["providers"]
+        return _normalize_providers(yaml.safe_load(f))
 
 
 def get_available_models(providers_file: Optional[Union[str, Path]] = None) -> List[str]:
@@ -53,6 +156,31 @@ def _normalize_messages(prompt: MessageInput) -> List[Dict[str, Any]]:
     return [{"role": "user", "content": prompt}]
 
 
+def _attach_response_metadata(response: Any, metadata: Dict[str, Any]) -> Any:
+    if isinstance(response, dict):
+        response.setdefault("_lammap", {}).update(metadata)
+        return response
+
+    current = getattr(response, "_lammap_metadata", {})
+    if not isinstance(current, dict):
+        current = {}
+    current.update(metadata)
+    try:
+        setattr(response, "_lammap_metadata", current)
+    except Exception:
+        return response
+    return response
+
+
+def extract_response_metadata(response: Any) -> Dict[str, Any]:
+    if isinstance(response, dict):
+        metadata = response.get("_lammap", {})
+        return metadata if isinstance(metadata, dict) else {}
+
+    metadata = getattr(response, "_lammap_metadata", {})
+    return metadata if isinstance(metadata, dict) else {}
+
+
 def complete_with_provider(
     model: str,
     prompt: MessageInput,
@@ -62,10 +190,10 @@ def complete_with_provider(
     stop: Optional[List[str]] = None,
     frequency_penalty: float = 0,
 ) -> Any:
+    messages = _normalize_messages(prompt)
     kwargs: Dict[str, Any] = {
         "model": model,
-        "messages": _normalize_messages(prompt),
-        "api_key": provider["api_key"],
+        "messages": messages,
         "api_base": provider["base_url"],
         "max_tokens": max_tokens,
         "temperature": temperature,
@@ -74,10 +202,35 @@ def complete_with_provider(
     }
     if stop:
         kwargs["stop"] = stop
-    try:
-        return completion(**kwargs)
-    except Exception as exc:
-        raise _sanitize_litellm_error(exc)
+
+    api_keys = provider["api_keys"]
+    start_index = _api_key_rotation_pool.reserve_start_index(provider)
+    last_retryable_error: Optional[Exception] = None
+
+    for offset in range(len(api_keys)):
+        key_index = (start_index + offset) % len(api_keys)
+        kwargs["api_key"] = api_keys[key_index]
+        try:
+            response = completion(**kwargs)
+            return _attach_response_metadata(
+                response,
+                {
+                    "key_index": key_index,
+                    "key_count": len(api_keys),
+                    "provider_name": provider["name"],
+                },
+            )
+        except Exception as exc:
+            sanitized_error = _sanitize_litellm_error(exc)
+            if is_rate_limit_error(sanitized_error) or is_retryable_error(sanitized_error):
+                last_retryable_error = sanitized_error
+                continue
+            raise sanitized_error
+
+    if last_retryable_error is not None:
+        raise last_retryable_error
+
+    raise RuntimeError(f"Provider '{provider['name']}' has no usable API keys")
 
 
 def extract_text(response: Any) -> str:

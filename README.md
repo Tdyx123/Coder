@@ -57,10 +57,27 @@ cd ..
 The scripts read model provider settings from `scripts/providers.yaml`.
 
 1. Open `scripts/providers.yaml`
-2. Fill in the `api_key` for the provider you want to use
+2. Fill in the `api_keys` list for the provider you want to use
 3. Update `base_url` and `models` if you use a custom endpoint
 
 The available model choices exposed by the CLI are loaded dynamically from this file.
+
+Example:
+
+```yaml
+providers:
+  - name: deepseek
+    base_url: https://api.deepseek.com/v1
+    api_keys:
+      - your_first_key
+      - your_second_key
+      - your_third_key
+    models:
+      - deepseek-chat
+      - deepseek-reasoner
+```
+
+When multiple keys are configured for one provider, LaMMA-P rotates keys in round-robin order per request. If one key hits rate limits or another retryable upstream error, the same request will immediately try the next configured key.
 
 ### 4. Runtime Storage Setup
 

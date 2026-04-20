@@ -16,6 +16,7 @@ from ai2thor_object_cache import get_ai2_thor_objects_cached
 from llm_client import (
     complete_with_provider,
     extract_text,
+    extract_response_metadata,
     extract_usage,
     get_provider_for_model,
     load_providers,
@@ -46,6 +47,7 @@ def LM(prompt, model, max_tokens=128, temperature=0, stop=None, logprobs=1, freq
     )
     duration_ms = (time.time() - start_time) * 1000
     text = extract_text(response)
+    response_metadata = extract_response_metadata(response)
     usage = extract_usage(response)
     
     log_llm_call(
@@ -55,7 +57,8 @@ def LM(prompt, model, max_tokens=128, temperature=0, stop=None, logprobs=1, freq
         params={'max_tokens': max_tokens, 'temperature': temperature, 'frequency_penalty': frequency_penalty},
         response_text=text,
         usage=usage,
-        duration_ms=duration_ms
+        duration_ms=duration_ms,
+        key_index=response_metadata.get("key_index"),
     )
     
     return response, text

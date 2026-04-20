@@ -14,6 +14,7 @@ from typing import Dict, List, Any, Optional, Union, Tuple
 from llm_client import (
     complete_with_provider,
     extract_text,
+    extract_response_metadata,
     extract_usage,
     get_available_models as get_litellm_models,
     get_provider_for_model,
@@ -90,6 +91,7 @@ class LLMHandler:
                 )
                 duration_ms = (time.time() - start_time) * 1000
                 text = extract_text(response)
+                response_metadata = extract_response_metadata(response)
                 usage = extract_usage(response)
                 
                 log_llm_call(
@@ -103,7 +105,8 @@ class LLMHandler:
                     },
                     response_text=text,
                     usage=usage,
-                    duration_ms=duration_ms
+                    duration_ms=duration_ms,
+                    key_index=response_metadata.get("key_index"),
                 )
                 
                 return response, text

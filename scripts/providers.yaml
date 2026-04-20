@@ -1,19 +1,22 @@
 providers:
   - name: minimax
     base_url: https://api.minimaxi.com/v1
-    api_key: your_minimax_api_key_here
+    api_keys:
+      - your_minimax_api_key_here
     models:
       - MiniMax-M2.7
 
   - name: deepseek
     base_url: https://api.deepseek.com/v1
-    api_key: your_deepseek_api_key_here
+    api_keys:
+      - your_deepseek_api_key_here
     models:
       - deepseek-chat
       - deepseek-reasoner
 
   - name: poloapi
     base_url: https://poloapi.top/v1
-    api_key: your_deepseek_api_key_here
+    api_keys:
+      - your_deepseek_api_key_here
     models:
       - gpt-4o

@@ -141,6 +141,24 @@ Each line is expected to be a JSON object describing one task.
 
 `scripts/providers.yaml` should define the LiteLLM providers and model names you want exposed to the scripts.
 
+Each provider must now use an `api_keys` list, even when only one key is configured.
+
+Example:
+
+```yaml
+providers:
+  - name: deepseek
+    base_url: https://api.deepseek.com/v1
+    api_keys:
+      - your_first_key
+      - your_second_key
+    models:
+      - deepseek-chat
+      - deepseek-reasoner
+```
+
+Requests rotate across the configured keys in round-robin order. If a key encounters a rate limit or another retryable API error, the current request automatically falls through to the next key from the same provider.
+
 ### Storage File
 
 `scripts/pddlrun_llmseparate_config.yaml` currently contains:

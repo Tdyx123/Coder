@@ -76,7 +76,8 @@ def log_llm_call(
     response_text: str,
     usage: Optional[Dict[str, int]] = None,
     duration_ms: Optional[float] = None,
-    error: Optional[str] = None
+    error: Optional[str] = None,
+    key_index: Optional[int] = None,
 ) -> None:
     log_entry = {
         'timestamp': datetime.now().isoformat(),
@@ -91,6 +92,8 @@ def log_llm_call(
         log_entry['usage'] = usage
     if error is not None:
         log_entry['error'] = error
+    if key_index is not None:
+        log_entry['key_index'] = key_index
 
     logger = LLMCallLogger()
     logger.log(log_entry)
