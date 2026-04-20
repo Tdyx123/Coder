@@ -1,4 +1,5 @@
 import threading
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -9,6 +10,7 @@ from litellm.exceptions import APIError, RateLimitError, Timeout
 
 MessageInput = Union[str, List[Dict[str, Any]]]
 ProviderConfig = Dict[str, Any]
+API_KEY_RETRY_DELAYS = [5, 10, 15]
 
 
 class ProviderConfigError(ValueError):
@@ -206,8 +208,9 @@ def complete_with_provider(
     api_keys = provider["api_keys"]
     start_index = _api_key_rotation_pool.reserve_start_index(provider)
     last_retryable_error: Optional[Exception] = None
+    max_attempts = min(len(api_keys), len(API_KEY_RETRY_DELAYS) + 1)
 
-    for offset in range(len(api_keys)):
+    for offset in range(max_attempts):
         key_index = (start_index + offset) % len(api_keys)
         kwargs["api_key"] = api_keys[key_index]
         try:
@@ -224,6 +227,8 @@ def complete_with_provider(
             sanitized_error = _sanitize_litellm_error(exc)
             if is_rate_limit_error(sanitized_error) or is_retryable_error(sanitized_error):
                 last_retryable_error = sanitized_error
+                if offset < max_attempts - 1:
+                    time.sleep(API_KEY_RETRY_DELAYS[offset])
                 continue
             raise sanitized_error
 

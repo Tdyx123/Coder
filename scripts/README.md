@@ -157,7 +157,7 @@ providers:
       - deepseek-reasoner
 ```
 
-Requests rotate across the configured keys in round-robin order. If a key encounters a rate limit or another retryable API error, the current request automatically falls through to the next key from the same provider.
+Requests rotate across the configured keys in round-robin order. If a key encounters a rate limit or another retryable API error, the current request switches to the next key from the same provider and retries up to 3 times, waiting 5, 10, and 15 seconds between retries.
 
 ### Storage File
 

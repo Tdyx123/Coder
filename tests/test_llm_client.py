@@ -89,6 +89,7 @@ class LLMClientTests(unittest.TestCase):
 
     def test_retryable_error_falls_through_to_next_key_in_same_request(self):
         seen_keys = []
+        sleep_calls = []
 
         def fake_completion(**kwargs):
             seen_keys.append(kwargs["api_key"])
@@ -96,24 +97,33 @@ class LLMClientTests(unittest.TestCase):
                 raise Exception("rate limit exceeded")
             return {}
 
-        with patch.object(llm_client, "completion", side_effect=fake_completion):
+        with patch.object(llm_client, "completion", side_effect=fake_completion), patch.object(
+            llm_client.time, "sleep", side_effect=sleep_calls.append
+        ):
             response = self._complete_once()
 
         self.assertEqual(seen_keys, ["key-a", "key-b"])
+        self.assertEqual(sleep_calls, [5])
         self.assertEqual(llm_client.extract_response_metadata(response)["key_index"], 1)
 
     def test_all_retryable_keys_failing_raises_last_error(self):
         seen_keys = []
+        sleep_calls = []
 
         def fake_completion(**kwargs):
             seen_keys.append(kwargs["api_key"])
             raise Exception("service unavailable")
 
-        with patch.object(llm_client, "completion", side_effect=fake_completion):
+        with patch.object(llm_client, "completion", side_effect=fake_completion), patch.object(
+            llm_client.time, "sleep", side_effect=sleep_calls.append
+        ):
             with self.assertRaisesRegex(Exception, "service unavailable"):
-                self._complete_once(provider={**self.provider, "api_keys": ["key-a", "key-b"]})
+                self._complete_once(
+                    provider={**self.provider, "api_keys": ["key-a", "key-b", "key-c", "key-d"]}
+                )
 
-        self.assertEqual(seen_keys, ["key-a", "key-b"])
+        self.assertEqual(seen_keys, ["key-a", "key-b", "key-c", "key-d"])
+        self.assertEqual(sleep_calls, [5, 10, 15])
 
     def test_non_retryable_error_does_not_switch_keys(self):
         seen_keys = []
@@ -146,6 +156,27 @@ class LLMClientTests(unittest.TestCase):
             for response in responses
         ]
         self.assertEqual(Counter(key_indices), Counter({0: 2, 1: 2, 2: 2}))
+
+    def test_retryable_key_switching_is_capped_at_three_retries(self):
+        seen_keys = []
+        sleep_calls = []
+        provider = {
+            **self.provider,
+            "api_keys": ["key-a", "key-b", "key-c", "key-d", "key-e"],
+        }
+
+        def fake_completion(**kwargs):
+            seen_keys.append(kwargs["api_key"])
+            raise Exception("gateway timeout")
+
+        with patch.object(llm_client, "completion", side_effect=fake_completion), patch.object(
+            llm_client.time, "sleep", side_effect=sleep_calls.append
+        ):
+            with self.assertRaisesRegex(Exception, "gateway timeout"):
+                self._complete_once(provider=provider)
+
+        self.assertEqual(seen_keys, ["key-a", "key-b", "key-c", "key-d"])
+        self.assertEqual(sleep_calls, [5, 10, 15])
 
 
 if __name__ == "__main__":

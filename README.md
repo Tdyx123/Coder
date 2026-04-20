@@ -77,7 +77,7 @@ providers:
       - deepseek-reasoner
 ```
 
-When multiple keys are configured for one provider, LaMMA-P rotates keys in round-robin order per request. If one key hits rate limits or another retryable upstream error, the same request will immediately try the next configured key.
+When multiple keys are configured for one provider, LaMMA-P rotates keys in round-robin order per request. If one key hits rate limits or another retryable upstream error, the same request will switch to the next configured key and retry up to 3 times, waiting 5, 10, and 15 seconds between retries.
 
 ### 4. Runtime Storage Setup
 
