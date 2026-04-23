@@ -1,0 +1,190 @@
+[
+  {
+    "name": "ArmChair",
+    "mass": 28.299999237060547
+  },
+  {
+    "name": "ArmChair",
+    "mass": 28.299999237060547
+  },
+  {
+    "name": "Book",
+    "mass": 0.5
+  },
+  {
+    "name": "Bowl",
+    "mass": 0.4699999988079071
+  },
+  {
+    "name": "Box",
+    "mass": 0.30000001192092896
+  },
+  {
+    "name": "Chair",
+    "mass": 10.0
+  },
+  {
+    "name": "Chair",
+    "mass": 10.0
+  },
+  {
+    "name": "Chair",
+    "mass": 10.0
+  },
+  {
+    "name": "Chair",
+    "mass": 10.0
+  },
+  {
+    "name": "Chair",
+    "mass": 10.0
+  },
+  {
+    "name": "Chair",
+    "mass": 10.0
+  },
+  {
+    "name": "CoffeeTable",
+    "mass": 11.0
+  },
+  {
+    "name": "CreditCard",
+    "mass": 0.005999999586492777
+  },
+  {
+    "name": "Curtains",
+    "mass": 0.0
+  },
+  {
+    "name": "DeskLamp",
+    "mass": 2.059999942779541
+  },
+  {
+    "name": "DiningTable",
+    "mass": 85.0
+  },
+  {
+    "name": "Drawer",
+    "mass": 0.0
+  },
+  {
+    "name": "Drawer",
+    "mass": 0.0
+  },
+  {
+    "name": "Floor",
+    "mass": 1.0
+  },
+  {
+    "name": "FloorLamp",
+    "mass": 3.9300003051757812
+  },
+  {
+    "name": "GarbageCan",
+    "mass": 0.699999988079071
+  },
+  {
+    "name": "HousePlant",
+    "mass": 3.0
+  },
+  {
+    "name": "KeyChain",
+    "mass": 0.07500000298023224
+  },
+  {
+    "name": "Laptop",
+    "mass": 2.299999952316284
+  },
+  {
+    "name": "LightSwitch",
+    "mass": 0.0
+  },
+  {
+    "name": "Newspaper",
+    "mass": 0.20000000298023224
+  },
+  {
+    "name": "Painting",
+    "mass": 0.0
+  },
+  {
+    "name": "Pen",
+    "mass": 0.005999999586492777
+  },
+  {
+    "name": "Pencil",
+    "mass": 0.005999999586492777
+  },
+  {
+    "name": "Pillow",
+    "mass": 0.699999988079071
+  },
+  {
+    "name": "Plate",
+    "mass": 0.6200000047683716
+  },
+  {
+    "name": "RemoteControl",
+    "mass": 0.15000000596046448
+  },
+  {
+    "name": "Shelf",
+    "mass": 0.0
+  },
+  {
+    "name": "Shelf",
+    "mass": 0.0
+  },
+  {
+    "name": "Shelf",
+    "mass": 0.0
+  },
+  {
+    "name": "SideTable",
+    "mass": 11.0
+  },
+  {
+    "name": "SideTable",
+    "mass": 11.0
+  },
+  {
+    "name": "SideTable",
+    "mass": 11.0
+  },
+  {
+    "name": "Sofa",
+    "mass": 103.99999237060547
+  },
+  {
+    "name": "Statue",
+    "mass": 1.0
+  },
+  {
+    "name": "Television",
+    "mass": 9.829999923706055
+  },
+  {
+    "name": "TissueBox",
+    "mass": 0.3499999940395355
+  },
+  {
+    "name": "TVStand",
+    "mass": 11.0
+  },
+  {
+    "name": "Vase",
+    "mass": 1.0
+  },
+  {
+    "name": "Watch",
+    "mass": 0.07000000029802322
+  },
+  {
+    "name": "Window",
+    "mass": 0.0
+  },
+  {
+    "name": "Window",
+    "mass": 0.0
+  }
+]
