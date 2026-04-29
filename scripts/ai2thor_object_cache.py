@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import ai2thor.controller
 
@@ -8,9 +8,13 @@ import ai2thor.controller
 REPO_ROOT = Path(__file__).resolve().parent.parent
 AI2THOR_OBJECTS_CACHE_DIR = REPO_ROOT / "data" / "ai2thor_objects_cache"
 
-def get_ai2_thor_objects_cache_path(floor_plan: int) -> Path:
+def get_ai2_thor_objects_cache_path(
+    floor_plan: int,
+    cache_dir: Optional[Union[str, Path]] = None,
+) -> Path:
     """Return the cache path for the given floor plan."""
-    return AI2THOR_OBJECTS_CACHE_DIR / f"FloorPlan{floor_plan}.json"
+    cache_root = Path(cache_dir) if cache_dir is not None else AI2THOR_OBJECTS_CACHE_DIR
+    return cache_root / f"FloorPlan{floor_plan}.json"
 
 
 def fetch_ai2_thor_objects(
@@ -33,12 +37,13 @@ def get_ai2_thor_objects_cached(
     floor_plan: int,
     convert_to_dict_objprop: Callable[[List[str], List[float]], List[Dict[str, Any]]],
     force_refresh: bool = False,
+    cache_dir: Optional[Union[str, Path]] = None,
 ) -> List[Dict[str, Any]]:
     """Load objects from cache or fetch them from AI2-THOR and persist the result."""
     if not isinstance(floor_plan, int):
         raise TypeError(f"floor_plan must be int, got {type(floor_plan).__name__}")
 
-    cache_path = get_ai2_thor_objects_cache_path(floor_plan)
+    cache_path = get_ai2_thor_objects_cache_path(floor_plan, cache_dir)
     if not force_refresh and cache_path.exists():
         with open(cache_path, "r", encoding="utf-8") as cache_file:
             return json.load(cache_file)

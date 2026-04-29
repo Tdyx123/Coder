@@ -1,52 +1,64 @@
-(define (domain robot23 )
-  (:requirements :strips :typing :negative-preconditions) 
-  (:types robot object)
+(define (domain robot23)
+  (:requirements :strips :typing :negative-preconditions :conditional-effects :universal-preconditions :disjunctive-preconditions)
+  (:types 
+    robot
+    object
+    knife sink microwave mug coffee_machine toaster bread - object)
   (:predicates
     (at ?robot - robot ?object - object)
     (inaction ?robot - robot) 
+    (holding ?robot - robot ?object - object)
     (at-location  ?object - object ?location - object)
-    (object-open ?robot - robot ?object - object)
-    (object-close ?robot - robot ?object - object)
+    (switch-on ?object - object)
+    (broken ?object - object)
+    (sliced ?object - object)
+    (cleaned ?object - object)
+    (is-openable ?object - object) 
+    (heated ?object - object)
+    (containing-coffee ?mug - mug)
+    (object-open ?object - object)
   )
-  
+
   (:action GoToObject
     :parameters (?robot - robot ?object - object)
     :precondition (not (inaction ?robot))
 
     :effect (and 
-              (at ?robot ?object)
               (forall (?another_object - object)
                 (when (at ?robot ?another_object)
                   (not (at ?robot ?another_object))
                 )
               )
+              (at ?robot ?object)
               (not (inaction ?robot))
             )
   )
-  
+
   (:action OpenObject
     :parameters (?robot - robot ?object - object)
     :precondition (and
                     (not(inaction ?robot))
                     (at ?robot ?object)
+                    (is-openable ?object)
+                    (not(object-open ?object))
     )
       
     :effect (and
                 (not(inaction ?robot))
-                (object-open ?robot ?object)
+                (object-open ?object)
     )
   )
-
 
   (:action CloseObject
     :parameters (?robot - robot ?object - object)
     :precondition (and
                     (not(inaction ?robot))
                     (at ?robot ?object)
+                    (object-open ?object)
     )
     :effect (and
               (not(inaction ?robot))
-              (object-close ?robot ?object)
+              (not(object-open ?object))
   )
   )
 )

@@ -39,6 +39,199 @@ import resources.robots as robots
 CONFIG_FILE_NAME = "pddlrun_llmseparate_config.yaml"
 
 
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parent.parent
+
+
+DEFAULT_RUN_CONFIG: Dict[str, Any] = {
+    "storage": {
+        "base_dir": "logs/intermediate_runs",
+        "task_manager_runs_dir": "logs/task_manager_runs",
+        "default_generated_subtask_dir": "resources/generated_subtask",
+        "default_validated_subtask_dir": "resources/validated_subtask",
+        "default_each_run_dir": "resources/each_run",
+        "parallel_output_root": "parallel_runs",
+    },
+    "data": {
+        "dataset_dir": "data",
+        "prompt_template_dir": "data/pythonic_plans",
+        "ai2thor_objects_cache_dir": "data/ai2thor_objects_cache",
+    },
+    "resources": {
+        "resources_dir": "resources",
+        "robot_domain_dir": "resources",
+        "allaction_domain_file": "allactionrobot.pddl",
+    },
+    "planner": {
+        "executable": "downward/fast-downward.py",
+        "alias": "seq-opt-lmcut",
+        "timeout_seconds": 300,
+    },
+    "llm": {
+        "providers_file": "scripts/providers.yaml",
+        "default_max_tokens": 128,
+        "default_temperature": 0,
+        "default_retry_delay": 20,
+        "max_retries": 3,
+        "request_max_tokens_multiplier": 10,
+        "calls": {
+            "structure_fix": {"max_tokens": 1400, "frequency_penalty": 0.4},
+            "validate_problem": {"max_tokens": 1400, "frequency_penalty": 0.4},
+            "decompose": {"max_tokens": 1300, "frequency_penalty": 0.0},
+            "allocate": {"max_tokens": 1500, "frequency_penalty": 0.69},
+            "summary": {"max_tokens": 1400, "frequency_penalty": 0.4},
+            "problem_generation": {"max_tokens": 1400, "frequency_penalty": 0.4},
+            "llm_validator": {"max_tokens": 1400, "frequency_penalty": 0.4},
+            "combine": {"max_tokens": 1300, "frequency_penalty": 0.0},
+            "final_match": {"max_tokens": 1300, "frequency_penalty": 0.0},
+        },
+    },
+    "artifacts": {
+        "manifest": "run_manifest.json",
+        "llm_calls": "00_llm/llm_calls.jsonl",
+        "task_context": "inputs/task_context.json",
+        "domain_content": "inputs/domain_content.pddl",
+        "generated_subtask_dir": "06_split/generated_subtask",
+        "validated_subtask_dir": "07_validate/validated_subtask",
+        "each_run_dir": "artifacts/each_run",
+        "generated_subtask_manifest": "06_split/generated_subtask_manifest.json",
+        "validation_manifest": "07_validate/validation_manifest.json",
+        "planner_manifest": "08_planner/planner_manifest.json",
+        "decompose_prompt": "01_decompose/01_decompose_prompt.txt",
+        "decompose_output": "01_decompose/02_decompose_output.txt",
+        "allocate_prompt": "02_allocate/01_allocate_prompt.txt",
+        "allocate_output": "02_allocate/02_allocate_output.txt",
+        "problem_summary_raw": "04_problem_files/01_problem_summary_raw.txt",
+        "sequence_operations": "04_problem_files/02_sequence_operations.txt",
+        "subtasks_index": "04_problem_files/03_subtasks.json",
+        "generated_problem_files": "04_problem_files/04_generated_problem_files.json",
+        "combine_prompt": "09_combine/01_combine_prompt.txt",
+        "combine_output": "09_combine/02_combined_plan.txt",
+        "final_match_prompt": "10_final_match/01_match_prompt.txt",
+        "final_match_output": "10_final_match/02_final_plan.txt",
+    },
+}
+
+
+def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    merged = copy.deepcopy(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+class RunConfig:
+    """Resolved runtime configuration for pddlrun_llmseparate workflows."""
+
+    def __init__(
+        self,
+        base_path: Union[str, Path],
+        values: Optional[Dict[str, Any]] = None,
+        config_path: Optional[Union[str, Path]] = None,
+    ):
+        self.base_path = Path(base_path).resolve()
+        self.config_path = Path(config_path).resolve() if config_path else Path(__file__).resolve().parent / CONFIG_FILE_NAME
+        self.values = _deep_merge(DEFAULT_RUN_CONFIG, values or {})
+        self._apply_legacy_aliases()
+
+    def _apply_legacy_aliases(self) -> None:
+        storage = self.values.setdefault("storage", {})
+        if storage.get("intermediate_base_dir"):
+            storage["base_dir"] = storage["intermediate_base_dir"]
+        if storage.get("base_dir"):
+            storage["intermediate_base_dir"] = storage["base_dir"]
+
+    def get(self, section: str, key: str, default: Any = None) -> Any:
+        section_value = self.values.get(section, {})
+        if not isinstance(section_value, dict):
+            return default
+        return section_value.get(key, default)
+
+    def path(self, section: str, key: str) -> Path:
+        return self.resolve_path(self.get(section, key))
+
+    def resolve_path(self, value: Union[str, Path]) -> Path:
+        path = Path(value)
+        if path.is_absolute():
+            return path
+        return self.base_path / path
+
+    @property
+    def storage_base_dir(self) -> Path:
+        return self.path("storage", "base_dir")
+
+    @property
+    def task_manager_runs_dir(self) -> Path:
+        return self.path("storage", "task_manager_runs_dir")
+
+    @property
+    def resources_dir(self) -> Path:
+        return self.path("resources", "resources_dir")
+
+    @property
+    def robot_domain_dir(self) -> Path:
+        return self.path("resources", "robot_domain_dir")
+
+    @property
+    def prompt_template_dir(self) -> Path:
+        return self.path("data", "prompt_template_dir")
+
+    @property
+    def providers_file(self) -> Path:
+        return self.path("llm", "providers_file")
+
+    @property
+    def ai2thor_objects_cache_dir(self) -> Path:
+        return self.path("data", "ai2thor_objects_cache_dir")
+
+    @property
+    def planner_executable(self) -> Path:
+        return self.path("planner", "executable")
+
+    def allaction_domain_path(self) -> Path:
+        configured = self.get("resources", "allaction_domain_file")
+        path = Path(configured)
+        return path if path.is_absolute() else self.resources_dir / path
+
+    def dataset_file(self, test_set: str, floor_plan: Union[int, str]) -> Path:
+        normalized = normalize_floor_plan(str(floor_plan))
+        return self.path("data", "dataset_dir") / test_set / f"FloorPlan{normalized}.jsonl"
+
+    def prompt_file(self, name: str) -> Path:
+        return self.prompt_template_dir / name
+
+    def robot_domain_path(self, filename: str) -> Path:
+        return self.robot_domain_dir / filename
+
+    def artifact(self, key: str, default: str) -> str:
+        return str(self.get("artifacts", key, default))
+
+    def llm_call(self, name: str) -> Dict[str, Any]:
+        calls = self.get("llm", "calls", {})
+        if not isinstance(calls, dict):
+            return {}
+        value = calls.get(name, {})
+        return value if isinstance(value, dict) else {}
+
+
+def load_run_config(base_path: Union[str, Path], config_path: Optional[Union[str, Path]] = None) -> RunConfig:
+    """Load and resolve the shared runtime config for single and parallel runs."""
+    config_file = Path(config_path).resolve() if config_path else Path(__file__).resolve().parent / CONFIG_FILE_NAME
+    loaded: Dict[str, Any] = {}
+
+    if config_file.exists():
+        with open(config_file, "r", encoding="utf-8") as file:
+            parsed = yaml.safe_load(file) or {}
+        if not isinstance(parsed, dict):
+            raise PDDLError(f"Invalid config format in {config_file}")
+        loaded = parsed
+
+    return RunConfig(base_path=base_path, values=loaded, config_path=config_file)
+
+
 def normalize_floor_plan(value: str) -> str:
     """Normalize FloorPlan-style identifiers to their suffix form."""
     text = str(value).strip()
@@ -48,46 +241,19 @@ def normalize_floor_plan(value: str) -> str:
 
 def get_available_models():
     """Get list of available models from providers.yaml"""
-    providers_file = Path(__file__).parent / 'providers.yaml'
-    return get_litellm_models(providers_file)
+    return get_litellm_models(load_run_config(_repo_root()).providers_file)
 
 
 def load_run_storage_config(base_path: str) -> Dict[str, Any]:
     """Load runtime storage configuration for intermediate artifacts."""
-    config_path = Path(__file__).parent / CONFIG_FILE_NAME
-    default_base_dir = os.path.join(base_path, "logs", "intermediate_runs")
-    config = {
-        "storage": {
-            "base_dir": default_base_dir
-        }
-    }
-
-    if not config_path.exists():
-        return config
-
-    with open(config_path, "r", encoding="utf-8") as file:
-        loaded = yaml.safe_load(file) or {}
-
-    if not isinstance(loaded, dict):
-        raise PDDLError(f"Invalid config format in {config_path}")
-
-    storage = loaded.get("storage", {})
-    if not isinstance(storage, dict):
-        raise PDDLError(f"Invalid 'storage' section in {config_path}")
-
-    configured_base_dir = storage.get("base_dir")
-    if configured_base_dir:
-        if not os.path.isabs(configured_base_dir):
-            configured_base_dir = os.path.join(base_path, configured_base_dir)
-        config["storage"]["base_dir"] = configured_base_dir
-
-    return config
+    config = load_run_config(base_path)
+    return {"storage": {"base_dir": str(config.storage_base_dir)}}
 
 # Constants
-DEFAULT_MAX_TOKENS = 128
-DEFAULT_TEMPERATURE = 0
-DEFAULT_RETRY_DELAY = 20
-MAX_RETRIES = 3
+DEFAULT_MAX_TOKENS = DEFAULT_RUN_CONFIG["llm"]["default_max_tokens"]
+DEFAULT_TEMPERATURE = DEFAULT_RUN_CONFIG["llm"]["default_temperature"]
+DEFAULT_RETRY_DELAY = DEFAULT_RUN_CONFIG["llm"]["default_retry_delay"]
+MAX_RETRIES = DEFAULT_RUN_CONFIG["llm"]["max_retries"]
 
 # Action mapping from actions module
 
@@ -142,7 +308,7 @@ class PDDLUtils:
         return match.group(1)
     
     @staticmethod
-    def get_ai2_thor_objects(floor_plan: int) -> List[Dict[str, Any]]:
+    def get_ai2_thor_objects(floor_plan: int, config: Optional[RunConfig] = None) -> List[Dict[str, Any]]:
         """Get objects from AI2Thor environment.
         
         Args:
@@ -151,7 +317,12 @@ class PDDLUtils:
         Returns:
             List[Dict[str, Any]]: List of objects with their properties
         """
-        return get_ai2_thor_objects_cached(floor_plan, PDDLUtils.convert_to_dict_objprop)
+        run_config = config or load_run_config(_repo_root())
+        return get_ai2_thor_objects_cached(
+            floor_plan,
+            PDDLUtils.convert_to_dict_objprop,
+            cache_dir=run_config.ai2thor_objects_cache_dir,
+        )
 
 class FileProcessor:
     """Handles file operations and text processing for PDDL files.
@@ -164,6 +335,7 @@ class FileProcessor:
     def __init__(
         self,
         base_path: str,
+        config: Optional[RunConfig] = None,
         subtask_path: Optional[str] = None,
         validated_subtask_path: Optional[str] = None,
         each_run_path: Optional[str] = None,
@@ -174,13 +346,14 @@ class FileProcessor:
             base_path (str): Base path for file operations
         """
         self.base_path = base_path
+        self.config = config or load_run_config(base_path)
         self.subtask_path = ""
         self.validated_subtask_path = ""
         self.each_run_path = ""
         self.configure_workspace(
-            subtask_path=subtask_path or os.path.join(base_path, "resources", "generated_subtask"),
-            validated_subtask_path=validated_subtask_path or os.path.join(base_path, "resources", "validated_subtask"),
-            each_run_path=each_run_path or os.path.join(base_path, "resources", "each_run"),
+            subtask_path=subtask_path or str(self.config.path("storage", "default_generated_subtask_dir")),
+            validated_subtask_path=validated_subtask_path or str(self.config.path("storage", "default_validated_subtask_dir")),
+            each_run_path=each_run_path or str(self.config.path("storage", "default_each_run_dir")),
         )
 
     def configure_workspace(
@@ -424,7 +597,13 @@ class FileProcessor:
                     {"role": "system", "content": "You are a Robot PDDL problem Expert. Your task is to reformat subtask descriptions to match a specific structure. Do not add any explanations or additional text."},
                     {"role": "user", "content": fix_prompt}
                 ]
-                _, fixed_subtask = llm.query_model(messages, model, max_tokens=1400, frequency_penalty=0.4)
+                call_config = self.config.llm_call("structure_fix")
+                _, fixed_subtask = llm.query_model(
+                    messages,
+                    model,
+                    max_tokens=call_config.get("max_tokens", 1400),
+                    frequency_penalty=call_config.get("frequency_penalty", 0.4),
+                )
                     
 
                 #print("=== Testing match on fixed subtask ===")
@@ -471,7 +650,7 @@ class FileProcessor:
             Optional[str]: Path to domain file if found, None otherwise
         """
         try:
-            domain_path = os.path.join(self.base_path, "resources", f"{domain_name}.pddl")
+            domain_path = str(self.config.robot_domain_path(f"{domain_name}.pddl"))
             return domain_path if os.path.isfile(domain_path) else None
         except Exception as e:
             print(f"Error finding domain file for {domain_name}: {str(e)}")
@@ -581,15 +760,15 @@ class LLMHandler:
 
     """
     
-    def __init__(self):
+    def __init__(self, config: Optional[RunConfig] = None):
         """Initialize the LLM handler."""
+        self.config = config or load_run_config(_repo_root())
         self.providers = None
     
     def _load_providers(self):
         """Load providers from yaml file."""
         if self.providers is None:
-            providers_file = Path(__file__).parent / 'providers.yaml'
-            self.providers = load_providers(providers_file)
+            self.providers = load_providers(self.config.providers_file)
         return self.providers
     
     def _get_provider_for_model(self, model):
@@ -601,8 +780,8 @@ class LLMHandler:
         self, 
         prompt: Union[str, List[Dict]], 
         model: str, 
-        max_tokens: int = DEFAULT_MAX_TOKENS,
-        temperature: float = DEFAULT_TEMPERATURE,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
         stop: Optional[List[str]] = None,
         logprobs: Optional[int] = 1,
         frequency_penalty: float = 0
@@ -622,17 +801,24 @@ class LLMHandler:
             Tuple of (full response object, generated text)
             
         """
-        retry_delay = DEFAULT_RETRY_DELAY
+        if max_tokens is None:
+            max_tokens = int(self.config.get("llm", "default_max_tokens", DEFAULT_MAX_TOKENS))
+        if temperature is None:
+            temperature = float(self.config.get("llm", "default_temperature", DEFAULT_TEMPERATURE))
+
+        retry_delay = float(self.config.get("llm", "default_retry_delay", DEFAULT_RETRY_DELAY))
+        max_retries = int(self.config.get("llm", "max_retries", MAX_RETRIES))
+        request_multiplier = int(self.config.get("llm", "request_max_tokens_multiplier", 10))
         provider_config, provider = self._get_provider_for_model(model)
         
-        for attempt in range(MAX_RETRIES):
+        for attempt in range(max_retries):
             try:
                 start_time = time.time()
                 response = complete_with_provider(
                     model=model,
                     prompt=prompt,
                     provider=provider_config,
-                    max_tokens=max_tokens,
+                    max_tokens=max_tokens * request_multiplier,
                     temperature=temperature,
                     stop=stop,
                     frequency_penalty=frequency_penalty,
@@ -661,14 +847,14 @@ class LLMHandler:
                     
             except Exception as e:
                 if is_rate_limit_error(e):
-                    if attempt < MAX_RETRIES - 1:
+                    if attempt < max_retries - 1:
                         time.sleep(retry_delay)
                         retry_delay *= 2
                         continue
                     raise LLMError("Rate limit exceeded")
 
                 if is_retryable_error(e):
-                    if attempt < MAX_RETRIES - 1:
+                    if attempt < max_retries - 1:
                         time.sleep(retry_delay)
                         continue
                     raise LLMError(f"API Error after all retries: {str(e)}")
@@ -678,7 +864,7 @@ class LLMHandler:
 class PDDLValidator:
     """Handles PDDL validation operations"""
     
-    def __init__(self, llm_handler: LLMHandler, file_processor: FileProcessor):
+    def __init__(self, llm_handler: LLMHandler, file_processor: FileProcessor, config: Optional[RunConfig] = None):
         """Initialize the PDDL validator.
         
         Args:
@@ -687,6 +873,7 @@ class PDDLValidator:
         """
         self.llm = llm_handler
         self.file_processor = file_processor
+        self.config = config or load_run_config(_repo_root())
     
     def validate_problem(self, domain_file: str, problem_file: str, model: str) -> None:
         """Validate a PDDL problem file against its domain.
@@ -709,7 +896,13 @@ class PDDLValidator:
                 {"role": "system", "content": "You are a Robot PDDL problem Expert"},
                 {"role": "user", "content": prompt}
             ]
-            _, validated_text = self.llm.query_model(messages, self.model, max_tokens=1400, frequency_penalty=0.4)
+            call_config = self.config.llm_call("validate_problem")
+            _, validated_text = self.llm.query_model(
+                messages,
+                model,
+                max_tokens=call_config.get("max_tokens", 1400),
+                frequency_penalty=call_config.get("frequency_penalty", 0.4),
+            )
             
             # Save the validated content back to the problem file
             self.file_processor.write_file(problem_file, validated_text)
@@ -719,13 +912,16 @@ class PDDLValidator:
 
 class PDDLPlanner:
     
-    def __init__(self, base_path: str, file_processor: FileProcessor):
+    def __init__(self, base_path: str, file_processor: FileProcessor, config: Optional[RunConfig] = None):
         """Initialize the PDDL planner.
 
         """
         self.base_path = base_path
         self.file_processor = file_processor
-        self.planner_path = os.path.join(base_path, "downward", "fast-downward.py")
+        self.config = config or load_run_config(base_path)
+        self.planner_path = str(self.config.planner_executable)
+        self.planner_alias = str(self.config.get("planner", "alias", "seq-opt-lmcut"))
+        self.timeout_seconds = int(self.config.get("planner", "timeout_seconds", 300))
     
     def run_plan(self, domain_file: str, problem_file: str) -> None:
         """
@@ -739,7 +935,7 @@ class PDDLPlanner:
             command = [
                 self.planner_path,
                 "--alias",
-                "seq-opt-lmcut",
+                self.planner_alias,
                 domain_file,
                 problem_file
             ]
@@ -749,7 +945,7 @@ class PDDLPlanner:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                timeout=300  # 5 minute timeout
+                timeout=self.timeout_seconds
             )
             
             # Save the plan output
@@ -789,7 +985,14 @@ class TaskManager:
  result logging.
     """
     
-    def __init__(self, base_path: str, model: str, prompt_decompse_set: str = "pddl_train_task_decomposesep", prompt_allocation_set: str = "pddl_train_task_allocationsep"):
+    def __init__(
+        self,
+        base_path: str,
+        model: str,
+        prompt_decompse_set: str = "pddl_train_task_decomposesep",
+        prompt_allocation_set: str = "pddl_train_task_allocationsep",
+        config: Optional[RunConfig] = None,
+    ):
         """Initialize the task manager.
         
         Args:
@@ -802,19 +1005,20 @@ class TaskManager:
         self.model = model
         self.prompt_decompse_set = prompt_decompse_set
         self.prompt_allocation_set = prompt_allocation_set
-        self.runtime_config = load_run_storage_config(base_path)
+        self.config = config or load_run_config(base_path)
+        self.runtime_config = {"storage": {"base_dir": str(self.config.storage_base_dir)}}
         self.instance_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_{uuid.uuid4().hex[:8]}"
         
         # Initialize components
-        self.llm = LLMHandler()
-        self.file_processor = FileProcessor(base_path)
-        self.validator = PDDLValidator(self.llm, self.file_processor)
-        self.planner = PDDLPlanner(base_path, self.file_processor)
+        self.llm = LLMHandler(self.config)
+        self.file_processor = FileProcessor(base_path, config=self.config)
+        self.validator = PDDLValidator(self.llm, self.file_processor, self.config)
+        self.planner = PDDLPlanner(base_path, self.file_processor, self.config)
         
         # Initialize paths
-        self.resources_path = os.path.join(base_path, "resources")
-        self.logs_path = os.path.join(base_path, "logs", "task_manager_runs", self.instance_id)
-        self.intermediate_base_path = self.runtime_config["storage"]["base_dir"]
+        self.resources_path = str(self.config.resources_dir)
+        self.logs_path = str(self.config.task_manager_runs_dir / self.instance_id)
+        self.intermediate_base_path = str(self.config.storage_base_dir)
         os.makedirs(self.logs_path, exist_ok=True)
         os.makedirs(self.intermediate_base_path, exist_ok=True)
         
@@ -839,6 +1043,7 @@ class TaskManager:
         self.current_generated_subtask_dir: Optional[str] = None
         self.current_validated_subtask_dir: Optional[str] = None
         self.current_each_run_dir: Optional[str] = None
+        self.current_robot_domain_names: Dict[str, str] = {}
 
     def _sanitize_filename(self, value: str) -> str:
         """Convert a value into a filesystem-safe filename fragment."""
@@ -877,10 +1082,33 @@ class TaskManager:
             self.current_task_manifest["artifacts"][section] = {}
         self.current_task_manifest["artifacts"][section][key] = relative_path
 
+    def _build_robot_domain_name_map(self, robots_for_task: List[dict]) -> Dict[str, str]:
+        """Map task-local robot names to their source domain robot names."""
+        robot_domain_names: Dict[str, str] = {}
+        for robot in robots_for_task:
+            local_name = str(robot.get("name", "")).replace(" ", "")
+            if not local_name:
+                continue
+            source_name = robot.get("source_robot_name")
+            if not source_name and robot.get("source_robot_id") is not None:
+                source_name = f"robot{robot['source_robot_id']}"
+            robot_domain_names[local_name] = str(source_name or local_name).replace(" ", "")
+        return robot_domain_names
+
+    def _replace_domain_robot_name(self, domain_content: str, real_robot_name: str, normalized_robot_name: str) -> str:
+        """Replace a real robot domain token with the task-local robot token."""
+        real_robot_name = real_robot_name.replace(" ", "")
+        normalized_robot_name = normalized_robot_name.replace(" ", "")
+        if not real_robot_name or real_robot_name == normalized_robot_name:
+            return domain_content
+
+        token_pattern = rf"(?<![A-Za-z0-9_]){re.escape(real_robot_name)}(?![A-Za-z0-9_])"
+        return re.sub(token_pattern, normalized_robot_name, domain_content)
+
     def _persist_manifest(self) -> None:
         """Persist the current task manifest to disk."""
         if self.current_task_run_dir and self.current_task_manifest:
-            self._write_json_artifact("run_manifest.json", self.current_task_manifest)
+            self._write_json_artifact(self.config.artifact("manifest", "run_manifest.json"), self.current_task_manifest)
 
     def _prepare_task_run_dir(self, task_idx: int, task: str, robots: List[dict], objects_ai: str, domain_content: str) -> None:
         """Create and initialize the storage directory for the current task."""
@@ -888,9 +1116,12 @@ class TaskManager:
         folder_name = f"{task_idx + 1:03d}_{self._sanitize_filename(task)[:80]}_{self.instance_id}_{timestamp}"
         self.current_task_run_dir = os.path.join(self.intermediate_base_path, folder_name)
         os.makedirs(self.current_task_run_dir, exist_ok=True)
-        self.current_generated_subtask_dir = os.path.join(self.current_task_run_dir, "06_split", "generated_subtask")
-        self.current_validated_subtask_dir = os.path.join(self.current_task_run_dir, "07_validate", "validated_subtask")
-        self.current_each_run_dir = os.path.join(self.current_task_run_dir, "artifacts", "each_run")
+        generated_artifact_dir = self.config.artifact("generated_subtask_dir", "06_split/generated_subtask")
+        validated_artifact_dir = self.config.artifact("validated_subtask_dir", "07_validate/validated_subtask")
+        each_run_artifact_dir = self.config.artifact("each_run_dir", "artifacts/each_run")
+        self.current_generated_subtask_dir = os.path.join(self.current_task_run_dir, generated_artifact_dir)
+        self.current_validated_subtask_dir = os.path.join(self.current_task_run_dir, validated_artifact_dir)
+        self.current_each_run_dir = os.path.join(self.current_task_run_dir, each_run_artifact_dir)
         self.file_processor.configure_workspace(
             subtask_path=self.current_generated_subtask_dir,
             validated_subtask_path=self.current_validated_subtask_dir,
@@ -904,7 +1135,7 @@ class TaskManager:
             "storage_base_dir": self.intermediate_base_path,
             "artifacts": {},
             "llm": {
-                "task_log": "00_llm/llm_calls.jsonl"
+                "task_log": self.config.artifact("llm_calls", "00_llm/llm_calls.jsonl")
             }
         }
         get_llm_logger().set_context(
@@ -912,6 +1143,7 @@ class TaskManager:
             task_index=task_idx,
             task=task,
             task_run_dir=self.current_task_run_dir,
+            task_log_file=os.path.join(self.current_task_run_dir, self.config.artifact("llm_calls", "00_llm/llm_calls.jsonl")),
         )
 
         inputs = {
@@ -922,11 +1154,14 @@ class TaskManager:
             "prompt_decompose_set": self.prompt_decompse_set,
             "prompt_allocation_set": self.prompt_allocation_set
         }
-        self._write_json_artifact("inputs/task_context.json", inputs)
-        self._record_artifact("inputs", "task_context", "inputs/task_context.json")
-        self._write_text_artifact("inputs/domain_content.pddl", domain_content)
-        self._record_artifact("inputs", "domain_content", "inputs/domain_content.pddl")
-        self._record_artifact("llm", "calls", "00_llm/llm_calls.jsonl")
+        task_context_path = self.config.artifact("task_context", "inputs/task_context.json")
+        domain_content_path = self.config.artifact("domain_content", "inputs/domain_content.pddl")
+        llm_calls_path = self.config.artifact("llm_calls", "00_llm/llm_calls.jsonl")
+        self._write_json_artifact(task_context_path, inputs)
+        self._record_artifact("inputs", "task_context", task_context_path)
+        self._write_text_artifact(domain_content_path, domain_content)
+        self._record_artifact("inputs", "domain_content", domain_content_path)
+        self._record_artifact("llm", "calls", llm_calls_path)
         self._persist_manifest()
 
     def clean_generated_subtask_directory(self, isValidated: bool = False) -> None:
@@ -985,6 +1220,8 @@ class TaskManager:
                 for i, r_id in enumerate(robots_list):
                     rob = copy.deepcopy(robots.robots[r_id-1])
                     rob['name'] = f'robot{i+1}'  # Use f-string for consistency
+                    rob["source_robot_id"] = r_id
+                    rob["source_robot_name"] = f"robot{r_id}"
                     task_robots.append(rob)
                 available_robots.append(task_robots)
             
@@ -1146,7 +1383,7 @@ class TaskManager:
             self.task_results = []
             
             # Get domain content
-            allaction_domain_path = os.path.join(self.resources_path, "allactionrobot.pddl")
+            allaction_domain_path = str(self.config.allaction_domain_path())
             domain_content = self.file_processor.read_file(allaction_domain_path)
             
             # Process each task
@@ -1154,6 +1391,7 @@ class TaskManager:
                 print(f"\n{'='*50}")
                 print(f"Processing Task: {task}: {task_idx + 1}/{len(test_tasks)}")
                 print(f"{'='*50}")
+                self.current_robot_domain_names = self._build_robot_domain_name_map(robots)
                 self._prepare_task_run_dir(task_idx, task, robots, objects_ai, domain_content)
                 
                 # Clean generated subtask directory before starting new task
@@ -1198,10 +1436,14 @@ class TaskManager:
                 split_manifest = self.file_processor.split_pddl_tasks(
                     code_plan,
                     False,
-                    output_directory=os.path.join(self.current_task_run_dir, "06_split/generated_subtask")
+                    output_directory=os.path.join(
+                        self.current_task_run_dir,
+                        self.config.artifact("generated_subtask_dir", "06_split/generated_subtask"),
+                    )
                 )
-                self._write_json_artifact("06_split/generated_subtask_manifest.json", split_manifest)
-                self._record_artifact("split", "generated_subtask_manifest", "06_split/generated_subtask_manifest.json")
+                generated_subtask_manifest_path = self.config.artifact("generated_subtask_manifest", "06_split/generated_subtask_manifest.json")
+                self._write_json_artifact(generated_subtask_manifest_path, split_manifest)
+                self._record_artifact("split", "generated_subtask_manifest", generated_subtask_manifest_path)
                 self._persist_manifest()
                 print("✓ Split into subtasks complete")
                 #input("Press Enter to continue")
@@ -1270,8 +1512,8 @@ class TaskManager:
         """Generate decomposed plan for a task."""
         try:
             # Read decomposition prompt file
-            decompose_prompt_path = os.path.join(self.base_path, "data", "pythonic_plans", f"{self.prompt_decompse_set}.py")
-            decompose_prompt = self.file_processor.read_file(decompose_prompt_path)
+            decompose_prompt_path = self.config.prompt_file(f"{self.prompt_decompse_set}.py")
+            decompose_prompt = self.file_processor.read_file(str(decompose_prompt_path))
             
             # Construct the prompt incrementally like the original
             prompt = f"from pddl domain file with all possible actions: \n{domain_content}\n\n"
@@ -1280,15 +1522,24 @@ class TaskManager:
             prompt += "robot initiate 'as not inaction robot '(which defaults location too)\n\n"
             prompt += decompose_prompt
             prompt += "# GENERAL TASK DECOMPOSITION \n"
-            prompt += "Decompose and parallel subtasks where ever possible.\n\n"
+            prompt += "Decompose and parallel subtasks where ever possible.\n"
+            prompt += "Strictly follow the format in the examples above..\n"
             prompt += f"# Task Description: {task}"
-            self._write_text_artifact("01_decompose/01_decompose_prompt.txt", prompt)
-            self._record_artifact("decompose", "prompt", "01_decompose/01_decompose_prompt.txt")
+            decompose_prompt_artifact = self.config.artifact("decompose_prompt", "01_decompose/01_decompose_prompt.txt")
+            decompose_output_artifact = self.config.artifact("decompose_output", "01_decompose/02_decompose_output.txt")
+            self._write_text_artifact(decompose_prompt_artifact, prompt)
+            self._record_artifact("decompose", "prompt", decompose_prompt_artifact)
             
             messages = [{"role": "user", "content": prompt}]
-            _, text = self.llm.query_model(messages, self.model, max_tokens=1300, frequency_penalty=0.0)
-            self._write_text_artifact("01_decompose/02_decompose_output.txt", text)
-            self._record_artifact("decompose", "output", "01_decompose/02_decompose_output.txt")
+            call_config = self.config.llm_call("decompose")
+            _, text = self.llm.query_model(
+                messages,
+                self.model,
+                max_tokens=call_config.get("max_tokens", 1300),
+                frequency_penalty=call_config.get("frequency_penalty", 0.0),
+            )
+            self._write_text_artifact(decompose_output_artifact, text)
+            self._record_artifact("decompose", "output", decompose_output_artifact)
             self._persist_manifest()
             
             return text
@@ -1302,8 +1553,8 @@ class TaskManager:
         """
         try:
             # Read allocation prompt file
-            prompt_file = os.path.join(self.base_path, "data", "pythonic_plans", f"{self.prompt_allocation_set}_solution.py")
-            with open(prompt_file, "r") as allocated_prompt_file:
+            prompt_file = self.config.prompt_file(f"{self.prompt_allocation_set}_solution.py")
+            with open(prompt_file, "r", encoding="utf-8") as allocated_prompt_file:
                 allocated_prompt = allocated_prompt_file.read()
             
             # Build prompt incrementally like the original
@@ -1316,13 +1567,21 @@ class TaskManager:
             prompt += f"\n{objects_ai}"
             prompt += f"\n\n# IMPORTANT: The AI should ensure that the robots assigned to the tasks have all the necessary skills to perform the tasks. IMPORTANT: Determine whether the subtasks must be performed sequentially or in parallel, or a combination of both and allocate robots based on availability. "
             prompt += f"\n# SOLUTION\n"
-            self._write_text_artifact("02_allocate/01_allocate_prompt.txt", prompt)
-            self._record_artifact("allocate", "prompt", "02_allocate/01_allocate_prompt.txt")
+            allocate_prompt_artifact = self.config.artifact("allocate_prompt", "02_allocate/01_allocate_prompt.txt")
+            allocate_output_artifact = self.config.artifact("allocate_output", "02_allocate/02_allocate_output.txt")
+            self._write_text_artifact(allocate_prompt_artifact, prompt)
+            self._record_artifact("allocate", "prompt", allocate_prompt_artifact)
             
             messages = [{"role": "user", "content": prompt}]
-            _, text = self.llm.query_model(messages, self.model, max_tokens=1500, frequency_penalty=0.69)
-            self._write_text_artifact("02_allocate/02_allocate_output.txt", text)
-            self._record_artifact("allocate", "output", "02_allocate/02_allocate_output.txt")
+            call_config = self.config.llm_call("allocate")
+            _, text = self.llm.query_model(
+                messages,
+                self.model,
+                max_tokens=call_config.get("max_tokens", 1500),
+                frequency_penalty=call_config.get("frequency_penalty", 0.69),
+            )
+            self._write_text_artifact(allocate_output_artifact, text)
+            self._record_artifact("allocate", "output", allocate_output_artifact)
             self._persist_manifest()
             
             return text
@@ -1350,8 +1609,8 @@ class TaskManager:
                 available_robots = [available_robots]
             
             # Read summary prompt file
-            prompt_file = os.path.join(self.base_path, "data", "pythonic_plans", f"{self.prompt_allocation_set}_summary.py")
-            with open(prompt_file, "r") as code_prompt_file:
+            prompt_file = self.config.prompt_file(f"{self.prompt_allocation_set}_summary.py")
+            with open(prompt_file, "r", encoding="utf-8") as code_prompt_file:
                 code_prompt = code_prompt_file.read()
             
             # Build base prompt once
@@ -1376,7 +1635,13 @@ class TaskManager:
                     {"role": "system", "content": "You are a Robot PDDL problem Expert"},
                     {"role": "user", "content": prompt}
                 ]
-                _, text = self.llm.query_model(messages, self.model, max_tokens=1400, frequency_penalty=0.4)
+                call_config = self.config.llm_call("summary")
+                _, text = self.llm.query_model(
+                    messages,
+                    self.model,
+                    max_tokens=call_config.get("max_tokens", 1400),
+                    frequency_penalty=call_config.get("frequency_penalty", 0.4),
+                )
                 
                 code_plan.append(text)
                 self._write_text_artifact(output_path, text)
@@ -1397,8 +1662,12 @@ class TaskManager:
             problem_summary = problem_summary[0]
         
         problem_pddl = []
-        self._write_text_artifact("04_problem_files/01_problem_summary_raw.txt", problem_summary)
-        self._record_artifact("problem_files", "problem_summary", "04_problem_files/01_problem_summary_raw.txt")
+        problem_summary_artifact = self.config.artifact("problem_summary_raw", "04_problem_files/01_problem_summary_raw.txt")
+        sequence_operations_artifact = self.config.artifact("sequence_operations", "04_problem_files/02_sequence_operations.txt")
+        subtasks_index_artifact = self.config.artifact("subtasks_index", "04_problem_files/03_subtasks.json")
+        generated_problem_files_artifact = self.config.artifact("generated_problem_files", "04_problem_files/04_generated_problem_files.json")
+        self._write_text_artifact(problem_summary_artifact, problem_summary)
+        self._record_artifact("problem_files", "problem_summary", problem_summary_artifact)
         
         # Split into subtasks and sequence operations
         subtasks, sequence_operations = self.file_processor.split_and_store_tasks(
@@ -1415,8 +1684,8 @@ class TaskManager:
 
         # Store sequence operations for later use
         self.sequence_operations = sequence_operations
-        self._write_text_artifact("04_problem_files/02_sequence_operations.txt", sequence_operations)
-        self._record_artifact("problem_files", "sequence_operations", "04_problem_files/02_sequence_operations.txt")
+        self._write_text_artifact(sequence_operations_artifact, sequence_operations)
+        self._record_artifact("problem_files", "sequence_operations", sequence_operations_artifact)
         subtask_entries = []
         for idx, subtask in enumerate(subtasks, start=1):
             relative_path = f"04_problem_files/subtasks/subtask_{idx:02d}.txt"
@@ -1425,8 +1694,8 @@ class TaskManager:
                 "index": idx,
                 "path": relative_path
             })
-        self._write_json_artifact("04_problem_files/03_subtasks.json", subtask_entries)
-        self._record_artifact("problem_files", "subtasks_index", "04_problem_files/03_subtasks.json")
+        self._write_json_artifact(subtasks_index_artifact, subtask_entries)
+        self._record_artifact("problem_files", "subtasks_index", subtasks_index_artifact)
         
         # Process each subtask using the class method
         problem_pddl = self.problemextracting(
@@ -1438,10 +1707,10 @@ class TaskManager:
             prompt_allocation_set=self.prompt_allocation_set
         )
         self._write_json_artifact(
-            "04_problem_files/04_generated_problem_files.json",
+            generated_problem_files_artifact,
             [{"index": idx + 1, "content": content} for idx, content in enumerate(problem_pddl)]
         )
-        self._record_artifact("problem_files", "generated_problem_files", "04_problem_files/04_generated_problem_files.json")
+        self._record_artifact("problem_files", "generated_problem_files", generated_problem_files_artifact)
         self._persist_manifest()
         
         return problem_pddl
@@ -1517,46 +1786,8 @@ class TaskManager:
                 is_team = True
 
             if is_team:
-                # Team task: concatenate all team domains
-                all_domain_contents = ""
-                for robot in normalized_robot_numbers:
-                    domain_path = os.path.join(self.base_path, "resources", f"{robot}.pddl")
-                    domain_text = file_processor.read_file(domain_path)
-                    if domain_text:
-                        all_domain_contents += domain_text
-
-                if not all_domain_contents:
-                    print("No team robot domains found; skipping team prompt.")
-                    continue
-
-                problem_fileexamplepath = os.path.join(
-                    self.base_path, "data", "pythonic_plans", f"{prompt_allocation_set}_teamproblem.py"
-                )
-                problem_examplecontent = file_processor.read_file(problem_fileexamplepath) or ""
-
-                prompt = (
-                    "\n" + problem_examplecontent +
-                    "Strictly follow the structure and finish the tasks like example\n"
-                    "Subtask examination from action perspective:" + subtask +
-                    "\nDomain file content:" + all_domain_contents +
-                    "\n based on the objects available below." + objects_ai +
-                    "Task description: extract the problem files, based on the objects above, "
-                    "the preconditions, actions, and subtask examination.\n"
-                    "#IMPORTANT, strictly follow the structure, stop generating after the Problem file generation is done."
-                )
-                prompt_path = f"05_problem_generation/prompts/subtask_{subtask_idx:02d}_prompt.txt"
-                output_path = f"05_problem_generation/outputs/subtask_{subtask_idx:02d}_problem.pddl"
-                self._write_text_artifact(prompt_path, prompt)
-
-                messages = [
-                    {"role": "system", "content": "You are a Robot PDDL problem Expert"},
-                    {"role": "user", "content": prompt}
-                ]
-                _, text = llm.query_model(messages, model, max_tokens=1000, frequency_penalty=0.4)
-
-                problem_pddl.append(text)
-                self._write_text_artifact(output_path, text)
-
+                print("No team currently.\n")
+                return ""
             else:
                 # Single-robot case
                 if not normalized_robot_numbers:
@@ -1572,8 +1803,10 @@ class TaskManager:
                     except ValueError:
                         normalized_robot_numbers = [normalized_robot_numbers[0]]
 
-                robotassignnumber = f"{normalized_robot_numbers[0].replace(' ', '')}.pddl"
-                domain_path = os.path.join(self.base_path, "resources", robotassignnumber)
+                normalized_robot_name = normalized_robot_numbers[0].replace(' ', '')
+                real_robot_name = self.current_robot_domain_names.get(normalized_robot_name, normalized_robot_name)
+                robotassignnumber = f"{real_robot_name}.pddl"
+                domain_path = str(self.config.robot_domain_path(robotassignnumber))
                 # print("this is a solo work")
                 # print(domain_path)
 
@@ -1581,11 +1814,14 @@ class TaskManager:
                 if not domain_content:
                     print(f"Domain file not found or empty: {domain_path}")
                     continue
-
-                problem_fileexamplepath = os.path.join(
-                    self.base_path, "data", "pythonic_plans", f"{prompt_allocation_set}_problem.py"
+                domain_content = self._replace_domain_robot_name(
+                    domain_content,
+                    real_robot_name,
+                    normalized_robot_name,
                 )
-                problem_examplecontent = file_processor.read_file(problem_fileexamplepath) or ""
+
+                problem_fileexamplepath = self.config.prompt_file(f"{prompt_allocation_set}_problem.py")
+                problem_examplecontent = file_processor.read_file(str(problem_fileexamplepath)) or ""
 
                 prompt = (
                     "\n" + problem_examplecontent +
@@ -1593,7 +1829,7 @@ class TaskManager:
                     "Subtask examination from action perspective:" + subtask +
                     "\nDomain file content:" + domain_content +
                     "\n based on the objects available for potential usage below." + objects_ai +
-                    "Task description: generate the problem file. Based on the objects above, "
+                    "\nTask description: generate the problem file. Based on the objects above, "
                     "the domain file preconditions, actions, and subtask examination. "
                     "IMPORTANT the robot initiates strictly as not inaction and robot "
                     "(which includes location)\n"
@@ -1607,7 +1843,13 @@ class TaskManager:
                     {"role": "system", "content": "You are a Robot PDDL problem Expert"},
                     {"role": "user", "content": prompt}
                 ]
-                _, text = llm.query_model(messages, model, max_tokens=1400, frequency_penalty=0.4)
+                call_config = self.config.llm_call("problem_generation")
+                _, text = llm.query_model(
+                    messages,
+                    model,
+                    max_tokens=call_config.get("max_tokens", 1400),
+                    frequency_penalty=call_config.get("frequency_penalty", 0.4),
+                )
 
                 problem_pddl.append(text)
                 self._write_text_artifact(output_path, text)
@@ -1670,7 +1912,13 @@ class TaskManager:
                 
                     messages = [{"role": "system", "content": "You are a Robot PDDL problem Expert"},
                             {"role": "user", "content": prompt}]
-                    _, text = self.llm.query_model(messages, self.model, max_tokens=1400, frequency_penalty=0.4)
+                    call_config = self.config.llm_call("llm_validator")
+                    _, text = self.llm.query_model(
+                        messages,
+                        self.model,
+                        max_tokens=call_config.get("max_tokens", 1400),
+                        frequency_penalty=call_config.get("frequency_penalty", 0.4),
+                    )
 
                     self.validated_plan.append(text)  #PG: Store validated plan
                     code_plan = [text]
@@ -1678,7 +1926,10 @@ class TaskManager:
                     validation_manifest = self.file_processor.split_pddl_tasks(
                         code_plan,
                         True,
-                        output_directory=os.path.join(self.current_task_run_dir, "07_validate", "validated_subtask")
+                        output_directory=os.path.join(
+                            self.current_task_run_dir,
+                            self.config.artifact("validated_subtask_dir", "07_validate/validated_subtask"),
+                        )
                     )  #PG: Use True to indicate validated
                     validation_records.append({
                         "problem_file": problem_file,
@@ -1691,8 +1942,9 @@ class TaskManager:
                 except Exception as e:
                     print(f"Error processing file {problem_file}: {str(e)}")
                     continue
-            self._write_json_artifact("07_validate/validation_manifest.json", validation_records)
-            self._record_artifact("validate", "manifest", "07_validate/validation_manifest.json")
+            validation_manifest_path = self.config.artifact("validation_manifest", "07_validate/validation_manifest.json")
+            self._write_json_artifact(validation_manifest_path, validation_records)
+            self._record_artifact("validate", "manifest", validation_manifest_path)
             self._persist_manifest()
                     
         except Exception as e:
@@ -1702,7 +1954,7 @@ class TaskManager:
     def run_planners(self) -> None:
         """Run PDDL planners on problem files."""
         try:
-            planner_path = os.path.join(self.base_path, "downward", "fast-downward.py")
+            planner_path = str(self.config.planner_executable)
             problem_files = [f for f in os.listdir(self.file_processor.validated_subtask_path) if f.endswith('.pddl')]  #PG: Changed to validated_subtask_path
             planner_records = []
             for problem_file in problem_files:
@@ -1721,7 +1973,7 @@ class TaskManager:
                     command = [
                         planner_path,
                         "--alias",
-                        "seq-opt-lmcut",
+                        str(self.config.get("planner", "alias", "seq-opt-lmcut")),
                         domain_file,
                         problem_file_full
                     ]
@@ -1732,7 +1984,7 @@ class TaskManager:
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
                         text=True,
-                        timeout=300  # 5 minute timeout
+                        timeout=int(self.config.get("planner", "timeout_seconds", 300))
                     )
                     
                     output_file = os.path.join(self.file_processor.validated_subtask_path, problem_file.replace('.pddl', '_plan.txt')) #PG: Changed to validated_subtask_path from subtask_path
@@ -1772,8 +2024,9 @@ class TaskManager:
                         "error": str(e)
                     })
                     continue
-            self._write_json_artifact("08_planner/planner_manifest.json", planner_records)
-            self._record_artifact("planner", "manifest", "08_planner/planner_manifest.json")
+            planner_manifest_path = self.config.artifact("planner_manifest", "08_planner/planner_manifest.json")
+            self._write_json_artifact(planner_manifest_path, planner_records)
+            self._record_artifact("planner", "manifest", planner_manifest_path)
             self._persist_manifest()
                     
         except Exception as e:
@@ -1812,13 +2065,21 @@ class TaskManager:
                   "tasks are performed at the same time. IMPORTANT: all 'variablelocation' should be "
                   "corrected to variable itself, since variable itself includes location. and result "
                   "must be in PDDL plan format.")
-        self._write_text_artifact("09_combine/01_combine_prompt.txt", prompt)
-        self._record_artifact("combine", "prompt", "09_combine/01_combine_prompt.txt")
+        combine_prompt_artifact = self.config.artifact("combine_prompt", "09_combine/01_combine_prompt.txt")
+        combine_output_artifact = self.config.artifact("combine_output", "09_combine/02_combined_plan.txt")
+        self._write_text_artifact(combine_prompt_artifact, prompt)
+        self._record_artifact("combine", "prompt", combine_prompt_artifact)
         
         messages = [{"role": "user", "content": prompt}]
-        _, text = self.llm.query_model(messages, self.model, max_tokens=1300, frequency_penalty=0.0)
-        self._write_text_artifact("09_combine/02_combined_plan.txt", text)
-        self._record_artifact("combine", "output", "09_combine/02_combined_plan.txt")
+        call_config = self.config.llm_call("combine")
+        _, text = self.llm.query_model(
+            messages,
+            self.model,
+            max_tokens=call_config.get("max_tokens", 1300),
+            frequency_penalty=call_config.get("frequency_penalty", 0.0),
+        )
+        self._write_text_artifact(combine_output_artifact, text)
+        self._record_artifact("combine", "output", combine_output_artifact)
         self._persist_manifest()
         
         return text
@@ -1833,13 +2094,21 @@ class TaskManager:
             "IMPORTANT: the only parenthesis usage should be for the correct PDDL plan, no exception.\n\n"
             f"{plan}"
         )
-        self._write_text_artifact("10_final_match/01_match_prompt.txt", prompt)
-        self._record_artifact("final_match", "prompt", "10_final_match/01_match_prompt.txt")
+        final_match_prompt_artifact = self.config.artifact("final_match_prompt", "10_final_match/01_match_prompt.txt")
+        final_match_output_artifact = self.config.artifact("final_match_output", "10_final_match/02_final_plan.txt")
+        self._write_text_artifact(final_match_prompt_artifact, prompt)
+        self._record_artifact("final_match", "prompt", final_match_prompt_artifact)
         
         messages = [{"role": "user", "content": prompt}]
-        _, text = self.llm.query_model(messages, self.model, max_tokens=1300, frequency_penalty=0.0)
-        self._write_text_artifact("10_final_match/02_final_plan.txt", text)
-        self._record_artifact("final_match", "output", "10_final_match/02_final_plan.txt")
+        call_config = self.config.llm_call("final_match")
+        _, text = self.llm.query_model(
+            messages,
+            self.model,
+            max_tokens=call_config.get("max_tokens", 1300),
+            frequency_penalty=call_config.get("frequency_penalty", 0.0),
+        )
+        self._write_text_artifact(final_match_output_artifact, text)
+        self._record_artifact("final_match", "output", final_match_output_artifact)
         self._persist_manifest()
         
         return text
@@ -1893,6 +2162,8 @@ def build_robot_team(robot_ids: List[int]) -> List[dict]:
     for index, robot_id in enumerate(robot_ids):
         robot_def = copy.deepcopy(robots.robots[robot_id - 1])
         robot_def["name"] = f"robot{index + 1}"
+        robot_def["source_robot_id"] = robot_id
+        robot_def["source_robot_name"] = f"robot{robot_id}"
         task_robots.append(robot_def)
     return task_robots
 
@@ -1906,16 +2177,19 @@ def run_single_floor_plan_task(
     prompt_allocation_set: str = "pddl_train_task_allocationsep",
     objects_ai: Optional[str] = None,
     log_results: bool = True,
+    config: Optional[RunConfig] = None,
 ) -> TaskProcessingResult:
     """Run a single dataset record as an isolated task-safe execution unit."""
+    run_config = config or load_run_config(base_path)
     task_manager = TaskManager(
         base_path=base_path,
         model=model,
         prompt_decompse_set=prompt_decompse_set,
         prompt_allocation_set=prompt_allocation_set,
+        config=run_config,
     )
     floor_plan_id = PDDLUtils.extract_floor_plan_number(floor_plan)
-    objects_description = objects_ai or f"\n\nobjects = {PDDLUtils.get_ai2_thor_objects(int(floor_plan_id))}"
+    objects_description = objects_ai or f"\n\nobjects = {PDDLUtils.get_ai2_thor_objects(int(floor_plan_id), run_config)}"
     task = task_record["task"]
     robot_team = build_robot_team(task_record["robot list"])
     gt_test_tasks = [task_record.get("object_states", "")]
@@ -2014,13 +2288,16 @@ def main():
     try:
         # Parse arguments
         args = parse_arguments()
+        base_path = str(_repo_root())
+        run_config = load_run_config(base_path)
         
         # Initialize task manager
         task_manager = TaskManager(
-            base_path=os.getcwd(),
+            base_path=base_path,
             model=args.model,
             prompt_decompse_set=args.prompt_decompse_set,
-            prompt_allocation_set=args.prompt_allocation_set
+            prompt_allocation_set=args.prompt_allocation_set,
+            config=run_config,
         )
         
         if args.bddl_file:
@@ -2066,8 +2343,8 @@ def main():
                 )
         else:
             # Dataset workflow: run a single task selected by task index
-            test_file = os.path.join("data", args.test_set, f"FloorPlan{args.floor_plan}.jsonl")
-            task_records = load_dataset_records(test_file)
+            test_file = run_config.dataset_file(args.test_set, args.floor_plan)
+            task_records = load_dataset_records(str(test_file))
             if not task_records:
                 raise PDDLError(f"No tasks found in dataset: {test_file}")
             if args.task_index < 0 or args.task_index >= len(task_records):
@@ -2085,9 +2362,9 @@ def main():
             
             # Get AI2thor objects 
             scene_floor_plan = int(PDDLUtils.extract_floor_plan_number(args.floor_plan))
-            objects_ai = f"\n\nobjects = {PDDLUtils.get_ai2_thor_objects(scene_floor_plan)}"
+            objects_ai = f"\n\nobjects = {PDDLUtils.get_ai2_thor_objects(scene_floor_plan, run_config)}"
             run_single_floor_plan_task(
-                base_path=os.getcwd(),
+                base_path=base_path,
                 model=args.model,
                 floor_plan=args.floor_plan,
                 task_record=selected_record,
@@ -2095,6 +2372,7 @@ def main():
                 prompt_allocation_set=args.prompt_allocation_set,
                 objects_ai=objects_ai,
                 log_results=args.log_results,
+                config=run_config,
             )
         
     except Exception as e:

@@ -1,2 +1,82 @@
 storage:
   base_dir: logs/intermediate_runs
+  task_manager_runs_dir: logs/task_manager_runs
+  default_generated_subtask_dir: resources/generated_subtask
+  default_validated_subtask_dir: resources/validated_subtask
+  default_each_run_dir: resources/each_run
+  parallel_output_root: parallel_runs
+
+data:
+  dataset_dir: data
+  prompt_template_dir: data/pythonic_plans
+  ai2thor_objects_cache_dir: data/ai2thor_objects_cache
+
+resources:
+  resources_dir: resources
+  robot_domain_dir: resources
+  allaction_domain_file: allactionrobot.pddl
+
+planner:
+  executable: downward/fast-downward.py
+  alias: seq-opt-lmcut
+  timeout_seconds: 300
+
+llm:
+  providers_file: scripts/providers.yaml
+  default_max_tokens: 128
+  default_temperature: 0
+  default_retry_delay: 20
+  max_retries: 3
+  request_max_tokens_multiplier: 10
+  calls:
+    structure_fix:
+      max_tokens: 1400
+      frequency_penalty: 0.4
+    validate_problem:
+      max_tokens: 1400
+      frequency_penalty: 0.4
+    decompose:
+      max_tokens: 1300
+      frequency_penalty: 0.0
+    allocate:
+      max_tokens: 1500
+      frequency_penalty: 0.69
+    summary:
+      max_tokens: 1400
+      frequency_penalty: 0.4
+    problem_generation:
+      max_tokens: 1400
+      frequency_penalty: 0.4
+    llm_validator:
+      max_tokens: 1400
+      frequency_penalty: 0.4
+    combine:
+      max_tokens: 1300
+      frequency_penalty: 0.0
+    final_match:
+      max_tokens: 1300
+      frequency_penalty: 0.0
+
+artifacts:
+  manifest: run_manifest.json
+  llm_calls: 00_llm/llm_calls.jsonl
+  task_context: inputs/task_context.json
+  domain_content: inputs/domain_content.pddl
+  generated_subtask_dir: 06_split/generated_subtask
+  validated_subtask_dir: 07_validate/validated_subtask
+  each_run_dir: artifacts/each_run
+  generated_subtask_manifest: 06_split/generated_subtask_manifest.json
+  validation_manifest: 07_validate/validation_manifest.json
+  planner_manifest: 08_planner/planner_manifest.json
+  decompose_prompt: 01_decompose/01_decompose_prompt.txt
+  decompose_output: 01_decompose/02_decompose_output.txt
+  allocate_prompt: 02_allocate/01_allocate_prompt.txt
+  allocate_output: 02_allocate/02_allocate_output.txt
+  problem_summary_raw: 04_problem_files/01_problem_summary_raw.txt
+  sequence_operations: 04_problem_files/02_sequence_operations.txt
+  subtasks_index: 04_problem_files/03_subtasks.json
+  generated_problem_files: 04_problem_files/04_generated_problem_files.json
+  combine_prompt: 09_combine/01_combine_prompt.txt
+  combine_output: 09_combine/02_combined_plan.txt
+  final_match_prompt: 10_final_match/01_match_prompt.txt
+  final_match_output: 10_final_match/02_final_plan.txt

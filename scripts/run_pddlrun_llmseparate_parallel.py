@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List
 
-from pddlrun_llmseparate import PDDLUtils, normalize_floor_plan, run_single_floor_plan_task
+from pddlrun_llmseparate import PDDLUtils, RunConfig, load_run_config, normalize_floor_plan, run_single_floor_plan_task
 
 
 @dataclass(frozen=True)
@@ -52,12 +52,12 @@ def floor_plan_sort_key(value: str) -> tuple:
 
 
 def load_jobs(
-    repo_root: Path,
+    config: RunConfig,
     test_set: str,
     floor_plan: str,
 ) -> List[TaskJob]:
     normalized = normalize_floor_plan(floor_plan)
-    dataset_file = repo_root / "data" / test_set / f"FloorPlan{normalized}.jsonl"
+    dataset_file = config.dataset_file(test_set, normalized)
     if not dataset_file.exists():
         raise FileNotFoundError(f"Dataset file not found: {dataset_file}")
 
@@ -73,6 +73,7 @@ def load_jobs(
 
 def run_single_job(
     repo_root: Path,
+    config: RunConfig,
     args: argparse.Namespace,
     job: TaskJob,
     objects_ai: str,
@@ -92,6 +93,7 @@ def run_single_job(
                 prompt_allocation_set=args.prompt_allocation_set,
                 objects_ai=objects_ai,
                 log_results=not args.disable_log_results,
+                config=config,
             )
     except Exception as exc:
         status = "error"
@@ -120,19 +122,20 @@ def run_single_job(
 def run_floor_plan_jobs(
     repo_root: Path,
     output_root: Path,
+    config: RunConfig,
     args: argparse.Namespace,
     floor_plan: str,
 ) -> Dict[str, Any]:
-    jobs = load_jobs(repo_root, args.test_set, floor_plan)
+    jobs = load_jobs(config, args.test_set, floor_plan)
     floor_plan_key = normalize_floor_plan(floor_plan)
-    objects_ai = f"\n\nobjects = {PDDLUtils.get_ai2_thor_objects(int(PDDLUtils.extract_floor_plan_number(floor_plan_key)))}"
+    objects_ai = f"\n\nobjects = {PDDLUtils.get_ai2_thor_objects(int(PDDLUtils.extract_floor_plan_number(floor_plan_key)), config)}"
     results: List[Dict[str, Any]] = []
 
     print(f"[FloorPlan{floor_plan_key}] loaded {len(jobs)} task(s)")
 
     with ThreadPoolExecutor(max_workers=args.max_task_workers) as executor:
         future_map = {
-            executor.submit(run_single_job, repo_root, args, job, objects_ai): job
+            executor.submit(run_single_job, repo_root, config, args, job, objects_ai): job
             for job in jobs
         }
         for future in as_completed(future_map):
@@ -161,11 +164,12 @@ def run_floor_plan_jobs(
 def main() -> None:
     args = parse_args()
     repo_root = Path(__file__).resolve().parent.parent
+    config = load_run_config(repo_root)
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     output_root = (
-        Path(args.output_root)
+        config.resolve_path(args.output_root)
         if args.output_root
-        else repo_root / "parallel_runs" / f"pddlrun_llmseparate_{timestamp}"
+        else config.path("storage", "parallel_output_root") / f"pddlrun_llmseparate_{timestamp}"
     )
     output_root.mkdir(parents=True, exist_ok=True)
 
@@ -174,7 +178,7 @@ def main() -> None:
 
     with ThreadPoolExecutor(max_workers=args.max_floor_plan_workers) as executor:
         future_map = {
-            executor.submit(run_floor_plan_jobs, repo_root, output_root, args, floor_plan): floor_plan
+            executor.submit(run_floor_plan_jobs, repo_root, output_root, config, args, floor_plan): floor_plan
             for floor_plan in floor_plans
         }
         for future in as_completed(future_map):

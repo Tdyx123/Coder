@@ -1,54 +1,66 @@
-(define (domain robot26 )
-  (:requirements :strips :typing :negative-preconditions) 
-  (:types robot object)
+(define (domain robot26)
+  (:requirements :strips :typing :negative-preconditions :conditional-effects :universal-preconditions :disjunctive-preconditions)
+  (:types 
+    robot
+    object
+    knife sink microwave mug coffee_machine toaster bread - object)
   (:predicates
     (at ?robot - robot ?object - object)
     (inaction ?robot - robot) 
     (holding ?robot - robot ?object - object)
     (at-location  ?object - object ?location - object)
+    (switch-on ?object - object)
+    (broken ?object - object)
     (sliced ?object - object)
+    (cleaned ?object - object)
+    (is-openable ?object - object) 
+    (heated ?object - object)
+    (containing-coffee ?mug - mug)
+    (object-open ?object - object)
   )
-  
+
   (:action GoToObject
     :parameters (?robot - robot ?object - object)
     :precondition (not (inaction ?robot))
 
     :effect (and 
-              (at ?robot ?object)
               (forall (?another_object - object)
                 (when (at ?robot ?another_object)
                   (not (at ?robot ?another_object))
                 )
               )
+              (at ?robot ?object)
               (not (inaction ?robot))
             )
   )
 
-
-  (:action PickupObject
-    :parameters (?robot - robot ?object - object ?location - object)
+  (:action SliceObject
+    :parameters (?robot - robot ?object - object ?location - object ?knife - object)
     :precondition (and 
                     (at-location ?object ?location)
                     (at ?robot ?location)
-                    (not(inaction ?robot))
+                    (holding ?robot ?knife)
+                    (not (inaction ?robot))
     )
     :effect (and
-              (holding ?robot ?object)
-              (not(inaction ?robot))
+              (not (inaction ?robot))
+              (sliced ?object)
     )
   )
 
-
-  (:action SliceObject
+  (:action PickupObject      
     :parameters (?robot - robot ?object - object ?location - object)
     :precondition (and 
                     (at-location ?object ?location)
-                    (at ?robot ?location)
-                    (not(inaction ?robot))
-    )
+                    (or (at ?robot ?object)
+                      (at ?robot ?location))
+                    (or (not(is-openable ?location))
+                      (object-open ?location))
+                    (not(inaction ?robot)))
     :effect (and
+              (holding ?robot ?object)
+              (not(at-location ?object ?location))
               (not(inaction ?robot))
-              (sliced ?object)
     )
-  )    
+  )
 )

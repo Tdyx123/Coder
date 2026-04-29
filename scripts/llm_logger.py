@@ -54,6 +54,9 @@ class LLMCallLogger:
         return getattr(self._thread_local, "context", {}).copy()
 
     def _resolve_task_log_file(self, context: Dict[str, Any]) -> Optional[Path]:
+        task_log_file = context.get("task_log_file")
+        if task_log_file:
+            return Path(task_log_file)
         task_run_dir = context.get("task_run_dir")
         if not task_run_dir:
             return None

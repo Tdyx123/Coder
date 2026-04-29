@@ -1,22 +1,22 @@
 (define (domain allactionrobot)
-  (:requirements :strips :typing :negative-preconditions :fluents) 
-  (:types robot object)
+  (:requirements :strips :typing :negative-preconditions :conditional-effects :universal-preconditions :disjunctive-preconditions)
+  (:types 
+    robot
+    object
+    knife sink microwave mug coffee_machine toaster bread - object)
   (:predicates
     (at ?robot - robot ?object - object)
     (inaction ?robot - robot) 
     (holding ?robot - robot ?object - object)
     (at-location  ?object - object ?location - object)
-    (switch-on ?robot - robot ?object - object)
-    (switch-off ?robot - robot ?object - object)
-    (object-open ?robot - robot ?object - object)
-    (object-close ?robot - robot ?object - object)
-    (break ?robot - robot ?object - object)
+    (switch-on ?object - object)
+    (broken ?object - object)
     (sliced ?object - object)
-    (cleaned ?robot - robot ?object - object)
-    (is-fridge ?object - object) 
-  )
-  (:functions
-    (fridge-state ?fridge - object) ;; Numeric fluent for fridge state
+    (cleaned ?object - object)
+    (is-openable ?object - object) 
+    (heated ?object - object)
+    (containing-coffee ?mug - mug)
+    (object-open ?object - object)
   )
 
   (:action GoToObject
@@ -24,26 +24,28 @@
     :precondition (not (inaction ?robot))
 
     :effect (and 
-              (at ?robot ?object)
               (forall (?another_object - object)
                 (when (at ?robot ?another_object)
                   (not (at ?robot ?another_object))
                 )
               )
+              (at ?robot ?object)
               (not (inaction ?robot))
             )
   )
-
 
   (:action PickupObject      
     :parameters (?robot - robot ?object - object ?location - object)
     :precondition (and 
                     (at-location ?object ?location)
-                    (at ?robot ?location)
-                    (not(inaction ?robot))
-    )
+                    (or (at ?robot ?object)
+                      (at ?robot ?location))
+                    (or (not(is-openable ?location))
+                      (object-open ?location))
+                    (not(inaction ?robot)))
     :effect (and
               (holding ?robot ?object)
+              (not(at-location ?object ?location))
               (not(inaction ?robot))
     )
   )
@@ -55,13 +57,12 @@
                     (holding ?robot ?object)
                     (not(inaction ?robot))
                     (at ?robot ?location)
-                    (or (not (is-fridge ?location))  ;; Check if location is not the fridge
-                        (> (fridge-state ?location) 0))  ;; If it is the fridge, it must be open
-    )
+                    (or (not (is-openable ?location))  ;; Check if location is not openable
+                        (object-open ?location)))  ;; If it is openable, it must be open
     :effect (and
               (at-location ?object ?location)
               (not (holding ?robot ?object))
-              (not(inaction ?robot))
+              (not (inaction ?robot))
     )
   )
 
@@ -71,10 +72,11 @@
     :precondition (and 
                     (not(inaction ?robot))
                     (at ?robot ?object)
+                    (not(switch-on ?object))
     )   
     :effect (and
               (not(inaction ?robot))
-              (switch-on ?robot ?object)
+              (switch-on ?object)
     ) 
   )
 
@@ -84,10 +86,11 @@
     :precondition (and
                     (not(inaction ?robot))
                     (at ?robot ?object)
+                    (switch-on ?object)
     )
     :effect (and
                 (not(inaction ?robot))
-                (switch-off ?robot ?object)
+                (not(switch-on ?object))
     )    
   )
 
@@ -97,11 +100,13 @@
     :precondition (and
                     (not(inaction ?robot))
                     (at ?robot ?object)
+                    (is-openable ?object)
+                    (not(object-open ?object))
     )
       
     :effect (and
                 (not(inaction ?robot))
-                (object-open ?robot ?object)
+                (object-open ?object)
     )
   )
 
@@ -114,77 +119,92 @@
     )
     :effect (and
               (not(inaction ?robot))
-              (break ?robot ?object)
+              (broken ?object)
     )
   )
- 
 
   (:action CloseObject
     :parameters (?robot - robot ?object - object)
     :precondition (and
                     (not(inaction ?robot))
                     (at ?robot ?object)
+                    (object-open ?object)
     )
     :effect (and
               (not(inaction ?robot))
-              (object-close ?robot ?object)
+              (not(object-open ?object))
   )
   )
-
 
 
   (:action SliceObject
-    :parameters (?robot - robot ?object - object ?location - object)
+    :parameters (?robot - robot ?object - object ?location - object ?knife - object)
     :precondition (and 
                     (at-location ?object ?location)
                     (at ?robot ?location)
-                    (not(inaction ?robot))
+                    (holding ?robot ?knife)
+                    (not (inaction ?robot))
     )
     :effect (and
-              (not(inaction ?robot))
+              (not (inaction ?robot))
               (sliced ?object)
     )
-  )    
+  )
   
 
- (:action CleanObject
-    :parameters (?robot - robot ?object - object)
+  (:action CleanObject
+    :parameters (?robot - robot ?object - object ?sink - sink)
     :precondition (and
-                    (not(inaction ?robot))
-                    (at ?robot ?object)
+                    (not (inaction ?robot))
+                    (holding ?robot ?object)
+                    (at ?robot ?sink)
     )
     :effect (and
-              (not(inaction ?robot))
-              (cleaned ?robot ?object)
+              (not (inaction ?robot))
+              (cleaned ?object)
     )    
   )
-  (:action OpenFridge
-    :parameters (?robot - robot ?fridge - object)
+
+
+  (:action RunMicrowave
+    :parameters (?robot - robot ?microwave - microwave ?item - object)
     :precondition (and
-                    (not(inaction ?robot))
-                    (at ?robot ?fridge)
-                    (is-fridge ?fridge)  ;; Ensure the object is a fridge
+                    (not (inaction ?robot))
+                    (at ?robot ?microwave)
+                    (at-location ?item ?microwave)
+                    (not(object-open ?microwave))
     )
     :effect (and
-                (not(inaction ?robot))
-                (object-open ?robot ?fridge)
-                (increase (fridge-state ?fridge) 1)  
+              (not (inaction ?robot))
+              (heated ?item)
     )
   )
 
-  (:action CloseFridge
-    :parameters (?robot - robot ?fridge - object)
+  (:action RunCoffeeMachine
+    :parameters (?robot - robot ?coffee_machine - coffee_machine ?mug - mug)
     :precondition (and
-                    (not(inaction ?robot))
-                    (at ?robot ?fridge)
-                    (object-open ?robot ?fridge) 
-                    (is-fridge ?fridge)  
+                    (at ?robot ?coffee_machine)
+                    (holding ?robot ?mug)
+                    (not (inaction ?robot)))
+
+    :effect (and
+              (not (inaction ?robot))
+              (containing-coffee ?mug)
+    )
+  )
+
+  (:action RunToaster
+    :parameters (?robot - robot ?toaster - toaster ?bread - bread)
+    :precondition (and
+                    (at ?robot ?toaster)
+                    (holding ?robot ?bread)
+                    (not (inaction ?robot))
     )
     :effect (and
-              (not(inaction ?robot))
-              (object-close ?robot ?fridge)
-              (decrease (fridge-state ?fridge) 1)  
+              (not (inaction ?robot))
+              (heated ?bread)
     )
   )
 )
+
 

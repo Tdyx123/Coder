@@ -1,53 +1,62 @@
-(define (domain robot24 )
-  (:requirements :strips :typing :negative-preconditions) 
-  (:types robot object)
+(define (domain robot24)
+  (:requirements :strips :typing :negative-preconditions :conditional-effects :universal-preconditions :disjunctive-preconditions)
+  (:types 
+    robot
+    object
+    knife sink microwave mug coffee_machine toaster bread - object)
   (:predicates
     (at ?robot - robot ?object - object)
     (inaction ?robot - robot) 
+    (holding ?robot - robot ?object - object)
     (at-location  ?object - object ?location - object)
-    (switch-on ?robot - robot ?object - object)
-    (switch-off ?robot - robot ?object - object)
+    (switch-on ?object - object)
+    (broken ?object - object)
+    (sliced ?object - object)
+    (cleaned ?object - object)
+    (is-openable ?object - object) 
+    (heated ?object - object)
+    (containing-coffee ?mug - mug)
+    (object-open ?object - object)
   )
-  
+
   (:action GoToObject
     :parameters (?robot - robot ?object - object)
     :precondition (not (inaction ?robot))
 
     :effect (and 
-              (at ?robot ?object)
               (forall (?another_object - object)
                 (when (at ?robot ?another_object)
                   (not (at ?robot ?another_object))
                 )
               )
+              (at ?robot ?object)
               (not (inaction ?robot))
             )
   )
-
 
   (:action SwitchOn
     :parameters (?robot - robot ?object - object)
     :precondition (and 
                     (not(inaction ?robot))
                     (at ?robot ?object)
+                    (not(switch-on ?object))
     )   
     :effect (and
               (not(inaction ?robot))
-              (switch-on ?robot ?object)
+              (switch-on ?object)
     ) 
   )
-
 
   (:action Switchoff
     :parameters (?robot - robot ?object - object)
     :precondition (and
                     (not(inaction ?robot))
                     (at ?robot ?object)
+                    (switch-on ?object)
     )
     :effect (and
                 (not(inaction ?robot))
-                (switch-off ?robot ?object)
+                (not(switch-on ?object))
     )    
   )
-
 )

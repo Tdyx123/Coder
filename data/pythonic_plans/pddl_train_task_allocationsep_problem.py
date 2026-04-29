@@ -6,182 +6,103 @@
 #1. Robot not at the potato
 #2. Robot not holding the potato
 
-GoToObject (Robot, Knife)
-Parameters: ?robot , ?Knife  ,
-Preconditions: (not (inaction Robot))
-Effects: (at Robot CuttingBoard), (not (inaction Robot))
+#Subtask 1: Slice the Potato
 
-PickupObject (Robot, Knife, KnifeLocation)
-Parameters: ?robot , ?Knife , ?KnifeLocation 
-Preconditions: (at-location Knife KnifeLocation), (at Robot KnifeLocation), (not (inaction Robot))
-Effects: (holding Robot Knife), (not (inaction Robot))
+# Initial Precondition analyze due to previous subtask:
+#1. Robot not at the potato
+#2. Robot not holding knife
 
-GoToObject: Robot goes to the potato.
+GoToObject: Robot goes to the knife
+Parameters: ?robot, ?knife
+Preconditions: (not (inaction ?robot))
+Effects: (at ?robot ?knife), (not (inaction ?robot))
+
+PickupObject: Robot pickes up the knife
+Parameters: ?robot, ?knife, ?knife_location 
+Preconditions: (at-location ?knife ?knife_location), (at ?robot ?knife), (not (inaction ?robot))
+Effects: (holding ?robot ?knife), (not (inaction ?robot))
+
+GoToObject: Robot goes to the potato
 Parameters: ?robot, ?potato
 Preconditions: (not (inaction ?robot))
 Effects: (at ?robot ?potato), (not (inaction ?robot))
 
-SliceObject: Robot slices the potato.
+SliceObject: Robot slices the potato
 Parameters: ?robot, ?potato
-Preconditions: (holding Robot Knife), (not (inaction ?robot))
+Preconditions: (holding ?robot ?knife), (not (inaction ?robot))
 Effects: (sliced ?potato), (not (inaction ?robot))
 
 Assigned Robots: Robot 1
-Objects Involved: Potato, knife
+Objects Involved: potato, knife
 
 #Domain file content,
 (define (domain robot1)
-  (:requirements :strips :typing :negative-preconditions) 
-  (:types robot object)
+  (:requirements :strips :typing :negative-preconditions :conditional-effects :universal-preconditions :disjunctive-preconditions)
+  (:types 
+    robot
+    object
+    knife sink microwave mug coffee_machine toaster bread - object)
   (:predicates
     (at ?robot - robot ?object - object)
     (inaction ?robot - robot) 
     (holding ?robot - robot ?object - object)
     (at-location  ?object - object ?location - object)
-    (switch-on ?robot - robot ?object - object)
-    (switch-off ?robot - robot ?object - object)
-    (object-open ?robot - robot ?object - object)
-    (object-close ?robot - robot ?object - object)
-    (break ?robot - robot ?object - object)
+    (switch-on ?object - object)
+    (broken ?object - object)
     (sliced ?object - object)
-    (cleaned ?robot - robot ?object - object)
+    (cleaned ?object - object)
+    (is-openable ?object - object) 
+    (heated ?object - object)
+    (containing-coffee ?mug - mug)
+    (object-open ?object - object)
   )
-  
+
   (:action GoToObject
     :parameters (?robot - robot ?object - object)
     :precondition (not (inaction ?robot))
 
     :effect (and 
-              (at ?robot ?object)
               (forall (?another_object - object)
                 (when (at ?robot ?another_object)
                   (not (at ?robot ?another_object))
                 )
               )
+              (at ?robot ?object)
               (not (inaction ?robot))
             )
   )
 
 
-  (:action PickupObject
+  (:action PickupObject      
     :parameters (?robot - robot ?object - object ?location - object)
     :precondition (and 
                     (at-location ?object ?location)
-                    (at ?robot ?location)
-                    (not(inaction ?robot))
-    )
+                    (or (at ?robot ?object)
+                      (at ?robot ?location))
+                    (or (not(is-openable ?location))
+                      (object-open ?location))
+                    (not(inaction ?robot)))
     :effect (and
               (holding ?robot ?object)
+              (not(at-location ?object ?location))
               (not(inaction ?robot))
     )
   )
-
-  (:action PutObject
-    :parameters (?robot - robot ?object  - object ?location - object)
-    :precondition (and 
-                    (holding ?robot ?object)
-                    (not(inaction ?robot))
-                    (at ?robot ?location)
-    )
-    :effect (and
-              (at-location ?object ?location)
-              (not (holding ?robot ?object))
-              (not(inaction ?robot))
-    )
-  )
-  
-  (:action SwitchOn
-    :parameters (?robot - robot ?object - object)
-    :precondition (and 
-                    (not(inaction ?robot))
-                    (at ?robot ?object)
-    )   
-    :effect (and
-              (not(inaction ?robot))
-              (switch-on ?robot ?object)
-    ) 
-  )
-
-
-  (:action Switchoff
-    :parameters (?robot - robot ?object - object)
-    :precondition (and
-                    (not(inaction ?robot))
-                    (at ?robot ?object)
-    )
-    :effect (and
-                (not(inaction ?robot))
-                (switch-off ?robot ?object)
-    )    
-  )
-
-
-  (:action OpenObject
-    :parameters (?robot - robot ?object - object)
-    :precondition (and
-                    (not(inaction ?robot))
-                    (at ?robot ?object)
-    )
-      
-    :effect (and
-                (not(inaction ?robot))
-                (object-open ?robot ?object)
-    )
-  )
-
-
-  (:action BreakObject
-    :parameters (?robot - robot ?object - object)
-    :precondition (and
-                    (not(inaction ?robot))
-                    (at ?robot ?object)
-    )
-    :effect (and
-              (not(inaction ?robot))
-              (break ?robot ?object)
-    )
-  )
- 
-
-  (:action CloseObject
-    :parameters (?robot - robot ?object - object)
-    :precondition (and
-                    (not(inaction ?robot))
-                    (at ?robot ?object)
-    )
-    :effect (and
-              (not(inaction ?robot))
-              (object-close ?robot ?object)
-  )
-  )
-
-
 
   (:action SliceObject
-    :parameters (?robot - robot ?object - object ?location - object)
+    :parameters (?robot - robot ?object - object ?location - object ?knife - object)
     :precondition (and 
                     (at-location ?object ?location)
                     (at ?robot ?location)
-                    (not(inaction ?robot))
+                    (holding ?robot ?knife)
+                    (not (inaction ?robot))
     )
     :effect (and
-              (not(inaction ?robot))
+              (not (inaction ?robot))
               (sliced ?object)
     )
-  )    
-  
+  )   
 
- (:action CleanObject
-    :parameters (?robot - robot ?object - object)
-    :precondition (and
-                    (not(inaction ?robot))
-                    (at ?robot ?object)
-    )
-    :effect (and
-              (not(inaction ?robot))
-              (cleaned ?robot ?object)
-    )    
-  )
 )
 
 #based on the objects availiable for potential usage below."
@@ -205,7 +126,7 @@ objects = [{'name': 'SaltShaker', 'mass': 1.0}, {'name': 'SoapBottle', 'mass': 5
 
     at-location potato counterTop
     at-location knife counterTop
-    inaction robot1
+    not (inaction robot1)
 
 #Step 2: Define Goals
 
@@ -222,18 +143,16 @@ pddl
     potato - object
     knife - object
     counterTop - object
+    robot1_init_location - object
   )
   (:init
-    (at robot1 counterTop)
+    (at robot1 robot1_init_location)
     (at-location potato counterTop)
-    (at-location knife)
-    (inaction robot1)
-    (inaction robot3)
+    (at-location knife counterTop)
+    not (inaction robot1)
   )
   (:goal
-    (and
-      (sliced potato)
-    )
+    (sliced potato)
   )
 )
 
