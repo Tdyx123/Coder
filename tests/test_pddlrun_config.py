@@ -13,7 +13,15 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 from ai2thor_object_cache import get_ai2_thor_objects_cache_path
-from pddlrun_llmseparate import FileProcessor, PDDLPlanner, RunConfig, TaskManager, build_robot_team, load_run_config
+from pddlrun_llmseparate import (
+    FileProcessor,
+    PDDLPlanner,
+    RunConfig,
+    TaskManager,
+    build_robot_domain_name_map,
+    build_robot_team,
+    load_run_config,
+)
 
 
 class PDDLRunConfigTests(unittest.TestCase):
@@ -95,15 +103,21 @@ class PDDLRunConfigTests(unittest.TestCase):
 
             self.assertEqual(problem_file.with_name("problem_plan.txt").read_text(encoding="utf-8"), "Solution found!")
 
-    def test_build_robot_team_preserves_source_robot_identity(self):
+    def test_build_robot_team_keeps_source_metadata_out_of_robot_dict(self):
         team = build_robot_team([15, 6])
 
         self.assertEqual(team[0]["name"], "robot1")
-        self.assertEqual(team[0]["source_robot_id"], 15)
-        self.assertEqual(team[0]["source_robot_name"], "robot15")
+        self.assertNotIn("source_robot_id", team[0])
+        self.assertNotIn("source_robot_name", team[0])
         self.assertEqual(team[1]["name"], "robot2")
-        self.assertEqual(team[1]["source_robot_id"], 6)
-        self.assertEqual(team[1]["source_robot_name"], "robot6")
+        self.assertNotIn("source_robot_id", team[1])
+        self.assertNotIn("source_robot_name", team[1])
+
+    def test_build_robot_domain_name_map_preserves_source_robot_identity(self):
+        self.assertEqual(
+            build_robot_domain_name_map([15, 6]),
+            {"robot1": "robot15", "robot2": "robot6"},
+        )
 
     def test_problemextracting_reads_real_domain_and_rewrites_to_local_robot(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

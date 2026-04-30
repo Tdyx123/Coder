@@ -1044,6 +1044,7 @@ class TaskManager:
         self.current_validated_subtask_dir: Optional[str] = None
         self.current_each_run_dir: Optional[str] = None
         self.current_robot_domain_names: Dict[str, str] = {}
+        self.dataset_robot_domain_name_maps: List[Dict[str, str]] = []
 
     def _sanitize_filename(self, value: str) -> str:
         """Convert a value into a filesystem-safe filename fragment."""
@@ -1081,19 +1082,6 @@ class TaskManager:
         if section not in self.current_task_manifest["artifacts"]:
             self.current_task_manifest["artifacts"][section] = {}
         self.current_task_manifest["artifacts"][section][key] = relative_path
-
-    def _build_robot_domain_name_map(self, robots_for_task: List[dict]) -> Dict[str, str]:
-        """Map task-local robot names to their source domain robot names."""
-        robot_domain_names: Dict[str, str] = {}
-        for robot in robots_for_task:
-            local_name = str(robot.get("name", "")).replace(" ", "")
-            if not local_name:
-                continue
-            source_name = robot.get("source_robot_name")
-            if not source_name and robot.get("source_robot_id") is not None:
-                source_name = f"robot{robot['source_robot_id']}"
-            robot_domain_names[local_name] = str(source_name or local_name).replace(" ", "")
-        return robot_domain_names
 
     def _replace_domain_robot_name(self, domain_content: str, real_robot_name: str, normalized_robot_name: str) -> str:
         """Replace a real robot domain token with the task-local robot token."""
@@ -1215,15 +1203,15 @@ class TaskManager:
             
             # Prepare robot configurations
             available_robots = []
+            self.dataset_robot_domain_name_maps = []
             for robots_list in robots_test_tasks:
                 task_robots = []
                 for i, r_id in enumerate(robots_list):
                     rob = copy.deepcopy(robots.robots[r_id-1])
                     rob['name'] = f'robot{i+1}'  # Use f-string for consistency
-                    rob["source_robot_id"] = r_id
-                    rob["source_robot_name"] = f"robot{r_id}"
                     task_robots.append(rob)
                 available_robots.append(task_robots)
+                self.dataset_robot_domain_name_maps.append(build_robot_domain_name_map(robots_list))
             
             return test_tasks, available_robots, gt_test_tasks, trans_cnt_tasks, min_trans_cnt_tasks
             
@@ -1362,7 +1350,13 @@ class TaskManager:
             with open(os.path.join(folder, filename), 'w', encoding='utf-8') as f:
                 f.write(content)
 
-    def process_tasks(self, test_tasks: List[str], available_robots: List[dict], objects_ai: str) -> None:
+    def process_tasks(
+        self,
+        test_tasks: List[str],
+        available_robots: List[dict],
+        objects_ai: str,
+        robot_domain_name_maps: Optional[List[Dict[str, str]]] = None,
+    ) -> None:
         """Process a list of tasks."""
         try:
             # Initial task count
@@ -1385,13 +1379,22 @@ class TaskManager:
             # Get domain content
             allaction_domain_path = str(self.config.allaction_domain_path())
             domain_content = self.file_processor.read_file(allaction_domain_path)
+            effective_robot_domain_name_maps = (
+                robot_domain_name_maps
+                if robot_domain_name_maps is not None
+                else self.dataset_robot_domain_name_maps
+            )
             
             # Process each task
             for task_idx, (task, robots) in enumerate(zip(test_tasks, available_robots)):
                 print(f"\n{'='*50}")
                 print(f"Processing Task: {task}: {task_idx + 1}/{len(test_tasks)}")
                 print(f"{'='*50}")
-                self.current_robot_domain_names = self._build_robot_domain_name_map(robots)
+                self.current_robot_domain_names = (
+                    copy.deepcopy(effective_robot_domain_name_maps[task_idx])
+                    if task_idx < len(effective_robot_domain_name_maps)
+                    else {}
+                )
                 self._prepare_task_run_dir(task_idx, task, robots, objects_ai, domain_content)
                 
                 # Clean generated subtask directory before starting new task
@@ -2162,10 +2165,16 @@ def build_robot_team(robot_ids: List[int]) -> List[dict]:
     for index, robot_id in enumerate(robot_ids):
         robot_def = copy.deepcopy(robots.robots[robot_id - 1])
         robot_def["name"] = f"robot{index + 1}"
-        robot_def["source_robot_id"] = robot_id
-        robot_def["source_robot_name"] = f"robot{robot_id}"
         task_robots.append(robot_def)
     return task_robots
+
+
+def build_robot_domain_name_map(robot_ids: List[int]) -> Dict[str, str]:
+    """Map task-local robot names to the real robot domain names."""
+    return {
+        f"robot{index + 1}": f"robot{robot_id}"
+        for index, robot_id in enumerate(robot_ids)
+    }
 
 
 def run_single_floor_plan_task(
@@ -2191,7 +2200,9 @@ def run_single_floor_plan_task(
     floor_plan_id = PDDLUtils.extract_floor_plan_number(floor_plan)
     objects_description = objects_ai or f"\n\nobjects = {PDDLUtils.get_ai2_thor_objects(int(floor_plan_id), run_config)}"
     task = task_record["task"]
-    robot_team = build_robot_team(task_record["robot list"])
+    robot_ids = task_record["robot list"]
+    robot_team = build_robot_team(robot_ids)
+    robot_domain_name_map = build_robot_domain_name_map(robot_ids)
     gt_test_tasks = [task_record.get("object_states", "")]
     trans_cnt_tasks = [task_record.get("trans", 0)]
     min_trans_cnt_tasks = [task_record.get("min_trans", task_record.get("max_trans", 0))]
@@ -2200,6 +2211,7 @@ def run_single_floor_plan_task(
         test_tasks=[task],
         available_robots=[robot_team],
         objects_ai=objects_description,
+        robot_domain_name_maps=[robot_domain_name_map],
     )
 
     if log_results:
