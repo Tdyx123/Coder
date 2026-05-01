@@ -72,7 +72,6 @@ objects = [{'name': 'SaltShaker', 'mass': 1.0}, {'name': 'SoapBottle', 'mass': 5
 # For the 'Turn off the light' subtask, it can be performed by any robot with 'GoToObject' and 'SwitchOff' skills. In this case, Robots 2 has all these skills.
 # For the 'Turn on the faucet' subtask, it can be performed by any robot with 'GoToObject' and 'SwitchOff' skills. In this case, Robots 2 has all these skills.
 # For the 'Leave the house' subtask, it can performed only after subtask 1 and subtask 2 is done. In this case, Robots 2 after finishing 'turn off the light' and 'turn off the facut task'
-# No teams are required since SubTasks can be performed with individual robots as explained above. The 'Turn off the light' and 'Turn on the faucet' subtasks, and 'leave the house' subtask are sequantially assigned to Robot 2. 
 # Robot 2 cannot do both the SubTasks in parallel. Serialize the SubTasks and perform them one after the other using Robot 2. 
 
 #Problem content summary
