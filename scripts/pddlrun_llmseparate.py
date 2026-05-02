@@ -690,6 +690,23 @@ class FileProcessor:
             print(f"Error extracting plan from output: {str(e)}")
             return ""
 
+    def extract_plan_from_planfile(self, content: str) -> str:
+        """Extract clean plan actions from a planner plan file."""
+        if not content or not isinstance(content, str):
+            raise ValueError("Invalid content provided to extract_plan_from_planfile")
+
+        try:
+            plan_lines = []
+            for line in content.splitlines():
+                stripped = line.strip()
+                if not stripped or stripped.startswith(";"):
+                    continue
+                plan_lines.append(stripped)
+            return "\n".join(plan_lines)
+        except Exception as e:
+            print(f"Error extracting plan from plan file: {str(e)}")
+            return ""
+
     def calculate_task_completion_rate(self) -> Tuple[int, int]:
         """Calculate task completion rate from plan files.
         
@@ -1965,6 +1982,7 @@ class TaskManager:
             planner_path = str(self.config.planner_executable)
             problem_files = [f for f in os.listdir(self.file_processor.validated_subtask_path) if f.endswith('.pddl')]  #PG: Changed to validated_subtask_path
             planner_records = []
+            plan_output_files = []
             for problem_file in problem_files:
                 try:
                     problem_file_full = os.path.join(self.file_processor.validated_subtask_path, problem_file) #PG: Changed to validated_subtask_path
@@ -1978,8 +1996,11 @@ class TaskManager:
                         print(f"No domain file found for domain {domain_name}")
                         continue
 
+                    output_file = os.path.join(self.file_processor.validated_subtask_path, problem_file.replace('.pddl', '_plan.txt')) #PG: Changed to validated_subtask_path from subtask_path
                     command = [
                         planner_path,
+                        "--plan-file",
+                        output_file,
                         "--alias",
                         str(self.config.get("planner", "alias", "seq-opt-lmcut")),
                         domain_file,
@@ -1995,8 +2016,6 @@ class TaskManager:
                         timeout=int(self.config.get("planner", "timeout_seconds", 300))
                     )
                     
-                    output_file = os.path.join(self.file_processor.validated_subtask_path, problem_file.replace('.pddl', '_plan.txt')) #PG: Changed to validated_subtask_path from subtask_path
-                    self.file_processor.write_file(output_file, result.stdout)
                     safe_name = self._sanitize_filename(problem_file.replace(".pddl", ""))
                     command_path = f"08_planner/commands/{safe_name}_command.txt"
                     stdout_path = f"08_planner/stdout/{safe_name}_stdout.txt"
@@ -2014,6 +2033,8 @@ class TaskManager:
                         "duration_seconds": round(time.time() - started_at, 3),
                         "compatibility_output": output_file,
                     })
+                    if self.current_task_manifest is not None:
+                        plan_output_files.append(output_file)
 
                     if result.stderr:
                         print(f"Warnings/Errors for {problem_file}:", result.stderr)
@@ -2032,6 +2053,10 @@ class TaskManager:
                         "error": str(e)
                     })
                     continue
+            if self.current_task_manifest is not None:
+                self.current_task_manifest["planner"] = {
+                    "plan_output_files": plan_output_files
+                }
             planner_manifest_path = self.config.artifact("planner_manifest", "08_planner/planner_manifest.json")
             self._write_json_artifact(planner_manifest_path, planner_records)
             self._record_artifact("planner", "manifest", planner_manifest_path)
@@ -2049,15 +2074,13 @@ class TaskManager:
         if isinstance(decomposed_plan, list):
             decomposed_plan = decomposed_plan[0]
         
-        base_path = self.file_processor.validated_subtask_path
-        plan_files = [f for f in os.listdir(base_path) if f.endswith('_plan.txt')]
+        plan_files = self.current_task_manifest.get("planner", {}).get("plan_output_files", [])
         prompt = ""
         # Add plans from files if they exist
         if plan_files:
-            for idx, filename in enumerate(plan_files):
-                filepath = os.path.join(base_path, filename)
+            for idx, filepath in enumerate(plan_files):
                 content = self.file_processor.read_file(filepath)
-                plan = self.file_processor.extract_plan_from_output(content)
+                plan = self.file_processor.extract_plan_from_planfile(content)
                 if plan:  # Only add non-empty plans
                     prompt += f"\nPlan {idx + 1}:\n{plan}\n"
         

@@ -103,6 +103,94 @@ class PDDLRunConfigTests(unittest.TestCase):
 
             self.assertEqual(problem_file.with_name("problem_plan.txt").read_text(encoding="utf-8"), "Solution found!")
 
+    def test_run_planners_passes_plan_file_before_alias_without_overwriting_it(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            config = RunConfig(
+                root,
+                values={
+                    "planner": {
+                        "executable": "custom/fast-downward.py",
+                        "alias": "custom-alias",
+                        "timeout_seconds": 17,
+                    }
+                },
+            )
+            manager = TaskManager(str(root), "test-model", config=config)
+            manager.current_task_run_dir = str(root / "task_run")
+            manager.current_task_manifest = {"artifacts": {}}
+            Path(manager.current_task_run_dir).mkdir(parents=True)
+
+            resources_dir = root / "resources"
+            resources_dir.mkdir(parents=True, exist_ok=True)
+            domain_file = resources_dir / "robot1.pddl"
+            domain_file.write_text("(define (domain robot1))", encoding="utf-8")
+
+            problem_file = Path(manager.file_processor.validated_subtask_path) / "task.pddl"
+            problem_file.write_text("(define (problem task) (:domain robot1 ))", encoding="utf-8")
+            output_file = problem_file.with_name("task_plan.txt")
+            captured = {}
+
+            def fake_run(command, stdout, stderr, text, timeout):
+                captured["command"] = command
+                self.assertEqual(timeout, 17)
+
+                class Result:
+                    stdout = "planner stdout"
+                    stderr = ""
+                    returncode = 0
+
+                return Result()
+
+            with patch("pddlrun_llmseparate.subprocess.run", side_effect=fake_run), \
+                    patch.object(manager.file_processor, "write_file", wraps=manager.file_processor.write_file) as write_file:
+                manager.run_planners()
+
+            command = captured["command"]
+            self.assertEqual(command[0], str(root / "custom" / "fast-downward.py"))
+            self.assertEqual(command[1:3], ["--plan-file", str(output_file)])
+            self.assertLess(command.index("--plan-file"), command.index("--alias"))
+            self.assertEqual(command[3:5], ["--alias", "custom-alias"])
+            self.assertEqual(command[-2:], [str(domain_file), str(problem_file)])
+            self.assertFalse(output_file.exists())
+            self.assertEqual(manager.current_task_manifest["planner"]["plan_output_files"], [str(output_file)])
+            self.assertNotIn((str(output_file), "planner stdout"), [call.args for call in write_file.call_args_list])
+            self.assertTrue(
+                any(str(call.args[0]).endswith("08_planner/stdout/task_stdout.txt") and call.args[1] == "planner stdout"
+                    for call in write_file.call_args_list)
+            )
+
+    def test_combine_all_plans_reads_recorded_plan_output_files_only(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manager = TaskManager(str(root), "test-model", config=RunConfig(root))
+            manager.current_task_run_dir = str(root / "task_run")
+            Path(manager.current_task_run_dir).mkdir(parents=True)
+
+            recorded_plan = root / "recorded_plan.txt"
+            recorded_plan.write_text("move robot apple (1)", encoding="utf-8")
+            unrelated_plan = Path(manager.file_processor.validated_subtask_path) / "unrelated_plan.txt"
+            unrelated_plan.write_text("drop robot banana (1)", encoding="utf-8")
+
+            manager.current_task_manifest = {
+                "artifacts": {},
+                "planner": {
+                    "plan_output_files": [str(recorded_plan)]
+                },
+            }
+            captured = {}
+
+            def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
+                captured["prompt"] = messages[-1]["content"]
+                return {}, "combined plan"
+
+            with patch.object(manager.llm, "query_model", side_effect=fake_query_model):
+                result = manager._combine_all_plans("initial decomposed plan")
+
+            self.assertEqual(result, "combined plan")
+            self.assertIn("move robot apple (1)", captured["prompt"])
+            self.assertNotIn("drop robot banana (1)", captured["prompt"])
+
     def test_build_robot_team_keeps_source_metadata_out_of_robot_dict(self):
         team = build_robot_team([15, 6])
 
