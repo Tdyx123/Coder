@@ -145,6 +145,20 @@
     )
   )
 
+  (:action CleanObject
+    :parameters (?robot - robot ?object - object ?sink - sink)
+    :precondition (and
+                    (not (inaction ?robot))
+                    (holding ?robot ?object)
+                    (at ?robot ?sink)
+    )
+    :effect (and
+              (not (inaction ?robot))
+              (cleaned ?object)
+    )    
+  )
+
+
   (:action RunMicrowave
     :parameters (?robot - robot ?microwave - microwave ?item - object)
     :precondition (and

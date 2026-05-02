@@ -102,4 +102,17 @@
               (not (inaction ?robot))
     )
   )
+
+  (:action CleanObject
+    :parameters (?robot - robot ?object - object ?sink - sink)
+    :precondition (and
+                    (not (inaction ?robot))
+                    (holding ?robot ?object)
+                    (at ?robot ?sink)
+    )
+    :effect (and
+              (not (inaction ?robot))
+              (cleaned ?object)
+    )    
+  )
 )

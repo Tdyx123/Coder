@@ -65,6 +65,49 @@
     )
   )
 
+  (:action CleanObject
+    :parameters (?robot - robot ?object - object ?sink - sink)
+    :precondition (and
+                    (not (inaction ?robot))
+                    (holding ?robot ?object)
+                    (at ?robot ?sink)
+    )
+    :effect (and
+              (not (inaction ?robot))
+              (cleaned ?object)
+    )    
+  )
+
+
+  (:action OpenObject
+    :parameters (?robot - robot ?object - object)
+    :precondition (and
+                    (not(inaction ?robot))
+                    (at ?robot ?object)
+                    (is-openable ?object)
+                    (not(object-open ?object))
+    )
+      
+    :effect (and
+                (not(inaction ?robot))
+                (object-open ?object)
+    )
+  )
+
+
+  (:action CloseObject
+    :parameters (?robot - robot ?object - object)
+    :precondition (and
+                    (not(inaction ?robot))
+                    (at ?robot ?object)
+                    (object-open ?object)
+    )
+    :effect (and
+              (not(inaction ?robot))
+              (not(object-open ?object))
+  )
+  )
+
   (:action RunMicrowave
     :parameters (?robot - robot ?microwave - microwave ?item - object)
     :precondition (and
