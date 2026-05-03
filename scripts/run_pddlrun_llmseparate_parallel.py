@@ -109,11 +109,6 @@ def run_single_job(
         summary["error"] = error_message
     if result:
         summary["task_run_dir"] = result.get("task_run_dir")
-        summary["generated_subtask_dir"] = result.get("generated_subtask_dir")
-        summary["validated_subtask_dir"] = result.get("validated_subtask_dir")
-        summary["successful_subtasks"] = result.get("successful_subtasks")
-        summary["total_subtasks"] = result.get("total_subtasks")
-        summary["manifest"] = result.get("manifest")
     return summary
 
 

@@ -2247,6 +2247,7 @@ def run_single_floor_plan_task(
         robot_domain_name_maps=[robot_domain_name_map],
     )
 
+    return {"task_run_dir": task_manager.current_task_run_dir}
     
 
 def load_dataset_records(test_file: str) -> List[Dict[str, Any]]:
