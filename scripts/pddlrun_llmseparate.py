@@ -981,19 +981,13 @@ class PDDLPlanner:
         Returns:
             Tuple[int, int]: (number of completed tasks, total number of tasks)
         """
-        TC = 0
-        total_subtasks = 0
+
+        validated_problem_file_path = self._get_validated_problem_file_path()
+
+        TC = len([f for f in os.listdir(validated_problem_file_path) if f.endswith('_validated_plan.txt')])
+        total_subtasks = len([f for f in os.listdir(validated_problem_file_path) if f.endswith('_validated.pddl')])
         
-        try:
-            for file_path in glob.glob(os.path.join(self.file_processor.validated_subtask_path, '*_plan.txt')):   #PG: Changed for validation
-                total_subtasks += 1
-                content = self.file_processor.read_file(file_path)
-                TC += content.count('Solution found!')
-                
-            return TC, total_subtasks
-            
-        except Exception as e:
-            raise PlanningError(f"Error calculating completion rate: {str(e)}")
+        return TC, total_subtasks
 
 class TaskManager:
     """Manages task processing and coordination.
@@ -1473,30 +1467,12 @@ class TaskManager:
 
                 # Calculate completion rate
                 tc, total = self.planner.calculate_completion_rate()
-                self.tc.append(tc)
-                self.total_subtasks.append(total)
+
                 self.current_task_manifest["completion"] = {
                     "successful_subtasks": tc,
                     "total_subtasks": total
                 }
                 self._persist_manifest()
-                validated_count = len(split_manifest)
-                self.task_results.append({
-                    "task_index": task_idx,
-                    "task": task,
-                    "task_run_dir": self.current_task_run_dir,
-                    "generated_subtask_dir": self.file_processor.subtask_path,
-                    "validated_subtask_dir": self.file_processor.validated_subtask_path,
-                    "decomposed_plan": decomposed_plan,
-                    "allocated_plan": allocated_plan,
-                    "code_plan": code_plan,
-                    "validated_plan": list(self.validated_plan[-validated_count:]) if validated_count else [],
-                    "combined_plan": combined_plan,
-                    "code_planpddl": matched_plan,
-                    "successful_subtasks": tc,
-                    "total_subtasks": total,
-                    "manifest": copy.deepcopy(self.current_task_manifest),
-                })
                 print(f"Task {task_idx + 1} completion rate: {tc}/{total}")
                 
             print(f"\n{'='*50}")
