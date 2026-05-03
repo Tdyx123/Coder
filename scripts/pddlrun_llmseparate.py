@@ -974,20 +974,6 @@ class PDDLPlanner:
                 
         except Exception as e:
             raise PlanningError(f"Error running PDDL planner: {str(e)}")
-    
-    def calculate_completion_rate(self) -> Tuple[int, int]:
-        """
-        
-        Returns:
-            Tuple[int, int]: (number of completed tasks, total number of tasks)
-        """
-
-        validated_problem_file_path = self._get_validated_problem_file_path()
-
-        TC = len([f for f in os.listdir(validated_problem_file_path) if f.endswith('_validated_plan.txt')])
-        total_subtasks = len([f for f in os.listdir(validated_problem_file_path) if f.endswith('_validated.pddl')])
-        
-        return TC, total_subtasks
 
 class TaskManager:
     """Manages task processing and coordination.
@@ -1197,7 +1183,19 @@ class TaskManager:
         except Exception as e:
             print(f"Error accessing directory {directory}: {str(e)}")
     
+    def calculate_completion_rate(self) -> Tuple[int, int]:
+        """
+        
+        Returns:
+            Tuple[int, int]: (number of completed tasks, total number of tasks)
+        """
 
+        validated_problem_file_path = self._get_validated_problem_file_path()
+
+        TC = len([f for f in os.listdir(validated_problem_file_path) if f.endswith('_validated_plan.txt')])
+        total_subtasks = len([f for f in os.listdir(validated_problem_file_path) if f.endswith('_validated.pddl')])
+        
+        return TC, total_subtasks
 
     def load_dataset(self, test_file: str) -> Tuple[List[str], List[List[dict]], List[str], List[int], List[int]]:
         """Load dataset from a JSONL file.
@@ -1473,7 +1471,7 @@ class TaskManager:
                 print("Final PDDL Plan:\n", matched_plan)
 
                 # Calculate completion rate
-                tc, total = self.planner.calculate_completion_rate()
+                tc, total = self.calculate_completion_rate()
 
                 self.current_task_manifest["completion"] = {
                     "successful_subtasks": tc,
