@@ -1073,6 +1073,13 @@ class TaskManager:
 
         return os.path.join(self.current_task_run_dir, "05_problem_generation/outputs")
     
+    def _get_plan_file_path(self) -> Optional[str]:
+        """Write a text artifact under the current task run directory."""
+        if not self.current_task_run_dir:
+            return None
+
+        return os.path.join(self.current_task_run_dir, "08_planner/outputs")
+
     def _write_json_artifact(self, relative_path: str, content: Any) -> Optional[str]:
         """Write a JSON artifact under the current task run directory."""
         if not self.current_task_run_dir:
@@ -1190,10 +1197,8 @@ class TaskManager:
             Tuple[int, int]: (number of completed tasks, total number of tasks)
         """
 
-        validated_problem_file_path = self._get_validated_problem_file_path()
-
-        TC = len([f for f in os.listdir(validated_problem_file_path) if f.endswith('_validated_plan.txt')])
-        total_subtasks = len([f for f in os.listdir(validated_problem_file_path) if f.endswith('_validated.pddl')])
+        TC = len([f for f in os.listdir(self._get_plan_file_path()) if f.endswith('_validated_plan.txt')])
+        total_subtasks = len([f for f in os.listdir(self._get_validated_problem_file_path()) if f.endswith('_validated.pddl')])
         
         return TC, total_subtasks
 
@@ -2006,8 +2011,12 @@ class TaskManager:
                     if not domain_file:
                         print(f"No domain file found for domain {domain_name}")
                         continue
-
-                    output_file = problem_file_full.replace('.pddl', '_plan.txt') #PG: Changed to validated_subtask_path from subtask_path
+                    
+                    safe_name = self._sanitize_filename(problem_file.replace(".pddl", ""))
+                    command_path = f"08_planner/commands/{safe_name}_command.txt"
+                    stdout_path = f"08_planner/stdout/{safe_name}_stdout.txt"
+                    stderr_path = f"08_planner/stderr/{safe_name}_stderr.txt"
+                    output_file = f"08_planner/outputs/{safe_name}_plan.txt"
                     command = [
                         planner_path,
                         "--plan-file",
@@ -2027,10 +2036,6 @@ class TaskManager:
                         timeout=int(self.config.get("planner", "timeout_seconds", 300))
                     )
                     
-                    safe_name = self._sanitize_filename(problem_file.replace(".pddl", ""))
-                    command_path = f"08_planner/commands/{safe_name}_command.txt"
-                    stdout_path = f"08_planner/stdout/{safe_name}_stdout.txt"
-                    stderr_path = f"08_planner/stderr/{safe_name}_stderr.txt"
                     self._write_text_artifact(command_path, " ".join(command))
                     self._write_text_artifact(stdout_path, result.stdout)
                     self._write_text_artifact(stderr_path, result.stderr)
@@ -2044,8 +2049,6 @@ class TaskManager:
                         "duration_seconds": round(time.time() - started_at, 3),
                         "compatibility_output": output_file,
                     })
-                    if self.current_task_manifest is not None:
-                        plan_output_files.append(output_file)
 
                     if result.stderr:
                         print(f"Warnings/Errors for {problem_file}:", result.stderr)
@@ -2064,10 +2067,7 @@ class TaskManager:
                         "error": str(e)
                     })
                     continue
-            if self.current_task_manifest is not None:
-                self.current_task_manifest["planner"] = {
-                    "plan_output_files": plan_output_files
-                }
+
             planner_manifest_path = self.config.artifact("planner_manifest", "08_planner/planner_manifest.json")
             self._write_json_artifact(planner_manifest_path, planner_records)
             self._record_artifact("planner", "manifest", planner_manifest_path)
@@ -2082,7 +2082,7 @@ class TaskManager:
  
         """
         
-        plan_files = self.current_task_manifest.get("planner", {}).get("plan_output_files", [])
+        plan_files = [f for f in os.listdir(self._get_plan_file_path()) if f.endswith('_validated_plan.txt')]
         prompt = ""
         # Add plans from files if they exist
         if plan_files:
@@ -2221,7 +2221,6 @@ def run_single_floor_plan_task(
     prompt_decompse_set: str = "pddl_train_task_decomposesep",
     prompt_allocation_set: str = "pddl_train_task_allocationsep",
     objects_ai: Optional[str] = None,
-    log_results: bool = True,
     config: Optional[RunConfig] = None,
 ) -> TaskProcessingResult:
     """Run a single dataset record as an isolated task-safe execution unit."""
@@ -2239,9 +2238,6 @@ def run_single_floor_plan_task(
     robot_ids = task_record["robot list"]
     robot_team = build_robot_team(robot_ids)
     robot_domain_name_map = build_robot_domain_name_map(robot_ids)
-    gt_test_tasks = [task_record.get("object_states", "")]
-    trans_cnt_tasks = [task_record.get("trans", 0)]
-    min_trans_cnt_tasks = [task_record.get("min_trans", task_record.get("max_trans", 0))]
 
     task_manager.process_tasks(
         test_tasks=[task],
@@ -2250,18 +2246,7 @@ def run_single_floor_plan_task(
         robot_domain_name_maps=[robot_domain_name_map],
     )
 
-    if log_results:
-        task_manager.log_results(
-            task=task,
-            idx=0,
-            available_robots=[robot_team],
-            gt_test_tasks=gt_test_tasks,
-            trans_cnt_tasks=trans_cnt_tasks,
-            min_trans_cnt_tasks=min_trans_cnt_tasks,
-            objects_ai=objects_description,
-        )
-
-    return task_manager.task_results[0]
+    
 
 def load_dataset_records(test_file: str) -> List[Dict[str, Any]]:
     """Load raw dataset records from a JSONL file."""
@@ -2319,10 +2304,7 @@ def parse_arguments() -> argparse.Namespace:
         default=0,
         help="Zero-based task index to run from the selected floor plan dataset."
     )
-    parser.add_argument("--log-results", dest="log_results", action="store_true")
-    parser.add_argument("--no-log-results", dest="log_results", action="store_false")
-    parser.set_defaults(log_results=True)
-    
+
     args = parser.parse_args()
     
     # Validate that either bddl_file or floor_plan is provided
@@ -2419,7 +2401,6 @@ def main():
                 prompt_decompse_set=args.prompt_decompse_set,
                 prompt_allocation_set=args.prompt_allocation_set,
                 objects_ai=objects_ai,
-                log_results=args.log_results,
                 config=run_config,
             )
         

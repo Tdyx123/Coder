@@ -33,7 +33,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-root", type=str, default=None)
     parser.add_argument("--prompt-decompse-set", type=str, default="pddl_train_task_decomposesep")
     parser.add_argument("--prompt-allocation-set", type=str, default="pddl_train_task_allocationsep")
-    parser.add_argument("--disable-log-results", action="store_true")
     return parser.parse_args()
 
 
@@ -92,7 +91,6 @@ def run_single_job(
                 prompt_decompse_set=args.prompt_decompse_set,
                 prompt_allocation_set=args.prompt_allocation_set,
                 objects_ai=objects_ai,
-                log_results=not args.disable_log_results,
                 config=config,
             )
     except Exception as exc:
