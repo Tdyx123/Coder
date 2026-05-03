@@ -1648,10 +1648,13 @@ class TaskManager:
             prompt += f"\n\n# IMPORTANT: The AI should ensure that the robots assigned to the tasks have all the necessary skills to perform the tasks. IMPORTANT: Determine whether the subtasks must be performed sequentially or in parallel, or a combination of both and allocate robots based on availability. "
             prompt += f"\n# SOLUTION\n"
             prompt += f"\n# Additional Output Rules:"
-            prompt += f"\n# Only assign a robot if it has every required skill."
-            prompt += f"\n# If multiple robots satisfy all constraints equally, choose the robot with the smallest robot number/name order.\n"
-            prompt += f"\n# Only mention mass capacity if it prevents assignment."
-            prompt += f"\n# The SOLUTION must strictly follow the concise reasoning style shown in the examples.\n"
+            prompt += f"\n# - Only assign a robot if it has every required skill."
+            prompt += f"\n# - If multiple robots satisfy all constraints equally, choose the robot with the smallest robot number/name order."
+            prompt += f"\n# - Only mention mass capacity if it prevents assignment."
+            prompt += f"\n# - The SOLUTION must strictly follow the concise reasoning style shown in the examples."
+            prompt += f"\n# - For the **Sequence of Operations** part: if two or more subtasks can be executed in parallel (i.e., they are independent), they MUST be placed on the same line, separated by a semicolon and no newline. "
+            prompt += f"\n#   Example correct format: Subtask 1: Robot 1;Subtask 2: Robot 2;"
+            prompt += f"\n#   Sequential subtasks that depend on others should appear on their own new line.\n"
             allocate_prompt_artifact = self.config.artifact("allocate_prompt", "02_allocate/01_allocate_prompt.txt")
             allocate_output_artifact = self.config.artifact("allocate_output", "02_allocate/02_allocate_output.txt")
             self._write_text_artifact(allocate_prompt_artifact, prompt)

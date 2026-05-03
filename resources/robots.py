@@ -1,8 +1,8 @@
 # List of robots with different configurations 
 
 # ALL SKILLS - INF MASS (robot1,robot2,robot3,robot4)
-robot1 = {'name': 'robot1',   'no_skills': 9,   'skills': ['GoToObject', 'OpenObject', 'CloseObject', 'BreakObject', 'SliceObject', 'SwitchOn', 'SwitchOff', 
-                                         'PickupObject', 'PutObject'], 'mass_capacity' : 100}
+robot1 = {'name': 'robot1',   'no_skills': 10,   'skills': ['GoToObject', 'OpenObject', 'CloseObject', 'BreakObject', 'SliceObject', 'SwitchOn', 'SwitchOff', 
+                                         'PickupObject', 'PutObject', 'CleanObject'], 'mass_capacity' : 100}
 
 robot2 = {'name': 'robot2',   'no_skills': 9,   'skills': ['GoToObject', 'OpenObject', 'CloseObject', 'BreakObject', 'SliceObject', 'SwitchOn', 'SwitchOff', 
                                          'PickupObject', 'PutObject'], 'mass_capacity' : 100}
