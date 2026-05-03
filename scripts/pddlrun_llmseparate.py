@@ -1996,9 +1996,9 @@ class TaskManager:
         try:
             planner_path = str(self.config.planner_executable)
             validated_problem_file_path = self._get_validated_problem_file_path()
+            plan_file_path = self._get_plan_file_path()
             problem_files = [f for f in os.listdir(validated_problem_file_path) if f.endswith('.pddl')]  #PG: Changed to validated_subtask_path
             planner_records = []
-            plan_output_files = []
             for problem_file in problem_files:
                 try:
                     problem_file_full = os.path.join(validated_problem_file_path, problem_file) #PG: Changed to validated_subtask_path
@@ -2013,10 +2013,7 @@ class TaskManager:
                         continue
                     
                     safe_name = self._sanitize_filename(problem_file.replace(".pddl", ""))
-                    command_path = f"08_planner/commands/{safe_name}_command.txt"
-                    stdout_path = f"08_planner/stdout/{safe_name}_stdout.txt"
-                    stderr_path = f"08_planner/stderr/{safe_name}_stderr.txt"
-                    output_file = f"08_planner/outputs/{safe_name}_plan.txt"
+                    output_file = os.path.join(plan_file_path, f"{safe_name}_plan.txt")
                     command = [
                         planner_path,
                         "--plan-file",
@@ -2036,6 +2033,9 @@ class TaskManager:
                         timeout=int(self.config.get("planner", "timeout_seconds", 300))
                     )
                     
+                    command_path = f"08_planner/commands/{safe_name}_command.txt"
+                    stdout_path = f"08_planner/stdout/{safe_name}_stdout.txt"
+                    stderr_path = f"08_planner/stderr/{safe_name}_stderr.txt"
                     self._write_text_artifact(command_path, " ".join(command))
                     self._write_text_artifact(stdout_path, result.stdout)
                     self._write_text_artifact(stderr_path, result.stderr)
