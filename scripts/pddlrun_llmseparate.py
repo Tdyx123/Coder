@@ -1079,6 +1079,13 @@ class TaskManager:
         self.file_processor.write_file(artifact_path, str(content))
         return artifact_path
 
+    def _get_validated_problem_file_path(self) -> Optional[str]:
+        """Write a text artifact under the current task run directory."""
+        if not self.current_task_run_dir:
+            return None
+
+        return os.path.join(self.current_task_run_dir, "07_validate/outputs")
+    
     def _write_json_artifact(self, relative_path: str, content: Any) -> Optional[str]:
         """Write a JSON artifact under the current task run directory."""
         if not self.current_task_run_dir:
@@ -1858,7 +1865,6 @@ class TaskManager:
                 frequency_penalty=call_config.get("frequency_penalty", 0.4),
             )
 
-            
             extracted_problem = self._extract_pddl_problem_block(text)
             self._write_text_artifact(output_path0, text)
             self._write_text_artifact(output_path1, extracted_problem)
@@ -1959,7 +1965,8 @@ class TaskManager:
                     safe_name = self._sanitize_filename(problem_file.replace(".pddl", ""))
                     input_path = f"07_validate/inputs/{safe_name}_input.pddl"
                     prompt_path = f"07_validate/prompts/{safe_name}_prompt.txt"
-                    output_path = f"07_validate/outputs/{safe_name}_validated.pddl"
+                    output_path0 = f"07_validate/outputs/{safe_name}_validated.raw.txt"
+                    output_path1 = f"07_validate/outputs/{safe_name}_validated.pddl"
                     self._write_text_artifact(input_path, problem_content)
                     self._write_text_artifact(prompt_path, prompt)
                 
@@ -1973,32 +1980,14 @@ class TaskManager:
                         frequency_penalty=call_config.get("frequency_penalty", 0.4),
                     )
 
-                    self.validated_plan.append(text)  #PG: Store validated plan
-                    code_plan = [text]
-                    self._write_text_artifact(output_path, text)
-                    validation_manifest = self.file_processor.split_pddl_tasks(
-                        code_plan,
-                        True,
-                        output_directory=os.path.join(
-                            self.current_task_run_dir,
-                            self.config.artifact("validated_subtask_dir", "07_validate/validated_subtask"),
-                        )
-                    )  #PG: Use True to indicate validated
-                    validation_records.append({
-                        "problem_file": problem_file,
-                        "input_path": input_path,
-                        "prompt_path": prompt_path,
-                        "output_path": output_path,
-                        "validated_split_files": validation_manifest,
-                    })
+                    extracted_problem = self._extract_pddl_problem_block(text)
+                    self._write_text_artifact(output_path0, text)
+                    self._write_text_artifact(output_path1, extracted_problem)
                     
                 except Exception as e:
                     print(f"Error processing file {problem_file}: {str(e)}")
                     continue
-            validation_manifest_path = self.config.artifact("validation_manifest", "07_validate/validation_manifest.json")
-            self._write_json_artifact(validation_manifest_path, validation_records)
-            self._record_artifact("validate", "manifest", validation_manifest_path)
-            self._persist_manifest()
+            
                     
         except Exception as e:
             print(f"Error in run_llmvalidator: {str(e)}")
@@ -2008,12 +1997,13 @@ class TaskManager:
         """Run PDDL planners on problem files."""
         try:
             planner_path = str(self.config.planner_executable)
-            problem_files = [f for f in os.listdir(self.file_processor.validated_subtask_path) if f.endswith('.pddl')]  #PG: Changed to validated_subtask_path
+            validated_problem_file_path = self._get_validated_problem_file_path()
+            problem_files = [f for f in os.listdir(validated_problem_file_path) if f.endswith('.pddl')]  #PG: Changed to validated_subtask_path
             planner_records = []
             plan_output_files = []
             for problem_file in problem_files:
                 try:
-                    problem_file_full = os.path.join(self.file_processor.validated_subtask_path, problem_file) #PG: Changed to validated_subtask_path
+                    problem_file_full = os.path.join(validated_problem_file_path, problem_file) #PG: Changed to validated_subtask_path
                     domain_name = self.file_processor.extract_domain_name(problem_file_full)
                     if not domain_name:
                         print(f"No domain specified in {problem_file}")
@@ -2024,7 +2014,7 @@ class TaskManager:
                         print(f"No domain file found for domain {domain_name}")
                         continue
 
-                    output_file = os.path.join(self.file_processor.validated_subtask_path, problem_file.replace('.pddl', '_plan.txt')) #PG: Changed to validated_subtask_path from subtask_path
+                    output_file = problem_file_full.replace('.pddl', '_plan.txt') #PG: Changed to validated_subtask_path from subtask_path
                     command = [
                         planner_path,
                         "--plan-file",
