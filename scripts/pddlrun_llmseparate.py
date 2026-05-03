@@ -2082,8 +2082,8 @@ class TaskManager:
         """Combine all generated plan files into a single plan.
  
         """
-        
-        plan_files = [f for f in os.listdir(self._get_plan_file_path()) if f.endswith('_validated_plan.txt')]
+        plan_file_path = self._get_plan_file_path()
+        plan_files = [os.path.join(plan_file_path, f) for f in os.listdir(plan_file_path) if f.endswith('_validated_plan.txt')]
         prompt = ""
         # Add plans from files if they exist
         if plan_files:
