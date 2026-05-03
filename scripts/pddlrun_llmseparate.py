@@ -1502,33 +1502,35 @@ class TaskManager:
     def _extract_subtasks(self, decomposed_plan: str) -> List[str]:
         """从 decomposed_plan 中提取 subtask 列表。
 
-        期望格式示例:
-        #SubTask 1: TurnOffLight
+        支持的格式:
+        #Subtask 1 Put a vegetable (e.g., Lettuce) in the Fridge
+        # SubTask 1: Slice the Tomato.
+        #Subtask 1: Wash the Lettuce.
 
         Returns:
             List[str]: subtask 文本列表
         """
         subtask_block_re = re.compile(
-            r'(?im)^\s*#?\s*Sub\s*Task\s*\d+\s*:\s*.*?(?=^\s*#?\s*Sub\s*Task\s*\d+\s*:|\Z)',
+            r'(?im)^\s*#\s*[Ss]ub\s*[Tt]ask\s+\d+\s*[:.\s].*?(?=^\s*#\s*[Ss]ub\s*[Tt]ask\s+\d+\s*[:.\s]|\Z)',
             re.DOTALL
         )
         subtasks = [m.group(0).strip() for m in subtask_block_re.finditer(decomposed_plan)]
         filteredSubtasks = []
-        
+
         if not subtasks:
             filteredSubtasks = [decomposed_plan.strip()] if decomposed_plan.strip() else []
         else:
             for subtask in subtasks:
                 lines = subtask.splitlines()
 
-                while lines and lines[-1].lstrip().startswith('#'):
+                while lines and (lines[-1].lstrip().startswith('#') or lines[-1].lstrip().startswith('```') or lines[-1].strip() == ''):
                     lines.pop()
 
                 if len(lines) < 10:
                     continue
 
                 filteredSubtasks.append('\n'.join(lines))
-   
+
         return filteredSubtasks
 
     def _extract_sequence_operations(self, allocated_plan: str) -> List[str]:
