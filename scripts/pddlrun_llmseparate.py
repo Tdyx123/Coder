@@ -1462,18 +1462,19 @@ class TaskManager:
                 self._validate_and_plan()
                 print("✓ Validation and planning complete")
                 
-                # Combine and process plans
-                combined_plan = self._combine_all_plans(decomposed_plan, sequence_operations)
-                self.combined_plan.append(combined_plan)
-                print("✓ Plans combined")
-                #print("Combined Plan:\n", combined_plan)
-                #input("Press Enter to continue")
+                # currently don't combine the plans
+                # # Combine and process plans
+                # combined_plan = self._combine_all_plans(decomposed_plan, sequence_operations)
+                # self.combined_plan.append(combined_plan)
+                # print("✓ Plans combined")
+                # #print("Combined Plan:\n", combined_plan)
+                # #input("Press Enter to continue")
 
-                # Match references and store final PDDL plan
-                matched_plan = self._match_references_for_plan(combined_plan, objects_ai)
-                self.code_planpddl.append(matched_plan)
-                print("✓ References matched")
-                print("Final PDDL Plan:\n", matched_plan)
+                # # Match references and store final PDDL plan
+                # matched_plan = self._match_references_for_plan(combined_plan, objects_ai)
+                # self.code_planpddl.append(matched_plan)
+                # print("✓ References matched")
+                # print("Final PDDL Plan:\n", matched_plan)
 
                 # Calculate completion rate
                 tc, total = self.calculate_completion_rate()
