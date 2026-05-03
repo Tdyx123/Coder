@@ -1433,39 +1433,16 @@ class TaskManager:
                 #print("Allocation Plan:\n", allocated_plan)
                 #print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
                 
-                #print("Waiting for content summary...")
-                #time.sleep(60)  
-                
-                # Generate problem summary
-                problem_summary = self._generate_problem_summary(decomposed_plan, allocated_plan, robots)
-                print("✓ Problem summary generated")
-                #print("Problem Summary:\n", problem_summary)
-                #print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+                # Extract subtasks and robot assignments
+                subtasks = self._extract_subtasks(decomposed_plan)
+                sequence_operations = self._extract_sequence_operations(allocated_plan)
+                robot_assignments = self._extract_robot_assignments(sequence_operations)
+                print(f"✓ Extracted {len(subtasks)} subtasks with robot assignments")
 
-                #print("Waiting to generate problem files...")
-                #time.sleep(60)  
-                
                 # Generate and store problem files
-                code_plan = self._generate_problem_files(problem_summary)
-                self.code_plan.append(code_plan) 
+                _ = self._generate_problem_files(subtasks, robot_assignments, objects_ai)
                 print("✓ Problem files generated")
-                # print("Code Plan:\n", code_plan)
-                # print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-
-                # Split into subtasks
-                split_manifest = self.file_processor.split_pddl_tasks(
-                    code_plan,
-                    False,
-                    output_directory=os.path.join(
-                        self.current_task_run_dir,
-                        self.config.artifact("generated_subtask_dir", "06_split/generated_subtask"),
-                    )
-                )
-                generated_subtask_manifest_path = self.config.artifact("generated_subtask_manifest", "06_split/generated_subtask_manifest.json")
-                self._write_json_artifact(generated_subtask_manifest_path, split_manifest)
-                self._record_artifact("split", "generated_subtask_manifest", generated_subtask_manifest_path)
-                self._persist_manifest()
-                print("✓ Split into subtasks complete")
+                
                 #input("Press Enter to continue")
                 #print("Waiting for files to be processed...")
                 #time.sleep(50)
@@ -1475,7 +1452,7 @@ class TaskManager:
                 print("✓ Validation and planning complete")
                 
                 # Combine and process plans
-                combined_plan = self._combine_all_plans(decomposed_plan)
+                combined_plan = self._combine_all_plans(decomposed_plan, sequence_operations)
                 self.combined_plan.append(combined_plan)
                 print("✓ Plans combined")
                 #print("Combined Plan:\n", combined_plan)
@@ -1527,6 +1504,84 @@ class TaskManager:
             raise
         finally:
             get_llm_logger().clear_context()
+
+    def _extract_subtasks(self, decomposed_plan: str) -> List[str]:
+        """从 decomposed_plan 中提取 subtask 列表。
+
+        期望格式示例:
+        #SubTask 1: TurnOffLight
+        **Assigned Robot**: robot1
+        **Objects Involved**: ...
+
+        Returns:
+            List[str]: subtask 文本列表
+        """
+        subtask_block_re = re.compile(
+            r'(?im)^\s*#?\s*Sub\s*Task\s*\d+\s*:\s*.*?(?=^\s*#?\s*Sub\s*Task\s*\d+\s*:|\Z)',
+            re.DOTALL
+        )
+        subtasks = [m.group(0).strip() for m in subtask_block_re.finditer(decomposed_plan)]
+        if not subtasks:
+            subtasks = [decomposed_plan.strip()] if decomposed_plan.strip() else []
+        return subtasks
+
+    def _extract_sequence_operations(self, allocated_plan: str) -> List[str]:
+        """从 allocated_plan 输出中提取 sequence operations 列表。
+
+        期望格式:
+        # Sequence of Operations:
+        Subtask 1: Robot 2;
+        Subtask 2: Robot 2;
+        Subtask 3: Robot 2;
+        (每行代表一个子任务及其分配的机器人)
+
+        Returns:
+            List[str]: 每行一个字符串，表示 "Subtask X: Robot Y;" 格式
+        """
+        lines = []
+        in_sequence_section = False
+
+        for line in allocated_plan.strip().split('\n'):
+            line = line.strip()
+
+            if re.search(r'#?\s*Sequence\s+of\s+Operations?\s*:', line, re.IGNORECASE):
+                in_sequence_section = True
+                continue
+
+            if in_sequence_section:
+                if not line:
+                    continue
+                if re.match(r'Subtask\s+\d+:\s*Robot\s+\d+;?', line, re.IGNORECASE):
+                    lines.append(line)
+                elif line.startswith('#') or not re.search(r'Subtask\s+\d+:', line, re.IGNORECASE):
+                    break
+
+        return lines
+
+    def _extract_robot_assignments(self, sequence_operations: List[str]) -> Dict[int, int]:
+        """从 sequence_operations 中提取每个子任务分配的机器人编号。
+
+        Args:
+            sequence_operations: List[str]，每行格式如 "Subtask 1: Robot 2;" 或 "Subtask 1: Robot 2;Subtask 2: Robot 2;"
+
+        Returns:
+            Dict[int, int]: {subtask_index: robot_number}，例如 {1: 2, 2: 2, 3: 2}
+        """
+        assignments: Dict[int, int] = {}
+
+        for line in sequence_operations:
+            entries = line.split(';')
+            for entry in entries:
+                entry = entry.strip()
+                if not entry:
+                    continue
+                match = re.search(r'Subtask\s+(\d+)\s*:\s*Robot\s+(\d+)', entry, re.IGNORECASE)
+                if match:
+                    subtask_num = int(match.group(1))
+                    robot_num = int(match.group(2))
+                    assignments[subtask_num] = robot_num
+
+        return assignments
 
     def _generate_decomposed_plan(self, task: str, domain_content: str, robots: List[dict], objects_ai: str) -> str:
         """Generate decomposed plan for a task."""
@@ -1678,39 +1733,26 @@ class TaskManager:
         except Exception as e:
             raise PDDLError(f"Error generating problem summary: {str(e)}")
 
-    def _generate_problem_files(self, problem_summary: Union[str, List[str]]) -> List[str]:
-        """Generate PDDL problem files from plans.
-        
+    def _generate_problem_files(
+        self,
+        subtasks: List[str],
+        robot_assignments: Dict[int, int],
+        objects_ai: str,
+    ) -> List[str]:
+        """Generate PDDL problem files from subtasks and robot assignments.
+
+        Args:
+            subtasks: List of subtask text
+            robot_assignments: Dict mapping subtask index to robot number
+            objects_ai: AI objects description
+
+        Returns:
+            List[str]: Generated PDDL problem files
         """
-        # Handle list input by taking first summary
-        if isinstance(problem_summary, list):
-            problem_summary = problem_summary[0]
-        
         problem_pddl = []
-        problem_summary_artifact = self.config.artifact("problem_summary_raw", "04_problem_files/01_problem_summary_raw.txt")
-        sequence_operations_artifact = self.config.artifact("sequence_operations", "04_problem_files/02_sequence_operations.txt")
         subtasks_index_artifact = self.config.artifact("subtasks_index", "04_problem_files/03_subtasks.json")
         generated_problem_files_artifact = self.config.artifact("generated_problem_files", "04_problem_files/04_generated_problem_files.json")
-        self._write_text_artifact(problem_summary_artifact, problem_summary)
-        self._record_artifact("problem_files", "problem_summary", problem_summary_artifact)
-        
-        # Split into subtasks and sequence operations
-        subtasks, sequence_operations = self.file_processor.split_and_store_tasks(
-            problem_summary,
-            llm=self.llm,
-            model=self.model
-        )
 
-        # print("subtasks", subtasks)
-        # print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-        # print("sequence operations", sequence_operations)
-        # print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-
-
-        # Store sequence operations for later use
-        self.sequence_operations = sequence_operations
-        self._write_text_artifact(sequence_operations_artifact, sequence_operations)
-        self._record_artifact("problem_files", "sequence_operations", sequence_operations_artifact)
         subtask_entries = []
         for idx, subtask in enumerate(subtasks, start=1):
             relative_path = f"04_problem_files/subtasks/subtask_{idx:02d}.txt"
@@ -1721,14 +1763,14 @@ class TaskManager:
             })
         self._write_json_artifact(subtasks_index_artifact, subtask_entries)
         self._record_artifact("problem_files", "subtasks_index", subtasks_index_artifact)
-        
-        # Process each subtask using the class method
+
         problem_pddl = self.problemextracting(
             subtasks=subtasks,
+            robot_assignments=robot_assignments,
             llm=self.llm,
             model=self.model,
             file_processor=self.file_processor,
-            objects_ai=self.objects_ai,
+            objects_ai=objects_ai,
             prompt_allocation_set=self.prompt_allocation_set
         )
         self._write_json_artifact(
@@ -1737,151 +1779,135 @@ class TaskManager:
         )
         self._record_artifact("problem_files", "generated_problem_files", generated_problem_files_artifact)
         self._persist_manifest()
-        
+
         return problem_pddl
     
 
     def problemextracting(
             self,
             subtasks: List[str],
+            robot_assignments: Dict[int, int],
             llm: 'LLMHandler',
             model: str,
             file_processor: 'FileProcessor',
             objects_ai: str,
             prompt_allocation_set: str
         ) -> List[str]:
-        """Extract problem files from subtasks."""
+        """Extract problem files from subtasks using precomputed robot assignments.
+
+        Args:
+            subtasks: List of subtask text
+            robot_assignments: Dict mapping subtask index to robot number
+            llm: LLM handler
+            model: Model name
+            file_processor: File processor instance
+            objects_ai: AI objects description
+            prompt_allocation_set: Prompt template name
+
+        Returns:
+            List[str]: Generated PDDL problem files
+        """
         problem_pddl: List[str] = []
 
-        # Robust matchers for the Assigned Robots block
-        assigned_block_re = re.compile(
-            r'(?is)\*\*Assigned\s*Robots?\*\*\s*:\s*(.*?)\n\*\*Objects\s*Involved\*\*\s*:',
-            re.IGNORECASE | re.DOTALL
-        )
-        assigned_block_fallback = re.compile(
-            r'(?is)\bAssigned\s*Robots?\b\s*:\s*(.*?)\n\bObjects\s*Involved\b\s*:',
-            re.IGNORECASE | re.DOTALL
-        )
-
-        # Match "robot 1" and "robots 1"
-        robot_num_re = re.compile(r'\brobots?\s*(\d+)\b', re.IGNORECASE)
-
-        # Phrases that imply "pick a single robot among the listed ones"
-        single_choice_phrase_re = re.compile(
-            r'\b(any\s+one|either|one\s+of|choose\s+one|pick\s+one|any\s+robot\s+among|any\s+of)\b',
-            re.IGNORECASE
-        )
-
         for subtask_idx, subtask in enumerate(subtasks, start=1):
-            m = assigned_block_re.search(subtask) or assigned_block_fallback.search(subtask)
-            if not m:
-                print("Invalid subtask structure, skipping")
+            robot_num = robot_assignments.get(subtask_idx, 1)
+            normalized_robot_name = f"robot{robot_num}"
+            real_robot_name = self.current_robot_domain_names.get(normalized_robot_name, normalized_robot_name)
+            robotassignnumber = f"{real_robot_name}.pddl"
+            domain_path = str(self.config.robot_domain_path(robotassignnumber))
+
+            domain_content = file_processor.read_file(domain_path) or ""
+            if not domain_content:
+                print(f"Domain file not found or empty: {domain_path}")
                 continue
+            domain_content = self._replace_domain_robot_name(
+                domain_content,
+                real_robot_name,
+                normalized_robot_name,
+            )
 
-            assigned_robots = m.group(1).strip()
+            problem_fileexamplepath = self.config.prompt_file(f"{prompt_allocation_set}_problem.py")
+            problem_examplecontent = file_processor.read_file(str(problem_fileexamplepath)) or ""
 
-            # Extract robot numbers
-            robot_numbers = robot_num_re.findall(assigned_robots)
+            prompt = (
+                "\n" + problem_examplecontent +
+                " Finish the tasks like example\n"
+                "Subtask examination from action perspective:" + subtask +
+                "\nDomain file content:" + domain_content +
+                "\n based on the objects available for potential usage below." + objects_ai +
+                "\nTask description: generate the problem file. Based on the objects above, "
+                "the domain file preconditions, actions, and subtask examination. "
+                "IMPORTANT the robot initiates strictly as not inaction and robot "
+                "(which includes location)\n"
+                "#IMPORTANT, strictly follow the structure, stop generating after the Problem file generation is done."
+            )
+            prompt_path = f"05_problem_generation/prompts/subtask_{subtask_idx:02d}_prompt.txt"
+            output_path0 = f"05_problem_generation/outputs/subtask_{subtask_idx:02d}_problem.raw.txt"
+            output_path1 = f"05_problem_generation/outputs/subtask_{subtask_idx:02d}_problem.pddl"
+            self._write_text_artifact(prompt_path, prompt)
 
-            # Fallback: capture bare numbers if "robot(s)" isn't repeated before each number
-            if not robot_numbers:
-                robot_numbers = re.findall(r'\b\d+\b', assigned_robots)
+            messages = [
+                {"role": "system", "content": "You are a Robot PDDL problem Expert"},
+                {"role": "user", "content": prompt}
+            ]
+            call_config = self.config.llm_call("problem_generation")
+            _, text = llm.query_model(
+                messages,
+                model,
+                max_tokens=call_config.get("max_tokens", 1400),
+                frequency_penalty=call_config.get("frequency_penalty", 0.4),
+            )
 
-            # Normalize like ["robot1", "robot2", ...]
-            normalized_robot_numbers = [f"robot{num}" for num in robot_numbers]
-
-            # Detect phrasing that indicates a single-choice (not team) among listed robots
-            single_choice = bool(single_choice_phrase_re.search(assigned_robots))
-
-            # Team detection
-            is_team = ("team" in assigned_robots.lower()) or ("allactionrobot" in assigned_robots.lower())
-
-            # If wording says "any one/either/one of/..." and we have numbers, treat as single-robot
-            if single_choice and normalized_robot_numbers:
-                # Deterministic selection policy: smallest robot number
-                try:
-                    smallest = min(int(n[len("robot"):]) for n in normalized_robot_numbers)
-                    normalized_robot_numbers = [f"robot{smallest}"]
-                except ValueError:
-                    # Fallback to the first listed if parsing failed
-                    normalized_robot_numbers = [normalized_robot_numbers[0]]
-                is_team = False
-
-            if (not single_choice) and (len(normalized_robot_numbers) > 1):
-                is_team = True
-
-            if is_team:
-                print("No team currently.\n")
-                return ""
-            else:
-                # Single-robot case
-                if not normalized_robot_numbers:
-                    print("No robot number found in Assigned Robot; skipping.")
-                    print("Assigned Robots content:", assigned_robots)
-                    continue
-
-                # Deterministic single-robot choice: if multiple remain, take smallest
-                if len(normalized_robot_numbers) > 1:
-                    try:
-                        smallest = min(int(n[len("robot"):]) for n in normalized_robot_numbers)
-                        normalized_robot_numbers = [f"robot{smallest}"]
-                    except ValueError:
-                        normalized_robot_numbers = [normalized_robot_numbers[0]]
-
-                normalized_robot_name = normalized_robot_numbers[0].replace(' ', '')
-                real_robot_name = self.current_robot_domain_names.get(normalized_robot_name, normalized_robot_name)
-                robotassignnumber = f"{real_robot_name}.pddl"
-                domain_path = str(self.config.robot_domain_path(robotassignnumber))
-                # print("this is a solo work")
-                # print(domain_path)
-
-                domain_content = file_processor.read_file(domain_path) or ""
-                if not domain_content:
-                    print(f"Domain file not found or empty: {domain_path}")
-                    continue
-                domain_content = self._replace_domain_robot_name(
-                    domain_content,
-                    real_robot_name,
-                    normalized_robot_name,
-                )
-
-                problem_fileexamplepath = self.config.prompt_file(f"{prompt_allocation_set}_problem.py")
-                problem_examplecontent = file_processor.read_file(str(problem_fileexamplepath)) or ""
-
-                prompt = (
-                    "\n" + problem_examplecontent +
-                    " Finish the tasks like example\n"
-                    "Subtask examination from action perspective:" + subtask +
-                    "\nDomain file content:" + domain_content +
-                    "\n based on the objects available for potential usage below." + objects_ai +
-                    "\nTask description: generate the problem file. Based on the objects above, "
-                    "the domain file preconditions, actions, and subtask examination. "
-                    "IMPORTANT the robot initiates strictly as not inaction and robot "
-                    "(which includes location)\n"
-                    "#IMPORTANT, strictly follow the structure, stop generating after the Problem file generation is done."
-                )
-                prompt_path = f"05_problem_generation/prompts/subtask_{subtask_idx:02d}_prompt.txt"
-                output_path = f"05_problem_generation/outputs/subtask_{subtask_idx:02d}_problem.pddl"
-                self._write_text_artifact(prompt_path, prompt)
             
-                messages = [
-                    {"role": "system", "content": "You are a Robot PDDL problem Expert"},
-                    {"role": "user", "content": prompt}
-                ]
-                call_config = self.config.llm_call("problem_generation")
-                _, text = llm.query_model(
-                    messages,
-                    model,
-                    max_tokens=call_config.get("max_tokens", 1400),
-                    frequency_penalty=call_config.get("frequency_penalty", 0.4),
-                )
-
-                problem_pddl.append(text)
-                self._write_text_artifact(output_path, text)
+            extracted_problem = self._extract_pddl_problem_block(text)
+            self._write_text_artifact(output_path0, text)
+            self._write_text_artifact(output_path1, extracted_problem)
+            problem_pddl.append(extracted_problem)
 
         return problem_pddl
-    
-    def _validate_and_plan(self) -> None:
+
+    def _extract_pddl_problem_block(self, text: str) -> str:
+        """Extract clean PDDL problem block from text.
+
+        Args:
+            text: Raw LLM output containing PDDL problem possibly with trailing text
+
+        Returns:
+            Extracted PDDL problem block, or original text if extraction fails
+        """
+        start_marker = "(define (problem"
+        start_idx = text.find(start_marker)
+        if start_idx == -1:
+            return text
+
+        in_problem = False
+
+        lines = text[start_idx:].split('\n')
+
+        problem_lines = []
+        for line in lines:
+            if not in_problem:
+                if '(define (problem' in line:
+                    in_problem = True
+                    problem_lines.append(line)
+                else:
+                    continue
+            else:
+                striped = line.strip()
+                if len(striped) == 0:
+                    break
+
+                if '#' in line or '```' in line:
+                    break
+
+                problem_lines.append(line)
+
+        if not problem_lines or problem_lines[-1].strip() != ')':
+            return text
+
+        return '\n'.join(problem_lines)
+
+    def _validate_and_plan(self):
         """Validate and plan all problem files."""
         try:
             # First run LLM validator
@@ -1912,8 +1938,10 @@ class TaskManager:
                     if not domain_name:
                         print(f"No domain specified in {problem_file}")
                         continue
+                    
+                    real_robot_name = self.current_robot_domain_names.get(domain_name, domain_name)
+                    domain_file = str(self.config.robot_domain_path(f"{real_robot_name}.pddl"))
 
-                    domain_file = self.file_processor.find_domain_file(domain_name)
                     if not domain_file:
                         print(f"No domain file found for domain {domain_name}")
                         continue
@@ -2066,13 +2094,10 @@ class TaskManager:
             print(f"Error in run_planners: {str(e)}")
             raise
 
-    def _combine_all_plans(self, decomposed_plan: Union[str, List[str]]) -> str:
+    def _combine_all_plans(self, decomposed_plan:str, sequence_operations:List[str]) -> str:
         """Combine all generated plan files into a single plan.
  
         """
-        # Handle list input by taking first plan
-        if isinstance(decomposed_plan, list):
-            decomposed_plan = decomposed_plan[0]
         
         plan_files = self.current_task_manifest.get("planner", {}).get("plan_output_files", [])
         prompt = ""
@@ -2086,7 +2111,7 @@ class TaskManager:
         
         # Add allocation examination and initial plan
         prompt += "\nallocation examination\n"
-        prompt += self.sequence_operations if hasattr(self, 'sequence_operations') else ""
+        prompt += "\n".join(sequence_operations)
         prompt += "\ninitial plan examination\n"
         prompt += decomposed_plan
         
