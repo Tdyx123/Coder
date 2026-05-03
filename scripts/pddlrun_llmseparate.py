@@ -1080,6 +1080,13 @@ class TaskManager:
 
         return os.path.join(self.current_task_run_dir, "07_validate/outputs")
     
+    def _get_raw_problem_file_path(self) -> Optional[str]:
+        """Write a text artifact under the current task run directory."""
+        if not self.current_task_run_dir:
+            return None
+
+        return os.path.join(self.current_task_run_dir, "05_problem_generation/outputs")
+    
     def _write_json_artifact(self, relative_path: str, content: Any) -> Optional[str]:
         """Write a JSON artifact under the current task run directory."""
         if not self.current_task_run_dir:
@@ -1493,8 +1500,6 @@ class TaskManager:
 
         期望格式示例:
         #SubTask 1: TurnOffLight
-        **Assigned Robot**: robot1
-        **Objects Involved**: ...
 
         Returns:
             List[str]: subtask 文本列表
@@ -1504,9 +1509,23 @@ class TaskManager:
             re.DOTALL
         )
         subtasks = [m.group(0).strip() for m in subtask_block_re.finditer(decomposed_plan)]
+        filteredSubtasks = []
+        
         if not subtasks:
-            subtasks = [decomposed_plan.strip()] if decomposed_plan.strip() else []
-        return subtasks
+            filteredSubtasks = [decomposed_plan.strip()] if decomposed_plan.strip() else []
+        else:
+            for subtask in subtasks:
+                lines = subtask.splitlines()
+
+                while lines and lines[-1].lstrip().startswith('#'):
+                    lines.pop()
+
+                if len(lines) < 10:
+                    continue
+
+                filteredSubtasks.append('\n'.join(lines))
+   
+        return filteredSubtasks
 
     def _extract_sequence_operations(self, allocated_plan: str) -> List[str]:
         """从 allocated_plan 输出中提取 sequence operations 列表。
@@ -1911,11 +1930,11 @@ class TaskManager:
     def run_llmvalidator(self) -> None:
         """Run LLM validation on problem files."""
         try:
-            problem_files = [f for f in os.listdir(self.file_processor.subtask_path) if f.endswith('.pddl')]
-            validation_records = []
+            raw_problem_file_path = self._get_raw_problem_file_path()
+            problem_files = [f for f in os.listdir(raw_problem_file_path) if f.endswith('.pddl')]
             for problem_file in problem_files:
                 try:
-                    problem_file_full = os.path.join(self.file_processor.subtask_path, problem_file)
+                    problem_file_full = os.path.join(raw_problem_file_path, problem_file)
                     domain_name = self.file_processor.extract_domain_name(problem_file_full)
                     if not domain_name:
                         print(f"No domain specified in {problem_file}")
