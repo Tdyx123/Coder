@@ -1997,6 +1997,7 @@ class TaskManager:
             planner_path = str(self.config.planner_executable)
             validated_problem_file_path = self._get_validated_problem_file_path()
             plan_file_path = self._get_plan_file_path()
+            os.makedirs(os.path.dirname(plan_file_path), exist_ok=True)
             problem_files = [f for f in os.listdir(validated_problem_file_path) if f.endswith('.pddl')]  #PG: Changed to validated_subtask_path
             planner_records = []
             for problem_file in problem_files:
