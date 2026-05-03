@@ -109,6 +109,7 @@ def run_single_job(
         summary["error"] = error_message
     if result:
         summary["task_run_dir"] = result.get("task_run_dir")
+        summary["model"] = result.get("model")
     return summary
 
 
