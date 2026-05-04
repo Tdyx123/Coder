@@ -13,8 +13,7 @@ def get_all_floor_plans() -> List[int]:
         list(range(1, 31)) +
         list(range(201, 231)) +
         list(range(301, 331)) +
-        list(range(401, 431)) +
-        list(range(501, 591))
+        list(range(401, 431))
     )
 
 
