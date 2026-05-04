@@ -1,0 +1,170 @@
+[
+  {
+    "name": "Bathtub",
+    "mass": 0.0
+  },
+  {
+    "name": "BathtubBasin",
+    "mass": 0.0
+  },
+  {
+    "name": "Cabinet",
+    "mass": 0.0
+  },
+  {
+    "name": "Cabinet",
+    "mass": 0.0
+  },
+  {
+    "name": "Cabinet",
+    "mass": 0.0
+  },
+  {
+    "name": "Cabinet",
+    "mass": 0.0
+  },
+  {
+    "name": "Candle",
+    "mass": 0.20000000298023224
+  },
+  {
+    "name": "Cloth",
+    "mass": 0.04500000178813934
+  },
+  {
+    "name": "CounterTop",
+    "mass": 0.0
+  },
+  {
+    "name": "DishSponge",
+    "mass": 0.029999997466802597
+  },
+  {
+    "name": "Faucet",
+    "mass": 0.0
+  },
+  {
+    "name": "Faucet",
+    "mass": 0.0
+  },
+  {
+    "name": "Faucet",
+    "mass": 0.0
+  },
+  {
+    "name": "Floor",
+    "mass": 1.0
+  },
+  {
+    "name": "GarbageCan",
+    "mass": 0.699999988079071
+  },
+  {
+    "name": "HandTowel",
+    "mass": 0.07999999821186066
+  },
+  {
+    "name": "HandTowelHolder",
+    "mass": 0.0
+  },
+  {
+    "name": "LightSwitch",
+    "mass": 0.0
+  },
+  {
+    "name": "Mirror",
+    "mass": 0.0
+  },
+  {
+    "name": "PaperTowelRoll",
+    "mass": 0.2199999988079071
+  },
+  {
+    "name": "Plunger",
+    "mass": 1.0
+  },
+  {
+    "name": "ScrubBrush",
+    "mass": 0.1899999976158142
+  },
+  {
+    "name": "Shelf",
+    "mass": 0.0
+  },
+  {
+    "name": "ShowerDoor",
+    "mass": 0.0
+  },
+  {
+    "name": "ShowerGlass",
+    "mass": 0.0
+  },
+  {
+    "name": "ShowerHead",
+    "mass": 0.0
+  },
+  {
+    "name": "Sink",
+    "mass": 0.0
+  },
+  {
+    "name": "Sink",
+    "mass": 0.0
+  },
+  {
+    "name": "SinkBasin",
+    "mass": 0.0
+  },
+  {
+    "name": "SinkBasin",
+    "mass": 0.0
+  },
+  {
+    "name": "SoapBar",
+    "mass": 0.10999999940395355
+  },
+  {
+    "name": "SoapBottle",
+    "mass": 0.4000000059604645
+  },
+  {
+    "name": "SprayBottle",
+    "mass": 0.10999999940395355
+  },
+  {
+    "name": "Toilet",
+    "mass": 0.0
+  },
+  {
+    "name": "ToiletPaper",
+    "mass": 0.20000000298023224
+  },
+  {
+    "name": "ToiletPaper",
+    "mass": 0.20000000298023224
+  },
+  {
+    "name": "ToiletPaperHanger",
+    "mass": 0.0
+  },
+  {
+    "name": "Towel",
+    "mass": 0.5699999928474426
+  },
+  {
+    "name": "TowelHolder",
+    "mass": 0.0
+  },
+  {
+    "name": "TowelHolder",
+    "mass": 0.0
+  },
+  {
+    "name": "Window",
+    "mass": 0.0
+  },
+  {
+    "name": "Window",
+    "mass": 0.0
+  }
+]

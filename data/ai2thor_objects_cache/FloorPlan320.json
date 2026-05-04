@@ -1,0 +1,146 @@
+[
+  {
+    "name": "AlarmClock",
+    "mass": 0.800000011920929
+  },
+  {
+    "name": "BasketBall",
+    "mass": 0.6000000238418579
+  },
+  {
+    "name": "Bed",
+    "mass": 29.999998092651367
+  },
+  {
+    "name": "Book",
+    "mass": 0.5
+  },
+  {
+    "name": "CD",
+    "mass": 0.014999998733401299
+  },
+  {
+    "name": "CellPhone",
+    "mass": 0.1599999964237213
+  },
+  {
+    "name": "Chair",
+    "mass": 10.0
+  },
+  {
+    "name": "CreditCard",
+    "mass": 0.005999999586492777
+  },
+  {
+    "name": "Curtains",
+    "mass": 0.0
+  },
+  {
+    "name": "Curtains",
+    "mass": 0.0
+  },
+  {
+    "name": "Desk",
+    "mass": 34.0
+  },
+  {
+    "name": "Desk",
+    "mass": 34.0
+  },
+  {
+    "name": "DeskLamp",
+    "mass": 2.059999942779541
+  },
+  {
+    "name": "Dumbbell",
+    "mass": 4.539999961853027
+  },
+  {
+    "name": "Dumbbell",
+    "mass": 4.539999961853027
+  },
+  {
+    "name": "Floor",
+    "mass": 1.0
+  },
+  {
+    "name": "Footstool",
+    "mass": 4.0
+  },
+  {
+    "name": "Footstool",
+    "mass": 4.0
+  },
+  {
+    "name": "GarbageBag",
+    "mass": 3.499999761581421
+  },
+  {
+    "name": "GarbageCan",
+    "mass": 0.699999988079071
+  },
+  {
+    "name": "KeyChain",
+    "mass": 0.07500000298023224
+  },
+  {
+    "name": "Laptop",
+    "mass": 2.299999952316284
+  },
+  {
+    "name": "LightSwitch",
+    "mass": 0.0
+  },
+  {
+    "name": "Mirror",
+    "mass": 0.0
+  },
+  {
+    "name": "Pen",
+    "mass": 0.005999999586492777
+  },
+  {
+    "name": "Pencil",
+    "mass": 0.005999999586492777
+  },
+  {
+    "name": "Pillow",
+    "mass": 0.699999988079071
+  },
+  {
+    "name": "Shelf",
+    "mass": 0.0
+  },
+  {
+    "name": "Shelf",
+    "mass": 0.0
+  },
+  {
+    "name": "Shelf",
+    "mass": 0.0
+  },
+  {
+    "name": "Shelf",
+    "mass": 0.0
+  },
+  {
+    "name": "SideTable",
+    "mass": 0.0
+  },
+  {
+    "name": "TeddyBear",
+    "mass": 0.8999999761581421
+  },
+  {
+    "name": "TennisRacket",
+    "mass": 0.3100000023841858
+  },
+  {
+    "name": "Window",
+    "mass": 0.0
+  },
+  {
+    "name": "Window",
+    "mass": 0.0
+  }
+]
