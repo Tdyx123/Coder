@@ -1196,9 +1196,15 @@ class TaskManager:
         Returns:
             Tuple[int, int]: (number of completed tasks, total number of tasks)
         """
-
-        TC = len([f for f in os.listdir(self._get_plan_file_path()) if f.endswith('_validated_plan.txt')])
-        total_subtasks = len([f for f in os.listdir(self._get_validated_problem_file_path()) if f.endswith('_validated.pddl')])
+        TC = 0
+        plan_file_path = self._get_plan_file_path()
+        if os.path.exists(plan_file_path):
+            TC = len([f for f in os.listdir(plan_file_path) if f.endswith('_validated_plan.txt')])
+        
+        total_subtasks = 0
+        validated_problem_file_path = self._get_validated_problem_file_path()
+        if os.path.exists(validated_problem_file_path):
+            total_subtasks = len([f for f in os.listdir(validated_problem_file_path) if f.endswith('_validated.pddl')])
         
         return TC, total_subtasks
 
@@ -2002,6 +2008,9 @@ class TaskManager:
         try:
             planner_path = str(self.config.planner_executable)
             validated_problem_file_path = self._get_validated_problem_file_path()
+            if not os.path.exists(validated_problem_file_path):
+                print("no problem_file")
+                return
             plan_file_path = self._get_plan_file_path()
             os.makedirs(plan_file_path, exist_ok=True)
             problem_files = [f for f in os.listdir(validated_problem_file_path) if f.endswith('.pddl')]  #PG: Changed to validated_subtask_path
