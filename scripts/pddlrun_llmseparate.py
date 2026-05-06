@@ -1491,6 +1491,8 @@ class TaskManager:
                 }
                 self._persist_manifest()
                 print(f"Task {task_idx + 1} completion rate: {tc}/{total}")
+                self.tc = tc
+                self.total = total
                 
             print(f"\n{'='*50}")
             print(f"All {len(test_tasks)} tasks processed")
@@ -2263,7 +2265,8 @@ def run_single_floor_plan_task(
     )
 
     return {"task_run_dir": task_manager.current_task_run_dir, 
-            "model": task_manager.model}
+            "tc": task_manager.tc,
+            "total": task_manager.total}
     
 
 def load_dataset_records(test_file: str) -> List[Dict[str, Any]]:

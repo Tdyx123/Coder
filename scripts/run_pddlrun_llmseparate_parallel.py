@@ -100,6 +100,7 @@ def run_single_job(
 
     summary: Dict[str, Any] = {
         "floor_plan": job.floor_plan,
+        "model": args.model,
         "task_index": job.task_index,
         "task": job.record.get("task", ""),
         "status": status,
@@ -109,7 +110,8 @@ def run_single_job(
         summary["error"] = error_message
     if result:
         summary["task_run_dir"] = result.get("task_run_dir")
-        summary["model"] = result.get("model")
+        summary["tc"] = result.get("tc")
+        summary["total"] = result.get("total")
     return summary
 
 
@@ -147,6 +149,8 @@ def run_floor_plan_jobs(
         "task_count": len(results),
         "success_count": sum(1 for item in results if item["status"] == "success"),
         "failure_count": sum(1 for item in results if item["status"] != "success"),
+        "all_pass_count": sum(1 for item in results if item["tc"] == item["total"]),
+        "pass_one_count": sum(1 for item in results if int(item["tc"]) > 0),
         "results": results,
     }
     floor_plan_summary = output_root / f"FloorPlan{floor_plan_key}" / "summary.json"
@@ -189,7 +193,12 @@ def main() -> None:
         "created_at": timestamp,
         "repo_root": str(repo_root),
         "output_root": str(output_root),
+        "test_set": args.test_set,
         "floor_plan_count": len(summaries),
+        "success_count": sum([summary["success_count"] for summary in summaries]),
+        "failure_count": sum([summary["failure_count"] for summary in summaries]),
+        "all_pass_count": sum([summary["all_pass_count"] for summary in summaries]),
+        "pass_one_count": sum([summary["pass_one_count"] for summary in summaries]),
         "summaries": summaries,
     }
     summary_file = output_root / "summary.json"
