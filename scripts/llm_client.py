@@ -18,7 +18,9 @@ class ProviderConfigError(ValueError):
 
 
 class _ApiKeyRotationPool:
-    """Thread-safe round-robin cursor storage for provider API keys."""
+    """Thread-safe hourly rotation cursor storage for provider API keys."""
+
+    _ROTATION_INTERVAL = 3600
 
     def __init__(self) -> None:
         self._registry_lock = threading.Lock()
@@ -34,14 +36,17 @@ class _ApiKeyRotationPool:
                 state = {
                     "api_keys": api_keys,
                     "next_index": 0,
+                    "last_rotation": time.time(),
                     "lock": threading.Lock(),
                 }
                 self._states[provider_key] = state
 
         with state["lock"]:
-            start_index = state["next_index"]
-            state["next_index"] = (start_index + 1) % len(api_keys)
-            return start_index
+            current_time = time.time()
+            if current_time - state["last_rotation"] >= self._ROTATION_INTERVAL:
+                state["next_index"] = (state["next_index"] + 1) % len(api_keys)
+                state["last_rotation"] = current_time
+            return state["next_index"]
 
 
 _api_key_rotation_pool = _ApiKeyRotationPool()
