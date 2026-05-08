@@ -661,13 +661,18 @@ put sink on saltshaker, then put ladle on sinkbasin
 if __name__ == "__main__":
     # seed = int(time.time())
     # random.seed(seed)
-    # print(random.sample(range(1, 31), 3))
-    # print(random.sample(range(201, 231), 3))
-    # print(random.sample(range(301, 331), 3))
-    # print(random.sample(range(401, 431), 3))
+    # print(random.sample(range(1, 31), 5))
+    # print(random.sample(range(201, 231), 5))
+    # print(random.sample(range(301, 331), 5))
+    # print(random.sample(range(401, 431), 5))
+
+    # data_engine = DataEngine()
+    # for floor_plan in [8, 6, 14, 207, 211, 203, 306, 322, 309, 428, 405, 412]:
+    #     data_engine.create_tasks(floor_plan, 30)
+    #     data_engine.create_tasks(floor_plan, 30, 1)
 
     data_engine = DataEngine()
-    for floor_plan in [8, 6, 14, 207, 211, 203, 306, 322, 309, 428, 405, 412]:
+    for floor_plan in [16, 28, 201, 218, 310, 312, 425, 408]:
         data_engine.create_tasks(floor_plan, 30)
         data_engine.create_tasks(floor_plan, 30, 1)
 
