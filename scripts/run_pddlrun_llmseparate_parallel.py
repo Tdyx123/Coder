@@ -149,7 +149,7 @@ def run_floor_plan_jobs(
         "task_count": len(results),
         "success_count": sum(1 for item in results if item["status"] == "success"),
         "failure_count": sum(1 for item in results if item["status"] != "success"),
-        "all_pass_count": sum(1 for item in results if item.get("total", default=0) > 0 and item.get["tc"] == item["total"]),
+        "all_pass_count": sum(1 for item in results if item.get("total", default=0) > 0 and item["tc"] == item["total"]),
         "pass_one_count": sum(1 for item in results if item.get("tc", default=0) > 0),
         "results": results,
     }
