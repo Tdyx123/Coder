@@ -3,6 +3,7 @@ import glob
 import json
 import os
 import argparse
+import ast
 import yaml
 from pathlib import Path
 from datetime import datetime
@@ -12,7 +13,7 @@ import time
 import re
 import shutil
 import sys
-from typing import List, Dict, Tuple, Optional, Union, Any
+from typing import List, Dict, Tuple, Optional, Union, Any, Set
 import uuid
 
 from ai2thor_object_cache import get_ai2_thor_objects_cached
@@ -101,6 +102,7 @@ DEFAULT_RUN_CONFIG: Dict[str, Any] = {
         "decompose_output": "01_decompose/02_decompose_output.txt",
         "allocate_prompt": "02_allocate/01_allocate_prompt.txt",
         "allocate_output": "02_allocate/02_allocate_output.txt",
+        "allocate_subtasks": "02_allocate/subtasks.json",
         "problem_summary_raw": "04_problem_files/01_problem_summary_raw.txt",
         "sequence_operations": "04_problem_files/02_sequence_operations.txt",
         "subtasks_index": "04_problem_files/03_subtasks.json",
@@ -1476,30 +1478,28 @@ class TaskManager:
                 #print("decomposed plan:\n", decomposed_plan)
                 #print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
 
-                # Generate and store allocation plan
-                allocated_plan = self._generate_allocation_plan(decomposed_plan, robots, objects_ai)
-                self.allocated_plan.append(allocated_plan)
-                print("✓ Allocation plan generated")
-                #print("Allocation Plan:\n", allocated_plan)
-                #print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-                
-                # Extract subtasks and robot assignments
+                # Extract subtasks before deterministic allocation.
                 subtasks = self._extract_subtasks(decomposed_plan)
-                sequence_operations = self._extract_sequence_operations(allocated_plan)
-                robot_assignments = self._extract_robot_assignments(sequence_operations)
-                print(f"✓ Extracted {len(subtasks)} subtasks with robot assignments")
+                print(f"✓ Extracted {len(subtasks)} subtasks")
 
-                # Generate and store problem files
-                _ = self._generate_problem_files(subtasks, robot_assignments, objects_ai)
-                print("✓ Problem files generated")
+                # Generate allaction problem files for each subtask.
+                problem_pddl = self._generate_allaction_problem_files(subtasks, objects_ai)
+                print("✓ Allaction problem files generated")
                 
-                #input("Press Enter to continue")
-                #print("Waiting for files to be processed...")
-                #time.sleep(50)
-                
-                # Validate and plan
-                self._validate_and_plan()
-                print("✓ Validation and planning complete")
+                # Plan each subtask with allactionrobot.pddl, then allocate with CP-SAT.
+                planner_records = self.run_allaction_planners()
+                print("✓ Allaction planning complete")
+
+                allocated_subtasks = self._allocate_subtasks_with_cpsat(
+                    subtasks=subtasks,
+                    decomposed_plan=decomposed_plan,
+                    problem_pddl=problem_pddl,
+                    planner_records=planner_records,
+                    available_robots=robots,
+                    objects_ai=objects_ai,
+                )
+                self.allocated_plan.append(json.dumps(allocated_subtasks, indent=2, ensure_ascii=False))
+                print("✓ CP-SAT allocation generated")
                 
                 # currently don't combine the plans
                 # # Combine and process plans
@@ -1515,8 +1515,8 @@ class TaskManager:
                 # print("✓ References matched")
                 # print("Final PDDL Plan:\n", matched_plan)
 
-                # Calculate completion rate
-                tc, total = self.calculate_completion_rate()
+                # In v2, successful allocation of all subtasks is the task-level completion signal.
+                tc, total = len(allocated_subtasks), len(subtasks)
 
                 self.current_task_manifest["completion"] = {
                     "successful_subtasks": tc,
@@ -1659,6 +1659,645 @@ class TaskManager:
             
         except Exception as e:
             raise PDDLError(f"Error generating decomposed plan: {str(e)}")
+
+    def _generate_allaction_problem_files(
+        self,
+        subtasks: List[str],
+        objects_ai: str,
+    ) -> List[str]:
+        """Generate allactionrobot problem files for each subtask."""
+        subtasks_index_artifact = self.config.artifact("subtasks_index", "04_problem_files/03_subtasks.json")
+        generated_problem_files_artifact = self.config.artifact("generated_problem_files", "04_problem_files/04_generated_problem_files.json")
+
+        subtask_entries = []
+        for idx, subtask in enumerate(subtasks, start=1):
+            relative_path = f"04_problem_files/subtasks/subtask_{idx:02d}.txt"
+            self._write_text_artifact(relative_path, subtask)
+            subtask_entries.append({"index": idx, "path": relative_path})
+        self._write_json_artifact(subtasks_index_artifact, subtask_entries)
+        self._record_artifact("problem_files", "subtasks_index", subtasks_index_artifact)
+
+        problem_pddl = self.allaction_problemextracting(
+            subtasks=subtasks,
+            llm=self.llm,
+            model=self.model,
+            file_processor=self.file_processor,
+            objects_ai=objects_ai,
+            prompt_allocation_set=self.prompt_allocation_set,
+        )
+        self._write_json_artifact(
+            generated_problem_files_artifact,
+            [{"index": idx + 1, "content": content} for idx, content in enumerate(problem_pddl)],
+        )
+        self._record_artifact("problem_files", "generated_problem_files", generated_problem_files_artifact)
+        self._persist_manifest()
+        return problem_pddl
+
+    def allaction_problemextracting(
+        self,
+        subtasks: List[str],
+        llm: 'LLMHandler',
+        model: str,
+        file_processor: 'FileProcessor',
+        objects_ai: str,
+        prompt_allocation_set: str,
+    ) -> List[str]:
+        """Generate PDDL problem files against the allactionrobot domain."""
+        problem_pddl: List[str] = []
+        domain_content = file_processor.read_file(str(self.config.allaction_domain_path())) or ""
+        problem_fileexamplepath = self.config.prompt_file(f"{prompt_allocation_set}_problem.txt")
+        problem_examplecontent = file_processor.read_file(str(problem_fileexamplepath)) or ""
+
+        for subtask_idx, subtask in enumerate(subtasks, start=1):
+            prompt = (
+                "\n" + problem_examplecontent +
+                " Finish the tasks like example\n"
+                "Subtask examination from action perspective:" + subtask +
+                "\nDomain file content:" + domain_content +
+                "\n based on the objects available for potential usage below." + objects_ai +
+                "\nTask description: generate the problem file. Based on the objects above, "
+                "the domain file preconditions, actions, and subtask examination. "
+                "IMPORTANT the problem must use (:domain allactionrobot). "
+                "IMPORTANT use robot1 as the robot object in the generated problem. "
+                "IMPORTANT the robot initiates strictly as not inaction and robot "
+                "(which includes location)\n"
+                "#IMPORTANT, strictly follow the structure, stop generating after the Problem file generation is done."
+            )
+            prompt_path = f"05_problem_generation/prompts/subtask_{subtask_idx:02d}_prompt.txt"
+            output_path0 = f"05_problem_generation/outputs/subtask_{subtask_idx:02d}_problem.raw.txt"
+            output_path1 = f"05_problem_generation/outputs/subtask_{subtask_idx:02d}_problem.pddl"
+            self._write_text_artifact(prompt_path, prompt)
+
+            messages = [
+                {"role": "system", "content": "You are a Robot PDDL problem Expert"},
+                {"role": "user", "content": prompt},
+            ]
+            call_config = self.config.llm_call("problem_generation")
+            _, text = llm.query_model(
+                messages,
+                model,
+                max_tokens=call_config.get("max_tokens", 1400),
+                frequency_penalty=call_config.get("frequency_penalty", 0.4),
+            )
+
+            extracted_problem = self._force_problem_domain(
+                self._extract_pddl_problem_block(text),
+                "allactionrobot",
+            )
+            self._write_text_artifact(output_path0, text)
+            self._write_text_artifact(output_path1, extracted_problem)
+            problem_pddl.append(extracted_problem)
+
+        return problem_pddl
+
+    def _force_problem_domain(self, problem_content: str, domain_name: str) -> str:
+        """Ensure a generated problem points to the desired PDDL domain."""
+        domain_pattern = re.compile(r'\(\s*:domain\s+[^)\s]+\s*\)', re.IGNORECASE)
+        replacement = f"(:domain {domain_name})"
+        if domain_pattern.search(problem_content):
+            return domain_pattern.sub(replacement, problem_content, count=1)
+
+        define_match = re.search(r'\(define\s+\(problem\s+[^)]+\)', problem_content, re.IGNORECASE)
+        if not define_match:
+            return problem_content
+        insert_at = define_match.end()
+        return problem_content[:insert_at] + f"\n  {replacement}" + problem_content[insert_at:]
+
+    def run_allaction_planners(self) -> List[Dict[str, Any]]:
+        """Run downward on all generated allaction problem files."""
+        try:
+            planner_path = str(self.config.planner_executable)
+            raw_problem_file_path = self._get_raw_problem_file_path()
+            if not raw_problem_file_path or not os.path.exists(raw_problem_file_path):
+                print("no problem_file")
+                return []
+
+            plan_file_path = self._get_plan_file_path()
+            os.makedirs(plan_file_path, exist_ok=True)
+            problem_files = sorted(f for f in os.listdir(raw_problem_file_path) if f.endswith('.pddl'))
+            domain_file = str(self.config.allaction_domain_path())
+            planner_records: List[Dict[str, Any]] = []
+            plan_output_files: List[str] = []
+
+            for problem_file in problem_files:
+                problem_file_full = os.path.join(raw_problem_file_path, problem_file)
+                safe_name = self._sanitize_filename(problem_file.replace(".pddl", ""))
+                output_file = os.path.join(plan_file_path, f"{safe_name}_plan.txt")
+                command = [
+                    planner_path,
+                    "--plan-file",
+                    output_file,
+                    "--alias",
+                    str(self.config.get("planner", "alias", "seq-opt-lmcut")),
+                    domain_file,
+                    problem_file_full,
+                ]
+                started_at = time.time()
+
+                try:
+                    result = subprocess.run(
+                        command,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        timeout=int(self.config.get("planner", "timeout_seconds", 300)),
+                    )
+
+                    command_path = f"08_planner/commands/{safe_name}_command.txt"
+                    stdout_path = f"08_planner/stdout/{safe_name}_stdout.txt"
+                    stderr_path = f"08_planner/stderr/{safe_name}_stderr.txt"
+                    self._write_text_artifact(command_path, " ".join(command))
+                    self._write_text_artifact(stdout_path, result.stdout)
+                    self._write_text_artifact(stderr_path, result.stderr)
+                    if os.path.exists(output_file):
+                        plan_output_files.append(output_file)
+                    planner_records.append({
+                        "problem_file": problem_file,
+                        "domain_file": domain_file,
+                        "command_path": command_path,
+                        "stdout_path": stdout_path,
+                        "stderr_path": stderr_path,
+                        "return_code": result.returncode,
+                        "duration_seconds": round(time.time() - started_at, 3),
+                        "compatibility_output": output_file,
+                    })
+
+                    if result.stderr:
+                        print(f"Warnings/Errors for {problem_file}:", result.stderr)
+
+                except subprocess.TimeoutExpired:
+                    print(f"Planner timed out for {problem_file}")
+                    planner_records.append({
+                        "problem_file": problem_file,
+                        "status": "timeout",
+                    })
+                except Exception as e:
+                    print(f"Error processing file {problem_file}: {str(e)}")
+                    planner_records.append({
+                        "problem_file": problem_file,
+                        "status": "error",
+                        "error": str(e),
+                    })
+
+            planner_manifest_path = self.config.artifact("planner_manifest", "08_planner/planner_manifest.json")
+            self._write_json_artifact(planner_manifest_path, planner_records)
+            self._record_artifact("planner", "manifest", planner_manifest_path)
+            self.current_task_manifest.setdefault("planner", {})["plan_output_files"] = plan_output_files
+            self._persist_manifest()
+            return planner_records
+
+        except Exception as e:
+            print(f"Error in run_allaction_planners: {str(e)}")
+            raise
+
+    def _allocate_subtasks_with_cpsat(
+        self,
+        subtasks: List[str],
+        decomposed_plan: str,
+        problem_pddl: List[str],
+        planner_records: List[Dict[str, Any]],
+        available_robots: List[dict],
+        objects_ai: str,
+    ) -> List[Dict[str, Any]]:
+        """Build subtask requirements from allaction plans, solve CP-SAT, and write subtasks.json."""
+        requirements = self._build_subtask_requirements(
+            subtasks=subtasks,
+            decomposed_plan=decomposed_plan,
+            problem_pddl=problem_pddl,
+            planner_records=planner_records,
+            objects_ai=objects_ai,
+        )
+        assignments = self._solve_subtask_assignment(requirements, available_robots)
+
+        output: List[Dict[str, Any]] = []
+        for req in requirements:
+            assigned_robot = assignments[req["subtask_id"]]["robot_name"]
+            output.append({
+                "subtask_id": req["subtask_id"],
+                "name": req["name"],
+                "predecessor_ids": req["predecessor_ids"],
+                "required_skills": req["required_skills"],
+                "min_mass_capacity": req["min_mass_capacity"],
+                "assigned_robot": assigned_robot,
+            })
+
+        allocate_subtasks_artifact = self.config.artifact("allocate_subtasks", "02_allocate/subtasks.json")
+        self._write_json_artifact(allocate_subtasks_artifact, output)
+        self._record_artifact("allocate", "subtasks", allocate_subtasks_artifact)
+        self._persist_manifest()
+        return output
+
+    def _build_subtask_requirements(
+        self,
+        subtasks: List[str],
+        decomposed_plan: str,
+        problem_pddl: List[str],
+        planner_records: List[Dict[str, Any]],
+        objects_ai: str,
+    ) -> List[Dict[str, Any]]:
+        records_by_subtask = {
+            subtask_id: record
+            for record in planner_records
+            for subtask_id in [self._subtask_id_from_filename(record.get("problem_file", ""))]
+            if subtask_id is not None
+        }
+        object_masses = self._parse_object_masses(objects_ai)
+        predecessors = self._infer_predecessors(decomposed_plan, problem_pddl)
+        requirements: List[Dict[str, Any]] = []
+
+        for subtask_id, subtask in enumerate(subtasks, start=1):
+            record = records_by_subtask.get(subtask_id)
+            if not record:
+                raise PDDLError(f"No planner record for subtask {subtask_id}")
+            plan_path = record.get("compatibility_output")
+            if not plan_path or not os.path.exists(plan_path):
+                raise PDDLError(f"No allaction plan file for subtask {subtask_id}: {plan_path}")
+
+            plan_text = self.file_processor.read_file(plan_path)
+            actions_in_plan = self._parse_plan_actions(plan_text)
+            if not actions_in_plan:
+                raise PDDLError(f"No plan actions found for subtask {subtask_id}: {plan_path}")
+
+            required_skills = self._extract_required_skills(actions_in_plan)
+            min_mass_capacity = self._calculate_pickup_mass_peak(actions_in_plan, object_masses)
+            requirements.append({
+                "subtask_id": subtask_id,
+                "name": self._extract_subtask_name(subtask, subtask_id),
+                "predecessor_ids": predecessors.get(subtask_id, []),
+                "required_skills": required_skills,
+                "min_mass_capacity": round(min_mass_capacity, 6),
+                "duration": max(1, len(actions_in_plan)),
+                "plan_path": plan_path,
+            })
+
+        return requirements
+
+    def _solve_subtask_assignment(
+        self,
+        requirements: List[Dict[str, Any]],
+        available_robots: List[dict],
+    ) -> Dict[int, Dict[str, Any]]:
+        try:
+            from ortools.sat.python import cp_model
+        except ImportError as exc:
+            raise PDDLError(
+                "OR-Tools is required for CP-SAT allocation in pddlrun_llmseparate_v2.py. "
+                "Install it with `pip install ortools` in the active environment."
+            ) from exc
+
+        if not requirements:
+            return {}
+        if not available_robots:
+            raise PDDLError("No robots available for CP-SAT allocation")
+
+        task_ids = [req["subtask_id"] for req in requirements]
+        task_index_by_id = {task_id: idx for idx, task_id in enumerate(task_ids)}
+        robot_count = len(available_robots)
+        horizon = sum(int(req["duration"]) for req in requirements)
+        horizon = max(horizon, 1)
+
+        feasible: Dict[Tuple[int, int], bool] = {}
+        for task_idx, req in enumerate(requirements):
+            required = {self._canonical_skill_name(skill) for skill in req["required_skills"]}
+            for robot_idx, robot in enumerate(available_robots):
+                robot_skills = {self._canonical_skill_name(skill) for skill in robot.get("skills", [])}
+                mass_capacity = float(robot.get("mass_capacity", robot.get("mass", 0)) or 0)
+                feasible[(task_idx, robot_idx)] = required.issubset(robot_skills) and mass_capacity >= req["min_mass_capacity"]
+
+            if not any(feasible[(task_idx, robot_idx)] for robot_idx in range(robot_count)):
+                raise PDDLError(
+                    f"No feasible robot for subtask {req['subtask_id']} "
+                    f"skills={req['required_skills']} min_mass_capacity={req['min_mass_capacity']}"
+                )
+
+        model = cp_model.CpModel()
+        starts = [
+            model.NewIntVar(0, horizon, f"start_{req['subtask_id']}")
+            for req in requirements
+        ]
+        ends = [
+            model.NewIntVar(0, horizon, f"end_{req['subtask_id']}")
+            for req in requirements
+        ]
+        assigned: Dict[Tuple[int, int], Any] = {}
+        intervals_by_robot: Dict[int, List[Any]] = {robot_idx: [] for robot_idx in range(robot_count)}
+
+        for task_idx, req in enumerate(requirements):
+            duration = int(req["duration"])
+            model.Add(ends[task_idx] == starts[task_idx] + duration)
+            choices = []
+            for robot_idx in range(robot_count):
+                var = model.NewBoolVar(f"x_{req['subtask_id']}_{robot_idx + 1}")
+                assigned[(task_idx, robot_idx)] = var
+                if not feasible[(task_idx, robot_idx)]:
+                    model.Add(var == 0)
+                choices.append(var)
+                intervals_by_robot[robot_idx].append(
+                    model.NewOptionalIntervalVar(
+                        starts[task_idx],
+                        duration,
+                        ends[task_idx],
+                        var,
+                        f"interval_{req['subtask_id']}_{robot_idx + 1}",
+                    )
+                )
+            model.Add(sum(choices) == 1)
+
+        for robot_idx in range(robot_count):
+            model.AddNoOverlap(intervals_by_robot[robot_idx])
+
+        for req in requirements:
+            task_idx = task_index_by_id[req["subtask_id"]]
+            for predecessor_id in req["predecessor_ids"]:
+                if predecessor_id not in task_index_by_id:
+                    continue
+                predecessor_idx = task_index_by_id[predecessor_id]
+                model.Add(ends[predecessor_idx] <= starts[task_idx])
+
+        makespan = model.NewIntVar(0, horizon, "makespan")
+        model.AddMaxEquality(makespan, ends)
+        used_robots = []
+        for robot_idx in range(robot_count):
+            used = model.NewBoolVar(f"used_robot_{robot_idx + 1}")
+            robot_assignments = [assigned[(task_idx, robot_idx)] for task_idx in range(len(requirements))]
+            for var in robot_assignments:
+                model.Add(var <= used)
+            model.Add(sum(robot_assignments) >= used)
+            used_robots.append(used)
+
+        tie_break_robot_order = sum(
+            (robot_idx + 1) * assigned[(task_idx, robot_idx)]
+            for task_idx in range(len(requirements))
+            for robot_idx in range(robot_count)
+        )
+        used_weight = len(requirements) * robot_count + 1
+        makespan_weight = used_weight * (robot_count + 1)
+        model.Minimize(makespan * makespan_weight + sum(used_robots) * used_weight + tie_break_robot_order)
+
+        solver = cp_model.CpSolver()
+        status = solver.Solve(model)
+        if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+            raise PDDLError(f"CP-SAT allocation failed with status {solver.StatusName(status)}")
+
+        assignments: Dict[int, Dict[str, Any]] = {}
+        for task_idx, req in enumerate(requirements):
+            chosen_robot_idx = None
+            for robot_idx in range(robot_count):
+                if solver.Value(assigned[(task_idx, robot_idx)]):
+                    chosen_robot_idx = robot_idx
+                    break
+            if chosen_robot_idx is None:
+                raise PDDLError(f"CP-SAT did not assign subtask {req['subtask_id']}")
+            robot = available_robots[chosen_robot_idx]
+            assignments[req["subtask_id"]] = {
+                "robot_name": robot.get("name", f"robot{chosen_robot_idx + 1}"),
+                "start": solver.Value(starts[task_idx]),
+                "end": solver.Value(ends[task_idx]),
+            }
+
+        return assignments
+
+    def _subtask_id_from_filename(self, filename: str) -> Optional[int]:
+        match = re.search(r'subtask[_-](\d+)', filename, re.IGNORECASE)
+        return int(match.group(1)) if match else None
+
+    def _extract_subtask_name(self, subtask: str, subtask_id: int) -> str:
+        for line in subtask.splitlines():
+            match = _match_subtask_header_line(line, allow_bare=True)
+            if match:
+                normalized = _normalize_subtask_header_line(line, allow_bare=True)
+                normalized = re.sub(r'^#+\s*Sub\s*Task\s*\d+\s*[:.\-]?\s*', '', normalized, flags=re.IGNORECASE)
+                return normalized.strip(" *#:\t") or f"Subtask {subtask_id}"
+        first_line = next((line.strip() for line in subtask.splitlines() if line.strip()), "")
+        return first_line.strip(" *#:\t") or f"Subtask {subtask_id}"
+
+    def _parse_plan_actions(self, plan_text: str) -> List[Dict[str, Any]]:
+        actions_in_plan: List[Dict[str, Any]] = []
+        for line in plan_text.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith(";"):
+                continue
+            if stripped.startswith("(") and stripped.endswith(")"):
+                inner = stripped[1:-1].strip()
+            else:
+                inner = re.sub(r'\s*\(\d+\)\s*$', '', stripped).strip()
+            if not inner:
+                continue
+            parts = inner.split()
+            if not parts:
+                continue
+            canonical_skill = self._canonical_skill_name(parts[0])
+            actions_in_plan.append({
+                "raw": stripped,
+                "skill": canonical_skill,
+                "args": parts[1:],
+            })
+        return actions_in_plan
+
+    def _extract_required_skills(self, actions_in_plan: List[Dict[str, Any]]) -> List[str]:
+        required_skills: List[str] = []
+        seen: Set[str] = set()
+        for action in actions_in_plan:
+            skill = action["skill"]
+            if skill not in seen:
+                seen.add(skill)
+                required_skills.append(skill)
+        return required_skills
+
+    def _calculate_pickup_mass_peak(
+        self,
+        actions_in_plan: List[Dict[str, Any]],
+        object_masses: Dict[str, float],
+    ) -> float:
+        held: Dict[str, float] = {}
+        current_mass = 0.0
+        peak_mass = 0.0
+        release_actions = {"PutObject", "DropHandObject", "ThrowObject"}
+
+        for action in actions_in_plan:
+            skill = action["skill"]
+            args = action.get("args", [])
+            if skill == "PickupObject" and len(args) >= 2:
+                object_key = self._object_key(args[1])
+                if object_key not in held:
+                    mass = object_masses.get(object_key, 0.0)
+                    held[object_key] = mass
+                    current_mass += mass
+                    peak_mass = max(peak_mass, current_mass)
+            elif skill in release_actions and len(args) >= 2:
+                object_key = self._object_key(args[1])
+                if object_key in held:
+                    current_mass -= held.pop(object_key)
+
+        return max(0.0, peak_mass)
+
+    def _parse_object_masses(self, objects_ai: str) -> Dict[str, float]:
+        if not objects_ai:
+            return {}
+        text = objects_ai.strip()
+        if "=" in text:
+            text = text.split("=", 1)[1].strip()
+        start = text.find("[")
+        end = text.rfind("]")
+        if start == -1 or end == -1 or end < start:
+            return {}
+
+        try:
+            parsed = ast.literal_eval(text[start:end + 1])
+        except (SyntaxError, ValueError):
+            return {}
+
+        object_masses: Dict[str, float] = {}
+        if not isinstance(parsed, list):
+            return object_masses
+        for item in parsed:
+            if not isinstance(item, dict) or "name" not in item:
+                continue
+            mass_value = item.get("mass", item.get("mass_capacity", 0.0))
+            try:
+                mass = float(mass_value or 0.0)
+            except (TypeError, ValueError):
+                mass = 0.0
+            key = self._object_key(str(item["name"]))
+            object_masses[key] = max(object_masses.get(key, 0.0), mass)
+        return object_masses
+
+    def _canonical_skill_name(self, action_name: str) -> str:
+        key = re.sub(r'[^a-z0-9]', '', str(action_name).lower())
+        aliases = {
+            "gotoobject": "GoToObject",
+            "openobject": "OpenObject",
+            "closeobject": "CloseObject",
+            "breakobject": "BreakObject",
+            "sliceobject": "SliceObject",
+            "switchon": "SwitchOn",
+            "switchoff": "SwitchOff",
+            "pickupobject": "PickupObject",
+            "putobject": "PutObject",
+            "cleanobject": "CleanObject",
+            "runmicrowave": "RunMicrowave",
+            "runcoffeemachine": "RunCoffeeMachine",
+            "runtoaster": "RunToaster",
+            "drophandobject": "DropHandObject",
+            "throwobject": "ThrowObject",
+            "pushobject": "PushObject",
+            "pullobject": "PullObject",
+        }
+        return aliases.get(key, str(action_name).strip())
+
+    def _object_key(self, value: str) -> str:
+        return re.sub(r'[^a-z0-9]', '', str(value).lower())
+
+    def _infer_predecessors(
+        self,
+        decomposed_plan: str,
+        problem_pddl: List[str],
+    ) -> Dict[int, List[int]]:
+        edges = self._infer_text_precedence_edges(decomposed_plan)
+
+        init_facts_by_subtask: Dict[int, Set[str]] = {}
+        goal_facts_by_subtask: Dict[int, Set[str]] = {}
+        for idx, problem in enumerate(problem_pddl, start=1):
+            init_facts_by_subtask[idx] = self._extract_pddl_facts(problem, "init")
+            goal_facts_by_subtask[idx] = self._extract_pddl_facts(problem, "goal")
+
+        for producer_idx, goal_facts in goal_facts_by_subtask.items():
+            for consumer_idx, init_facts in init_facts_by_subtask.items():
+                if producer_idx == consumer_idx:
+                    continue
+                if goal_facts and goal_facts.intersection(init_facts):
+                    edges.add((producer_idx, consumer_idx))
+
+        predecessors: Dict[int, List[int]] = {idx: [] for idx in range(1, len(problem_pddl) + 1)}
+        for before, after in edges:
+            if before == after or after not in predecessors:
+                continue
+            if before not in predecessors[after]:
+                predecessors[after].append(before)
+
+        return {idx: sorted(values) for idx, values in predecessors.items()}
+
+    def _infer_text_precedence_edges(self, decomposed_plan: str) -> Set[Tuple[int, int]]:
+        edges: Set[Tuple[int, int]] = set()
+        sentences = re.split(r'(?<=[.!?])\s+|\n+', decomposed_plan)
+        for sentence in sentences:
+            lowered = sentence.lower()
+            if "parallel" in lowered or "independent" in lowered:
+                continue
+            subtask_ids = [int(value) for value in re.findall(r'\bsub\s*task\s*(\d+)\b', sentence, flags=re.IGNORECASE)]
+            if len(subtask_ids) < 2:
+                continue
+
+            if " after " in lowered:
+                after_match = re.search(
+                    r'sub\s*task\s*(\d+).*?\bafter\b.*?sub\s*task\s*(\d+)',
+                    sentence,
+                    flags=re.IGNORECASE,
+                )
+                if after_match:
+                    edges.add((int(after_match.group(2)), int(after_match.group(1))))
+                    continue
+
+            if " depends " in lowered or " depends on " in lowered:
+                depends_match = re.search(
+                    r'sub\s*task\s*(\d+).*?\bdepends(?:\s+on)?\b.*?sub\s*task\s*(\d+)',
+                    sentence,
+                    flags=re.IGNORECASE,
+                )
+                if depends_match:
+                    edges.add((int(depends_match.group(2)), int(depends_match.group(1))))
+                    continue
+
+            if " follows " in lowered or " following " in lowered:
+                follows_match = re.search(
+                    r'sub\s*task\s*(\d+).*?\b(?:follows?|following)\b.*?sub\s*task\s*(\d+)',
+                    sentence,
+                    flags=re.IGNORECASE,
+                )
+                if follows_match:
+                    edges.add((int(follows_match.group(2)), int(follows_match.group(1))))
+                    continue
+
+            if any(marker in lowered for marker in (" then ", " before ", " sequential")):
+                for before, after in zip(subtask_ids, subtask_ids[1:]):
+                    edges.add((before, after))
+        return edges
+
+    def _extract_pddl_facts(self, pddl_content: str, section_name: str) -> Set[str]:
+        section = self._extract_pddl_section(pddl_content, section_name)
+        if not section:
+            return set()
+        section = re.sub(r';.*', '', section)
+        section = re.sub(r'\(\s*not\s+\([^()]*\)\s*\)', '', section, flags=re.IGNORECASE)
+
+        facts: Set[str] = set()
+        for match in re.finditer(r'\(\s*([A-Za-z][A-Za-z0-9_-]*)\s+([^()]*)\)', section):
+            predicate = match.group(1)
+            if predicate.lower() in {"and", "not"}:
+                continue
+            args = [arg for arg in match.group(2).split() if arg and not arg.startswith("-")]
+            if not args:
+                continue
+            fact_key = self._object_key(predicate) + ":" + ",".join(self._object_key(arg) for arg in args)
+            facts.add(fact_key)
+        return facts
+
+    def _extract_pddl_section(self, pddl_content: str, section_name: str) -> str:
+        match = re.search(r'\(\s*:' + re.escape(section_name) + r'\b', pddl_content, flags=re.IGNORECASE)
+        if not match:
+            return ""
+
+        start = match.start()
+        depth = 0
+        for idx in range(start, len(pddl_content)):
+            char = pddl_content[idx]
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth == 0:
+                    return pddl_content[start:idx + 1]
+        return pddl_content[start:]
     
     def _generate_allocation_plan(self, decomposed_plan: str, robots: List[dict], objects_ai: str) -> str:
         """Generate allocation plan for decomposed tasks.

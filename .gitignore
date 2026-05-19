@@ -1,1 +1,5 @@
 /logs/
+/parallel_runs/
+/scripts/providers.yaml
+/.python-version
+*.pyc

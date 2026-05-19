@@ -8,7 +8,7 @@ storage:
 
 data:
   dataset_dir: data
-  prompt_template_dir: data/pythonic_plans
+  prompt_template_dir: prompts/v1
   ai2thor_objects_cache_dir: data/ai2thor_objects_cache
 
 resources:
