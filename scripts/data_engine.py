@@ -24,54 +24,137 @@ def _repo_root() -> Path:
     return _REPO_ROOT
 
 
-breakable_objects = ['AlarmClock', 'Bottle', 'Bowl', 'CellPhone', 'Cup',
-                     'Desktop', 'Egg', 'Laptop', 'Mirror', 'Mug', 'Plate',
-                     'ShowerDoor', 'ShowerGlass', 'Statue', 'Television',
-                     'Vase', 'Window', 'WineBottle']
+AI2THOR_OBJECT_PROPERTIES_PATH = _REPO_ROOT / "data" / "all_ai2thor_objects.json"
+AI2THOR_OBJECT_PROPERTY_FIELDS = (
+    "breakable",
+    "pickupable",
+    "sliceable",
+    "openable",
+    "receptacle",
+    "toggleable",
+    "dirtyable",
+)
 
-pickupable_objects = ['HandTowel', 'Candle', 'Laptop', 'AluminumFoil', 'Potato',
-                       'Tomato', 'Watch', 'Pot', 'Vase', 'Boots',
-                       'KeyChain', 'Bottle', 'Towel', 'Cup', 'Mug',
-                       'Ladle', 'Book', 'WineBottle', 'AlarmClock', 'Newspaper',
-                       'Kettle', 'SaltShaker', 'Cloth', 'Bowl', 'TissueBox',
-                       'Pillow', 'BasketBall', 'Statue', 'RemoteControl', 'PaperTowelRoll',
-                       'Knife', 'PepperShaker', 'CD', 'CellPhone', 'HousePlant',
-                       'GarbageBag', 'TeddyBear', 'ScrubBrush', 'SprayBottle', 'Lettuce',
-                       'TennisRacket', 'SoapBottle', 'Dumbbell', 'Pen', 'Plate',
-                       'Bread', 'Spoon', 'DishSponge', 'DeskLamp', 'Apple',
-                       'WateringCan', 'Box', 'CreditCard', 'Pencil', 'BaseballBat',
-                       'Plunger', 'Pan', 'Spatula', 'ToiletPaper', 'TableTopDecor',
-                       'SoapBar', 'Fork', 'Egg', 'ButterKnife']
 
-sliceable_objects = ['Apple', 'Bread', 'Lettuce', 'Potato', 'Tomato']
+class ObjectPropertiesError(ValueError):
+    """Raised when floor-plan-specific AI2-THOR object properties are invalid."""
 
-washable_objects = ['Pot', 'Bottle', 'Cup', 'Mug', 'Ladle',
-                    'WineBottle', 'Bowl', 'Knife', 'Plate',
-                    'Spoon', 'Pan', 'Spatula', 'Fork', 'ButterKnife',
-                    'Apple', 'Potato', 'Tomato', 'Lettuce']
+
+def _normalize_scene_name(floor_plan: Union[int, str]) -> str:
+    text = str(floor_plan).strip()
+    if not text:
+        raise ObjectPropertiesError("floor_plan is required")
+
+    if text.startswith("FloorPlan"):
+        text = text[len("FloorPlan"):]
+
+    if not text.isdigit():
+        raise ObjectPropertiesError(f"Invalid floor_plan: {floor_plan}")
+
+    scene_id = int(text)
+    if scene_id < 1:
+        raise ObjectPropertiesError(f"Invalid floor_plan: {floor_plan}")
+
+    return f"FloorPlan{scene_id}"
+
+
+def _load_ai2thor_object_type_properties(
+    floor_plan: Union[int, str],
+    path: Path = AI2THOR_OBJECT_PROPERTIES_PATH,
+) -> Dict[str, Dict[str, bool]]:
+    scene_name = _normalize_scene_name(floor_plan)
+
+    if not path.exists():
+        raise FileNotFoundError(f"AI2-THOR object properties file not found: {path}")
+
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            objects = json.load(f)
+    except json.JSONDecodeError as exc:
+        raise ObjectPropertiesError(f"Invalid AI2-THOR object properties JSON: {path}") from exc
+
+    if not isinstance(objects, list):
+        raise ObjectPropertiesError(f"AI2-THOR object properties must be a list: {path}")
+
+    object_type_properties: Dict[str, Dict[str, bool]] = {}
+    for index, item in enumerate(objects):
+        if not isinstance(item, dict):
+            raise ObjectPropertiesError(f"AI2-THOR object entry #{index} must be an object")
+
+        scene = item.get("scene")
+        if not isinstance(scene, str) or not scene:
+            raise ObjectPropertiesError(f"AI2-THOR object entry #{index} is missing scene")
+        if scene != scene_name:
+            continue
+
+        object_type = item.get("objectType")
+        if not isinstance(object_type, str) or not object_type:
+            raise ObjectPropertiesError(f"AI2-THOR object entry #{index} is missing objectType")
+
+        properties = object_type_properties.setdefault(
+            object_type,
+            {field: False for field in AI2THOR_OBJECT_PROPERTY_FIELDS},
+        )
+        for field in AI2THOR_OBJECT_PROPERTY_FIELDS:
+            properties[field] = properties[field] or bool(item.get(field, False))
+
+    if not object_type_properties:
+        raise ObjectPropertiesError(
+            f"No AI2-THOR object properties found for scene {scene_name} in {path}"
+        )
+
+    return object_type_properties
+
+
+def _objects_with_property(
+    object_type_properties: Dict[str, Dict[str, bool]],
+    property_name: str,
+) -> List[str]:
+    return sorted(
+        object_type
+        for object_type, properties in object_type_properties.items()
+        if properties.get(property_name, False)
+    )
+
+
+def _openable_receptacles(
+    object_type_properties: Dict[str, Dict[str, bool]],
+) -> List[str]:
+    return sorted(
+        object_type
+        for object_type, properties in object_type_properties.items()
+        if properties.get("openable", False) and properties.get("receptacle", False)
+    )
+
+
+def _non_openable_receptacles(
+    object_type_properties: Dict[str, Dict[str, bool]],
+) -> List[str]:
+    return sorted(
+        object_type
+        for object_type, properties in object_type_properties.items()
+        if properties.get("receptacle", False) and not properties.get("openable", False)
+    )
+
+
+def _build_object_skill_sets(
+    floor_plan: Union[int, str],
+    path: Path = AI2THOR_OBJECT_PROPERTIES_PATH,
+) -> Dict[str, List[str]]:
+    object_type_properties = _load_ai2thor_object_type_properties(floor_plan, path)
+    return {
+        "breakable_objects": _objects_with_property(object_type_properties, "breakable"),
+        "pickupable_objects": _objects_with_property(object_type_properties, "pickupable"),
+        "sliceable_objects": _objects_with_property(object_type_properties, "sliceable"),
+        "washable_objects": _objects_with_property(object_type_properties, "dirtyable"),
+        "openable_objects": _objects_with_property(object_type_properties, "openable"),
+        "openable_containers": _openable_receptacles(object_type_properties),
+        "has_placing_surface_objects": _non_openable_receptacles(object_type_properties),
+        "switchable_objects": _objects_with_property(object_type_properties, "toggleable"),
+    }
 
 food = ['Apple', 'Bread', 'Egg', 'Lettuce', 'Potato', 'Tomato']
 food_containers = ['Pot', 'Bowl', 'Plate', 'Pan']
-
-openable_objects = ['Microwave',  'Fridge', 'Cabinet', 'Drawer', 'Dresser',
-                    'Safe', 'Box',  'SprayBottle', 'SoapBottle', 'Kettle',
-                    'WateringCan', 'Laptop', 'Book', 'Window', 'Blinds',
-                    'Curtains', 'ShowerCurtain', 'ShowerDoor', 'ShowerGlass']
-
-openable_containers = ['Cabinet', 'Drawer', 'Fridge', 'Microwave', 'Safe', 'Box']
-
-has_placing_surface_objects = ['GarbageCan', 'Pot', 'Bed', 'BathtubBasin', 'Desktop', 
-                    'Mug', 'Toilet', 'SinkBasin', 'Bowl', 'Desk',
-                    'LaundryHamper', 'TVStand', 'Shelf', 'StoveBurner', 'ArmChair',
-                    'Sofa', 'ShelvingUnit', 'Bathtub', 'CounterTop', 'DogBed',
-                    'Chair', 'Stool', 'Ottoman', 'Plate', 'DiningTable',
-                    'Sink', 'Footstool', 'SideTable', 'Dresser', 'Pan',
-                    'CoffeeTable', 'Floor']
-
-switchable_objects = ['LightSwitch', 'StoveKnob', 'Candle', 'Laptop', 'Faucet',
-                      'Desktop', 'Television', 'FloorLamp', 'CoffeeMachine', 'Toaster',
-                      'Kettle', 'StoveBurner', 'CellPhone', 'VacuumCleaner', 'ShowerHead',
-                      'DeskLamp', 'Microwave', 'AlarmClock']
 
 SKILL_TO_ROBOT_SKILLS = {
     'Open': ['GoToObject', 'OpenObject'],
@@ -87,7 +170,7 @@ MASS_OBJECTS = ['Knife']
 
 class DataEngine:
 
-    def __init__(self, model: str = "gpt-5-mini"):
+    def __init__(self, model: str = "deepseek-chat"):
         self.config = load_run_config(_repo_root(), error_cls=PDDLError)
         self.llm = LLMHandler(self.config)
         self.model = model
@@ -272,6 +355,7 @@ class DataEngine:
     def create_singe_task(self, floor_plan: int, created_set: set, complexity: int = 0) -> Tuple[List[Dict], List[str]]:
         MAX_TASK_ATTEMPTS = 3
         MAX_ROBOTS_ATTEMPTS = 3
+        skill_sets = _build_object_skill_sets(floor_plan)
 
         for _ in range(MAX_TASK_ATTEMPTS):
             objects = self.get_objects_with_mass(floor_plan)
@@ -285,7 +369,7 @@ class DataEngine:
 
             subtasks = []
             while json.dumps(subtasks, sort_keys=True) in created_set:
-                subtasks = self.generate_task([o['name'] for o in objects], num)
+                subtasks = self.generate_task([o['name'] for o in objects], num, skill_sets)
 
             for _ in range(MAX_ROBOTS_ATTEMPTS):
                 num_robots = random.randint(2, 4)
@@ -471,7 +555,6 @@ put sink on saltshaker, then put ladle on sinkbasin
             for _ in range(MAX_RETRIES):
                 try:
                     subtasks, assigned_robots, selected_robots = self.create_singe_task(foor_plan, created_set, complexity)
-                    
                     subtasks_key = json.dumps(subtasks, sort_keys=True)
                     if subtasks_key in created_set:
                         continue
@@ -503,6 +586,8 @@ put sink on saltshaker, then put ladle on sinkbasin
                         f.write(f"{json.dumps(result)}\n")
                     task_found = True
                     break
+                except (ObjectPropertiesError, FileNotFoundError):
+                    raise
                 except Exception:
                     continue
 
@@ -511,7 +596,12 @@ put sink on saltshaker, then put ladle on sinkbasin
 
     
     # ---------- 技能匹配逻辑 ----------
-    def get_applicable_skills(self, obj: str, all_objects: List[str]) -> List[Dict]:
+    def get_applicable_skills(
+        self,
+        obj: str,
+        all_objects: List[str],
+        skill_sets: Dict[str, List[str]],
+    ) -> List[Dict]:
         """
         返回当前对象可以参与的所有技能描述。
         每项为字典：
@@ -519,6 +609,14 @@ put sink on saltshaker, then put ladle on sinkbasin
         - 双对象技能: {'skill': 技能名, 'role': 'obj1'/'obj2', 'needed_set': 集合名称}
         """
         skills = []
+        openable_objects = skill_sets["openable_objects"]
+        switchable_objects = skill_sets["switchable_objects"]
+        washable_objects = skill_sets["washable_objects"]
+        breakable_objects = skill_sets["breakable_objects"]
+        sliceable_objects = skill_sets["sliceable_objects"]
+        pickupable_objects = skill_sets["pickupable_objects"]
+        has_placing_surface_objects = skill_sets["has_placing_surface_objects"]
+        openable_containers = skill_sets["openable_containers"]
 
         # 单对象技能
         if obj in openable_objects:
@@ -567,16 +665,29 @@ put sink on saltshaker, then put ladle on sinkbasin
         return skills
 
 
-    def sample_second_object(self, all_objects: List[str], needed_set_name: str, exclude: Optional[str] = None) -> str:
+    def sample_second_object(
+        self,
+        all_objects: List[str],
+        needed_set_name: str,
+        skill_sets: Dict[str, List[str]],
+        exclude: Optional[str] = None,
+    ) -> str:
         """从指定集合中随机抽取一个对象，可排除某个对象。"""
-        needed_set = globals()[needed_set_name]
+        needed_set = skill_sets[needed_set_name]
         candidates = [o for o in all_objects if o != exclude and o in needed_set]
         if not candidates:
             raise ValueError(f"没有足够的候选对象")
         return random.choice(candidates)
 
 
-    def generate_task(self, all_objects: List[str], num_subtasks: int, keep_prob: float = 0.5, seed: Optional[int] = None) -> List[Dict]:
+    def generate_task(
+        self,
+        all_objects: List[str],
+        num_subtasks: int,
+        skill_sets: Dict[str, List[str]],
+        keep_prob: float = 0.5,
+        seed: Optional[int] = None,
+    ) -> List[Dict]:
         """
         生成一系列子任务。
 
@@ -595,13 +706,13 @@ put sink on saltshaker, then put ladle on sinkbasin
         current_obj = None
 
         while len(subtasks) < num_subtasks:
-            if current_obj is None or not self.get_applicable_skills(current_obj, all_objects):
+            if current_obj is None or not self.get_applicable_skills(current_obj, all_objects, skill_sets):
                 while True:
                     current_obj = random.choice(all_objects)
-                    if self.get_applicable_skills(current_obj, all_objects):
+                    if self.get_applicable_skills(current_obj, all_objects, skill_sets):
                         break
 
-            applicable = self.get_applicable_skills(current_obj, all_objects)
+            applicable = self.get_applicable_skills(current_obj, all_objects, skill_sets)
 
             filtered_applicable = [
                 skill for skill in applicable
@@ -627,7 +738,12 @@ put sink on saltshaker, then put ladle on sinkbasin
                     # 双对象技能，需要抽取第二个对象
                     needed_set = choice['needed_set']
                     try:
-                        second_obj = self.sample_second_object(all_objects, needed_set, exclude=current_obj)
+                        second_obj = self.sample_second_object(
+                            all_objects,
+                            needed_set,
+                            skill_sets,
+                            exclude=current_obj,
+                        )
                     except ValueError:
                         # 无可选对象，换一个技能重试（简单从 applicable 中另选）
                         retry+=1
@@ -674,9 +790,10 @@ if __name__ == "__main__":
     # print(random.sample(range(301, 331), 5))
     # print(random.sample(range(401, 431), 5))
 
+    # [8, 6, 14, 207, 211, 203, 306, 322, 309, 428, 405, 412, 16, 28, 201, 218, 310, 312, 425, 408]
     data_engine = DataEngine()
-    for floor_plan in [8, 6, 14, 207, 211, 203, 306, 322, 309, 428, 405, 412, 16, 28, 201, 218, 310, 312, 425, 408]:
-        data_engine.create_tasks(floor_plan, 30)
+    for floor_plan in [404, 412, 16, 28, 201, 218, 310, 312, 425, 408]:
+        data_engine.create_tasks(floor_plan, 5)
         data_engine.create_tasks(floor_plan, 30, 1)
 
    
