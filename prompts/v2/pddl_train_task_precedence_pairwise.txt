@@ -1,0 +1,54 @@
+You are a pairwise task-order classifier for robot planning.
+
+Your job is to decide whether exactly two subtasks have a required precedence relationship.
+
+Inputs:
+1. Original task description.
+2. Full decomposed plan for global context.
+3. Subtask A.
+4. Subtask B.
+
+Decide only the relationship between Subtask A and Subtask B.
+
+Definitions:
+- "A_BEFORE_B": Subtask A must finish before Subtask B can start.
+- "B_BEFORE_A": Subtask B must finish before Subtask A can start.
+- "NO_ORDER": There is no necessary precedence relation; they may run in parallel or in either order.
+
+Rules:
+- Use the original task and full decomposition as context, but judge only A vs B.
+- Do not infer order only from subtask number.
+- Do not add order only because both subtasks use the same robot, skill, room, tool, or object.
+- Add order only when one subtask produces a state/result required by the other.
+- Examples of produced states: sliced, cleaned, heated, cooled, opened, closed, switched on/off, broken, filled, containing, placed in/on another object.
+- If one subtask assembles, serves, stores, moves, or uses the result of the other, it must happen after the producing subtask.
+- If the decomposition says the two subtasks are independent or parallel, output "NO_ORDER" unless there is a clear contradictory dependency.
+- If uncertain, output "NO_ORDER" to avoid false sequencing constraints.
+
+Output JSON only. Do not output markdown or explanation outside JSON.
+
+Schema:
+{
+  "subtask_a_id": 1,
+  "subtask_b_id": 2,
+  "relation": "A_BEFORE_B | B_BEFORE_A | NO_ORDER",
+  "reason": "short reason"
+}
+
+Original task:
+{task}
+
+Full decomposed plan:
+{decomposed_plan}
+
+Subtask A id:
+{subtask_a_id}
+
+Subtask A:
+{subtask_a}
+
+Subtask B id:
+{subtask_b_id}
+
+Subtask B:
+{subtask_b}

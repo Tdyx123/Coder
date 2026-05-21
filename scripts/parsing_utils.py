@@ -133,6 +133,28 @@ class ParsingUtils:
             or cls.MARKDOWN_TASK_DONE_FOOTER_RE.match(stripped) is not None
         )
 
+    @classmethod
+    def extract_subtasks(cls, decomposed_plan: str) -> List[str]:
+        """Extract executable subtask sections from a decomposed plan."""
+        if not any(cls.is_subtask_header_line(line) for line in decomposed_plan.splitlines()):
+            return [decomposed_plan.strip()] if decomposed_plan.strip() else []
+
+        subtasks = cls.extract_subtask_blocks(decomposed_plan, normalize_headers=True)
+        filtered_subtasks = []
+
+        for subtask in subtasks:
+            lines = subtask.splitlines()
+
+            while lines and cls.is_subtask_trailing_line(lines[-1]):
+                lines.pop()
+
+            if len(lines) < 10:
+                continue
+
+            filtered_subtasks.append('\n'.join(lines))
+
+        return filtered_subtasks
+
     @staticmethod
     def sequence_assignment_re() -> re.Pattern:
         return re.compile(

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List
 
-from pddlrun_llmseparate import PDDLUtils, RunConfig, load_run_config, normalize_floor_plan, run_single_floor_plan_task
+from run_config import RunConfig, load_run_config, normalize_floor_plan
 
 
 @dataclass(frozen=True)
@@ -33,6 +33,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-root", type=str, default=None)
     parser.add_argument("--prompt-decompse-set", type=str, default="pddl_train_task_decomposesep")
     parser.add_argument("--prompt-allocation-set", type=str, default="pddl_train_task_allocationsep")
+    parser.add_argument(
+        "--disable-log-results",
+        action="store_true",
+        help="Accepted for compatibility; this parallel runner does not write legacy log_results output.",
+    )
     return parser.parse_args()
 
 
@@ -48,6 +53,16 @@ def floor_plan_sort_key(value: str) -> tuple:
             suffix.append(ch)
     number = int("".join(prefix_digits)) if prefix_digits else -1
     return (number, "".join(suffix))
+
+
+def safe_count(value: Any) -> int:
+    return value if isinstance(value, int) else 0
+
+
+def all_subtasks_passed(result: Dict[str, Any]) -> bool:
+    total = safe_count(result.get("total"))
+    tc = safe_count(result.get("tc"))
+    return total > 0 and tc == total
 
 
 def load_jobs(
@@ -82,6 +97,8 @@ def run_single_job(
     error_message = None
 
     try:
+        from pddlrun_llmseparate import run_single_floor_plan_task
+
         with contextlib.redirect_stdout(io.StringIO()):
             result = run_single_floor_plan_task(
                 base_path=str(repo_root),
@@ -92,6 +109,7 @@ def run_single_job(
                 prompt_allocation_set=args.prompt_allocation_set,
                 objects_ai=objects_ai,
                 config=config,
+                test_set=args.test_set,
             )
     except Exception as exc:
         status = "error"
@@ -122,6 +140,8 @@ def run_floor_plan_jobs(
     args: argparse.Namespace,
     floor_plan: str,
 ) -> Dict[str, Any]:
+    from pddlrun_llmseparate import PDDLUtils
+
     jobs = load_jobs(config, args.test_set, floor_plan)
     floor_plan_key = normalize_floor_plan(floor_plan)
     objects_ai = f"\n\nobjects = {PDDLUtils.get_ai2_thor_objects(int(PDDLUtils.extract_floor_plan_number(floor_plan_key)), config)}"
@@ -149,8 +169,8 @@ def run_floor_plan_jobs(
         "task_count": len(results),
         "success_count": sum(1 for item in results if item["status"] == "success"),
         "failure_count": sum(1 for item in results if item["status"] != "success"),
-        "all_pass_count": sum(1 for item in results if item.get("total", 0) > 0 and item["tc"] == item["total"]),
-        "pass_one_count": sum(1 for item in results if item.get("tc", 0) > 0),
+        "all_pass_count": sum(1 for item in results if all_subtasks_passed(item)),
+        "pass_one_count": sum(1 for item in results if safe_count(item.get("tc")) > 0),
         "results": results,
     }
     floor_plan_summary = output_root / f"FloorPlan{floor_plan_key}" / "summary.json"

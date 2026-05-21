@@ -1,9 +1,13 @@
+import os
 import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import yaml
+
+os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
+
 from litellm import completion
 from litellm.exceptions import APIError, RateLimitError, Timeout
 
@@ -196,6 +200,12 @@ def complete_with_provider(
     temperature: float,
     stop: Optional[List[str]] = None,
     frequency_penalty: float = 0,
+    top_p: Optional[float] = None,
+    top_k: Optional[int] = None,
+    min_p: Optional[float] = None,
+    presence_penalty: Optional[float] = None,
+    repetition_penalty: Optional[float] = None,
+    extra_body: Optional[Dict[str, Any]] = None,
 ) -> Any:
     messages = _normalize_messages(prompt)
     kwargs: Dict[str, Any] = {
@@ -209,6 +219,18 @@ def complete_with_provider(
     }
     if stop:
         kwargs["stop"] = stop
+    optional_params = {
+        "top_p": top_p,
+        "top_k": top_k,
+        "min_p": min_p,
+        "presence_penalty": presence_penalty,
+        "repetition_penalty": repetition_penalty,
+    }
+    for key, value in optional_params.items():
+        if value is not None:
+            kwargs[key] = value
+    if extra_body is not None:
+        kwargs["extra_body"] = extra_body
 
     api_keys = provider["api_keys"]
     start_index = _api_key_rotation_pool.reserve_start_index(provider)

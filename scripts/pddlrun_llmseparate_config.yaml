@@ -27,7 +27,6 @@ llm:
   default_temperature: 0
   default_retry_delay: 20
   max_retries: 3
-  request_max_tokens_multiplier: 10
   calls:
     structure_fix:
       max_tokens: 1400
@@ -37,6 +36,9 @@ llm:
       frequency_penalty: 0.4
     decompose:
       max_tokens: 1300
+      frequency_penalty: 0.0
+    precedence:
+      max_tokens: 700
       frequency_penalty: 0.0
     allocate:
       max_tokens: 1500
@@ -70,6 +72,8 @@ artifacts:
   planner_manifest: 08_planner/planner_manifest.json
   decompose_prompt: 01_decompose/01_decompose_prompt.txt
   decompose_output: 01_decompose/02_decompose_output.txt
+  precedence_output: 02_precedence/predecessors.json
+  precedence_manifest: 02_precedence/pairwise_manifest.json
   allocate_prompt: 02_allocate/01_allocate_prompt.txt
   allocate_output: 02_allocate/02_allocate_output.txt
   problem_summary_raw: 04_problem_files/01_problem_summary_raw.txt

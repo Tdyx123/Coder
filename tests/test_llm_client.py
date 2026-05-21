@@ -13,6 +13,7 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 import llm_client
+import llm_handler
 
 
 class LLMClientTests(unittest.TestCase):
@@ -70,6 +71,90 @@ class LLMClientTests(unittest.TestCase):
         self.assertEqual(llm_client.extract_response_metadata(first)["key_index"], 0)
         self.assertEqual(llm_client.extract_response_metadata(second)["key_index"], 1)
         self.assertEqual(llm_client.extract_response_metadata(third)["key_index"], 2)
+
+    def test_complete_with_provider_passes_extra_body_to_completion(self):
+        seen_kwargs = []
+        extra_body = {"chat_template_kwargs": {"enable_thinking": False}}
+
+        def fake_completion(**kwargs):
+            seen_kwargs.append(kwargs)
+            return {}
+
+        with patch.object(llm_client, "completion", side_effect=fake_completion):
+            llm_client.complete_with_provider(
+                model="qwen3.5-test",
+                prompt="hello",
+                provider=self.provider,
+                max_tokens=16,
+                temperature=0.1,
+                top_p=0.95,
+                top_k=20,
+                min_p=0.0,
+                presence_penalty=1.5,
+                repetition_penalty=1.0,
+                extra_body=extra_body,
+            )
+
+        self.assertEqual(seen_kwargs[0]["extra_body"], extra_body)
+        self.assertEqual(seen_kwargs[0]["top_p"], 0.95)
+        self.assertEqual(seen_kwargs[0]["top_k"], 20)
+        self.assertEqual(seen_kwargs[0]["min_p"], 0.0)
+        self.assertEqual(seen_kwargs[0]["presence_penalty"], 1.5)
+        self.assertEqual(seen_kwargs[0]["repetition_penalty"], 1.0)
+
+    def test_llm_handler_applies_qwen35_request_params(self):
+        class DummyConfig:
+            def get(self, section, key, default=None):
+                return default
+
+        handler = llm_handler.LLMHandler(config=DummyConfig())
+
+        with patch.object(handler, "_get_provider_for_model", return_value=(self.provider, "deepseek")), \
+                patch.object(llm_handler, "complete_with_provider", return_value={}) as fake_complete, \
+                patch.object(llm_handler, "extract_text", return_value="ok"), \
+                patch.object(llm_handler, "extract_response_metadata", return_value={}), \
+                patch.object(llm_handler, "extract_usage", return_value=None), \
+                patch.object(llm_handler, "log_llm_call") as fake_log:
+            handler.query_model("hello", "qwen3.5-test", temperature=0.2)
+
+        request_kwargs = fake_complete.call_args.kwargs
+        self.assertEqual(request_kwargs["temperature"], 1.0)
+        self.assertEqual(request_kwargs["top_p"], 0.95)
+        self.assertEqual(request_kwargs["top_k"], 20)
+        self.assertEqual(request_kwargs["min_p"], 0.0)
+        self.assertEqual(request_kwargs["presence_penalty"], 1.5)
+        self.assertEqual(request_kwargs["repetition_penalty"], 1.0)
+        self.assertEqual(request_kwargs["extra_body"], {"chat_template_kwargs": {"enable_thinking": False}})
+
+        log_params = fake_log.call_args.kwargs["params"]
+        self.assertEqual(log_params["temperature"], 1.0)
+        self.assertEqual(log_params["top_p"], 0.95)
+        self.assertEqual(log_params["top_k"], 20)
+        self.assertEqual(log_params["min_p"], 0.0)
+        self.assertEqual(log_params["presence_penalty"], 1.5)
+        self.assertEqual(log_params["repetition_penalty"], 1.0)
+
+    def test_llm_handler_leaves_extra_body_empty_for_other_models(self):
+        class DummyConfig:
+            def get(self, section, key, default=None):
+                return default
+
+        handler = llm_handler.LLMHandler(config=DummyConfig())
+
+        with patch.object(handler, "_get_provider_for_model", return_value=(self.provider, "deepseek")), \
+                patch.object(llm_handler, "complete_with_provider", return_value={}) as fake_complete, \
+                patch.object(llm_handler, "extract_text", return_value="ok"), \
+                patch.object(llm_handler, "extract_response_metadata", return_value={}), \
+                patch.object(llm_handler, "extract_usage", return_value=None), \
+                patch.object(llm_handler, "log_llm_call"):
+            handler.query_model("hello", "deepseek-chat")
+
+        self.assertIsNone(fake_complete.call_args.kwargs["extra_body"])
+        self.assertIsNone(fake_complete.call_args.kwargs["top_p"])
+        self.assertIsNone(fake_complete.call_args.kwargs["top_k"])
+        self.assertIsNone(fake_complete.call_args.kwargs["min_p"])
+        self.assertIsNone(fake_complete.call_args.kwargs["presence_penalty"])
+        self.assertIsNone(fake_complete.call_args.kwargs["repetition_penalty"])
 
     def test_round_robin_wraps_after_last_key(self):
         seen_keys = []

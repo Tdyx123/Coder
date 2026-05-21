@@ -1,19 +1,27 @@
 import json
-import re
-from pathlib import Path
-from typing import List, Tuple, Optional, Dict, Union, Any
 import random
-import time
+import re
 import sys
+import time
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
 
-sys.path.append(".")
+_SCRIPT_DIR = Path(__file__).resolve().parent
+_REPO_ROOT = _SCRIPT_DIR.parent
+for path in (_SCRIPT_DIR, _REPO_ROOT):
+    path_str = str(path)
+    if path_str not in sys.path:
+        sys.path.append(path_str)
 
-from resources.robots import robots
 from ai2thor_object_cache import get_ai2_thor_objects_cached
+from file_processor import PDDLError
+from llm_handler import LLMHandler
+from resources.robots import robots
+from run_config import load_run_config
 
-from pddlrun_llmseparate import LLMHandler, load_run_config, _repo_root
 
+def _repo_root() -> Path:
+    return _REPO_ROOT
 
 
 breakable_objects = ['AlarmClock', 'Bottle', 'Bowl', 'CellPhone', 'Cup',
@@ -79,8 +87,8 @@ MASS_OBJECTS = ['Knife']
 
 class DataEngine:
 
-    def __init__(self, model: str = "deepseek-chat"):
-        self.config = load_run_config(_repo_root())
+    def __init__(self, model: str = "gpt-5-mini"):
+        self.config = load_run_config(_repo_root(), error_cls=PDDLError)
         self.llm = LLMHandler(self.config)
         self.model = model
         seed = int(time.time())
@@ -450,7 +458,7 @@ put sink on saltshaker, then put ladle on sinkbasin
                     if line:
                         created_set.add(line)
 
-        task_folder = f"data/final_test_new_{complexity}"
+        task_folder = f"data/final_test_new_0521_{complexity}"
         task_folder_path = Path(task_folder)
         task_folder_path.mkdir(parents=True, exist_ok=True)
         TASK_FILE = task_folder_path.joinpath(f"FloorPlan{foor_plan}.jsonl")
@@ -666,13 +674,8 @@ if __name__ == "__main__":
     # print(random.sample(range(301, 331), 5))
     # print(random.sample(range(401, 431), 5))
 
-    # data_engine = DataEngine()
-    # for floor_plan in [8, 6, 14, 207, 211, 203, 306, 322, 309, 428, 405, 412]:
-    #     data_engine.create_tasks(floor_plan, 30)
-    #     data_engine.create_tasks(floor_plan, 30, 1)
-
     data_engine = DataEngine()
-    for floor_plan in [16, 28, 201, 218, 310, 312, 425, 408]:
+    for floor_plan in [8, 6, 14, 207, 211, 203, 306, 322, 309, 428, 405, 412, 16, 28, 201, 218, 310, 312, 425, 408]:
         data_engine.create_tasks(floor_plan, 30)
         data_engine.create_tasks(floor_plan, 30, 1)
 

@@ -1,9 +1,7 @@
 import copy
-import glob
 import json
 import os
 import argparse
-import yaml
 from pathlib import Path
 from datetime import datetime
 import random
@@ -16,19 +14,12 @@ from typing import List, Dict, Tuple, Optional, Union, Any
 import uuid
 
 from ai2thor_object_cache import get_ai2_thor_objects_cached
-from llm_client import (
-    complete_with_provider,
-    extract_text,
-    extract_response_metadata,
-    extract_usage,
-    get_available_models as get_litellm_models,
-    get_provider_for_model,
-    is_rate_limit_error,
-    is_retryable_error,
-    load_providers,
-)
-from llm_logger import log_llm_call, get_llm_logger
+from llm_client import get_available_models as get_litellm_models
+from file_processor import FileProcessor, PDDLError
+from llm_handler import LLMError, LLMHandler
+from llm_logger import get_llm_logger
 from parsing_utils import ParsingUtils
+from run_config import RunConfig, load_run_config as _load_run_config, normalize_floor_plan
 
 import sys
 sys.path.append(".")
@@ -36,208 +27,14 @@ sys.path.append(".")
 import resources.actions as actions
 import resources.robots as robots
 
-CONFIG_FILE_NAME = "pddlrun_llmseparate_config.yaml"
-
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
-DEFAULT_RUN_CONFIG: Dict[str, Any] = {
-    "storage": {
-        "base_dir": "logs/intermediate_runs",
-        "task_manager_runs_dir": "logs/task_manager_runs",
-        "default_generated_subtask_dir": "resources/generated_subtask",
-        "default_validated_subtask_dir": "resources/validated_subtask",
-        "default_each_run_dir": "resources/each_run",
-        "parallel_output_root": "parallel_runs",
-    },
-    "data": {
-        "dataset_dir": "data",
-        "prompt_template_dir": "prompts/v1",
-        "ai2thor_objects_cache_dir": "data/ai2thor_objects_cache",
-    },
-    "resources": {
-        "resources_dir": "resources",
-        "robot_domain_dir": "resources",
-        "allaction_domain_file": "allactionrobot.pddl",
-    },
-    "planner": {
-        "executable": "downward/fast-downward.py",
-        "alias": "seq-opt-lmcut",
-        "timeout_seconds": 300,
-    },
-    "llm": {
-        "providers_file": "scripts/providers.yaml",
-        "default_max_tokens": 128,
-        "default_temperature": 0,
-        "default_retry_delay": 20,
-        "max_retries": 3,
-        "request_max_tokens_multiplier": 10,
-        "calls": {
-            "structure_fix": {"max_tokens": 1400, "frequency_penalty": 0.4},
-            "validate_problem": {"max_tokens": 1400, "frequency_penalty": 0.4},
-            "decompose": {"max_tokens": 1300, "frequency_penalty": 0.0},
-            "allocate": {"max_tokens": 1500, "frequency_penalty": 0.69},
-            "summary": {"max_tokens": 1400, "frequency_penalty": 0.4},
-            "problem_generation": {"max_tokens": 1400, "frequency_penalty": 0.4},
-            "llm_validator": {"max_tokens": 1400, "frequency_penalty": 0.4},
-            "combine": {"max_tokens": 1300, "frequency_penalty": 0.0},
-            "final_match": {"max_tokens": 1300, "frequency_penalty": 0.0},
-        },
-    },
-    "artifacts": {
-        "manifest": "run_manifest.json",
-        "llm_calls": "00_llm/llm_calls.jsonl",
-        "task_context": "inputs/task_context.json",
-        "domain_content": "inputs/domain_content.pddl",
-        "generated_subtask_dir": "06_split/generated_subtask",
-        "validated_subtask_dir": "07_validate/validated_subtask",
-        "each_run_dir": "artifacts/each_run",
-        "generated_subtask_manifest": "06_split/generated_subtask_manifest.json",
-        "validation_manifest": "07_validate/validation_manifest.json",
-        "planner_manifest": "08_planner/planner_manifest.json",
-        "decompose_prompt": "01_decompose/01_decompose_prompt.txt",
-        "decompose_output": "01_decompose/02_decompose_output.txt",
-        "allocate_prompt": "02_allocate/01_allocate_prompt.txt",
-        "allocate_output": "02_allocate/02_allocate_output.txt",
-        "problem_summary_raw": "04_problem_files/01_problem_summary_raw.txt",
-        "sequence_operations": "04_problem_files/02_sequence_operations.txt",
-        "subtasks_index": "04_problem_files/03_subtasks.json",
-        "generated_problem_files": "04_problem_files/04_generated_problem_files.json",
-        "combine_prompt": "09_combine/01_combine_prompt.txt",
-        "combine_output": "09_combine/02_combined_plan.txt",
-        "final_match_prompt": "10_final_match/01_match_prompt.txt",
-        "final_match_output": "10_final_match/02_final_plan.txt",
-    },
-}
-
-
-def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
-    merged = copy.deepcopy(base)
-    for key, value in override.items():
-        if isinstance(value, dict) and isinstance(merged.get(key), dict):
-            merged[key] = _deep_merge(merged[key], value)
-        else:
-            merged[key] = value
-    return merged
-
-
-class RunConfig:
-    """Resolved runtime configuration for pddlrun_llmseparate workflows."""
-
-    def __init__(
-        self,
-        base_path: Union[str, Path],
-        values: Optional[Dict[str, Any]] = None,
-        config_path: Optional[Union[str, Path]] = None,
-    ):
-        self.base_path = Path(base_path).resolve()
-        self.config_path = Path(config_path).resolve() if config_path else Path(__file__).resolve().parent / CONFIG_FILE_NAME
-        self.values = _deep_merge(DEFAULT_RUN_CONFIG, values or {})
-        self._apply_legacy_aliases()
-
-    def _apply_legacy_aliases(self) -> None:
-        storage = self.values.setdefault("storage", {})
-        if storage.get("intermediate_base_dir"):
-            storage["base_dir"] = storage["intermediate_base_dir"]
-        if storage.get("base_dir"):
-            storage["intermediate_base_dir"] = storage["base_dir"]
-
-    def get(self, section: str, key: str, default: Any = None) -> Any:
-        section_value = self.values.get(section, {})
-        if not isinstance(section_value, dict):
-            return default
-        return section_value.get(key, default)
-
-    def path(self, section: str, key: str) -> Path:
-        return self.resolve_path(self.get(section, key))
-
-    def resolve_path(self, value: Union[str, Path]) -> Path:
-        path = Path(value)
-        if path.is_absolute():
-            return path
-        return self.base_path / path
-
-    @property
-    def storage_base_dir(self) -> Path:
-        return self.path("storage", "base_dir")
-
-    @property
-    def task_manager_runs_dir(self) -> Path:
-        return self.path("storage", "task_manager_runs_dir")
-
-    @property
-    def resources_dir(self) -> Path:
-        return self.path("resources", "resources_dir")
-
-    @property
-    def robot_domain_dir(self) -> Path:
-        return self.path("resources", "robot_domain_dir")
-
-    @property
-    def prompt_template_dir(self) -> Path:
-        return self.path("data", "prompt_template_dir")
-
-    @property
-    def providers_file(self) -> Path:
-        return self.path("llm", "providers_file")
-
-    @property
-    def ai2thor_objects_cache_dir(self) -> Path:
-        return self.path("data", "ai2thor_objects_cache_dir")
-
-    @property
-    def planner_executable(self) -> Path:
-        return self.path("planner", "executable")
-
-    def allaction_domain_path(self) -> Path:
-        configured = self.get("resources", "allaction_domain_file")
-        path = Path(configured)
-        return path if path.is_absolute() else self.resources_dir / path
-
-    def dataset_file(self, test_set: str, floor_plan: Union[int, str]) -> Path:
-        normalized = normalize_floor_plan(str(floor_plan))
-        return self.path("data", "dataset_dir") / test_set / f"FloorPlan{normalized}.jsonl"
-
-    def prompt_file(self, name: str) -> Path:
-        return self.prompt_template_dir / name
-
-    def robot_domain_path(self, filename: str) -> Path:
-        return self.robot_domain_dir / filename
-
-    def artifact(self, key: str, default: str) -> str:
-        return str(self.get("artifacts", key, default))
-
-    def llm_call(self, name: str) -> Dict[str, Any]:
-        calls = self.get("llm", "calls", {})
-        if not isinstance(calls, dict):
-            return {}
-        value = calls.get(name, {})
-        return value if isinstance(value, dict) else {}
-
-
 def load_run_config(base_path: Union[str, Path], config_path: Optional[Union[str, Path]] = None) -> RunConfig:
     """Load and resolve the shared runtime config for single and parallel runs."""
-    config_file = Path(config_path).resolve() if config_path else Path(__file__).resolve().parent / CONFIG_FILE_NAME
-    loaded: Dict[str, Any] = {}
-
-    if config_file.exists():
-        with open(config_file, "r", encoding="utf-8") as file:
-            parsed = yaml.safe_load(file) or {}
-        if not isinstance(parsed, dict):
-            raise PDDLError(f"Invalid config format in {config_file}")
-        loaded = parsed
-
-    return RunConfig(base_path=base_path, values=loaded, config_path=config_file)
-
-
-def normalize_floor_plan(value: str) -> str:
-    """Normalize FloorPlan-style identifiers to their suffix form."""
-    text = str(value).strip()
-    if text.startswith("FloorPlan"):
-        text = text[len("FloorPlan"):]
-    return text
+    return _load_run_config(base_path, config_path, error_cls=PDDLError)
 
 
 def _match_subtask_header_line(
@@ -304,17 +101,7 @@ def load_run_storage_config(base_path: str) -> Dict[str, Any]:
     config = load_run_config(base_path)
     return {"storage": {"base_dir": str(config.storage_base_dir)}}
 
-# Constants
-DEFAULT_MAX_TOKENS = DEFAULT_RUN_CONFIG["llm"]["default_max_tokens"]
-DEFAULT_TEMPERATURE = DEFAULT_RUN_CONFIG["llm"]["default_temperature"]
-DEFAULT_RETRY_DELAY = DEFAULT_RUN_CONFIG["llm"]["default_retry_delay"]
-MAX_RETRIES = DEFAULT_RUN_CONFIG["llm"]["max_retries"]
-
 # Action mapping from actions module
-
-class PDDLError(Exception):
-    """Base exception class for PDDL-related errors."""
-    pass
 
 class ValidationError(PDDLError):
     """Exception raised for PDDL validation errors."""
@@ -323,11 +110,6 @@ class ValidationError(PDDLError):
 class PlanningError(PDDLError):
     """Exception raised for PDDL planning errors."""
     pass
-
-class LLMError(Exception):
-    """Exception raised for Language Model related errors."""
-    pass
-
 
 class TaskProcessingResult(Dict[str, Any]):
     """Typed dictionary-like container for per-task execution results."""
@@ -379,538 +161,6 @@ class PDDLUtils:
             cache_dir=run_config.ai2thor_objects_cache_dir,
         )
 
-class FileProcessor:
-    """Handles file operations and text processing for PDDL files.
-    
-    This class manages reading, writing, and processing of PDDL files and related
-    text content. It provides methods for file operations and text manipulation
-    specific to PDDL task processing.
-    """
-    
-    def __init__(
-        self,
-        base_path: str,
-        config: Optional[RunConfig] = None,
-        subtask_path: Optional[str] = None,
-        validated_subtask_path: Optional[str] = None,
-        each_run_path: Optional[str] = None,
-    ):
-        """Initialize the file processor.
-        
-        Args:
-            base_path (str): Base path for file operations
-        """
-        self.base_path = base_path
-        self.config = config or load_run_config(base_path)
-        self.subtask_path = ""
-        self.validated_subtask_path = ""
-        self.each_run_path = ""
-        self.configure_workspace(
-            subtask_path=subtask_path or str(self.config.path("storage", "default_generated_subtask_dir")),
-            validated_subtask_path=validated_subtask_path or str(self.config.path("storage", "default_validated_subtask_dir")),
-            each_run_path=each_run_path or str(self.config.path("storage", "default_each_run_dir")),
-        )
-
-    def configure_workspace(
-        self,
-        subtask_path: str,
-        validated_subtask_path: str,
-        each_run_path: str,
-    ) -> None:
-        """Configure the active workspace directories for generated artifacts."""
-        self.subtask_path = subtask_path
-        self.validated_subtask_path = validated_subtask_path
-        self.each_run_path = each_run_path
-        os.makedirs(self.subtask_path, exist_ok=True)
-        os.makedirs(self.validated_subtask_path, exist_ok=True)
-        os.makedirs(self.each_run_path, exist_ok=True)
-    
-    def read_file(self, file_path: str) -> str:
-        """Read contents of a file.
-        
-        Args:
-            file_path (str): Path to the file to read
-            
-        Returns:
-            str: Contents of the file
-        """
-        try:
-            with open(file_path, 'r', encoding='utf-8') as file:
-                return file.read()
-        except FileNotFoundError:
-            raise PDDLError(f"File not found: {file_path}")
-        except Exception as e:
-            raise PDDLError(f"Error reading file {file_path}: {str(e)}")
-    
-    def write_file(self, file_path: str, content: str) -> None:
-        """Write content to a file.
-        
-        Args:
-            file_path (str): Path to write to
-            content (str): Content to write
-        """
-        try:
-            with open(file_path, 'w', encoding='utf-8') as file:
-                file.write(content)
-        except Exception as e:
-            raise PDDLError(f"Error writing to file {file_path}: {str(e)}")
-
-    def write_json(self, file_path: str, content: Any) -> None:
-        """Write JSON content to a file."""
-        try:
-            with open(file_path, 'w', encoding='utf-8') as file:
-                json.dump(content, file, indent=2, ensure_ascii=False)
-        except Exception as e:
-            raise PDDLError(f"Error writing JSON to file {file_path}: {str(e)}")
-    
-    def split_pddl_tasks(
-        self,
-        code_plan: Union[str, List[str]],
-        isValidated: bool,
-        output_directory: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
-        """Split PDDL tasks and save them to files.
-        
-        Args:
-            code_plan (List[str]): List of PDDL plans to split
-        """
-        try:
-            # Convert single plan to list
-            if isinstance(code_plan, str):
-                code_plan = [code_plan]
-
-            saved_tasks: List[Dict[str, Any]] = []
-            
-            # Create timestamped directory
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            timestamp_directory = os.path.join(self.each_run_path, timestamp)
-            os.makedirs(timestamp_directory, exist_ok=True)
-            if output_directory:
-                os.makedirs(output_directory, exist_ok=True)
-            
-            for i, plan in enumerate(code_plan):
-                tasks = re.split(r"\s*\(define\s*\(problem", plan)
-                
-                for j, task in enumerate(tasks[1:]):
-                    task = "(define (problem" + task
-                    task = self.balance_parentheses(task)
-                    
-                    match = re.search(r'\(problem\s+(\w+)\)', task, re.IGNORECASE)
-                    if match:
-                        task_name = match.group(1)
-                        filename = f"{i+1}_{j+1}_{task_name}.pddl"
-                    else:
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-                        filename = f"{i+1}_{j+1}_{timestamp}.pddl"
-                    
-                    # Save to both timestamped directory and generated_subtask
-                    filepath = os.path.join(timestamp_directory, filename)
-                    self.write_file(filepath, task)
-
-                    custom_output_path = None
-                    if output_directory:
-                        custom_output_path = os.path.join(output_directory, filename)
-                        self.write_file(custom_output_path, task)
-                    
-                    # Also save to generated_subtask for compatibility
-                    if isValidated:
-                        subtask_filepath = os.path.join(self.validated_subtask_path, filename)  #PG: Changed for validation
-                    else:
-                        subtask_filepath = os.path.join(self.subtask_path, filename)
-                    #print("Saving pddl at path:", subtask_filepath)
-                    self.write_file(subtask_filepath, task)
-                    saved_tasks.append({
-                        "source_plan_index": i,
-                        "task_index": j,
-                        "filename": filename,
-                        "timestamp_copy": filepath,
-                        "custom_output_copy": custom_output_path,
-                        "compatibility_copy": subtask_filepath,
-                    })
-            return saved_tasks
-            
-        except Exception as e:
-            raise PDDLError(f"Error splitting PDDL tasks: {str(e)}")
-    
-    def balance_parentheses(self, content: str) -> str:
-        """Balance parentheses in PDDL content.
-        
-        Args:
-            content (str): PDDL content to process
-            
-        Returns:
-            str: Processed PDDL content with balanced parentheses
-        """
-        open_count = 0
-        start_index = -1
-        end_index = -1
-        
-        for i, char in enumerate(content):
-            if char == '(':
-                if open_count == 0:
-                    start_index = i
-                open_count += 1
-            elif char == ')':
-                open_count -= 1
-                if open_count == 0:
-                    end_index = i
-                    break
-        
-        if start_index != -1 and end_index != -1:
-            return content[start_index:end_index+1]
-        return ""
-    
-
-    def split_and_store_tasks(
-        self,
-        content: str,
-        llm: Optional['LLMHandler'] = None,
-        model: Optional[str] = None
-    ) -> Tuple[List[str], str]:
-        """Split and store tasks from content.
-
-        Returns:
-            Tuple[List[str], str]: (subtasks list, sequence operations)
-        """
-        sequence_operations = ""
-
-        summary_match = re.search(
-            r'(?:#?\s*)?Problem\s*content\s*summary\s*:?(.*?)(?=(?:#?\s*)?Sequence\s*of\s*Operations?\s*:?)',
-            content, re.DOTALL | re.IGNORECASE
-        )
-        if summary_match:
-            problem_summary = summary_match.group(1).strip()
-        else:
-            split_marker = re.search(r'(?:#?\s*)?Sequence\s*of\s*Operations?\s*:', content, re.IGNORECASE)
-            if split_marker:
-                problem_summary = content[:split_marker.start()].strip()
-                sequence_operations = content[split_marker.end():].strip()
-            else:
-                problem_summary = content.strip()
-                sequence_operations = "failed to extract2"
-
-        subtasks = ParsingUtils.extract_subtask_blocks(
-            problem_summary,
-            allow_bare=True,
-            allow_hash_space_separator=False,
-        )
-
-        if not subtasks:
-            subtasks = [problem_summary.strip()] if problem_summary.strip() else []
-
-        fixed_subtasks = []
-        structure_ok = re.compile(
-            r'\*\*Assigned\s*Robots?\*\*\s*:\s*.*?\n\*\*Objects\s*Involved\*\*\s*:\s*.*',
-            re.DOTALL | re.IGNORECASE
-        )
-        fallback_plain = re.compile(
-            r'\bAssigned\s*Robots?\b\s*:\s*.*?\n\bObjects\s*Involved\b\s*:\s*.*',
-            re.DOTALL | re.IGNORECASE
-        )
-
-        for subtask in subtasks:
-            if structure_ok.search(subtask) or fallback_plain.search(subtask):
-                fixed_subtasks.append(subtask)
-                continue
-
-            if llm and model:
-                fix_prompt = (
-                    "The following subtask description needs to be reformatted. Please reformat it to strictly follow this structure:\n\n"
-                    "#SubTask [number]: [Task Name]\n\n"
-                    "# Initial Precondition analyze due to previous subtask:\n"
-                    "#1. [precondition description]\n\n"
-                    "[Action descriptions with Parameters, Preconditions, and Effects]\n\n"
-                    "**Assigned Robot**: [robot number or 'team']\n"
-                    "**Objects Involved**: [list of objects]\n\n"
-                    "Important formatting rules:\n"
-                    "1. Each section must start with the exact headers shown above\n"
-                    "2. The order must be: SubTask header, Preconditions, Action descriptions, Assigned Robot, Objects Involved\n"
-                    "3. Use '**Assigned Robot**:' and '**Objects Involved**:' exactly as shown with double asterisks\n"
-                    "4. Include all action descriptions with their Parameters, Preconditions, and Effects\n"
-                    "5. Keep the original action descriptions if they exist\n\n"
-                    "Original subtask:\n" + subtask + "\n\n"
-                    "Please provide ONLY the reformatted version following the structure above. Do not add any explanations or additional text."
-                )
-
-                messages = [
-                    {"role": "system", "content": "You are a Robot PDDL problem Expert. Your task is to reformat subtask descriptions to match a specific structure. Do not add any explanations or additional text."},
-                    {"role": "user", "content": fix_prompt}
-                ]
-                call_config = self.config.llm_call("structure_fix")
-                _, fixed_subtask = llm.query_model(
-                    messages,
-                    model,
-                    max_tokens=call_config.get("max_tokens", 1400),
-                    frequency_penalty=call_config.get("frequency_penalty", 0.4),
-                )
-
-                if structure_ok.search(fixed_subtask) or fallback_plain.search(fixed_subtask):
-                    fixed_subtasks.append(fixed_subtask)
-                else:
-                    print("LLM structure fix failed, using original subtask")
-                    fixed_subtasks.append(subtask)
-            else:
-                print("LLM handler not provided, using original subtask")
-                fixed_subtasks.append(subtask)
-
-        return fixed_subtasks, sequence_operations
-    
-    def extract_domain_name(self, problem_file_path: str) -> Optional[str]:
-        """Extract the domain name from a problem PDDL file.
-        
-        Args:
-            problem_file_path (str): Path to the problem PDDL file
-            
-        Returns:
-            Optional[str]: Domain name if found, None otherwise
-        """
-        try:
-            domain_pattern = re.compile(r'\(\s*:domain\s+(\S+)\s*\)')
-            content = self.read_file(problem_file_path)
-            match = domain_pattern.search(content)
-            return match.group(1) if match else None
-        except Exception as e:
-            print(f"Error extracting domain name from {problem_file_path}: {str(e)}")
-            return None
-
-    def find_domain_file(self, domain_name: str) -> Optional[str]:
-        """Find the domain file for a given domain name.
-        
-        Args:
-            domain_name (str): Name of the domain to find
-            
-        Returns:
-            Optional[str]: Path to domain file if found, None otherwise
-        """
-        try:
-            domain_path = str(self.config.robot_domain_path(f"{domain_name}.pddl"))
-            return domain_path if os.path.isfile(domain_path) else None
-        except Exception as e:
-            print(f"Error finding domain file for {domain_name}: {str(e)}")
-            return None
-
-    def clean_directory(self, directory_path: str) -> None:
-        """Clean a directory by removing all files and subdirectories.
-        
-        Args:
-            directory_path (str): Path to directory to clean
-        """
-        if os.path.exists(directory_path):
-            for filename in os.listdir(directory_path):
-                file_path = os.path.join(directory_path, filename)
-                if os.path.isfile(file_path) or os.path.islink(file_path):
-                    os.unlink(file_path)
-                elif os.path.isdir(file_path):
-                    shutil.rmtree(file_path)
-
-    def extract_plan_from_output(self, content: str) -> str:
-        """Extract clean plan from planner output.
-        
-        Args:
-            content (str): Raw planner output content
-            
-        Returns:
-            str: Cleaned plan text
-        """
-        if not content or not isinstance(content, str):
-            raise ValueError("Invalid content provided to extract_plan_from_output")
-            
-        try:
-            plan_pattern = re.compile(r"^\s*\w+\s+\w+\s+\w+\s+\(\d+\)\s*$", re.MULTILINE)
-            plan = plan_pattern.findall(content)
-            return "\n".join(plan) if plan else ""
-        except Exception as e:
-            print(f"Error extracting plan from output: {str(e)}")
-            return ""
-
-    def extract_plan_from_planfile(self, content: str) -> str:
-        """Extract clean plan actions from a planner plan file."""
-        if not content or not isinstance(content, str):
-            raise ValueError("Invalid content provided to extract_plan_from_planfile")
-
-        try:
-            plan_lines = []
-            for line in content.splitlines():
-                stripped = line.strip()
-                if not stripped or stripped.startswith(";"):
-                    continue
-                plan_lines.append(stripped)
-            return "\n".join(plan_lines)
-        except Exception as e:
-            print(f"Error extracting plan from plan file: {str(e)}")
-            return ""
-
-    def calculate_task_completion_rate(self) -> Tuple[int, int]:
-        """Calculate task completion rate from plan files.
-        
-        Returns:
-            Tuple[int, int]: (number of completed tasks, total number of tasks)
-        """
-        TC = 0
-        total_subtasks = 0
-
-        for file_path in glob.glob(os.path.join(self.subtask_path, '*_plan.txt')):
-            print("Calculating completion for file:", file_path)
-            total_subtasks += 1
-            content = self.read_file(file_path)
-            TC += content.count('Solution found!')
-            print(f"File: {file_path}, Solutions found: {content.count('Solution found!')}")
-        
-        print(f"Total completed tasks: {TC}, Total subtasks: {total_subtasks}")
-        return TC, total_subtasks
-
-    def parse_bddl_file(self, bddl_file_path: str) -> Dict[str, Any]:
-        """Parse BDDL file and extract key components.
-        
-        Args:
-            bddl_file_path (str): Path to BDDL file
-            
-        Returns:
-            Dict with keys:
-                - task_name: str
-                - objects: List[Dict]
-                - init_state: List[str]
-                - goal_state: List[str]
-        """
-        try:
-            content = self.read_file(bddl_file_path)
-            
-            # Extract task name from problem definition
-            task_pattern = r'\(define \(problem (.*?)\)'
-            task_match = re.search(task_pattern, content)
-            task_name = task_match.group(1) if task_match else ""
-            
-            # Extract objects section
-            objects_pattern = r'\(:objects(.*?)\)'
-            objects_match = re.search(objects_pattern, content, re.DOTALL)
-            objects_section = objects_match.group(1) if objects_match else ""
-            
-            # Extract init state
-            init_pattern = r'\(:init(.*?)\)'
-            init_match = re.search(init_pattern, content, re.DOTALL)
-            init_state = init_match.group(1) if init_match else ""
-            
-            # Extract goal state
-            goal_pattern = r'\(:goal(.*?)\)\s*\)'
-            goal_match = re.search(goal_pattern, content, re.DOTALL)
-            goal_state = goal_match.group(1) if goal_match else ""
-            
-            return {
-                "task_name": task_name,
-                "objects": objects_section.strip(),
-                "init_state": init_state.strip(),
-                "goal_state": goal_state.strip()
-            }
-        except Exception as e:
-            raise PDDLError(f"Error parsing BDDL file: {str(e)}")
-
-class LLMHandler:
-    """Handles interactions with Language Models (LLMs).
-    
-
-    """
-    
-    def __init__(self, config: Optional[RunConfig] = None):
-        """Initialize the LLM handler."""
-        self.config = config or load_run_config(_repo_root())
-        self.providers = None
-    
-    def _load_providers(self):
-        """Load providers from yaml file."""
-        if self.providers is None:
-            self.providers = load_providers(self.config.providers_file)
-        return self.providers
-    
-    def _get_provider_for_model(self, model):
-        """Get provider configuration for the given model."""
-        provider = get_provider_for_model(model, self._load_providers())
-        return provider, provider['name']
-    
-    def query_model(
-        self, 
-        prompt: Union[str, List[Dict]], 
-        model: str, 
-        max_tokens: Optional[int] = None,
-        temperature: Optional[float] = None,
-        stop: Optional[List[str]] = None,
-        logprobs: Optional[int] = 1,
-        frequency_penalty: float = 0
-    ) -> Tuple[dict, str]:
-        """the language model 
-        
-        Args:
-            prompt: Either a string or a list of message dicts
-            model: The model to use
-            max_tokens: Maximum number of tokens in the response
-            temperature: Sampling temperature
-            stop: Optional list of stop sequences
-            logprobs: Optional number of logprobs to return
-            frequency_penalty: Frequency penalty for token generation
-        
-        Returns:
-            Tuple of (full response object, generated text)
-            
-        """
-        if max_tokens is None:
-            max_tokens = int(self.config.get("llm", "default_max_tokens", DEFAULT_MAX_TOKENS))
-        if temperature is None:
-            temperature = float(self.config.get("llm", "default_temperature", DEFAULT_TEMPERATURE))
-
-        retry_delay = float(self.config.get("llm", "default_retry_delay", DEFAULT_RETRY_DELAY))
-        max_retries = int(self.config.get("llm", "max_retries", MAX_RETRIES))
-        request_multiplier = int(self.config.get("llm", "request_max_tokens_multiplier", 10))
-        provider_config, provider = self._get_provider_for_model(model)
-        
-        for attempt in range(max_retries):
-            try:
-                start_time = time.time()
-                response = complete_with_provider(
-                    model=model,
-                    prompt=prompt,
-                    provider=provider_config,
-                    max_tokens=max_tokens * request_multiplier,
-                    temperature=temperature,
-                    stop=stop,
-                    frequency_penalty=frequency_penalty,
-                )
-                duration_ms = (time.time() - start_time) * 1000
-                text = extract_text(response)
-                response_metadata = extract_response_metadata(response)
-                usage = extract_usage(response)
-                
-                log_llm_call(
-                    model=model,
-                    provider=provider,
-                    messages=prompt if isinstance(prompt, list) else [{'role': 'user', 'content': prompt}],
-                    params={
-                        'max_tokens': max_tokens,
-                        'temperature': temperature,
-                        'frequency_penalty': frequency_penalty
-                    },
-                    response_text=text,
-                    usage=usage,
-                    duration_ms=duration_ms,
-                    key_index=response_metadata.get("key_index"),
-                )
-                
-                return response, text
-                    
-            except Exception as e:
-                if is_rate_limit_error(e):
-                    if attempt < max_retries - 1:
-                        time.sleep(retry_delay)
-                        retry_delay *= 2
-                        continue
-                    raise LLMError("Rate limit exceeded")
-
-                if is_retryable_error(e):
-                    if attempt < max_retries - 1:
-                        time.sleep(retry_delay)
-                        continue
-                    raise LLMError(f"API Error after all retries: {str(e)}")
-
-                raise LLMError(f"Unexpected error in LLM query: {str(e)}")
-
 class PDDLValidator:
     """Handles PDDL validation operations"""
     
@@ -950,7 +200,6 @@ class PDDLValidator:
             _, validated_text = self.llm.query_model(
                 messages,
                 model,
-                max_tokens=call_config.get("max_tokens", 1400),
                 frequency_penalty=call_config.get("frequency_penalty", 0.4),
             )
             
@@ -1022,6 +271,8 @@ class TaskManager:
         prompt_decompse_set: str = "pddl_train_task_decomposesep",
         prompt_allocation_set: str = "pddl_train_task_allocationsep",
         config: Optional[RunConfig] = None,
+        test_set: Optional[str] = None,
+        floor_plan: Optional[Union[int, str]] = None,
     ):
         """Initialize the task manager.
         
@@ -1036,6 +287,8 @@ class TaskManager:
         self.prompt_decompse_set = prompt_decompse_set
         self.prompt_allocation_set = prompt_allocation_set
         self.config = config or load_run_config(base_path)
+        self.test_set = test_set
+        self.floor_plan = normalize_floor_plan(str(floor_plan)) if floor_plan is not None else None
         self.runtime_config = {"storage": {"base_dir": str(self.config.storage_base_dir)}}
         self.instance_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_{uuid.uuid4().hex[:8]}"
         
@@ -1049,7 +302,6 @@ class TaskManager:
         self.resources_path = str(self.config.resources_dir)
         self.logs_path = str(self.config.task_manager_runs_dir / self.instance_id)
         self.intermediate_base_path = str(self.config.storage_base_dir)
-        os.makedirs(self.logs_path, exist_ok=True)
         os.makedirs(self.intermediate_base_path, exist_ok=True)
         
         # Initialize result storage
@@ -1081,6 +333,41 @@ class TaskManager:
         sanitized = re.sub(r'[<>:"/\\|?*\s]+', '_', value.strip())
         sanitized = sanitized.strip('._')
         return sanitized or "task"
+
+    def _next_run_sequence(self, task_run_parent: str, date_prefix: str) -> int:
+        """Return the next run sequence for a task/date directory."""
+        max_sequence = 0
+        if os.path.isdir(task_run_parent):
+            for entry in os.listdir(task_run_parent):
+                match = re.fullmatch(rf"{re.escape(date_prefix)}_(\d{{3}})", entry)
+                if match and os.path.isdir(os.path.join(task_run_parent, entry)):
+                    max_sequence = max(max_sequence, int(match.group(1)))
+        return max_sequence + 1
+
+    def _create_dataset_task_run_dir(
+        self,
+        task: str,
+        date_prefix: str,
+    ) -> Tuple[str, int]:
+        """Create a dataset-scoped task run directory with a three-digit sequence."""
+        test_set_dir = self._sanitize_filename(self.test_set or "dataset")
+        floor_plan_dir = self._sanitize_filename(self.floor_plan or "floorplan")
+        task_dir = self._sanitize_filename(task)[:80]
+        task_run_parent = os.path.join(
+            self.intermediate_base_path,
+            f"{test_set_dir}___{floor_plan_dir}",
+            task_dir,
+        )
+        os.makedirs(task_run_parent, exist_ok=True)
+
+        run_sequence = self._next_run_sequence(task_run_parent, date_prefix)
+        while True:
+            task_run_dir = os.path.join(task_run_parent, f"{date_prefix}_{run_sequence:03d}")
+            try:
+                os.makedirs(task_run_dir)
+                return task_run_dir, run_sequence
+            except FileExistsError:
+                run_sequence += 1
 
     def _write_text_artifact(self, relative_path: str, content: Any) -> Optional[str]:
         """Write a text artifact under the current task run directory."""
@@ -1151,10 +438,16 @@ class TaskManager:
 
     def _prepare_task_run_dir(self, task_idx: int, task: str, robots: List[dict], objects_ai: str, domain_content: str) -> None:
         """Create and initialize the storage directory for the current task."""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        folder_name = f"{task_idx + 1:03d}_{self._sanitize_filename(task)[:80]}_{self.instance_id}_{timestamp}"
-        self.current_task_run_dir = os.path.join(self.intermediate_base_path, folder_name)
-        os.makedirs(self.current_task_run_dir, exist_ok=True)
+        now = datetime.now()
+        timestamp = now.strftime("%Y%m%d_%H%M%S_%f")
+        date_prefix = now.strftime("%Y%m%d")
+        run_sequence = None
+        if self.test_set and self.floor_plan:
+            self.current_task_run_dir, run_sequence = self._create_dataset_task_run_dir(task, date_prefix)
+        else:
+            folder_name = f"{task_idx + 1:03d}_{self._sanitize_filename(task)[:80]}_{self.instance_id}_{timestamp}"
+            self.current_task_run_dir = os.path.join(self.intermediate_base_path, folder_name)
+            os.makedirs(self.current_task_run_dir, exist_ok=True)
         generated_artifact_dir = self.config.artifact("generated_subtask_dir", "06_split/generated_subtask")
         validated_artifact_dir = self.config.artifact("validated_subtask_dir", "07_validate/validated_subtask")
         each_run_artifact_dir = self.config.artifact("each_run_dir", "artifacts/each_run")
@@ -1172,6 +465,11 @@ class TaskManager:
             "model": self.model,
             "created_at": timestamp,
             "storage_base_dir": self.intermediate_base_path,
+            "task_run_dir": self.current_task_run_dir,
+            "test_set": self.test_set,
+            "floor_plan": self.floor_plan,
+            "run_date": date_prefix,
+            "run_sequence": run_sequence,
             "artifacts": {},
             "llm": {
                 "task_log": self.config.artifact("llm_calls", "00_llm/llm_calls.jsonl")
@@ -1484,7 +782,7 @@ class TaskManager:
                 #print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
                 
                 # Extract subtasks and robot assignments
-                subtasks = self._extract_subtasks(decomposed_plan)
+                subtasks = ParsingUtils.extract_subtasks(decomposed_plan)
                 sequence_operations = self._extract_sequence_operations(allocated_plan)
                 robot_assignments = self._extract_robot_assignments(sequence_operations)
                 print(f"✓ Extracted {len(subtasks)} subtasks with robot assignments")
@@ -1539,36 +837,6 @@ class TaskManager:
             raise
         finally:
             get_llm_logger().clear_context()
-
-    def _extract_subtasks(self, decomposed_plan: str) -> List[str]:
-        """从 decomposed_plan 中提取 subtask 列表。
-
-        支持的格式:
-        #Subtask 1 Put a vegetable (e.g., Lettuce) in the Fridge
-        # SubTask 1: Slice the Tomato.
-        #Subtask 1: Wash the Lettuce.
-
-        Returns:
-            List[str]: subtask 文本列表
-        """
-        if not any(_is_subtask_header_line(line) for line in decomposed_plan.splitlines()):
-            return [decomposed_plan.strip()] if decomposed_plan.strip() else []
-
-        subtasks = _extract_subtask_blocks(decomposed_plan, normalize_headers=True)
-        filteredSubtasks = []
-
-        for subtask in subtasks:
-            lines = subtask.splitlines()
-
-            while lines and _is_subtask_trailing_line(lines[-1]):
-                lines.pop()
-
-            if len(lines) < 10:
-                continue
-
-            filteredSubtasks.append('\n'.join(lines))
-
-        return filteredSubtasks
 
     def _sequence_assignment_re(self) -> re.Pattern:
         return ParsingUtils.sequence_assignment_re()
@@ -1648,7 +916,6 @@ class TaskManager:
             _, text = self.llm.query_model(
                 messages,
                 self.model,
-                max_tokens=call_config.get("max_tokens", 1300),
                 frequency_penalty=call_config.get("frequency_penalty", 0.0),
             )
             self._write_text_artifact(decompose_output_artifact, text)
@@ -1702,7 +969,6 @@ class TaskManager:
             _, text = self.llm.query_model(
                 messages,
                 self.model,
-                max_tokens=call_config.get("max_tokens", 1500),
                 frequency_penalty=call_config.get("frequency_penalty", 0.69),
             )
             self._write_text_artifact(allocate_output_artifact, text)
@@ -1764,7 +1030,6 @@ class TaskManager:
                 _, text = self.llm.query_model(
                     messages,
                     self.model,
-                    max_tokens=call_config.get("max_tokens", 1400),
                     frequency_penalty=call_config.get("frequency_penalty", 0.4),
                 )
                 
@@ -1899,7 +1164,6 @@ class TaskManager:
             _, text = llm.query_model(
                 messages,
                 model,
-                max_tokens=call_config.get("max_tokens", 1400),
                 frequency_penalty=call_config.get("frequency_penalty", 0.4),
             )
 
@@ -2014,7 +1278,6 @@ class TaskManager:
                     _, text = self.llm.query_model(
                         messages,
                         self.model,
-                        max_tokens=call_config.get("max_tokens", 1400),
                         frequency_penalty=call_config.get("frequency_penalty", 0.4),
                     )
 
@@ -2158,7 +1421,6 @@ class TaskManager:
         _, text = self.llm.query_model(
             messages,
             self.model,
-            max_tokens=call_config.get("max_tokens", 1300),
             frequency_penalty=call_config.get("frequency_penalty", 0.0),
         )
         self._write_text_artifact(combine_output_artifact, text)
@@ -2187,7 +1449,6 @@ class TaskManager:
         _, text = self.llm.query_model(
             messages,
             self.model,
-            max_tokens=call_config.get("max_tokens", 1300),
             frequency_penalty=call_config.get("frequency_penalty", 0.0),
         )
         self._write_text_artifact(final_match_output_artifact, text)
@@ -2266,6 +1527,7 @@ def run_single_floor_plan_task(
     prompt_allocation_set: str = "pddl_train_task_allocationsep",
     objects_ai: Optional[str] = None,
     config: Optional[RunConfig] = None,
+    test_set: str = "final_test",
 ) -> TaskProcessingResult:
     """Run a single dataset record as an isolated task-safe execution unit."""
     run_config = config or load_run_config(base_path)
@@ -2275,6 +1537,8 @@ def run_single_floor_plan_task(
         prompt_decompse_set=prompt_decompse_set,
         prompt_allocation_set=prompt_allocation_set,
         config=run_config,
+        test_set=test_set,
+        floor_plan=floor_plan,
     )
     floor_plan_id = PDDLUtils.extract_floor_plan_number(floor_plan)
     objects_description = objects_ai or f"\n\nobjects = {PDDLUtils.get_ai2_thor_objects(int(floor_plan_id), run_config)}"
@@ -2312,6 +1576,20 @@ def load_dataset_records(test_file: str) -> List[Dict[str, Any]]:
 
     return records
 
+
+def validate_dataset_file(run_config: RunConfig, test_set: str, floor_plan: Union[int, str]) -> Path:
+    test_file = run_config.dataset_file(test_set, floor_plan)
+    if test_file.exists():
+        return test_file
+
+    available = run_config.available_test_sets()
+    available_text = ", ".join(available) if available else "none"
+    raise PDDLError(
+        f"Test file not found: {test_file}. "
+        f"Available test sets: {available_text}"
+    )
+
+
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--bddl-file", type=str, help="Path to BDDL file")
@@ -2342,8 +1620,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--test-set",
         type=str,
-        default="final_test",
-        choices=['final_test']
+        default="final_test"
     )
     parser.add_argument(
         "--task-index",
@@ -2420,7 +1697,7 @@ def main():
                 )
         else:
             # Dataset workflow: run a single task selected by task index
-            test_file = run_config.dataset_file(args.test_set, args.floor_plan)
+            test_file = validate_dataset_file(run_config, args.test_set, args.floor_plan)
             task_records = load_dataset_records(str(test_file))
             if not task_records:
                 raise PDDLError(f"No tasks found in dataset: {test_file}")
@@ -2449,6 +1726,7 @@ def main():
                 prompt_allocation_set=args.prompt_allocation_set,
                 objects_ai=objects_ai,
                 config=run_config,
+                test_set=args.test_set,
             )
         
     except Exception as e:
