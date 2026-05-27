@@ -16,6 +16,11 @@ import llm_client
 import llm_handler
 
 
+class SimpleObj:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+
 class LLMClientTests(unittest.TestCase):
     def setUp(self) -> None:
         with llm_client._api_key_rotation_pool._registry_lock:
@@ -27,6 +32,29 @@ class LLMClientTests(unittest.TestCase):
             "api_keys": ["key-a", "key-b", "key-c"],
             "models": ["deepseek-chat"],
         }
+
+    def _stream_chunk(self, content=None, finish_reason=None, usage=None):
+        delta = {}
+        if content is not None:
+            delta["content"] = content
+
+        chunk = {
+            "choices": [
+                {
+                    "delta": delta,
+                    "finish_reason": finish_reason,
+                    "index": 0,
+                }
+            ]
+        }
+        if usage is not None:
+            chunk["usage"] = usage
+        return chunk
+
+    def _stream_response(self, *contents, usage=None):
+        chunks = [self._stream_chunk(content=content) for content in contents]
+        chunks.append(self._stream_chunk(finish_reason="stop", usage=usage))
+        return iter(chunks)
 
     def _complete_once(self, provider=None):
         return llm_client.complete_with_provider(
@@ -60,7 +88,7 @@ class LLMClientTests(unittest.TestCase):
 
         def fake_completion(**kwargs):
             seen_keys.append(kwargs["api_key"])
-            return {}
+            return self._stream_response("ok")
 
         with patch.object(llm_client, "completion", side_effect=fake_completion):
             first = self._complete_once()
@@ -78,7 +106,7 @@ class LLMClientTests(unittest.TestCase):
 
         def fake_completion(**kwargs):
             seen_kwargs.append(kwargs)
-            return {}
+            return self._stream_response("ok")
 
         with patch.object(llm_client, "completion", side_effect=fake_completion):
             llm_client.complete_with_provider(
@@ -101,6 +129,94 @@ class LLMClientTests(unittest.TestCase):
         self.assertEqual(seen_kwargs[0]["min_p"], 0.0)
         self.assertEqual(seen_kwargs[0]["presence_penalty"], 1.5)
         self.assertEqual(seen_kwargs[0]["repetition_penalty"], 1.0)
+
+    def test_complete_with_provider_streams_and_aggregates_text(self):
+        seen_kwargs = []
+
+        def fake_completion(**kwargs):
+            seen_kwargs.append(kwargs)
+            return self._stream_response("Hel", "lo")
+
+        with patch.object(llm_client, "completion", side_effect=fake_completion):
+            response = llm_client.complete_with_provider(
+                model="deepseek-chat",
+                prompt="hello",
+                provider=self.provider,
+                max_tokens=16,
+                temperature=0.1,
+            )
+
+        self.assertTrue(seen_kwargs[0]["stream"])
+        self.assertEqual(llm_client.extract_text(response), "Hello")
+        self.assertEqual(response["choices"][0]["finish_reason"], "stop")
+        self.assertEqual(llm_client.extract_response_metadata(response)["key_index"], 0)
+
+    def test_complete_with_provider_handles_object_stream_chunks(self):
+        def chunk(content=None, finish_reason=None):
+            delta = SimpleObj()
+            if content is not None:
+                delta.content = content
+            return SimpleObj(
+                model="deepseek-chat",
+                choices=[
+                    SimpleObj(delta=delta, finish_reason=finish_reason, index=0)
+                ],
+            )
+
+        with patch.object(
+            llm_client,
+            "completion",
+            return_value=iter([chunk("Hel"), chunk("lo", finish_reason="stop")]),
+        ):
+            response = self._complete_once()
+
+        self.assertEqual(llm_client.extract_text(response), "Hello")
+        self.assertEqual(response["choices"][0]["finish_reason"], "stop")
+
+    def test_complete_with_provider_preserves_stream_usage(self):
+        usage = {
+            "prompt_tokens": 2,
+            "completion_tokens": 3,
+            "total_tokens": 5,
+        }
+
+        with patch.object(
+            llm_client,
+            "completion",
+            return_value=self._stream_response("ok", usage=usage),
+        ):
+            response = self._complete_once()
+
+        self.assertEqual(llm_client.extract_usage(response), usage)
+
+    def test_complete_with_provider_stream_without_usage_returns_none(self):
+        with patch.object(
+            llm_client,
+            "completion",
+            return_value=self._stream_response("ok"),
+        ):
+            response = self._complete_once()
+
+        self.assertIsNone(llm_client.extract_usage(response))
+
+    def test_complete_with_provider_omits_frequency_penalty_when_none(self):
+        seen_kwargs = []
+
+        def fake_completion(**kwargs):
+            seen_kwargs.append(kwargs)
+            return self._stream_response("ok")
+
+        with patch.object(llm_client, "completion", side_effect=fake_completion):
+            llm_client.complete_with_provider(
+                model="gpt5-mini",
+                prompt="hello",
+                provider=self.provider,
+                max_tokens=16,
+                temperature=0.1,
+                frequency_penalty=None,
+            )
+
+        self.assertNotIn("frequency_penalty", seen_kwargs[0])
 
     def test_llm_handler_applies_qwen35_request_params(self):
         class DummyConfig:
@@ -134,6 +250,42 @@ class LLMClientTests(unittest.TestCase):
         self.assertEqual(log_params["presence_penalty"], 1.5)
         self.assertEqual(log_params["repetition_penalty"], 1.0)
 
+    def test_llm_handler_drops_frequency_penalty_for_gpt5_models(self):
+        class DummyConfig:
+            def get(self, section, key, default=None):
+                return default
+
+        handler = llm_handler.LLMHandler(config=DummyConfig())
+
+        with patch.object(handler, "_get_provider_for_model", return_value=(self.provider, "deepseek")), \
+                patch.object(llm_handler, "complete_with_provider", return_value={}) as fake_complete, \
+                patch.object(llm_handler, "extract_text", return_value="ok"), \
+                patch.object(llm_handler, "extract_response_metadata", return_value={}), \
+                patch.object(llm_handler, "extract_usage", return_value=None), \
+                patch.object(llm_handler, "log_llm_call") as fake_log:
+            handler.query_model("hello", "gpt-5-mini", frequency_penalty=0.6)
+
+        self.assertIsNone(fake_complete.call_args.kwargs["frequency_penalty"])
+        self.assertNotIn("frequency_penalty", fake_log.call_args.kwargs["params"])
+
+    def test_llm_handler_keeps_frequency_penalty_for_other_models(self):
+        class DummyConfig:
+            def get(self, section, key, default=None):
+                return default
+
+        handler = llm_handler.LLMHandler(config=DummyConfig())
+
+        with patch.object(handler, "_get_provider_for_model", return_value=(self.provider, "deepseek")), \
+                patch.object(llm_handler, "complete_with_provider", return_value={}) as fake_complete, \
+                patch.object(llm_handler, "extract_text", return_value="ok"), \
+                patch.object(llm_handler, "extract_response_metadata", return_value={}), \
+                patch.object(llm_handler, "extract_usage", return_value=None), \
+                patch.object(llm_handler, "log_llm_call") as fake_log:
+            handler.query_model("hello", "deepseek-chat", frequency_penalty=0.6)
+
+        self.assertEqual(fake_complete.call_args.kwargs["frequency_penalty"], 0.6)
+        self.assertEqual(fake_log.call_args.kwargs["params"]["frequency_penalty"], 0.6)
+
     def test_llm_handler_leaves_extra_body_empty_for_other_models(self):
         class DummyConfig:
             def get(self, section, key, default=None):
@@ -161,7 +313,7 @@ class LLMClientTests(unittest.TestCase):
 
         def fake_completion(**kwargs):
             seen_keys.append(kwargs["api_key"])
-            return {}
+            return self._stream_response("ok")
 
         with patch.object(llm_client, "completion", side_effect=fake_completion):
             responses = [self._complete_once() for _ in range(5)]
@@ -180,7 +332,7 @@ class LLMClientTests(unittest.TestCase):
             seen_keys.append(kwargs["api_key"])
             if kwargs["api_key"] == "key-a":
                 raise Exception("rate limit exceeded")
-            return {}
+            return self._stream_response("ok")
 
         with patch.object(llm_client, "completion", side_effect=fake_completion), patch.object(
             llm_client.time, "sleep", side_effect=sleep_calls.append
@@ -189,6 +341,30 @@ class LLMClientTests(unittest.TestCase):
 
         self.assertEqual(seen_keys, ["key-a", "key-b"])
         self.assertEqual(sleep_calls, [5])
+        self.assertEqual(llm_client.extract_response_metadata(response)["key_index"], 1)
+
+    def test_stream_consumption_retry_discards_partial_text(self):
+        seen_keys = []
+        sleep_calls = []
+
+        def failing_stream():
+            yield self._stream_chunk("partial")
+            raise Exception("service unavailable")
+
+        def fake_completion(**kwargs):
+            seen_keys.append(kwargs["api_key"])
+            if kwargs["api_key"] == "key-a":
+                return failing_stream()
+            return self._stream_response("final")
+
+        with patch.object(llm_client, "completion", side_effect=fake_completion), patch.object(
+            llm_client.time, "sleep", side_effect=sleep_calls.append
+        ):
+            response = self._complete_once()
+
+        self.assertEqual(seen_keys, ["key-a", "key-b"])
+        self.assertEqual(sleep_calls, [5])
+        self.assertEqual(llm_client.extract_text(response), "final")
         self.assertEqual(llm_client.extract_response_metadata(response)["key_index"], 1)
 
     def test_all_retryable_keys_failing_raises_last_error(self):
@@ -228,7 +404,7 @@ class LLMClientTests(unittest.TestCase):
 
         def fake_completion(**kwargs):
             time.sleep(0.02)
-            return {"used_key": kwargs["api_key"]}
+            return self._stream_response("ok")
 
         with patch.object(llm_client, "completion", side_effect=fake_completion):
             with ThreadPoolExecutor(max_workers=6) as executor:

@@ -542,12 +542,12 @@ put sink on saltshaker, then put ladle on sinkbasin
                     if line:
                         created_set.add(line)
 
-        task_folder = f"data/final_test_new_0521_{complexity}"
+        task_folder = f"data/final_test_new_0527_{complexity}"
         task_folder_path = Path(task_folder)
         task_folder_path.mkdir(parents=True, exist_ok=True)
         TASK_FILE = task_folder_path.joinpath(f"FloorPlan{foor_plan}.jsonl")
 
-        MAX_RETRIES = 100
+        MAX_RETRIES = 30
 
         for _ in range(count):
             task_found = False
@@ -790,10 +790,11 @@ if __name__ == "__main__":
     # print(random.sample(range(301, 331), 5))
     # print(random.sample(range(401, 431), 5))
 
-    # [8, 6, 14, 207, 211, 203, 306, 322, 309, 428, 405, 412, 16, 28, 201, 218, 310, 312, 425, 408]
+    # [8, 6, 14, 201, 211, 218, 306, 310, 322, 405, 412, 428, 16, 203, 212, 28, 309, 312, 404, 408, 425]
     data_engine = DataEngine()
-    for floor_plan in [404, 412, 16, 28, 201, 218, 310, 312, 425, 408]:
-        data_engine.create_tasks(floor_plan, 5)
-        data_engine.create_tasks(floor_plan, 30, 1)
+    for base in [0, 200, 300, 400]:
+        for floor_plan in range(21, 41):
+            # data_engine.create_tasks(base + floor_plan, 5)
+            data_engine.create_tasks(base + floor_plan, 30, 1)
 
    

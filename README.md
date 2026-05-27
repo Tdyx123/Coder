@@ -149,6 +149,17 @@ parallel_runs/pddlrun_llmseparate_<timestamp>/
 
 ### 3. Convert Generated Plans into Executable AI2-THOR Code
 
+For the newer `parallel_runs/pddlrun_llmseparate_<timestamp>/` layout, encode the allocation and planner artifacts deterministically into standalone AI2-THOR scripts:
+
+```bash
+python scripts/parallel_plan_to_code.py \
+  --parallel-run parallel_runs/pddlrun_llmseparate_<timestamp> \
+  --floor-plan 6 \
+  --task-index 0
+```
+
+This writes `code_plan.py`, `executable_plan.py`, and `encoding_summary.json` into the task's `plan_to_code/` folder. Headless AI2-THOR execution is the default; add `--no-headless` when you want local rendering windows for visual debugging. Add `--execute` to run each generated standalone script immediately.
+
 After planning, convert generated plans into executable Python code:
 
 ```bash

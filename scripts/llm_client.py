@@ -192,6 +192,94 @@ def extract_response_metadata(response: Any) -> Dict[str, Any]:
     return metadata if isinstance(metadata, dict) else {}
 
 
+def _get_value(obj: Any, key: str, default: Any = None) -> Any:
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
+def _first_choice(response: Any) -> Optional[Any]:
+    choices = _get_value(response, "choices", [])
+    if not choices:
+        return None
+    return choices[0]
+
+
+def _content_to_text(content: Any) -> str:
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict) and item.get("type") == "text":
+                parts.append(item.get("text", ""))
+            elif hasattr(item, "text"):
+                parts.append(item.text)
+        return "".join(parts)
+
+    return content if isinstance(content, str) else ""
+
+
+def _collect_stream_response(stream: Any, model: str) -> Dict[str, Any]:
+    content_parts = []
+    finish_reason = None
+    usage = None
+    response_id = None
+    created = None
+    response_model = model
+    system_fingerprint = None
+
+    for chunk in stream:
+        if response_id is None:
+            response_id = _get_value(chunk, "id")
+        if created is None:
+            created = _get_value(chunk, "created")
+        if system_fingerprint is None:
+            system_fingerprint = _get_value(chunk, "system_fingerprint")
+
+        chunk_model = _get_value(chunk, "model")
+        if chunk_model:
+            response_model = chunk_model
+
+        chunk_usage = _get_value(chunk, "usage")
+        if chunk_usage is not None:
+            usage = chunk_usage
+
+        choice = _first_choice(chunk)
+        if choice is None:
+            continue
+
+        delta = _get_value(choice, "delta", {})
+        content_parts.append(_content_to_text(_get_value(delta, "content")))
+
+        chunk_finish_reason = _get_value(choice, "finish_reason")
+        if chunk_finish_reason is not None:
+            finish_reason = chunk_finish_reason
+
+    response: Dict[str, Any] = {
+        "model": response_model,
+        "object": "chat.completion",
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "".join(content_parts),
+                },
+                "finish_reason": finish_reason,
+            }
+        ],
+    }
+    if response_id is not None:
+        response["id"] = response_id
+    if created is not None:
+        response["created"] = created
+    if system_fingerprint is not None:
+        response["system_fingerprint"] = system_fingerprint
+    if usage is not None:
+        response["usage"] = usage
+
+    return response
+
+
 def complete_with_provider(
     model: str,
     prompt: MessageInput,
@@ -199,7 +287,7 @@ def complete_with_provider(
     max_tokens: int,
     temperature: float,
     stop: Optional[List[str]] = None,
-    frequency_penalty: float = 0,
+    frequency_penalty: Optional[float] = 0,
     top_p: Optional[float] = None,
     top_k: Optional[int] = None,
     min_p: Optional[float] = None,
@@ -214,9 +302,11 @@ def complete_with_provider(
         "api_base": provider["base_url"],
         "max_tokens": max_tokens,
         "temperature": temperature,
-        "frequency_penalty": frequency_penalty,
-        "custom_llm_provider": "openai"
+        "custom_llm_provider": "openai",
+        "stream": True,
     }
+    if frequency_penalty is not None:
+        kwargs["frequency_penalty"] = frequency_penalty
     if stop:
         kwargs["stop"] = stop
     optional_params = {
@@ -241,7 +331,8 @@ def complete_with_provider(
         key_index = (start_index + offset) % len(api_keys)
         kwargs["api_key"] = api_keys[key_index]
         try:
-            response = completion(**kwargs)
+            stream = completion(**kwargs)
+            response = _collect_stream_response(stream, model)
             return _attach_response_metadata(
                 response,
                 {
@@ -266,25 +357,16 @@ def complete_with_provider(
 
 
 def extract_text(response: Any) -> str:
-    choice = response.choices[0]
-    message = getattr(choice, "message", None)
-    if message is None and isinstance(choice, dict):
-        message = choice.get("message", {})
+    choice = _first_choice(response)
+    if choice is None:
+        return ""
 
-    content = getattr(message, "content", None)
-    if content is None and isinstance(message, dict):
-        content = message.get("content")
+    message = _get_value(choice, "message")
+    if message is None:
+        message = _get_value(choice, "delta", {})
 
-    if isinstance(content, list):
-        parts = []
-        for item in content:
-            if isinstance(item, dict) and item.get("type") == "text":
-                parts.append(item.get("text", ""))
-            elif hasattr(item, "text"):
-                parts.append(item.text)
-        return "".join(parts).strip()
+    return _content_to_text(_get_value(message, "content")).strip()
 
-    return (content or "").strip()
 
 
 def extract_usage(response: Any) -> Optional[Dict[str, Any]]:

@@ -17,7 +17,7 @@ from llm_logger import log_llm_call
 from run_config import DEFAULT_RUN_CONFIG, RunConfig, load_run_config
 
 
-DEFAULT_MAX_TOKENS = 20000
+DEFAULT_MAX_TOKENS = 15000
 DEFAULT_TEMPERATURE = DEFAULT_RUN_CONFIG["llm"]["default_temperature"]
 DEFAULT_RETRY_DELAY = DEFAULT_RUN_CONFIG["llm"]["default_retry_delay"]
 MAX_RETRIES = DEFAULT_RUN_CONFIG["llm"]["max_retries"]
@@ -77,7 +77,15 @@ class LLMHandler:
             "presence_penalty": None,
             "repetition_penalty": None,
         }
-        if model.lower().startswith("qwen3.5"):
+        model_key = model.lower()
+
+        effective_frequency_penalty = frequency_penalty
+
+        if model_key.startswith("gpt-5"):
+            effective_frequency_penalty = None
+            temperature = 1
+
+        if model_key.startswith("qwen3.5"):
             temperature = 1.0
             extra_body = {"chat_template_kwargs": {"enable_thinking": False}}
             sampling_params.update({
@@ -98,7 +106,7 @@ class LLMHandler:
                     max_tokens=max_tokens,
                     temperature=temperature,
                     stop=stop,
-                    frequency_penalty=frequency_penalty,
+                    frequency_penalty=effective_frequency_penalty,
                     top_p=sampling_params["top_p"],
                     top_k=sampling_params["top_k"],
                     min_p=sampling_params["min_p"],
@@ -114,8 +122,9 @@ class LLMHandler:
                 log_params = {
                     "max_tokens": max_tokens,
                     "temperature": temperature,
-                    "frequency_penalty": frequency_penalty,
                 }
+                if effective_frequency_penalty is not None:
+                    log_params["frequency_penalty"] = effective_frequency_penalty
                 log_params.update({
                     key: value
                     for key, value in sampling_params.items()
