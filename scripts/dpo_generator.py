@@ -28,7 +28,13 @@ SOURCE_SUMMARY_FILES = [
     str(REPO_ROOT / "parallel_runs" / "pddlrun_llmseparate_20260520_225427" / "summary.json"),
     str(REPO_ROOT / "parallel_runs" / "pddlrun_llmseparate_20260521_151830" / "summary.json"),
     str(REPO_ROOT / "parallel_runs" / "pddlrun_llmseparate_20260522_102424" / "summary.json"),
-    str(REPO_ROOT / "parallel_runs" / "pddlrun_llmseparate_20260523_152557" / "summary.json"),
+    str(REPO_ROOT / "parallel_runs" / "pddlrun_llmseparate_20260524_195257" / "summary.json"),
+    str(REPO_ROOT / "parallel_runs" / "pddlrun_llmseparate_20260525_141235" / "summary.json"),
+    str(REPO_ROOT / "parallel_runs" / "pddlrun_llmseparate_20260526_143831" / "summary.json"),
+    str(REPO_ROOT / "parallel_runs" / "pddlrun_llmseparate_20260526_194352" / "summary.json"),
+    str(REPO_ROOT / "parallel_runs" / "pddlrun_llmseparate_20260527_135853" / "summary.json"),
+    str(REPO_ROOT / "parallel_runs" / "pddlrun_llmseparate_20260527_151453" / "summary.json"),
+    str(REPO_ROOT / "parallel_runs" / "pddlrun_llmseparate_20260528_153620" / "summary.json"),
 ]
 
 # Configure the output file here.
