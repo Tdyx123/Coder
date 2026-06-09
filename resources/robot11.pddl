@@ -166,7 +166,7 @@
     :parameters (?r - robot ?t - toaster ?b - bread)
     :precondition (and
         (at ?r ?t)
-        (at-location ?b ?t)
+        (holding ?r ?b)
         (sliced ?b)
       )
     :effect (and

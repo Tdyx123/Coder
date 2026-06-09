@@ -14,7 +14,6 @@
     knife - object
     stove_burner - object
     sink - object
-    candle - object
   )
 
   (:predicates
@@ -203,22 +202,8 @@
       )
     :effect (and
       (hot ?object)
-      (not (holding ?r ?object))
-      (at-location ?object ?sb)
     )
   )
-
-  (:action FireByStoveBurner
-    :parameters (?r - robot ?sb - stove_burner ?candle - candle)
-    :precondition (and
-        (at ?r ?sb)
-        (holding ?r ?candle)
-      )
-    :effect (and
-        (switch-on ?candle)
-      )
-  )
-
   (:action FillWater
     :parameters (?r - robot ?sink - sink ?object - object)
     :precondition (and

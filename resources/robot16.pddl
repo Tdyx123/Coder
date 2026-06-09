@@ -18,7 +18,6 @@
     stove_burner - object
     sink - object
     mug - object
-    candle - object
     egg - object
   )
 
@@ -97,19 +96,19 @@
       )
   )
 
-  (:action BreakEgg
-    :parameters (?r - robot ?egg - egg)
+  (:action PrepareEgg
+    :parameters (?r - robot ?egg - egg ?container - object)
     :precondition (and
-        (at ?r ?egg)
-        (not
-          (broken ?egg)
-        )
-      )
+      (at ?r ?egg)
+      (at-location ?egg ?container)
+      (not (broken ?egg))
+      (placable_on_stove_burner ?container)
+    )
     :effect (and
-        (broken ?egg)
-        (cookable-by-stove_burner ?egg)
-        (cookable-by-microwave ?egg)
-      )
+      (broken ?egg)
+      (cookable-by-stove_burner ?egg)
+      (cookable-by-microwave ?egg)
+    )
   )
 
   (:action SliceObject
@@ -182,22 +181,8 @@
       )
     :effect (and
       (hot ?object)
-      (not (holding ?r ?object))
-      (at-location ?object ?sb)
     )
   )
-
-  (:action FireByStoveBurner
-    :parameters (?r - robot ?sb - stove_burner ?candle - candle)
-    :precondition (and
-        (at ?r ?sb)
-        (holding ?r ?candle)
-      )
-    :effect (and
-        (switch-on ?candle)
-      )
-  )
-
   (:action FillWater
     :parameters (?r - robot ?sink - sink ?object - object)
     :precondition (and

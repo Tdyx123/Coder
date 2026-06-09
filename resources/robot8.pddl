@@ -30,6 +30,7 @@
     (cookable-by-stove_burner ?object - object)
     (cookable-by-microwave ?object - object)
     (cooked ?object - object)
+    (placable_on_stove_burner ?object - object)
   )
 
   (:action GoToObject
@@ -163,19 +164,19 @@
       )
   )
 
-  (:action BreakEgg
-    :parameters (?r - robot ?egg - egg)
+  (:action PrepareEgg
+    :parameters (?r - robot ?egg - egg ?container - object)
     :precondition (and
-        (at ?r ?egg)
-        (not
-          (broken ?egg)
-        )
-      )
+      (at ?r ?egg)
+      (at-location ?egg ?container)
+      (not (broken ?egg))
+      (placable_on_stove_burner ?container)
+    )
     :effect (and
-        (broken ?egg)
-        (cookable-by-stove_burner ?egg)
-        (cookable-by-microwave ?egg)
-      )
+      (broken ?egg)
+      (cookable-by-stove_burner ?egg)
+      (cookable-by-microwave ?egg)
+    )
   )
 
   (:action SliceObject
@@ -197,7 +198,7 @@
     :parameters (?r - robot ?t - toaster ?b - bread)
     :precondition (and
         (at ?r ?t)
-        (at-location ?b ?t)
+        (holding ?r ?b)
         (sliced ?b)
       )
     :effect (and

@@ -16,7 +16,6 @@
     fridge - object
     stove_burner - object
     sink - object
-    candle - object
     bread - object
   )
 
@@ -162,7 +161,7 @@
     :parameters (?r - robot ?t - toaster ?b - bread)
     :precondition (and
         (at ?r ?t)
-        (at-location ?b ?t)
+        (holding ?r ?b)
         (sliced ?b)
       )
     :effect (and
@@ -194,22 +193,8 @@
       )
     :effect (and
       (hot ?object)
-      (not (holding ?r ?object))
-      (at-location ?object ?sb)
     )
   )
-
-  (:action FireByStoveBurner
-    :parameters (?r - robot ?sb - stove_burner ?candle - candle)
-    :precondition (and
-        (at ?r ?sb)
-        (holding ?r ?candle)
-      )
-    :effect (and
-        (switch-on ?candle)
-      )
-  )
-
   (:action FillWater
     :parameters (?r - robot ?sink - sink ?object - object)
     :precondition (and
