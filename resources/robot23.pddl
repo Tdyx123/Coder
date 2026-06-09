@@ -1,64 +1,193 @@
 (define (domain robot23)
-  (:requirements :strips :typing :negative-preconditions :conditional-effects :universal-preconditions :disjunctive-preconditions)
-  (:types 
+  (:requirements
+    :strips
+    :typing
+    :negative-preconditions
+    :conditional-effects
+    :universal-preconditions
+    :disjunctive-preconditions
+  )
+
+  (:types
     robot
     object
-    knife sink microwave mug coffee_machine toaster bread - object)
+    microwave - object
+    toaster - object
+    coffee_machine - object
+    fridge - object
+    stove_burner - object
+    sink - object
+    mug - object
+    candle - object
+    bread - object
+  )
+
   (:predicates
     (at ?robot - robot ?object - object)
-    (inaction ?robot - robot) 
     (holding ?robot - robot ?object - object)
-    (at-location  ?object - object ?location - object)
+    (at-location ?object - object ?location - object)
     (switch-on ?object - object)
-    (broken ?object - object)
     (sliced ?object - object)
-    (cleaned ?object - object)
-    (is-openable ?object - object) 
-    (heated ?object - object)
-    (containing-coffee ?mug - mug)
+    (is-openable ?object - object)
+    (hot ?object - object)
+    (cold ?object - object)
     (object-open ?object - object)
+    (filled-with-water ?object - object)
+    (filled-with-coffee ?object - object)
+    (cookable-by-stove_burner ?object - object)
+    (cookable-by-microwave ?object - object)
+    (cooked ?object - object)
+    (placable_on_stove_burner ?object - object)
   )
 
   (:action GoToObject
-    :parameters (?robot - robot ?object - object)
-    :precondition (not (inaction ?robot))
-
-    :effect (and 
-              (forall (?another_object - object)
-                (when (at ?robot ?another_object)
-                  (not (at ?robot ?another_object))
-                )
-              )
-              (at ?robot ?object)
-              (not (inaction ?robot))
+    :parameters (?r - robot ?o - object)
+    :effect (and
+        (forall
+          (?x - object)
+          (when
+            (at ?r ?x)
+            (not
+              (at ?r ?x)
             )
+          )
+        )
+        (at ?r ?o)
+      )
   )
 
   (:action OpenObject
-    :parameters (?robot - robot ?object - object)
+    :parameters (?r - robot ?o - object)
     :precondition (and
-                    (not(inaction ?robot))
-                    (at ?robot ?object)
-                    (is-openable ?object)
-                    (not(object-open ?object))
-    )
-      
+        (is-openable ?o)
+        (at ?r ?o)
+        (not
+          (object-open ?o)
+        )
+      )
     :effect (and
-                (not(inaction ?robot))
-                (object-open ?object)
-    )
+        (object-open ?o)
+      )
   )
 
   (:action CloseObject
-    :parameters (?robot - robot ?object - object)
+    :parameters (?r - robot ?o - object)
     :precondition (and
-                    (not(inaction ?robot))
-                    (at ?robot ?object)
-                    (object-open ?object)
+        (at ?r ?o)
+        (object-open ?o)
+      )
+    :effect (and
+        (not
+          (object-open ?o)
+        )
+      )
+  )
+
+  (:action RunMicrowave
+    :parameters (?r - robot ?m - microwave ?item - object)
+    :precondition (and
+      (at ?r ?m)
+      (at-location ?item ?m)
+      (not (object-open ?m))
     )
     :effect (and
-              (not(inaction ?robot))
-              (not(object-open ?object))
+      (hot ?item)
+      (when (cookable-by-microwave ?item)
+        (cooked ?item)
+      )
+    )
   )
+
+  (:action RunCoffeeMachine
+    :parameters (?r - robot ?cm - coffee_machine ?m - mug)
+    :precondition (and
+        (at ?r ?cm)
+        (at-location ?m ?cm)
+        (not
+          (filled-with-water ?m)
+        )
+        (not
+          (filled-with-coffee ?m)
+        )
+      )
+    :effect (and
+        (filled-with-coffee ?m)
+      )
+  )
+
+  (:action RunToaster
+    :parameters (?r - robot ?t - toaster ?b - bread)
+    :precondition (and
+        (at ?r ?t)
+        (at-location ?b ?t)
+        (sliced ?b)
+      )
+    :effect (and
+        (hot ?b)
+        (cooked ?b)
+      )
+  )
+
+  (:action CookByStoveBurner
+    :parameters (?r - robot ?sb - stove_burner ?container - object ?food - object)
+    :precondition (and
+      (at ?r ?sb)
+      (placable_on_stove_burner ?container)
+      (at-location ?food ?container)
+      (holding ?r ?container)
+      (cookable-by-stove_burner ?food)
+    )
+    :effect (and
+      (cooked ?food)
+    )
+  )
+
+  (:action HeatByStoveBurner
+    :parameters (?r - robot ?sb - stove_burner ?object - object)
+    :precondition (and
+        (at ?r ?sb)
+        (holding ?r ?object)
+        (placable_on_stove_burner ?object)
+      )
+    :effect (and
+      (hot ?object)
+      (not (holding ?r ?object))
+      (at-location ?object ?sb)
+    )
+  )
+
+  (:action FireByStoveBurner
+    :parameters (?r - robot ?sb - stove_burner ?candle - candle)
+    :precondition (and
+        (at ?r ?sb)
+        (holding ?r ?candle)
+      )
+    :effect (and
+        (switch-on ?candle)
+      )
+  )
+
+  (:action FillWater
+    :parameters (?r - robot ?sink - sink ?object - object)
+    :precondition (and
+        (at ?r ?sink)
+        (holding ?r ?object)
+      )
+    :effect (and
+        (filled-with-water ?object)
+      )
+  )
+
+  (:action ColdObject
+    :parameters (?r - robot ?fridge - fridge ?object - object)
+    :precondition (and
+      (at ?r ?fridge)
+      (at-location ?object ?fridge)
+      (not (object-open ?fridge))
+      (switch-on ?fridge)
+    )
+    :effect (and
+        (cold ?object)
+      )
   )
 )

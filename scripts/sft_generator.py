@@ -2,7 +2,8 @@ import json
 import os
 import os.path
 
-from typing import Dict, List
+from functools import wraps
+from typing import Dict, List, Union
 
 from parsing_utils import ParsingUtils
 
@@ -102,7 +103,69 @@ def _load_jsonl_record(jsonl_path: str, task_index: int) -> Dict:
 
     raise IndexError(f"Task index {task_index} is out of range for {jsonl_path}")
 
-def check_decompose_subtask_count(summary_path: str, index: int, data_root: str = "data") -> Dict:
+def _get_first_summary_result(summary_path: str) -> Dict:
+    with open(summary_path, "r", encoding="utf-8") as f:
+        summary_data = json.load(f)
+
+    flat_results = _flatten_summary_results(summary_data)
+    if not flat_results:
+        raise ValueError(f"No summary results found: {summary_path}")
+
+    result = flat_results[0]
+    if not isinstance(result, dict):
+        raise ValueError("First summary result must be an object")
+
+    return result
+
+def _get_result_model(result: Dict) -> str:
+    model = str(result.get("model") or "").strip()
+    if not model:
+        raise ValueError("Missing model for flat index 0")
+
+    return model
+
+def get_model(summary_path: str) -> str:
+    """Get the model from the first flattened summary result."""
+    result = _get_first_summary_result(summary_path)
+    return _get_result_model(result)
+
+def check_model(summary_path: str, expected_model: str) -> Dict:
+    """Check the first flattened summary result against the expected model."""
+    expected_model_text = str(expected_model).strip()
+    if not expected_model_text:
+        raise ValueError("Expected model must be non-empty")
+
+    result = _get_first_summary_result(summary_path)
+    model = _get_result_model(result)
+
+    return {
+        "matched": model == expected_model_text,
+        "model": model,
+        "expected_model": expected_model_text,
+        "flat_index": 0,
+        "floor_plan": result.get("floor_plan"),
+        "task_index": result.get("task_index"),
+        "task_run_dir": result.get("task_run_dir"),
+    }
+
+def _return_unmatched_on_missing_file(check_func):
+    @wraps(check_func)
+    def wrapper(*args, **kwargs):
+        try:
+            return check_func(*args, **kwargs)
+        except FileNotFoundError:
+            return False
+
+    return wrapper
+
+def _check_matched(check_result: Union[Dict, bool]) -> bool:
+    if isinstance(check_result, dict):
+        return bool(check_result.get("matched"))
+
+    return bool(check_result)
+
+@_return_unmatched_on_missing_file
+def check_decompose_subtask_count(summary_path: str, index: int, data_root: str = "data") -> Union[Dict, bool]:
     """Check one flattened summary result against its dataset JSONL subtask count."""
     if index < 0:
         raise IndexError(f"Flat index must be non-negative, got {index}")
@@ -117,7 +180,7 @@ def check_decompose_subtask_count(summary_path: str, index: int, data_root: str 
     result = flat_results[index]
     task_run_dir = result.get("task_run_dir")
     if not task_run_dir:
-        raise ValueError(f"Missing task_run_dir for flat index {index}")
+        return False
 
     decompose_output_path = os.path.join(task_run_dir, "01_decompose", "02_decompose_output.txt")
     if not os.path.exists(decompose_output_path):
@@ -153,7 +216,8 @@ def check_decompose_subtask_count(summary_path: str, index: int, data_root: str 
         "jsonl_path": jsonl_path,
     }
 
-def check_allocate_assignment_count(summary_path: str, index: int, data_root: str = "data") -> Dict:
+@_return_unmatched_on_missing_file
+def check_allocate_assignment_count(summary_path: str, index: int, data_root: str = "data") -> Union[Dict, bool]:
     """Check one flattened summary result against its dataset JSONL assignment count."""
     if index < 0:
         raise IndexError(f"Flat index must be non-negative, got {index}")
@@ -208,7 +272,8 @@ def check_allocate_assignment_count(summary_path: str, index: int, data_root: st
         "jsonl_path": jsonl_path,
     }
 
-def check_validate_output_count(summary_path: str, index: int, data_root: str = "data") -> Dict:
+@_return_unmatched_on_missing_file
+def check_validate_output_count(summary_path: str, index: int, data_root: str = "data") -> Union[Dict, bool]:
     """Check one flattened summary result against its dataset JSONL validated PDDL count."""
     if index < 0:
         raise IndexError(f"Flat index must be non-negative, got {index}")
@@ -265,7 +330,8 @@ def check_validate_output_count(summary_path: str, index: int, data_root: str = 
         "jsonl_path": jsonl_path,
     }
 
-def check_planner_plan_count(summary_path: str, index: int, data_root: str = "data") -> Dict:
+@_return_unmatched_on_missing_file
+def check_planner_plan_count(summary_path: str, index: int, data_root: str = "data") -> Union[Dict, bool]:
     """Check one flattened summary result against its dataset JSONL planner plan count."""
     if index < 0:
         raise IndexError(f"Flat index must be non-negative, got {index}")
@@ -322,45 +388,58 @@ def check_planner_plan_count(summary_path: str, index: int, data_root: str = "da
         "jsonl_path": jsonl_path,
     }
 
-if __name__ == "__main__":
-    output_path_base = "/data/dwb/datasets/0526"
-    summary_path = os.path.join("/home/dwb/thor/LaMMA-P/parallel_runs",                    
-        "pddlrun_llmseparate_20260525_141235",
-        "summary.json")
 
+def output(summary_path):
+    output_path_base = "/data/dwb/datasets/all"
+
+    model = get_model(summary_path)
+
+    if model.startswith("Qwen3"):
+        pass
 
     for index, task_run_dir in enumerate(get_all_task_run_dirs(summary_path)):
-        if not (check_decompose_subtask_count(summary_path, index))["matched"]:
+        if not _check_matched(check_decompose_subtask_count(summary_path, index)):
             continue
-        if not (check_allocate_assignment_count(summary_path, index))["matched"]:
+        if not _check_matched(check_allocate_assignment_count(summary_path, index)):
             continue
-        if not (check_validate_output_count(summary_path, index))["matched"]:
+        if not _check_matched(check_validate_output_count(summary_path, index)):
             continue
-        if not (check_planner_plan_count(summary_path, index))["matched"]:
+        if not _check_matched(check_planner_plan_count(summary_path, index)):
             continue
 
 
-        # file_path0 = os.path.join(task_run_dir, "01_decompose",  "01_decompose_prompt.txt")
-        # file_path1 = os.path.join(task_run_dir, "01_decompose",  "02_decompose_output.txt")
-        # append_conversation(file_path0, file_path1, os.path.join(output_path_base,"01_decompose.jsonl"))
+        file_path0 = os.path.join(task_run_dir, "01_decompose",  "01_decompose_prompt.txt")
+        file_path1 = os.path.join(task_run_dir, "01_decompose",  "02_decompose_output.txt")
+        append_conversation(file_path0, file_path1, os.path.join(output_path_base,"01_decompose.jsonl"))
 
         file_path0 = os.path.join(task_run_dir, "02_allocate",  "01_allocate_prompt.txt")
         file_path1 = os.path.join(task_run_dir, "02_allocate",  "02_allocate_output.txt")
         append_conversation(file_path0, file_path1, os.path.join(output_path_base,"02_allocate.jsonl"))
 
-        # problem_generation_path = os.path.join(task_run_dir, "05_problem_generation")
-        # for f in os.listdir(os.path.join(problem_generation_path, "prompts")):
-        #     problem_path = os.path.join(problem_generation_path, "outputs", f.replace("_prompt.txt", "_problem.pddl"))
-        #     if os.path.exists(problem_path):
-        #         append_conversation(os.path.join(problem_generation_path, "prompts", f), problem_path, os.path.join(output_path_base,"05_problem_generation.jsonl"))
+        problem_generation_path = os.path.join(task_run_dir, "05_problem_generation")
+        for f in os.listdir(os.path.join(problem_generation_path, "prompts")):
+            problem_path = os.path.join(problem_generation_path, "outputs", f.replace("_prompt.txt", "_problem.pddl"))
+            if os.path.exists(problem_path):
+                append_conversation(os.path.join(problem_generation_path, "prompts", f), problem_path, os.path.join(output_path_base,"05_problem_generation.jsonl"))
         
-        # validate_path = os.path.join(task_run_dir, "07_validate")
-        # for f in os.listdir(os.path.join(validate_path, "prompts")):
-        #     problem_path = os.path.join(validate_path, "outputs", f.replace("_prompt.txt", "_validated.pddl"))
-        #     if os.path.exists(problem_path):
-        #         append_conversation(os.path.join(validate_path, "prompts", f), problem_path, os.path.join(output_path_base,"07_validate.jsonl"))
+        validate_path = os.path.join(task_run_dir, "07_validate")
+        for f in os.listdir(os.path.join(validate_path, "prompts")):
+            problem_path = os.path.join(validate_path, "outputs", f.replace("_prompt.txt", "_validated.pddl"))
+            if os.path.exists(problem_path):
+                append_conversation(os.path.join(validate_path, "prompts", f), problem_path, os.path.join(output_path_base,"07_validate.jsonl"))
 
 
+
+
+if __name__ == "__main__":
+    
+    for pddlrun in ["pddlrun_llmseparate_20260506_160313", "pddlrun_llmseparate_20260517_140101", "pddlrun_llmseparate_20260520_225427", "pddlrun_llmseparate_20260526_143831", "pddlrun_llmseparate_20260529_190454", "pddlrun_llmseparate_20260506_162101", "pddlrun_llmseparate_20260518_145253", "pddlrun_llmseparate_20260521_151830", "pddlrun_llmseparate_20260526_194352", "pddlrun_llmseparate_20260531_213941", "pddlrun_llmseparate_20260506_180812", "pddlrun_llmseparate_20260518_214413", "pddlrun_llmseparate_20260522_102424", "pddlrun_llmseparate_20260527_135853", "pddlrun_llmseparate_20260507_145350", "pddlrun_llmseparate_20260519_151717", "pddlrun_llmseparate_20260523_152557", "pddlrun_llmseparate_20260527_220002", "pddlrun_llmseparate_20260516_145201", "pddlrun_llmseparate_20260520_162612", "pddlrun_llmseparate_20260524_195257", "pddlrun_llmseparate_20260528_153620", "pddlrun_llmseparate_20260516_164415", "pddlrun_llmseparate_20260520_204726", "pddlrun_llmseparate_20260525_141235", "pddlrun_llmseparate_20260528_222518"]:
+        summary_path = os.path.join("/home/dwb/thor/LaMMA-P/parallel_runs",                    
+            pddlrun,
+            "summary.json")
+        output(summary_path)
+    
+    
 
 
         

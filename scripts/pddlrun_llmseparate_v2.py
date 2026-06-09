@@ -21,6 +21,7 @@ from llm_handler import LLMError, LLMHandler
 from llm_logger import get_llm_logger
 from parsing_utils import ParsingUtils
 from run_config import RunConfig, load_run_config as _load_run_config, normalize_floor_plan
+from special_task_skills import SPECIAL_TASK_SKILL_ALIASES, SPECIAL_TASK_SKILL_PROMPT_RULE
 
 import sys
 sys.path.append(".")
@@ -1746,6 +1747,7 @@ class TaskManager:
             "pushobject": "PushObject",
             "pullobject": "PullObject",
         }
+        aliases.update(SPECIAL_TASK_SKILL_ALIASES)
         return aliases.get(key, str(action_name).strip())
 
     def _object_key(self, value: str) -> str:
@@ -1884,6 +1886,7 @@ class TaskManager:
             prompt += f"\n# SOLUTION\n"
             prompt += f"\n# Additional Output Rules:"
             prompt += f"\n# - Only assign a robot if it has every required skill."
+            prompt += f"\n{SPECIAL_TASK_SKILL_PROMPT_RULE}"
             prompt += f"\n# - If multiple robots satisfy all constraints equally, choose the robot with the smallest robot number/name order."
             prompt += f"\n# - Only mention mass capacity if it prevents assignment."
             prompt += f"\n# - The SOLUTION must strictly follow the concise reasoning style shown in the examples."

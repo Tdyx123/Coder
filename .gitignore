@@ -3,3 +3,5 @@
 /scripts/providers.yaml
 /.python-version
 *.pyc
+/tests/artifacts/
+AGENTS.md

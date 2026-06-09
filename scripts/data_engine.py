@@ -18,6 +18,7 @@ from file_processor import PDDLError
 from llm_handler import LLMHandler
 from resources.robots import robots
 from run_config import load_run_config
+from special_task_skills import SPECIAL_TASK_SKILL_SET
 
 
 def _repo_root() -> Path:
@@ -33,7 +34,108 @@ AI2THOR_OBJECT_PROPERTY_FIELDS = (
     "receptacle",
     "toggleable",
     "dirtyable",
+    "canFillWithLiquid",
+    "cookable",
 )
+
+PUT_IN_RECEPTACLES = (
+    "Drawer", "Cabinet", "Fridge", "Microwave", "LaundryHamper", "Box", "Cup", "Bowl",
+    "GarbageCan", "Sink", "BathtubBasin", "Pan", "Pot",
+)
+
+MUST_OPEN_TO_PLACE_OBJECTS_IN = (
+    "Drawer", "Cabinet", "LaundryHamper", "Microwave", "Fridge", "Box",
+)
+
+PLACEMENT_RESTRICTIONS = {
+    "AlarmClock": ("Box", "Dresser", "Desk", "SideTable", "DiningTable", "TVStand", "CoffeeTable", "CounterTop", "Shelf", "Chair", "Stool"),
+    "Apple": ("Pot", "Pan", "Bowl", "Microwave", "Fridge", "Plate", "Sink", "SinkBasin", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "Desk", "CounterTop", "GarbageCan", "Dresser"),
+    "AppleSliced": ("Pot", "Pan", "Bowl", "Microwave", "Fridge", "Plate", "Sink", "SinkBasin", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "Desk", "CounterTop", "GarbageCan", "Dresser"),
+    "BaseballBat": ("Bed", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "Desk", "CounterTop", "Floor"),
+    "BasketBall": ("Sofa", "ArmChair", "Dresser", "Desk", "Bed", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Stool", "Chair", "Floor"),
+    "Book": ("Sofa", "ArmChair", "Box", "Ottoman", "Dresser", "Desk", "Bed", "Cabinet", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf", "Drawer", "Stool", "Chair", "Floor"),
+    "Boots": ("Floor",),
+    "Bottle": ("Fridge", "Box", "Dresser", "Desk", "Sink", "SinkBasin", "Cabinet", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf", "GarbageCan"),
+    "Bowl": ("Microwave", "Fridge", "Dresser", "Desk", "Sink", "SinkBasin", "Cabinet", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf"),
+    "Box": ("Sofa", "ArmChair", "Dresser", "Desk", "Cabinet", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf", "Ottoman", "Stool", "Chair", "Floor"),
+    "Bread": ("Microwave", "Fridge", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "Desk", "CounterTop", "GarbageCan", "Plate"),
+    "BreadSliced": ("Microwave", "Fridge", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "Desk", "CounterTop", "GarbageCan", "Toaster", "Plate"),
+    "ButterKnife": ("Pot", "Pan", "Bowl", "Mug", "Plate", "Cup", "Sink", "SinkBasin", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "Desk", "CounterTop", "Drawer"),
+    "Candle": ("Box", "Dresser", "Desk", "Toilet", "Cart", "Bathtub", "Cabinet", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf", "Drawer", "Stool", "Chair"),
+    "CD": ("Box", "Ottoman", "Dresser", "Desk", "Cabinet", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf", "Drawer", "GarbageCan", "Safe", "Sofa", "ArmChair", "Stool", "Chair", "Footstool"),
+    "CellPhone": ("Sofa", "ArmChair", "Box", "Ottoman", "Dresser", "Desk", "Bed", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf", "Drawer", "Safe", "Stool", "Chair", "Footstool"),
+    "Cloth": ("Sofa", "ArmChair", "Box", "Ottoman", "Dresser", "LaundryHamper", "Desk", "Toilet", "Cart", "BathtubBasin", "Bathtub", "Sink", "SinkBasin", "Cabinet", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf", "Drawer", "GarbageCan", "Stool", "Chair", "Footstool", "Floor"),
+    "CreditCard": ("Sofa", "ArmChair", "Box", "Ottoman", "Dresser", "Desk", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf", "Drawer", "Stool", "Chair", "Footstool"),
+    "Cup": ("Microwave", "Fridge", "Dresser", "Desk", "Sink", "SinkBasin", "Cabinet", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf"),
+    "DishSponge": ("Pot", "Pan", "Bowl", "Plate", "Box", "Toilet", "Cart", "BathtubBasin", "Bathtub", "Sink", "SinkBasin", "Cabinet", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf", "Drawer", "GarbageCan"),
+    "Egg": ("Pot", "Pan", "Bowl", "Microwave", "Fridge", "Plate", "Sink", "SinkBasin", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "GarbageCan"),
+    "EggCracked": ("Pot", "Pan", "Bowl", "Microwave", "Fridge", "Plate", "Sink", "SinkBasin", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "GarbageCan"),
+    "Fork": ("Pot", "Pan", "Bowl", "Mug", "Plate", "Cup", "Sink", "SinkBasin", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Drawer"),
+    "HandTowel": ("HandTowelHolder",),
+    "Kettle": ("DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Sink", "SinkBasin", "Cabinet", "StoveBurner", "Shelf"),
+    "KeyChain": ("Sofa", "ArmChair", "Box", "Ottoman", "Dresser", "Desk", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf", "Drawer", "Safe", "Stool", "Chair"),
+    "Knife": ("Pot", "Pan", "Bowl", "Mug", "Plate", "Sink", "SinkBasin", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Drawer"),
+    "Ladle": ("Pot", "Pan", "Bowl", "Plate", "Sink", "SinkBasin", "Cabinet", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Drawer"),
+    "Laptop": ("Sofa", "ArmChair", "Ottoman", "Dresser", "Desk", "Bed", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Stool", "Chair", "Footstool"),
+    "Lettuce": ("Pot", "Pan", "Bowl", "Fridge", "Plate", "Sink", "SinkBasin", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "GarbageCan"),
+    "LettuceSliced": ("Pot", "Pan", "Bowl", "Fridge", "Plate", "Sink", "SinkBasin", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "GarbageCan"),
+    "Mug": ("CoffeeMachine", "Microwave", "Fridge", "Plate", "Box", "Dresser", "Desk", "Cart", "Sink", "SinkBasin", "Cabinet", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf"),
+    "Newspaper": ("Sofa", "ArmChair", "Ottoman", "Dresser", "Desk", "Bed", "Toilet", "Cabinet", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf", "Drawer", "GarbageCan", "Stool", "Chair", "Footstool", "Floor"),
+    "Pan": ("DiningTable", "CounterTop", "TVStand", "CoffeeTable", "SideTable", "Sink", "SinkBasin", "Cabinet", "StoveBurner", "Fridge"),
+    "PaperTowelRoll": ("Box", "Toilet", "Cart", "Bathtub", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf", "GarbageCan"),
+    "Pen": ("Mug", "Box", "Dresser", "Desk", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf", "Drawer", "GarbageCan", "Stool", "Chair", "Footstool"),
+    "Pencil": ("Mug", "Box", "Dresser", "Desk", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf", "Drawer", "GarbageCan", "Stool", "Chair", "Footstool"),
+    "PepperShaker": ("DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Drawer", "Cabinet", "Shelf"),
+    "Pillow": ("Sofa", "ArmChair", "Ottoman", "Bed", "Stool", "Chair"),
+    "Plate": ("Microwave", "Fridge", "Dresser", "Desk", "Sink", "SinkBasin", "Cabinet", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf"),
+    "Plunger": ("Cart", "Cabinet", "Floor"),
+    "Pot": ("StoveBurner", "Fridge", "Sink", "SinkBasin", "Cabinet", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf"),
+    "Potato": ("Pot", "Pan", "Bowl", "Microwave", "Fridge", "Plate", "Sink", "SinkBasin", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "GarbageCan"),
+    "PotatoSliced": ("Pot", "Pan", "Bowl", "Microwave", "Fridge", "Plate", "Sink", "SinkBasin", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "GarbageCan"),
+    "RemoteControl": ("Sofa", "ArmChair", "Box", "Ottoman", "Dresser", "Desk", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf", "Drawer", "Stool", "Chair", "Footstool"),
+    "SaltShaker": ("DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Drawer", "Cabinet", "Shelf"),
+    "SoapBar": ("Toilet", "Cart", "Bathtub", "BathtubBasin", "Sink", "SinkBasin", "Cabinet", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf", "Drawer", "GarbageCan"),
+    "SoapBottle": ("Dresser", "Desk", "Toilet", "Cart", "Bathtub", "Sink", "Cabinet", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf", "Drawer", "GarbageCan"),
+    "Spatula": ("Pot", "Pan", "Bowl", "Plate", "Sink", "SinkBasin", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Drawer"),
+    "Spoon": ("Pot", "Pan", "Bowl", "Mug", "Plate", "Cup", "Sink", "SinkBasin", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Drawer"),
+    "SprayBottle": ("Dresser", "Desk", "Toilet", "Cart", "Cabinet", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf", "Drawer", "GarbageCan"),
+    "Statue": ("Box", "Dresser", "Desk", "Cart", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf", "Safe"),
+    "TeddyBear": ("Bed", "Sofa", "ArmChair", "Ottoman", "Dresser", "Desk", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Safe", "Stool", "Chair"),
+    "TennisRacket": ("Dresser", "Desk", "Bed", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Stool", "Chair", "Floor"),
+    "TissueBox": ("Box", "Dresser", "Desk", "Toilet", "Cart", "Cabinet", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf", "Drawer", "GarbageCan", "Stool", "Chair", "Footstool"),
+    "ToiletPaper": ("Dresser", "Desk", "Toilet", "ToiletPaperHanger", "Cart", "Bathtub", "Cabinet", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf", "Drawer", "GarbageCan", "Stool", "Chair"),
+    "ToiletPaperRoll": ("Dresser", "Desk", "Toilet", "ToiletPaperHanger", "Cart", "Bathtub", "Cabinet", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf", "Drawer", "GarbageCan", "Stool"),
+    "Tomato": ("DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Sink", "SinkBasin", "Pot", "Bowl", "Fridge", "GarbageCan", "Plate"),
+    "TomatoSliced": ("DiningTable", "CounterTop", "TVStand", "CoffeeTable", "SideTable", "Sink", "SinkBasin", "Pot", "Bowl", "Fridge", "GarbageCan", "Plate"),
+    "Towel": ("TowelHolder",),
+    "Vase": ("Box", "Dresser", "Desk", "Cart", "Cabinet", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf", "Safe"),
+    "Watch": ("Box", "Dresser", "Desk", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf", "Drawer", "Safe", "Stool", "Chair", "Footstool"),
+    "WateringCan": ("Dresser", "Desk", "Cabinet", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf", "Drawer", "Stool", "Chair", "Floor"),
+    "WineBottle": ("Fridge", "Dresser", "Desk", "Cabinet", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf", "GarbageCan"),
+    "Dumbbell": ("Dresser", "Desk", "Cabinet", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf", "Bed", "Chair", "ArmChair", "Sofa", "Stool", "Footstool", "Floor"),
+    "AluminumFoil": ("Dresser", "Drawer", "Desk", "Cabinet", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf"),
+    "TableTopDecor": ("Dresser", "Desk", "Cabinet", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf"),
+    "TargetCircle": ("Dresser", "Desk", "DiningTable", "TVStand", "CoffeeTable", "SideTable", "CounterTop", "Shelf", "Floor"),
+}
+
+COOKABLE_OBJECTS = (
+    "Egg", "EggCracked", "Potato", "PotatoSliced",
+)
+
+WATER_FILLABLE_OBJECTS = (
+    "Bottle", "Bowl", "Cup", "Kettle", "Mug", "Pot", "WateringCan", "WineBottle",
+)
+
+MUG_OBJECTS = ("Mug",)
+BREAD_OBJECTS = ("Bread",)
+CANDLE_OBJECTS = ("Candle",)
+
+MICROWAVE_OBJECTS = ("Microwave",)
+COFFEE_MACHINE_OBJECTS = ("CoffeeMachine",)
+TOASTER_OBJECTS = ("Toaster",)
+STOVE_BURNER_OBJECTS = ("StoveBurner",)
+SINK_OBJECTS = ("Sink",)
+FRIDGE_OBJECTS = ("Fridge",)
 
 
 class ObjectPropertiesError(ValueError):
@@ -137,10 +239,90 @@ def _non_openable_receptacles(
     )
 
 
+def _restricted_receptacles(
+    object_type_properties: Dict[str, Dict[str, bool]],
+    restrictions: Tuple[str, ...],
+) -> List[str]:
+    return sorted(
+        object_type
+        for object_type in restrictions
+        if object_type_properties.get(object_type, {}).get("receptacle", False)
+    )
+
+
+def _filtered_placement_restrictions(
+    object_type_properties: Dict[str, Dict[str, bool]],
+) -> Dict[str, List[str]]:
+    object_types = set(object_type_properties)
+    return {
+        object_type: sorted(
+            target for target in targets
+            if target in object_types
+        )
+        for object_type, targets in PLACEMENT_RESTRICTIONS.items()
+        if object_type in object_types
+    }
+
+
+def _objects_present(
+    object_type_properties: Dict[str, Dict[str, bool]],
+    object_types: Tuple[str, ...],
+    require_pickupable: bool = False,
+) -> List[str]:
+    return sorted(
+        object_type
+        for object_type in object_types
+        if object_type in object_type_properties
+        and (
+            not require_pickupable
+            or object_type_properties[object_type].get("pickupable", False)
+        )
+    )
+
+
+def _objects_with_property_or_fallback(
+    object_type_properties: Dict[str, Dict[str, bool]],
+    property_name: str,
+    fallback_object_types: Tuple[str, ...],
+    require_pickupable: bool = True,
+) -> List[str]:
+    candidates = set(_objects_with_property(object_type_properties, property_name))
+    candidates.update(
+        _objects_present(
+            object_type_properties,
+            fallback_object_types,
+            require_pickupable=require_pickupable,
+        )
+    )
+    if require_pickupable:
+        candidates = {
+            object_type for object_type in candidates
+            if object_type_properties.get(object_type, {}).get("pickupable", False)
+        }
+    return sorted(candidates)
+
+
+def _pickupable_objects_allowed_at(
+    object_type_properties: Dict[str, Dict[str, bool]],
+    receptacle: str,
+) -> List[str]:
+    if receptacle not in object_type_properties:
+        return []
+
+    object_types = set(object_type_properties)
+    return sorted(
+        object_type
+        for object_type, targets in PLACEMENT_RESTRICTIONS.items()
+        if object_type in object_types
+        and receptacle in targets
+        and object_type_properties[object_type].get("pickupable", False)
+    )
+
+
 def _build_object_skill_sets(
     floor_plan: Union[int, str],
     path: Path = AI2THOR_OBJECT_PROPERTIES_PATH,
-) -> Dict[str, List[str]]:
+) -> Dict[str, Any]:
     object_type_properties = _load_ai2thor_object_type_properties(floor_plan, path)
     return {
         "breakable_objects": _objects_with_property(object_type_properties, "breakable"),
@@ -151,6 +333,54 @@ def _build_object_skill_sets(
         "openable_containers": _openable_receptacles(object_type_properties),
         "has_placing_surface_objects": _non_openable_receptacles(object_type_properties),
         "switchable_objects": _objects_with_property(object_type_properties, "toggleable"),
+        "put_in_receptacles": _restricted_receptacles(
+            object_type_properties,
+            PUT_IN_RECEPTACLES,
+        ),
+        "must_open_to_place_receptacles": _restricted_receptacles(
+            object_type_properties,
+            MUST_OPEN_TO_PLACE_OBJECTS_IN,
+        ),
+        "placement_restrictions": _filtered_placement_restrictions(object_type_properties),
+        "cookable_objects": _objects_with_property_or_fallback(
+            object_type_properties,
+            "cookable",
+            COOKABLE_OBJECTS,
+        ),
+        "fillable_objects": _objects_with_property_or_fallback(
+            object_type_properties,
+            "canFillWithLiquid",
+            WATER_FILLABLE_OBJECTS,
+        ),
+        "mug_objects": _objects_present(
+            object_type_properties,
+            MUG_OBJECTS,
+            require_pickupable=True,
+        ),
+        "bread_objects": _objects_present(
+            object_type_properties,
+            BREAD_OBJECTS,
+            require_pickupable=True,
+        ),
+        "candle_objects": _objects_present(
+            object_type_properties,
+            CANDLE_OBJECTS,
+            require_pickupable=True,
+        ),
+        "microwave_objects": _objects_present(object_type_properties, MICROWAVE_OBJECTS),
+        "coffee_machine_objects": _objects_present(object_type_properties, COFFEE_MACHINE_OBJECTS),
+        "toaster_objects": _objects_present(object_type_properties, TOASTER_OBJECTS),
+        "stove_burner_objects": _objects_present(object_type_properties, STOVE_BURNER_OBJECTS),
+        "sink_objects": _objects_present(object_type_properties, SINK_OBJECTS),
+        "fridge_objects": _objects_present(object_type_properties, FRIDGE_OBJECTS),
+        "stove_burner_placeable_objects": _pickupable_objects_allowed_at(
+            object_type_properties,
+            "StoveBurner",
+        ),
+        "fridge_coldable_objects": _pickupable_objects_allowed_at(
+            object_type_properties,
+            "Fridge",
+        ),
     }
 
 food = ['Apple', 'Bread', 'Egg', 'Lettuce', 'Potato', 'Tomato']
@@ -167,6 +397,94 @@ SKILL_TO_ROBOT_SKILLS = {
 }
 
 MASS_OBJECTS = ['Knife']
+
+ACTION_SKILL_CORE_REQUIREMENTS = {
+    'RunMicrowave': ['GoToObject', 'PickupObject'],
+    'RunCoffeeMachine': ['GoToObject'],
+    'RunToaster': ['GoToObject'],
+    'CookByStoveBurner': ['GoToObject', 'PickupObject'],
+    'HeatByStoveBurner': ['GoToObject', 'PickupObject'],
+    'FireByStoveBurner': ['GoToObject', 'PickupObject'],
+    'FillWater': ['GoToObject', 'PickupObject'],
+    'ColdObject': ['GoToObject', 'PickupObject'],
+}
+
+ACTION_PAIR_SKILL_SETS = {
+    'RunMicrowave': ('pickupable_objects', 'microwave_objects'),
+    'RunCoffeeMachine': ('mug_objects', 'coffee_machine_objects'),
+    'RunToaster': ('bread_objects', 'toaster_objects'),
+    'CookByStoveBurner': ('cookable_objects', 'stove_burner_objects'),
+    'HeatByStoveBurner': ('stove_burner_placeable_objects', 'stove_burner_objects'),
+    'FireByStoveBurner': ('candle_objects', 'stove_burner_objects'),
+    'FillWater': ('fillable_objects', 'sink_objects'),
+    'ColdObject': ('fridge_coldable_objects', 'fridge_objects'),
+}
+
+
+def _putin_requires_open_close(receptacle: str) -> bool:
+    return receptacle in MUST_OPEN_TO_PLACE_OBJECTS_IN
+
+
+def _required_robot_skills_for_subtask(subtask: Dict[str, Any]) -> List[str]:
+    skill = subtask["skill"]
+    if skill == "PutIn" and not _putin_requires_open_close(subtask["objects"][1]):
+        return ['GoToObject', 'PickupObject', 'PutObject']
+    if skill in ACTION_SKILL_CORE_REQUIREMENTS:
+        required_skills = list(ACTION_SKILL_CORE_REQUIREMENTS[skill])
+        if skill in SPECIAL_TASK_SKILL_SET:
+            required_skills.append(skill)
+        return required_skills
+    return SKILL_TO_ROBOT_SKILLS.get(skill, [])
+
+
+def _can_place_with_skill(
+    obj: str,
+    receptacle: str,
+    skill: str,
+    skill_sets: Dict[str, Any],
+) -> bool:
+    if obj == receptacle or obj not in skill_sets["pickupable_objects"]:
+        return False
+
+    if skill == "PutOn":
+        return receptacle in skill_sets["placement_restrictions"].get(obj, [])
+
+    if skill != "PutIn":
+        return False
+
+    if receptacle not in skill_sets["put_in_receptacles"]:
+        return False
+
+    return receptacle in skill_sets["placement_restrictions"].get(obj, [])
+
+
+def _can_pair_with_action_skill(
+    obj: str,
+    appliance: str,
+    skill: str,
+    skill_sets: Dict[str, Any],
+) -> bool:
+    if obj == appliance or skill not in ACTION_PAIR_SKILL_SETS:
+        return False
+
+    obj_set_name, appliance_set_name = ACTION_PAIR_SKILL_SETS[skill]
+    return (
+        obj in skill_sets[obj_set_name]
+        and appliance in skill_sets[appliance_set_name]
+    )
+
+
+def _is_cookable_object(obj: str) -> bool:
+    return obj in COOKABLE_OBJECTS
+
+
+MUTUALLY_EXCLUSIVE_STATES = {
+    "OPENED": "CLOSED",
+    "CLOSED": "OPENED",
+    "ON": "OFF",
+    "OFF": "ON",
+}
+
 
 class DataEngine:
 
@@ -240,6 +558,22 @@ class DataEngine:
             return f"put {obj_strs[0]} on {obj_strs[1]}"
         elif skill == 'PutIn':
             return f"put {obj_strs[0]} in {obj_strs[1]}"
+        elif skill == 'RunMicrowave':
+            return f"microwave the {obj_strs[0]}"
+        elif skill == 'RunCoffeeMachine':
+            return f"make coffee in the {obj_strs[0]}"
+        elif skill == 'RunToaster':
+            return f"toast the {obj_strs[0]}"
+        elif skill == 'CookByStoveBurner':
+            return f"cook the {obj_strs[0]} on the {obj_strs[1]}"
+        elif skill == 'HeatByStoveBurner':
+            return f"heat the {obj_strs[0]} on the {obj_strs[1]}"
+        elif skill == 'FireByStoveBurner':
+            return f"light the {obj_strs[0]} by the {obj_strs[1]}"
+        elif skill == 'FillWater':
+            return f"fill the {obj_strs[0]} with water"
+        elif skill == 'ColdObject':
+            return f"cool the {obj_strs[0]} in the {obj_strs[1]}"
         else:
             return f"unknown skill: {skill}"
 
@@ -249,46 +583,82 @@ class DataEngine:
         results = []
 
         if skill == 'Open':
-            results.append({"name": objs[0], "contains": [], "state": "OPENED"})
+            results.append({"name": objs[0], "contains": [], "states": ["OPENED"]})
         elif skill == 'Close':
-            results.append({"name": objs[0], "contains": [], "state": "CLOSED"})
+            results.append({"name": objs[0], "contains": [], "states": ["CLOSED"]})
         elif skill == 'SwitchOn':
-            results.append({"name": objs[0], "contains": [], "state": "ON"})
+            results.append({"name": objs[0], "contains": [], "states": ["ON"]})
         elif skill == 'SwitchOff':
-            results.append({"name": objs[0], "contains": [], "state": "OFF"})
+            results.append({"name": objs[0], "contains": [], "states": ["OFF"]})
         elif skill == 'Wash':
-            results.append({"name": objs[0], "contains": [], "state": "CLEANED"})
+            results.append({"name": objs[0], "contains": [], "states": ["CLEANED"]})
         elif skill == 'Break':
-            results.append({"name": objs[0], "contains": [], "state": "BROKEN"})
+            results.append({"name": objs[0], "contains": [], "states": ["BROKEN"]})
         elif skill == 'Slice':
-            results.append({"name": objs[0], "contains": [], "state": "SLICED"})
+            results.append({"name": objs[0], "contains": [], "states": ["SLICED"]})
         elif skill == 'PutOn':
-            results.append({"name": objs[1], "contains": [objs[0]], "state": None})
+            results.append({"name": objs[1], "contains": [objs[0]], "states": []})
         elif skill == 'PutIn':
-            results.append({"name": objs[1], "contains": [objs[0]], "state": "CLOSED"})
+            results.append({"name": objs[1], "contains": [objs[0]], "states": []})
+        elif skill == 'RunMicrowave':
+            states = ["HOT"]
+            if _is_cookable_object(objs[0]):
+                states.append("COOKED")
+            results.append({"name": objs[0], "contains": [], "states": states})
+        elif skill == 'RunCoffeeMachine':
+            results.append({"name": objs[0], "contains": [], "states": ["FILLED_WITH_COFFEE"]})
+        elif skill == 'RunToaster':
+            results.append({"name": objs[0], "contains": [], "states": ["HOT", "COOKED"]})
+        elif skill == 'CookByStoveBurner':
+            results.append({"name": objs[0], "contains": [], "states": ["COOKED"]})
+        elif skill == 'HeatByStoveBurner':
+            results.append({"name": objs[0], "contains": [], "states": ["HOT"]})
+        elif skill == 'FireByStoveBurner':
+            results.append({"name": objs[0], "contains": [], "states": ["ON"]})
+        elif skill == 'FillWater':
+            results.append({"name": objs[0], "contains": [], "states": ["FILLED_WITH_WATER"]})
+        elif skill == 'ColdObject':
+            results.append({"name": objs[0], "contains": [], "states": ["COLD"]})
 
         return results
 
     def get_task_final_state(self, subtasks: List[Dict]) -> List[Dict]:
-        name_to_obj = {}
+        contains_by_name: Dict[str, List[str]] = {}
+        states_by_name: Dict[str, List[str]] = {}
+        names: List[str] = []
 
         for subtask in subtasks:
             partial_states = self.get_subtask_final_state(subtask)
             for ps in partial_states:
                 name = ps["name"]
-                if name not in name_to_obj:
-                    name_to_obj[name] = {"contains": [], "state": None}
+                contains_by_name.setdefault(name, [])
+                states_by_name.setdefault(name, [])
+                if name not in names:
+                    names.append(name)
 
                 if ps["contains"]:
-                    name_to_obj[name]["contains"].extend(ps["contains"])
+                    for contained in ps["contains"]:
+                        if contained not in contains_by_name[name]:
+                            contains_by_name[name].append(contained)
 
-                if ps["state"] is not None:
-                    name_to_obj[name]["state"] = ps["state"]
+                for state in ps["states"]:
+                    opposite = MUTUALLY_EXCLUSIVE_STATES.get(state)
+                    if opposite in states_by_name[name]:
+                        states_by_name[name].remove(opposite)
+                    if state not in states_by_name[name]:
+                        states_by_name[name].append(state)
 
-        return [{"name": name, **data} for name, data in name_to_obj.items()]
+        return [
+            {
+                "name": name,
+                "contains": contains_by_name.get(name, []),
+                "states": states_by_name.get(name, []),
+            }
+            for name in names
+        ]
 
     def _robot_can_complete_subtask(self, robot: Dict, subtask: Dict, obj_mass_map: Dict[str, float]) -> bool:
-        required_skills = SKILL_TO_ROBOT_SKILLS.get(subtask['skill'], [])
+        required_skills = _required_robot_skills_for_subtask(subtask)
         if not all(s in robot['skills'] for s in required_skills):
             return False
 
@@ -504,15 +874,43 @@ put sink on saltshaker, then put ladle on sinkbasin
             if subtask["skill"] == "Open":
                 opened_containers.append(subtask["objects"][0])
 
-            if subtask["skill"] == "PutIn" and subtask["objects"][1] in opened_containers:
+            if (
+                subtask["skill"] == "PutIn"
+                and _putin_requires_open_close(subtask["objects"][1])
+                and subtask["objects"][1] in opened_containers
+            ):
                 return False
 
         # 先放入物品 再打开容器
         containers = []
         for subtask in subtasks:
-            if subtask["skill"] == "PutIn":
+            if subtask["skill"] == "PutIn" and _putin_requires_open_close(subtask["objects"][1]):
                 containers.append(subtask["objects"][1])
             if subtask["skill"] == "Open" and subtask["objects"][0] in containers:
+                return False
+
+        # FillWater 与 RunCoffeeMachine 的前置条件冲突
+        water_filled_objects = []
+        coffee_filled_objects = []
+        for subtask in subtasks:
+            if subtask["skill"] == "FillWater":
+                obj = subtask["objects"][0]
+                if obj in coffee_filled_objects:
+                    return False
+                water_filled_objects.append(obj)
+
+            if subtask["skill"] == "RunCoffeeMachine":
+                obj = subtask["objects"][0]
+                if obj in water_filled_objects or obj in coffee_filled_objects:
+                    return False
+                coffee_filled_objects.append(obj)
+
+        # RunToaster 需要 sliced；如果同一面包出现在后续 Slice 中，顺序无效
+        toasted_objects = []
+        for subtask in subtasks:
+            if subtask["skill"] == "RunToaster":
+                toasted_objects.append(subtask["objects"][0])
+            if subtask["skill"] == "Slice" and subtask["objects"][0] in toasted_objects:
                 return False
             
         return True
@@ -600,7 +998,7 @@ put sink on saltshaker, then put ladle on sinkbasin
         self,
         obj: str,
         all_objects: List[str],
-        skill_sets: Dict[str, List[str]],
+        skill_sets: Dict[str, Any],
     ) -> List[Dict]:
         """
         返回当前对象可以参与的所有技能描述。
@@ -615,8 +1013,7 @@ put sink on saltshaker, then put ladle on sinkbasin
         breakable_objects = skill_sets["breakable_objects"]
         sliceable_objects = skill_sets["sliceable_objects"]
         pickupable_objects = skill_sets["pickupable_objects"]
-        has_placing_surface_objects = skill_sets["has_placing_surface_objects"]
-        openable_containers = skill_sets["openable_containers"]
+        all_object_types = set(all_objects)
 
         # 单对象技能
         if obj in openable_objects:
@@ -631,36 +1028,74 @@ put sink on saltshaker, then put ladle on sinkbasin
             skills.append({'skill': 'Slice', 'type': 'single'})
 
         # 双对象技能 PutOn
-        if obj in pickupable_objects:
+        if obj in pickupable_objects and any(
+            target in all_object_types and _can_place_with_skill(obj, target, "PutOn", skill_sets)
+            for target in skill_sets["placement_restrictions"].get(obj, [])
+        ):
             skills.append({
                 'skill': 'PutOn',
                 'type': 'double',
-                'role': 'obj1',
-                'needed_set': 'has_placing_surface_objects'
+                'role': 'obj1'
             })
-        if obj in has_placing_surface_objects:
+        if any(
+            pickup in all_object_types and _can_place_with_skill(pickup, obj, "PutOn", skill_sets)
+            for pickup in pickupable_objects
+        ):
             skills.append({
                 'skill': 'PutOn',
+                'type': 'double',
+                'role': 'obj2'
+            })
+
+        # 双对象技能 PutIn
+        if obj in pickupable_objects and any(
+            target in all_object_types and _can_place_with_skill(obj, target, "PutIn", skill_sets)
+            for target in skill_sets["put_in_receptacles"]
+        ):
+            skills.append({
+                'skill': 'PutIn',
+                'type': 'double',
+                'role': 'obj1',
+                'needed_set': 'put_in_receptacles'
+            })
+        if obj in skill_sets["put_in_receptacles"] and any(
+            pickup in all_object_types and _can_place_with_skill(pickup, obj, "PutIn", skill_sets)
+            for pickup in pickupable_objects
+        ):
+            skills.append({
+                'skill': 'PutIn',
                 'type': 'double',
                 'role': 'obj2',
                 'needed_set': 'pickupable_objects'
             })
 
-        # 双对象技能 PutIn
-        if obj in pickupable_objects:
-            skills.append({
-                'skill': 'PutIn',
-                'type': 'double',
-                'role': 'obj1',
-                'needed_set': 'openable_containers'
-            })
-        if obj in openable_containers:
-            skills.append({
-                'skill': 'PutIn',
-                'type': 'double',
-                'role': 'obj2',
-                'needed_set': 'pickupable_objects'
-            })
+        for action_skill, (obj_set_name, appliance_set_name) in ACTION_PAIR_SKILL_SETS.items():
+            obj_set = skill_sets[obj_set_name]
+            appliance_set = skill_sets[appliance_set_name]
+
+            if obj in obj_set and any(
+                appliance in all_object_types
+                and _can_pair_with_action_skill(obj, appliance, action_skill, skill_sets)
+                for appliance in appliance_set
+            ):
+                skills.append({
+                    'skill': action_skill,
+                    'type': 'double',
+                    'role': 'obj1',
+                    'needed_set': appliance_set_name
+                })
+
+            if obj in appliance_set and any(
+                target in all_object_types
+                and _can_pair_with_action_skill(target, obj, action_skill, skill_sets)
+                for target in obj_set
+            ):
+                skills.append({
+                    'skill': action_skill,
+                    'type': 'double',
+                    'role': 'obj2',
+                    'needed_set': obj_set_name
+                })
 
         return skills
 
@@ -668,13 +1103,57 @@ put sink on saltshaker, then put ladle on sinkbasin
     def sample_second_object(
         self,
         all_objects: List[str],
-        needed_set_name: str,
-        skill_sets: Dict[str, List[str]],
+        needed_set_name: Optional[str] = None,
+        skill_sets: Optional[Dict[str, Any]] = None,
         exclude: Optional[str] = None,
+        skill: Optional[str] = None,
+        role: Optional[str] = None,
     ) -> str:
         """从指定集合中随机抽取一个对象，可排除某个对象。"""
-        needed_set = skill_sets[needed_set_name]
-        candidates = [o for o in all_objects if o != exclude and o in needed_set]
+        if skill_sets is None:
+            raise ValueError("skill_sets is required")
+
+        if skill == "PutOn" and role and exclude is not None:
+            candidates = [o for o in all_objects if o != exclude]
+            if role == "obj1":
+                candidates = [
+                    receptacle for receptacle in candidates
+                    if _can_place_with_skill(exclude, receptacle, skill, skill_sets)
+                ]
+            else:
+                candidates = [
+                    pickup for pickup in candidates
+                    if _can_place_with_skill(pickup, exclude, skill, skill_sets)
+                ]
+        else:
+            if needed_set_name is None:
+                raise ValueError(f"没有足够的候选对象")
+
+            needed_set = skill_sets[needed_set_name]
+            candidates = [o for o in all_objects if o != exclude and o in needed_set]
+
+        if skill in ACTION_PAIR_SKILL_SETS and role and exclude is not None:
+            if role == "obj1":
+                candidates = [
+                    appliance for appliance in candidates
+                    if _can_pair_with_action_skill(exclude, appliance, skill, skill_sets)
+                ]
+            else:
+                candidates = [
+                    target for target in candidates
+                    if _can_pair_with_action_skill(target, exclude, skill, skill_sets)
+                ]
+        elif skill == "PutIn" and role and exclude is not None:
+            if role == "obj1":
+                candidates = [
+                    receptacle for receptacle in candidates
+                    if _can_place_with_skill(exclude, receptacle, skill, skill_sets)
+                ]
+            else:
+                candidates = [
+                    pickup for pickup in candidates
+                    if _can_place_with_skill(pickup, exclude, skill, skill_sets)
+                ]
         if not candidates:
             raise ValueError(f"没有足够的候选对象")
         return random.choice(candidates)
@@ -684,7 +1163,7 @@ put sink on saltshaker, then put ladle on sinkbasin
         self,
         all_objects: List[str],
         num_subtasks: int,
-        skill_sets: Dict[str, List[str]],
+        skill_sets: Dict[str, Any],
         keep_prob: float = 0.5,
         seed: Optional[int] = None,
     ) -> List[Dict]:
@@ -736,13 +1215,15 @@ put sink on saltshaker, then put ladle on sinkbasin
                     }
                 else:
                     # 双对象技能，需要抽取第二个对象
-                    needed_set = choice['needed_set']
+                    needed_set = choice.get('needed_set')
                     try:
                         second_obj = self.sample_second_object(
                             all_objects,
                             needed_set,
                             skill_sets,
                             exclude=current_obj,
+                            skill=choice['skill'],
+                            role=choice['role'],
                         )
                     except ValueError:
                         # 无可选对象，换一个技能重试（简单从 applicable 中另选）

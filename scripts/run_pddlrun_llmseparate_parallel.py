@@ -81,7 +81,10 @@ def load_jobs(
             line = raw_line.strip()
             if not line:
                 continue
-            jobs.append(TaskJob(floor_plan=normalized, task_index=idx, record=json.loads(line)))
+            record = json.loads(line)
+            if record.get("invalid") or record.get("Invalid"):
+                continue
+            jobs.append(TaskJob(floor_plan=normalized, task_index=idx, record=record))
     return jobs
 
 

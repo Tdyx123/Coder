@@ -1,116 +1,175 @@
 (define (domain robot22)
-  (:requirements :strips :typing :negative-preconditions :conditional-effects :universal-preconditions :disjunctive-preconditions)
-  (:types 
+  (:requirements
+    :strips
+    :typing
+    :negative-preconditions
+    :conditional-effects
+    :universal-preconditions
+    :disjunctive-preconditions
+  )
+
+  (:types
     robot
     object
-    knife sink microwave mug coffee_machine toaster bread - object)
+    knife - object
+    microwave - object
+    fridge - object
+    egg - object
+  )
+
   (:predicates
     (at ?robot - robot ?object - object)
-    (inaction ?robot - robot) 
     (holding ?robot - robot ?object - object)
-    (at-location  ?object - object ?location - object)
+    (at-location ?object - object ?location - object)
     (switch-on ?object - object)
     (broken ?object - object)
     (sliced ?object - object)
-    (cleaned ?object - object)
-    (is-openable ?object - object) 
-    (heated ?object - object)
-    (containing-coffee ?mug - mug)
+    (is-openable ?object - object)
+    (hot ?object - object)
+    (cold ?object - object)
     (object-open ?object - object)
+    (cookable-by-stove_burner ?object - object)
+    (cookable-by-microwave ?object - object)
+    (cooked ?object - object)
   )
 
   (:action GoToObject
-    :parameters (?robot - robot ?object - object)
-    :precondition (not (inaction ?robot))
-
-    :effect (and 
-              (forall (?another_object - object)
-                (when (at ?robot ?another_object)
-                  (not (at ?robot ?another_object))
-                )
-              )
-              (at ?robot ?object)
-              (not (inaction ?robot))
+    :parameters (?r - robot ?o - object)
+    :effect (and
+        (forall
+          (?x - object)
+          (when
+            (at ?r ?x)
+            (not
+              (at ?r ?x)
             )
-  )
-
-  (:action OpenObject
-    :parameters (?robot - robot ?object - object)
-    :precondition (and
-                    (not(inaction ?robot))
-                    (at ?robot ?object)
-                    (is-openable ?object)
-                    (not(object-open ?object))
-    )
-      
-    :effect (and
-                (not(inaction ?robot))
-                (object-open ?object)
-    )
-  )
-
-  (:action CloseObject
-    :parameters (?robot - robot ?object - object)
-    :precondition (and
-                    (not(inaction ?robot))
-                    (at ?robot ?object)
-                    (object-open ?object)
-    )
-    :effect (and
-              (not(inaction ?robot))
-              (not(object-open ?object))
-  )
-  )
-
-  (:action BreakObject
-    :parameters (?robot - robot ?object - object)
-    :precondition (and
-                    (not(inaction ?robot))
-                    (at ?robot ?object)
-    )
-    :effect (and
-              (not(inaction ?robot))
-              (broken ?object)
-    )
-  )
-
-  (:action SliceObject
-    :parameters (?robot - robot ?object - object ?location - object ?knife - object)
-    :precondition (and 
-                    (at-location ?object ?location)
-                    (at ?robot ?location)
-                    (holding ?robot ?knife)
-                    (not (inaction ?robot))
-    )
-    :effect (and
-              (not (inaction ?robot))
-              (sliced ?object)
-    )
+          )
+        )
+        (at ?r ?o)
+      )
   )
 
   (:action SwitchOn
-    :parameters (?robot - robot ?object - object)
-    :precondition (and 
-                    (not(inaction ?robot))
-                    (at ?robot ?object)
-                    (not(switch-on ?object))
-    )   
+    :parameters (?r - robot ?o - object)
+    :precondition (and
+        (at ?r ?o)
+        (not
+          (switch-on ?o)
+        )
+      )
     :effect (and
-              (not(inaction ?robot))
-              (switch-on ?object)
-    ) 
+        (switch-on ?o)
+      )
   )
 
-  (:action Switchoff
-    :parameters (?robot - robot ?object - object)
+  (:action SwitchOff
+    :parameters (?r - robot ?o - object)
     :precondition (and
-                    (not(inaction ?robot))
-                    (at ?robot ?object)
-                    (switch-on ?object)
+        (at ?r ?o)
+        (switch-on ?o)
+      )
+    :effect (and
+        (not
+          (switch-on ?o)
+        )
+      )
+  )
+
+  (:action OpenObject
+    :parameters (?r - robot ?o - object)
+    :precondition (and
+        (is-openable ?o)
+        (at ?r ?o)
+        (not
+          (object-open ?o)
+        )
+      )
+    :effect (and
+        (object-open ?o)
+      )
+  )
+
+  (:action CloseObject
+    :parameters (?r - robot ?o - object)
+    :precondition (and
+        (at ?r ?o)
+        (object-open ?o)
+      )
+    :effect (and
+        (not
+          (object-open ?o)
+        )
+      )
+  )
+
+  (:action BreakObject
+    :parameters (?r - robot ?o - object)
+    :precondition (and
+        (at ?r ?o)
+        (not
+          (broken ?o)
+        )
+      )
+    :effect (and
+        (broken ?o)
+      )
+  )
+
+  (:action BreakEgg
+    :parameters (?r - robot ?egg - egg)
+    :precondition (and
+        (at ?r ?egg)
+        (not
+          (broken ?egg)
+        )
+      )
+    :effect (and
+        (broken ?egg)
+        (cookable-by-stove_burner ?egg)
+        (cookable-by-microwave ?egg)
+      )
+  )
+
+  (:action SliceObject
+    :parameters (?r - robot ?o - object ?loc - object ?k - knife)
+    :precondition (and
+        (not
+          (sliced ?o)
+        )
+        (at-location ?o ?loc)
+        (at ?r ?loc)
+        (holding ?r ?k)
+      )
+    :effect (and
+        (sliced ?o)
+      )
+  )
+
+  (:action RunMicrowave
+    :parameters (?r - robot ?m - microwave ?item - object)
+    :precondition (and
+      (at ?r ?m)
+      (at-location ?item ?m)
+      (not (object-open ?m))
     )
     :effect (and
-                (not(inaction ?robot))
-                (not(switch-on ?object))
-    )    
+      (hot ?item)
+      (when (cookable-by-microwave ?item)
+        (cooked ?item)
+      )
+    )
+  )
+
+  (:action ColdObject
+    :parameters (?r - robot ?fridge - fridge ?object - object)
+    :precondition (and
+      (at ?r ?fridge)
+      (at-location ?object ?fridge)
+      (not (object-open ?fridge))
+      (switch-on ?fridge)
+    )
+    :effect (and
+        (cold ?object)
+      )
   )
 )

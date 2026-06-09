@@ -1,66 +1,126 @@
 (define (domain robot26)
-  (:requirements :strips :typing :negative-preconditions :conditional-effects :universal-preconditions :disjunctive-preconditions)
-  (:types 
+  (:requirements
+    :strips
+    :typing
+    :negative-preconditions
+    :conditional-effects
+    :universal-preconditions
+    :disjunctive-preconditions
+  )
+
+  (:types
     robot
     object
-    knife sink microwave mug coffee_machine toaster bread - object)
+    knife - object
+    microwave - object
+    coffee_machine - object
+    mug - object
+  )
+
   (:predicates
     (at ?robot - robot ?object - object)
-    (inaction ?robot - robot) 
     (holding ?robot - robot ?object - object)
-    (at-location  ?object - object ?location - object)
-    (switch-on ?object - object)
-    (broken ?object - object)
+    (at-location ?object - object ?location - object)
     (sliced ?object - object)
-    (cleaned ?object - object)
-    (is-openable ?object - object) 
-    (heated ?object - object)
-    (containing-coffee ?mug - mug)
+    (is-openable ?object - object)
+    (hot ?object - object)
     (object-open ?object - object)
+    (filled-with-water ?object - object)
+    (filled-with-coffee ?object - object)
+    (cookable-by-stove_burner ?object - object)
+    (cookable-by-microwave ?object - object)
+    (cooked ?object - object)
   )
 
   (:action GoToObject
-    :parameters (?robot - robot ?object - object)
-    :precondition (not (inaction ?robot))
-
-    :effect (and 
-              (forall (?another_object - object)
-                (when (at ?robot ?another_object)
-                  (not (at ?robot ?another_object))
-                )
-              )
-              (at ?robot ?object)
-              (not (inaction ?robot))
+    :parameters (?r - robot ?o - object)
+    :effect (and
+        (forall
+          (?x - object)
+          (when
+            (at ?r ?x)
+            (not
+              (at ?r ?x)
             )
+          )
+        )
+        (at ?r ?o)
+      )
+  )
+
+  (:action PickupObject
+    :parameters (?r - robot ?o - object ?loc - object)
+    :precondition (and
+        (at-location ?o ?loc)
+        (or
+          (at ?r ?o)
+          (at ?r ?loc)
+        )
+        (or
+          (not
+            (is-openable ?loc)
+          )
+          (object-open ?loc)
+        )
+      )
+    :effect (and
+        (holding ?r ?o)
+        (forall
+          (?x - object)
+          (when
+            (at-location ?o ?x)
+            (not
+              (at-location ?o ?x)
+            )
+          )
+        )
+      )
   )
 
   (:action SliceObject
-    :parameters (?robot - robot ?object - object ?location - object ?knife - object)
-    :precondition (and 
-                    (at-location ?object ?location)
-                    (at ?robot ?location)
-                    (holding ?robot ?knife)
-                    (not (inaction ?robot))
+    :parameters (?r - robot ?o - object ?loc - object ?k - knife)
+    :precondition (and
+        (not
+          (sliced ?o)
+        )
+        (at-location ?o ?loc)
+        (at ?r ?loc)
+        (holding ?r ?k)
+      )
+    :effect (and
+        (sliced ?o)
+      )
+  )
+
+  (:action RunMicrowave
+    :parameters (?r - robot ?m - microwave ?item - object)
+    :precondition (and
+      (at ?r ?m)
+      (at-location ?item ?m)
+      (not (object-open ?m))
     )
     :effect (and
-              (not (inaction ?robot))
-              (sliced ?object)
+      (hot ?item)
+      (when (cookable-by-microwave ?item)
+        (cooked ?item)
+      )
     )
   )
 
-  (:action PickupObject      
-    :parameters (?robot - robot ?object - object ?location - object)
-    :precondition (and 
-                    (at-location ?object ?location)
-                    (or (at ?robot ?object)
-                      (at ?robot ?location))
-                    (or (not(is-openable ?location))
-                      (object-open ?location))
-                    (not(inaction ?robot)))
+  (:action RunCoffeeMachine
+    :parameters (?r - robot ?cm - coffee_machine ?m - mug)
+    :precondition (and
+        (at ?r ?cm)
+        (at-location ?m ?cm)
+        (not
+          (filled-with-water ?m)
+        )
+        (not
+          (filled-with-coffee ?m)
+        )
+      )
     :effect (and
-              (holding ?robot ?object)
-              (not(at-location ?object ?location))
-              (not(inaction ?robot))
-    )
+        (filled-with-coffee ?m)
+      )
   )
 )

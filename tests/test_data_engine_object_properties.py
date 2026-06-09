@@ -11,6 +11,7 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 import data_engine
+from special_task_skills import SPECIAL_TASK_SKILLS
 
 
 class DataEngineObjectPropertiesTests(unittest.TestCase):
@@ -28,8 +29,18 @@ class DataEngineObjectPropertiesTests(unittest.TestCase):
                 {"scene": "FloorPlan1", "objectType": "Knife", "pickupable": True},
                 {"scene": "FloorPlan1", "objectType": "Sink", "receptacle": True},
                 {"scene": "FloorPlan1", "objectType": "Apple", "pickupable": True},
+                {"scene": "FloorPlan1", "objectType": "Book", "pickupable": True},
                 {"scene": "FloorPlan1", "objectType": "Cabinet", "openable": True, "receptacle": True},
-                {"scene": "FloorPlan1", "objectType": "Plate", "receptacle": True, "dirtyable": True},
+                {"scene": "FloorPlan1", "objectType": "Drawer", "openable": True, "receptacle": True},
+                {"scene": "FloorPlan1", "objectType": "Box", "openable": True, "receptacle": True},
+                {"scene": "FloorPlan1", "objectType": "Bowl", "receptacle": True, "pickupable": True},
+                {"scene": "FloorPlan1", "objectType": "Cup", "receptacle": True, "pickupable": True},
+                {"scene": "FloorPlan1", "objectType": "Pan", "receptacle": True, "pickupable": True},
+                {"scene": "FloorPlan1", "objectType": "Pot", "receptacle": True, "pickupable": True},
+                {"scene": "FloorPlan1", "objectType": "CounterTop", "receptacle": True},
+                {"scene": "FloorPlan1", "objectType": "Floor", "receptacle": True},
+                {"scene": "FloorPlan1", "objectType": "Chair", "receptacle": True},
+                {"scene": "FloorPlan1", "objectType": "Plate", "receptacle": True, "dirtyable": True, "pickupable": True},
                 {"scene": "FloorPlan2", "objectType": "Egg", "breakable": False, "sliceable": False, "pickupable": True},
                 {"scene": "FloorPlan2", "objectType": "Cabinet", "openable": False, "receptacle": True},
             ]
@@ -81,6 +92,12 @@ class DataEngineObjectPropertiesTests(unittest.TestCase):
         self.assertIn("Cabinet", floor_plan_1_sets["openable_containers"])
         self.assertNotIn("Cabinet", floor_plan_1_sets["has_placing_surface_objects"])
         self.assertIn("Cabinet", floor_plan_2_sets["has_placing_surface_objects"])
+        self.assertNotIn("put_on_receptacles", floor_plan_1_sets)
+        self.assertIn("Cabinet", floor_plan_1_sets["put_in_receptacles"])
+        self.assertIn("Bowl", floor_plan_1_sets["put_in_receptacles"])
+        self.assertIn("Cabinet", floor_plan_1_sets["must_open_to_place_receptacles"])
+        self.assertNotIn("Bowl", floor_plan_1_sets["must_open_to_place_receptacles"])
+        self.assertIn("Bowl", floor_plan_1_sets["placement_restrictions"]["Apple"])
 
     def test_get_applicable_skills_uses_explicit_skill_sets(self):
         engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
@@ -92,11 +109,77 @@ class DataEngineObjectPropertiesTests(unittest.TestCase):
         self.assertIn("Break", skill_names)
         self.assertIn("Slice", skill_names)
 
-    def test_openable_receptacles_can_be_putin_targets(self):
+    def test_placement_restrictions_can_be_puton_targets_in_both_roles(self):
         engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
         skill_sets = data_engine._build_object_skill_sets(1, self._skill_fixture_path())
 
-        skills = engine.get_applicable_skills("Cabinet", ["Cabinet", "Apple"], skill_sets)
+        apple_skills = engine.get_applicable_skills("Apple", ["Apple", "CounterTop"], skill_sets)
+        countertop_skills = engine.get_applicable_skills("CounterTop", ["CounterTop", "Apple"], skill_sets)
+
+        self.assertIn(
+            {
+                "skill": "PutOn",
+                "type": "double",
+                "role": "obj1",
+            },
+            apple_skills,
+        )
+        self.assertIn(
+            {
+                "skill": "PutOn",
+                "type": "double",
+                "role": "obj2",
+            },
+            countertop_skills,
+        )
+
+    def test_in_receptacles_can_be_putin_targets_and_puton_when_restrictions_allow(self):
+        engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
+        skill_sets = data_engine._build_object_skill_sets(1, self._skill_fixture_path())
+
+        book_skills = engine.get_applicable_skills("Book", ["Book", "Cabinet"], skill_sets)
+        cabinet_skills = engine.get_applicable_skills("Cabinet", ["Cabinet", "Book"], skill_sets)
+
+        self.assertIn(
+            {
+                "skill": "PutIn",
+                "type": "double",
+                "role": "obj1",
+                "needed_set": "put_in_receptacles",
+            },
+            book_skills,
+        )
+        self.assertIn(
+            {
+                "skill": "PutOn",
+                "type": "double",
+                "role": "obj1",
+            },
+            book_skills,
+        )
+        self.assertIn(
+            {
+                "skill": "PutOn",
+                "type": "double",
+                "role": "obj2",
+            },
+            cabinet_skills,
+        )
+        self.assertIn(
+            {
+                "skill": "PutIn",
+                "type": "double",
+                "role": "obj2",
+                "needed_set": "pickupable_objects",
+            },
+            cabinet_skills,
+        )
+
+    def test_bottom_four_in_receptacles_do_not_require_open_or_closed_final_state(self):
+        engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
+        skill_sets = data_engine._build_object_skill_sets(1, self._skill_fixture_path())
+
+        skills = engine.get_applicable_skills("Bowl", ["Bowl", "Apple"], skill_sets)
 
         self.assertIn(
             {
@@ -107,21 +190,212 @@ class DataEngineObjectPropertiesTests(unittest.TestCase):
             },
             skills,
         )
+        self.assertIn(
+            {
+                "skill": "PutOn",
+                "type": "double",
+                "role": "obj2",
+            },
+            skills,
+        )
+        self.assertEqual(
+            engine.get_subtask_final_state({"skill": "PutIn", "objects": ["Apple", "Bowl"]}),
+            [{"name": "Bowl", "contains": ["Apple"], "states": []}],
+        )
+        self.assertEqual(
+            data_engine._required_robot_skills_for_subtask(
+                {"skill": "PutIn", "objects": ["Apple", "Bowl"]}
+            ),
+            ["GoToObject", "PickupObject", "PutObject"],
+        )
 
-    def test_openable_receptacles_are_not_puton_surfaces(self):
+    def test_must_open_in_receptacles_do_not_require_closed_final_state(self):
+        engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
+
+        self.assertEqual(
+            engine.get_subtask_final_state({"skill": "PutIn", "objects": ["Book", "Cabinet"]}),
+            [{"name": "Cabinet", "contains": ["Book"], "states": []}],
+        )
+        self.assertEqual(
+            data_engine._required_robot_skills_for_subtask(
+                {"skill": "PutIn", "objects": ["Book", "Cabinet"]}
+            ),
+            ["GoToObject", "OpenObject", "CloseObject", "PickupObject", "PutObject"],
+        )
+
+    def test_special_task_skills_always_require_same_named_robot_skill(self):
+        original_robots = data_engine.robots
+        data_engine.robots = []
+        self.addCleanup(lambda: setattr(data_engine, "robots", original_robots))
+
+        for skill in SPECIAL_TASK_SKILLS:
+            with self.subTest(skill=skill):
+                required = data_engine._required_robot_skills_for_subtask(
+                    {"skill": skill, "objects": ["Apple", "Microwave"]}
+                )
+                self.assertIn(skill, required)
+
+    def test_robot_can_complete_special_task_only_with_same_named_skill(self):
+        engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
+        subtask = {"skill": "RunMicrowave", "objects": ["Apple", "Microwave"]}
+        obj_mass_map = {"Apple": 0.1}
+
+        base_only_robot = {
+            "skills": ["GoToObject", "PickupObject"],
+            "mass_capacity": 1,
+        }
+        specialist_robot = {
+            "skills": ["GoToObject", "PickupObject", "RunMicrowave"],
+            "mass_capacity": 1,
+        }
+
+        self.assertFalse(engine._robot_can_complete_subtask(base_only_robot, subtask, obj_mass_map))
+        self.assertTrue(engine._robot_can_complete_subtask(specialist_robot, subtask, obj_mass_map))
+
+    def test_placement_restrictions_filter_invalid_pairs(self):
         engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
         skill_sets = data_engine._build_object_skill_sets(1, self._skill_fixture_path())
 
-        skills = engine.get_applicable_skills("Cabinet", ["Cabinet", "Apple"], skill_sets)
+        apple_skills = engine.get_applicable_skills("Apple", ["Apple", "Cabinet"], skill_sets)
+        cabinet_skills = engine.get_applicable_skills("Cabinet", ["Cabinet", "Apple"], skill_sets)
+        chair_skills = engine.get_applicable_skills("Chair", ["Chair", "Book"], skill_sets)
+        invalid_chair_skills = engine.get_applicable_skills("Chair", ["Chair", "Apple"], skill_sets)
 
+        self.assertNotIn(
+            {
+                "skill": "PutIn",
+                "type": "double",
+                "role": "obj1",
+                "needed_set": "put_in_receptacles",
+            },
+            apple_skills,
+        )
+        self.assertNotIn(
+            {
+                "skill": "PutIn",
+                "type": "double",
+                "role": "obj2",
+                "needed_set": "pickupable_objects",
+            },
+            cabinet_skills,
+        )
+        self.assertIn(
+            {
+                "skill": "PutOn",
+                "type": "double",
+                "role": "obj2",
+            },
+            chair_skills,
+        )
         self.assertNotIn(
             {
                 "skill": "PutOn",
                 "type": "double",
                 "role": "obj2",
-                "needed_set": "pickupable_objects",
             },
-            skills,
+            invalid_chair_skills,
+        )
+
+    def test_sample_second_object_uses_pair_filters(self):
+        engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
+        skill_sets = data_engine._build_object_skill_sets(1, self._skill_fixture_path())
+
+        self.assertEqual(
+            engine.sample_second_object(
+                ["Apple", "Cabinet", "Bowl"],
+                "put_in_receptacles",
+                skill_sets,
+                exclude="Apple",
+                skill="PutIn",
+                role="obj1",
+            ),
+            "Bowl",
+        )
+        self.assertEqual(
+            engine.sample_second_object(
+                ["Book", "Chair"],
+                skill_sets=skill_sets,
+                exclude="Book",
+                skill="PutOn",
+                role="obj1",
+            ),
+            "Chair",
+        )
+
+    def test_task_final_state_open_closed_states_are_mutually_exclusive(self):
+        engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
+
+        self.assertEqual(
+            engine.get_task_final_state(
+                [
+                    {"skill": "Open", "objects": ["Cabinet"]},
+                    {"skill": "Close", "objects": ["Cabinet"]},
+                    {"skill": "Open", "objects": ["Cabinet"]},
+                ]
+            ),
+            [{"name": "Cabinet", "contains": [], "states": ["OPENED"]}],
+        )
+
+    def test_task_final_state_on_off_states_are_mutually_exclusive(self):
+        engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
+
+        self.assertEqual(
+            engine.get_task_final_state(
+                [
+                    {"skill": "SwitchOn", "objects": ["Lamp"]},
+                    {"skill": "SwitchOff", "objects": ["Lamp"]},
+                    {"skill": "SwitchOn", "objects": ["Lamp"]},
+                ]
+            ),
+            [{"name": "Lamp", "contains": [], "states": ["ON"]}],
+        )
+
+    def test_task_final_state_accumulates_nonexclusive_states_and_ignores_duplicates(self):
+        engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
+
+        self.assertEqual(
+            engine.get_task_final_state(
+                [
+                    {"skill": "RunToaster", "objects": ["Bread", "Toaster"]},
+                    {"skill": "CookByStoveBurner", "objects": ["Bread", "StoveBurner"]},
+                    {"skill": "Slice", "objects": ["Bread"]},
+                ]
+            ),
+            [{"name": "Bread", "contains": [], "states": ["HOT", "COOKED", "SLICED"]}],
+        )
+
+    def test_task_final_state_accumulates_contains_and_keeps_empty_states(self):
+        engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
+
+        self.assertEqual(
+            engine.get_task_final_state(
+                [
+                    {"skill": "PutIn", "objects": ["Apple", "Bowl"]},
+                    {"skill": "PutIn", "objects": ["Apple", "Bowl"]},
+                    {"skill": "PutIn", "objects": ["Book", "Bowl"]},
+                ]
+            ),
+            [{"name": "Bowl", "contains": ["Apple", "Book"], "states": []}],
+        )
+
+    def test_check_subtasks_only_treats_must_open_putin_as_container_order_conflict(self):
+        engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
+
+        self.assertTrue(
+            engine.check_subtasks(
+                [
+                    {"skill": "Open", "objects": ["Bowl"]},
+                    {"skill": "PutIn", "objects": ["Apple", "Bowl"]},
+                ]
+            )
+        )
+        self.assertFalse(
+            engine.check_subtasks(
+                [
+                    {"skill": "Open", "objects": ["Cabinet"]},
+                    {"skill": "PutIn", "objects": ["Book", "Cabinet"]},
+                ]
+            )
         )
 
     def test_unknown_objects_have_no_skills(self):

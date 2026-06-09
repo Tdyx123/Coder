@@ -618,6 +618,37 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertEqual(requirements[0]["subtask_id"], 1)
             self.assertEqual(requirements[0]["required_skills"], ["GoToObject"])
 
+    def test_v2_extracts_special_task_skills_from_normalized_action_names(self):
+        manager = pddlrun_llmseparate_v2.TaskManager.__new__(pddlrun_llmseparate_v2.TaskManager)
+        plan_text = "\n".join(
+            [
+                "(run_microwave robot1 microwave apple)",
+                "(run-coffee-machine robot1 coffee_machine mug)",
+                "(runtoaster robot1 toaster bread)",
+                "(cook_by_stove_burner robot1 stove_burner egg)",
+                "(heat-by-stove-burner robot1 stove_burner kettle)",
+                "(fire_by_stove_burner robot1 stove_burner candle)",
+                "(fill_water robot1 sink mug)",
+                "(cold_object robot1 fridge apple)",
+            ]
+        )
+
+        actions = manager._parse_plan_actions(plan_text)
+
+        self.assertEqual(
+            manager._extract_required_skills(actions),
+            [
+                "RunMicrowave",
+                "RunCoffeeMachine",
+                "RunToaster",
+                "CookByStoveBurner",
+                "HeatByStoveBurner",
+                "FireByStoveBurner",
+                "FillWater",
+                "ColdObject",
+            ],
+        )
+
     def test_v2_pairwise_precedence_extracts_predecessors(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)

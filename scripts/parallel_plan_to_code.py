@@ -806,34 +806,46 @@ objs = list([obj for obj in c.last_event.metadata["objects"]])
 
 gcr_tasks = 0.0
 gcr_complete = 0.0
+
+def state_matches(state, obj):
+    if state == "SLICED":
+        return obj.get("isSliced")
+    if state == "BROKEN":
+        return obj.get("isBroken")
+    if state == "OFF":
+        return not obj.get("isToggled")
+    if state == "ON":
+        return obj.get("isToggled")
+    if state == "HOT":
+        return obj.get("temperature") == "Hot"
+    if state == "COOKED":
+        return obj.get("isCooked")
+    if state == "OPENED":
+        return obj.get("isOpen")
+    if state == "CLOSED":
+        return not obj.get("isOpen")
+    if state == "PICKED":
+        return obj.get("isPickedUp")
+    return False
+
 for obj_gt in ground_truth:
     obj_name = obj_gt.get("name")
-    state = obj_gt.get("state")
+    states = obj_gt.get("states") or []
     contains = obj_gt.get("contains") or []
-    gcr_tasks += 1
-    for obj in objs:
-        if state == "SLICED" and obj_name in obj["name"] and obj.get("isSliced"):
-            gcr_complete += 1
-        if state == "BROKEN" and obj_name in obj["name"] and obj.get("isBroken"):
-            gcr_complete += 1
-        if state == "OFF" and obj_name in obj["name"] and not obj.get("isToggled"):
-            gcr_complete += 1
-        if state == "ON" and obj_name in obj["name"] and obj.get("isToggled"):
-            gcr_complete += 1
-        if state == "HOT" and obj_name in obj["name"] and obj.get("temperature") == "Hot":
-            gcr_complete += 1
-        if state == "COOKED" and obj_name in obj["name"] and obj.get("isCooked"):
-            gcr_complete += 1
-        if state == "OPENED" and obj_name in obj["name"] and obj.get("isOpen"):
-            gcr_complete += 1
-        if state == "CLOSED" and obj_name in obj["name"] and not obj.get("isOpen"):
-            gcr_complete += 1
-        if state == "PICKED" and obj_name in obj["name"] and obj.get("isPickedUp"):
-            gcr_complete += 1
-        if contains and obj_name in obj["name"] and obj.get("receptacleObjectIds"):
-            for rec in contains:
+    gcr_tasks += len(states) + len(contains)
+
+    for state in states:
+        for obj in objs:
+            if obj_name in obj["name"] and state_matches(state, obj):
+                gcr_complete += 1
+                break
+
+    for rec in contains:
+        for obj in objs:
+            if obj_name in obj["name"] and obj.get("receptacleObjectIds"):
                 if any(rec in receptacle for receptacle in obj["receptacleObjectIds"]):
                     gcr_complete += 1
+                    break
 
 gcr = 1 if gcr_tasks == 0 else gcr_complete / gcr_tasks
 tc = 1 if gcr == 1.0 else 0

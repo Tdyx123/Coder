@@ -145,6 +145,25 @@ Subtask 2: Robot 1;Subtask 3: Robot 1;
                     "task_run_dir": str(task_run_dir),
                 },
             )
+            dataset_dir = root / "data" / "sample"
+            dataset_dir.mkdir(parents=True)
+            (dataset_dir / "FloorPlan6.jsonl").write_text(
+                json.dumps(
+                    {
+                        "task": "break the window, then open the cabinet and the drawer.",
+                        "robot list": [1, 2],
+                        "object_states": [
+                            {"name": "Window", "contains": [], "states": ["BROKEN"]},
+                            {"name": "Cabinet", "contains": ["Book"], "states": ["OPENED"]},
+                            {"name": "Drawer", "contains": [], "states": ["OPENED"]},
+                        ],
+                        "trans": 3,
+                        "min_trans": 6,
+                    },
+                    ensure_ascii=False,
+                ) + "\n",
+                encoding="utf-8",
+            )
 
             parallel_run = root / "parallel_runs" / "pddlrun_fixture"
             write_json(
@@ -188,6 +207,11 @@ Subtask 2: Robot 1;Subtask 3: Robot 1;
             self.assertIn("from ai2thor.platform import CloudRendering", executable_text)
             self.assertIn("HEADLESS = True", executable_text)
             self.assertIn("platform=CloudRendering", executable_text)
+            self.assertIn("'states': ['BROKEN']", executable_text)
+            self.assertIn("states = obj_gt.get(\"states\") or []", executable_text)
+            self.assertIn("gcr_tasks += len(states) + len(contains)", executable_text)
+            self.assertIn("for state in states:", executable_text)
+            self.assertNotIn("obj_gt.get(\"state\")", executable_text)
             py_compile.compile(str(code_plan), doraise=True)
             py_compile.compile(str(executable_plan), doraise=True)
 
