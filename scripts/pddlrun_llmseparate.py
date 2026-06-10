@@ -432,6 +432,37 @@ class TaskManager:
         token_pattern = rf"(?<![A-Za-z0-9_]){re.escape(real_robot_name)}(?![A-Za-z0-9_])"
         return re.sub(token_pattern, normalized_robot_name, domain_content)
 
+    def _force_problem_domain(self, problem_content: str, domain_name: str) -> str:
+        """Ensure a generated problem points to the desired PDDL domain."""
+        domain_name = domain_name.replace(" ", "")
+        if not domain_name:
+            return problem_content
+
+        domain_pattern = re.compile(r'\(\s*:domain\s+[^)\s]+\s*\)', re.IGNORECASE)
+        replacement = f"(:domain {domain_name})"
+        if domain_pattern.search(problem_content):
+            return domain_pattern.sub(replacement, problem_content, count=1)
+
+        define_match = re.search(r'\(define\s+\(problem\s+[^)]+\)', problem_content, re.IGNORECASE)
+        if not define_match:
+            return problem_content
+
+        insert_at = define_match.end()
+        return problem_content[:insert_at] + f"\n  {replacement}" + problem_content[insert_at:]
+
+    def _force_problem_robot_name(
+        self,
+        problem_content: str,
+        local_robot_name: str,
+        real_robot_name: str,
+    ) -> str:
+        """Replace the task-local robot object token with the real robot token."""
+        return self._replace_domain_robot_name(
+            problem_content,
+            local_robot_name,
+            real_robot_name,
+        )
+
     def _persist_manifest(self) -> None:
         """Persist the current task manifest to disk."""
         if self.current_task_run_dir and self.current_task_manifest:
@@ -1132,11 +1163,6 @@ class TaskManager:
             if not domain_content:
                 print(f"Domain file not found or empty: {domain_path}")
                 continue
-            domain_content = self._replace_domain_robot_name(
-                domain_content,
-                real_robot_name,
-                normalized_robot_name,
-            )
 
             problem_fileexamplepath = self.config.prompt_file(f"{prompt_allocation_set}_problem.txt")
             problem_examplecontent = file_processor.read_file(str(problem_fileexamplepath)) or ""
@@ -1149,6 +1175,10 @@ class TaskManager:
                 "\n based on the objects available for potential usage below." + objects_ai +
                 "\nTask description: generate the problem file. Based on the objects above, "
                 "the domain file preconditions, actions, and subtask examination. "
+                f"IMPORTANT {normalized_robot_name} is only the task-local allocation name. "
+                f"The real PDDL domain and robot object for this subtask is {real_robot_name}. "
+                f"IMPORTANT the generated problem must use (:domain {real_robot_name}) and "
+                f"must use {real_robot_name} as the robot object token. "
                 "IMPORTANT the robot initiates strictly as not inaction and robot "
                 "(which includes location)\n"
                 "#IMPORTANT, strictly follow the structure, stop generating after the Problem file generation is done."
@@ -1170,6 +1200,12 @@ class TaskManager:
             )
 
             extracted_problem = self._extract_pddl_problem_block(text)
+            extracted_problem = self._force_problem_robot_name(
+                extracted_problem,
+                normalized_robot_name,
+                real_robot_name,
+            )
+            extracted_problem = self._force_problem_domain(extracted_problem, real_robot_name)
             self._write_text_artifact(output_path0, text)
             self._write_text_artifact(output_path1, extracted_problem)
             problem_pddl.append(extracted_problem)
@@ -1190,32 +1226,19 @@ class TaskManager:
         if start_idx == -1:
             return text
 
-        in_problem = False
+        depth = 0
+        seen_open = False
+        for idx in range(start_idx, len(text)):
+            char = text[idx]
+            if char == '(':
+                depth += 1
+                seen_open = True
+            elif char == ')':
+                depth -= 1
+                if seen_open and depth == 0:
+                    return text[start_idx:idx + 1].strip()
 
-        lines = text[start_idx:].split('\n')
-
-        problem_lines = []
-        for line in lines:
-            if not in_problem:
-                if '(define (problem' in line:
-                    in_problem = True
-                    problem_lines.append(line)
-                else:
-                    continue
-            else:
-                striped = line.strip()
-                if len(striped) == 0:
-                    break
-
-                if '#' in line or '```' in line:
-                    break
-
-                problem_lines.append(line)
-
-        if not problem_lines or problem_lines[-1].strip() != ')':
-            return text
-
-        return '\n'.join(problem_lines)
+        return text
 
     def _validate_and_plan(self):
         """Validate and plan all problem files."""

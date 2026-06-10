@@ -1272,7 +1272,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertEqual(mismatched["jsonl_count"], 2)
             self.assertEqual(mismatched["flat_index"], 1)
 
-    def test_problemextracting_reads_real_domain_and_rewrites_to_local_robot(self):
+    def test_problemextracting_reads_real_domain_and_keeps_real_robot(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             resources_dir = root / "resources"
@@ -1298,7 +1298,13 @@ class PDDLRunConfigTests(unittest.TestCase):
             class FakeLLM:
                 def query_model(self, messages, model, max_tokens=None, frequency_penalty=0):
                     captured["prompt"] = messages[-1]["content"]
-                    return {}, "(define (problem generated))"
+                    return {}, (
+                        "(define (problem generated)\n"
+                        "  (:domain robot1)\n"
+                        "  (:objects robot1 robot150 robot1_extra - robot)\n"
+                        "  (:init (ready robot1) (near robot150) (ready robot1_extra))\n"
+                        ")"
+                    )
 
             subtask = (
                 "#SubTask 1: Test\n"
@@ -1316,11 +1322,17 @@ class PDDLRunConfigTests(unittest.TestCase):
                 prompt_allocation_set="pddl_train_task_allocationsep",
             )
 
-            self.assertEqual(result, ["(define (problem generated))"])
-            self.assertIn("(define (domain robot1)", captured["prompt"])
-            self.assertIn("(ready robot1)", captured["prompt"])
+            self.assertIn("(:domain robot15)", result[0])
+            self.assertIn("robot15 robot150 robot1_extra - robot", result[0])
+            self.assertIn("(ready robot15)", result[0])
+            self.assertIn("(near robot150)", result[0])
+            self.assertIn("(ready robot1_extra)", result[0])
+            self.assertNotIn("(:domain robot1)", result[0])
+
+            self.assertIn("(define (domain robot15)", captured["prompt"])
+            self.assertIn("(ready robot15)", captured["prompt"])
             self.assertIn("(near robot150)", captured["prompt"])
-            self.assertNotIn("(domain robot15)", captured["prompt"])
+            self.assertNotIn("(define (domain robot1)", captured["prompt"])
 
     def test_domain_robot_replacement_does_not_replace_partial_tokens(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
