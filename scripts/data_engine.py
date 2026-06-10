@@ -3,8 +3,9 @@ import random
 import re
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 _SCRIPT_DIR = Path(__file__).resolve().parent
 _REPO_ROOT = _SCRIPT_DIR.parent
@@ -135,6 +136,360 @@ TOASTER_OBJECTS = ("Toaster",)
 STOVE_BURNER_OBJECTS = ("StoveBurner",)
 SINK_OBJECTS = ("Sink",)
 FRIDGE_OBJECTS = ("Fridge",)
+
+
+TextBuilder = Callable[[List[str]], str]
+FinalStateBuilder = Callable[[List[str]], List[Dict[str, Any]]]
+RobotSkillResolver = Callable[[Dict[str, Any]], List[str]]
+GenerationGate = Callable[[List[str], Dict[str, Any]], bool]
+PairValidator = Callable[[str, str, List[str], Dict[str, Any]], bool]
+
+
+@dataclass(frozen=True)
+class SkillConfig:
+    name: str
+    arity: int
+    primary_set: Optional[str]
+    target_set: Optional[str]
+    roles: Tuple[str, ...]
+    relation: str
+    needed_set_by_role: Dict[str, str]
+    robot_skills: Tuple[str, ...]
+    required_pickup: Tuple[Union[int, str], ...]
+    text_builder: TextBuilder
+    final_state_builder: FinalStateBuilder
+    generation_probability: float = 1.0
+    robot_skills_resolver: Optional[RobotSkillResolver] = None
+    generation_gate: Optional[GenerationGate] = None
+    pair_validator: Optional[PairValidator] = None
+
+
+def _putin_requires_open_close(receptacle: str) -> bool:
+    return receptacle in MUST_OPEN_TO_PLACE_OBJECTS_IN
+
+
+def _is_cookable_object(obj: str) -> bool:
+    return obj in COOKABLE_OBJECTS
+
+
+def _lower_objects(objs: List[str]) -> List[str]:
+    return [obj.lower() for obj in objs]
+
+
+def _single_state_builder(state: str) -> FinalStateBuilder:
+    return lambda objs: [{"name": objs[0], "contains": [], "states": [state]}]
+
+
+def _contains_state_builder(objs: List[str]) -> List[Dict[str, Any]]:
+    return [{"name": objs[1], "contains": [objs[0]], "states": []}]
+
+
+def _run_microwave_state_builder(objs: List[str]) -> List[Dict[str, Any]]:
+    states = ["HOT"]
+    if _is_cookable_object(objs[0]):
+        states.append("COOKED")
+    return [{"name": objs[0], "contains": [], "states": states}]
+
+
+def _putin_robot_skills(subtask: Dict[str, Any]) -> List[str]:
+    objects = subtask.get("objects", [])
+    if len(objects) > 1 and not _putin_requires_open_close(objects[1]):
+        return ["GoToObject", "PickupObject", "PutObject"]
+    return ["GoToObject", "OpenObject", "CloseObject", "PickupObject", "PutObject"]
+
+
+def _requires_object_in_scene(object_name: str) -> GenerationGate:
+    return lambda all_objects, skill_sets: (
+        object_name in set(all_objects)
+        and object_name in skill_sets.get("pickupable_objects", [])
+    )
+
+
+def _cook_by_stove_burner_has_valid_container(
+    food_obj: str,
+    all_objects: List[str],
+    skill_sets: Dict[str, Any],
+) -> bool:
+    scene_objects = set(all_objects)
+    return any(
+        container in scene_objects
+        and _can_place_with_skill(food_obj, container, "PutIn", skill_sets)
+        for container in skill_sets.get("stove_burner_placeable_objects", [])
+    )
+
+
+def _cook_by_stove_burner_generation_gate(
+    all_objects: List[str],
+    skill_sets: Dict[str, Any],
+) -> bool:
+    scene_objects = set(all_objects)
+    return any(
+        food_obj in scene_objects
+        and _cook_by_stove_burner_has_valid_container(food_obj, all_objects, skill_sets)
+        for food_obj in skill_sets.get("cookable_objects", [])
+    )
+
+
+def _cook_by_stove_burner_pair_validator(
+    food_obj: str,
+    stove_burner: str,
+    all_objects: List[str],
+    skill_sets: Dict[str, Any],
+) -> bool:
+    scene_objects = set(all_objects)
+    return (
+        stove_burner in scene_objects
+        and _cook_by_stove_burner_has_valid_container(food_obj, all_objects, skill_sets)
+    )
+
+
+def _special_robot_skills(skill: str, core_skills: Tuple[str, ...]) -> Tuple[str, ...]:
+    if skill in SPECIAL_TASK_SKILL_SET:
+        return core_skills + (skill,)
+    return core_skills
+
+
+SKILL_CONFIGS: Dict[str, SkillConfig] = {
+    "Open": SkillConfig(
+        name="Open",
+        arity=1,
+        primary_set="openable_objects",
+        target_set=None,
+        roles=("obj1",),
+        relation="single",
+        needed_set_by_role={},
+        robot_skills=("GoToObject", "OpenObject"),
+        required_pickup=(),
+        text_builder=lambda objs: f"open the {_lower_objects(objs)[0]}",
+        final_state_builder=_single_state_builder("OPENED"),
+    ),
+    "Close": SkillConfig(
+        name="Close",
+        arity=1,
+        primary_set="openable_objects",
+        target_set=None,
+        roles=("obj1",),
+        relation="single",
+        needed_set_by_role={},
+        robot_skills=("GoToObject", "CloseObject"),
+        required_pickup=(),
+        text_builder=lambda objs: f"close the {_lower_objects(objs)[0]}",
+        final_state_builder=_single_state_builder("CLOSED"),
+        generation_probability=0.0,
+    ),
+    "SwitchOn": SkillConfig(
+        name="SwitchOn",
+        arity=1,
+        primary_set="switchable_objects",
+        target_set=None,
+        roles=("obj1",),
+        relation="single",
+        needed_set_by_role={},
+        robot_skills=("GoToObject", "SwitchOn"),
+        required_pickup=(),
+        text_builder=lambda objs: f"switch on the {_lower_objects(objs)[0]}",
+        final_state_builder=_single_state_builder("ON"),
+    ),
+    "SwitchOff": SkillConfig(
+        name="SwitchOff",
+        arity=1,
+        primary_set="switchable_objects",
+        target_set=None,
+        roles=("obj1",),
+        relation="single",
+        needed_set_by_role={},
+        robot_skills=("GoToObject", "SwitchOff"),
+        required_pickup=(),
+        text_builder=lambda objs: f"switch off the {_lower_objects(objs)[0]}",
+        final_state_builder=_single_state_builder("OFF"),
+        generation_probability=0.0,
+    ),
+    "Wash": SkillConfig(
+        name="Wash",
+        arity=1,
+        primary_set="washable_objects",
+        target_set=None,
+        roles=("obj1",),
+        relation="single",
+        needed_set_by_role={},
+        robot_skills=("GoToObject", "PickupObject", "CleanObject"),
+        required_pickup=(0,),
+        text_builder=lambda objs: f"wash the {_lower_objects(objs)[0]}",
+        final_state_builder=_single_state_builder("CLEANED"),
+        generation_gate=lambda all_objects, _: "Sink" in all_objects,
+    ),
+    "Break": SkillConfig(
+        name="Break",
+        arity=1,
+        primary_set="breakable_objects",
+        target_set=None,
+        roles=("obj1",),
+        relation="single",
+        needed_set_by_role={},
+        robot_skills=("GoToObject", "BreakObject"),
+        required_pickup=(),
+        text_builder=lambda objs: f"break the {_lower_objects(objs)[0]}",
+        final_state_builder=_single_state_builder("BROKEN"),
+    ),
+    "Slice": SkillConfig(
+        name="Slice",
+        arity=1,
+        primary_set="sliceable_objects",
+        target_set=None,
+        roles=("obj1",),
+        relation="single",
+        needed_set_by_role={},
+        robot_skills=("GoToObject", "PickupObject", "SliceObject"),
+        required_pickup=("Knife",),
+        text_builder=lambda objs: f"slice the {_lower_objects(objs)[0]}",
+        final_state_builder=_single_state_builder("SLICED"),
+        generation_gate=_requires_object_in_scene("Knife"),
+    ),
+    "PutOn": SkillConfig(
+        name="PutOn",
+        arity=2,
+        primary_set="pickupable_objects",
+        target_set=None,
+        roles=("obj1", "obj2"),
+        relation="placement",
+        needed_set_by_role={},
+        robot_skills=("GoToObject", "PickupObject", "PutObject"),
+        required_pickup=(0,),
+        text_builder=lambda objs: f"put {_lower_objects(objs)[0]} on {_lower_objects(objs)[1]}",
+        final_state_builder=_contains_state_builder,
+        generation_probability=0.2,
+    ),
+    "PutIn": SkillConfig(
+        name="PutIn",
+        arity=2,
+        primary_set="pickupable_objects",
+        target_set="put_in_receptacles",
+        roles=("obj1", "obj2"),
+        relation="placement",
+        needed_set_by_role={"obj1": "put_in_receptacles", "obj2": "pickupable_objects"},
+        robot_skills=("GoToObject", "OpenObject", "CloseObject", "PickupObject", "PutObject"),
+        required_pickup=(0,),
+        text_builder=lambda objs: f"put {_lower_objects(objs)[0]} in {_lower_objects(objs)[1]}",
+        final_state_builder=_contains_state_builder,
+        generation_probability=0.2,
+        robot_skills_resolver=_putin_robot_skills,
+    ),
+    "RunMicrowave": SkillConfig(
+        name="RunMicrowave",
+        arity=2,
+        primary_set="microwave_placeable_objects",
+        target_set="microwave_objects",
+        roles=("obj1", "obj2"),
+        relation="action_pair",
+        needed_set_by_role={"obj1": "microwave_objects", "obj2": "microwave_placeable_objects"},
+        robot_skills=_special_robot_skills(
+            "RunMicrowave",
+            ("GoToObject", "PickupObject", "PutObject", "OpenObject", "CloseObject"),
+        ),
+        required_pickup=(0,),
+        text_builder=lambda objs: f"microwave the {_lower_objects(objs)[0]} in the {_lower_objects(objs)[1]}",
+        final_state_builder=_run_microwave_state_builder,
+    ),
+    "RunCoffeeMachine": SkillConfig(
+        name="RunCoffeeMachine",
+        arity=2,
+        primary_set="mug_objects",
+        target_set="coffee_machine_objects",
+        roles=("obj1", "obj2"),
+        relation="action_pair",
+        needed_set_by_role={"obj1": "coffee_machine_objects", "obj2": "mug_objects"},
+        robot_skills=_special_robot_skills(
+            "RunCoffeeMachine",
+            ("GoToObject", "PickupObject", "PutObject"),
+        ),
+        required_pickup=(0,),
+        text_builder=lambda objs: f"make coffee in the {_lower_objects(objs)[0]} using the {_lower_objects(objs)[1]}",
+        final_state_builder=_single_state_builder("FILLEDWITHCOFFEE"),
+    ),
+    "RunToaster": SkillConfig(
+        name="RunToaster",
+        arity=2,
+        primary_set="bread_objects",
+        target_set="toaster_objects",
+        roles=("obj1", "obj2"),
+        relation="action_pair",
+        needed_set_by_role={"obj1": "toaster_objects", "obj2": "bread_objects"},
+        robot_skills=_special_robot_skills(
+            "RunToaster",
+            ("GoToObject", "PickupObject", "SliceObject"),
+        ),
+        required_pickup=(0,),
+        text_builder=lambda objs: f"toast the {_lower_objects(objs)[0]} in the {_lower_objects(objs)[1]}",
+        final_state_builder=lambda objs: [{"name": objs[0], "contains": [], "states": ["HOT", "COOKED"]}],
+        generation_gate=_requires_object_in_scene("Knife"),
+    ),
+    "CookByStoveBurner": SkillConfig(
+        name="CookByStoveBurner",
+        arity=2,
+        primary_set="cookable_objects",
+        target_set="stove_burner_objects",
+        roles=("obj1", "obj2"),
+        relation="action_pair",
+        needed_set_by_role={"obj1": "stove_burner_objects", "obj2": "cookable_objects"},
+        robot_skills=_special_robot_skills(
+            "CookByStoveBurner",
+            ("GoToObject", "PickupObject", "PutObject"),
+        ),
+        required_pickup=(0,),
+        text_builder=lambda objs: f"cook the {_lower_objects(objs)[0]} on the {_lower_objects(objs)[1]}",
+        final_state_builder=_single_state_builder("COOKED"),
+        generation_gate=_cook_by_stove_burner_generation_gate,
+        pair_validator=_cook_by_stove_burner_pair_validator,
+    ),
+    "HeatByStoveBurner": SkillConfig(
+        name="HeatByStoveBurner",
+        arity=2,
+        primary_set="stove_burner_placeable_objects",
+        target_set="stove_burner_objects",
+        roles=("obj1", "obj2"),
+        relation="action_pair",
+        needed_set_by_role={"obj1": "stove_burner_objects", "obj2": "stove_burner_placeable_objects"},
+        robot_skills=_special_robot_skills(
+            "HeatByStoveBurner",
+            ("GoToObject", "PickupObject"),
+        ),
+        required_pickup=(0,),
+        text_builder=lambda objs: f"heat the {_lower_objects(objs)[0]} on the {_lower_objects(objs)[1]}",
+        final_state_builder=_single_state_builder("HOT"),
+    ),
+    "FillWater": SkillConfig(
+        name="FillWater",
+        arity=2,
+        primary_set="fillable_objects",
+        target_set="sink_objects",
+        roles=("obj1", "obj2"),
+        relation="action_pair",
+        needed_set_by_role={"obj1": "sink_objects", "obj2": "fillable_objects"},
+        robot_skills=_special_robot_skills(
+            "FillWater",
+            ("GoToObject", "PickupObject"),
+        ),
+        required_pickup=(0,),
+        text_builder=lambda objs: f"fill the {_lower_objects(objs)[0]} with water",
+        final_state_builder=_single_state_builder("FILLEDWITHWATER"),
+    ),
+    "ColdObject": SkillConfig(
+        name="ColdObject",
+        arity=2,
+        primary_set="fridge_coldable_objects",
+        target_set="fridge_objects",
+        roles=("obj1", "obj2"),
+        relation="action_pair",
+        needed_set_by_role={"obj1": "fridge_objects", "obj2": "fridge_coldable_objects"},
+        robot_skills=_special_robot_skills(
+            "ColdObject",
+            ("GoToObject", "PickupObject", "PutObject", "OpenObject", "CloseObject", "SwitchOn"),
+        ),
+        required_pickup=(0,),
+        text_builder=lambda objs: f"cool the {_lower_objects(objs)[0]} in the {_lower_objects(objs)[1]}",
+        final_state_builder=_single_state_builder("COLD"),
+    ),
+}
 
 
 class ObjectPropertiesError(ValueError):
@@ -398,67 +753,100 @@ def _build_object_skill_sets(
 food = ['Apple', 'Bread', 'Egg', 'Lettuce', 'Potato', 'Tomato']
 food_containers = ['Pot', 'Bowl', 'Plate', 'Pan']
 
-SKILL_TO_ROBOT_SKILLS = {
-    'Open': ['GoToObject', 'OpenObject'],
-    'SwitchOn': ['GoToObject', 'SwitchOn'],
-    'Wash': ['GoToObject', 'PickupObject', 'CleanObject'],
-    'Break': ['GoToObject', 'BreakObject'],
-    'Slice': ['GoToObject', 'PickupObject', 'SliceObject'],
-    'PutOn': ['GoToObject', 'PickupObject', 'PutObject'],
-    'PutIn': ['GoToObject', 'OpenObject', 'CloseObject', 'PickupObject', 'PutObject'],
-}
-
 MASS_OBJECTS = ['Knife']
 
+SKILL_TO_ROBOT_SKILLS = {
+    skill: list(config.robot_skills)
+    for skill, config in SKILL_CONFIGS.items()
+    if (
+        skill not in SPECIAL_TASK_SKILL_SET
+        and skill not in {"Close", "SwitchOff"}
+        and config.generation_probability > 0
+    )
+}
+
 ACTION_SKILL_CORE_REQUIREMENTS = {
-    'RunMicrowave': ['GoToObject', 'PickupObject', 'PutObject', 'OpenObject', 'CloseObject'],
-    'RunCoffeeMachine': ['GoToObject', 'PickupObject', 'PutObject'],
-    'RunToaster': ['GoToObject', 'PickupObject', 'SliceObject'],
-    'CookByStoveBurner': ['GoToObject', 'PickupObject', 'PutObject'],
-    'HeatByStoveBurner': ['GoToObject', 'PickupObject'],
-    'FillWater': ['GoToObject', 'PickupObject'],
-    'ColdObject': ['GoToObject', 'PickupObject', 'PutObject', 'OpenObject', 'CloseObject', 'SwitchOn'],
+    skill: [robot_skill for robot_skill in config.robot_skills if robot_skill != skill]
+    for skill, config in SKILL_CONFIGS.items()
+    if skill in SPECIAL_TASK_SKILL_SET
 }
 
 ACTION_PAIR_SKILL_SETS = {
-    'RunMicrowave': ('microwave_placeable_objects', 'microwave_objects'),
-    'RunCoffeeMachine': ('mug_objects', 'coffee_machine_objects'),
-    'RunToaster': ('bread_objects', 'toaster_objects'),
-    'CookByStoveBurner': ('cookable_objects', 'stove_burner_objects'),
-    'HeatByStoveBurner': ('stove_burner_placeable_objects', 'stove_burner_objects'),
-    'FillWater': ('fillable_objects', 'sink_objects'),
-    'ColdObject': ('fridge_coldable_objects', 'fridge_objects'),
+    skill: (config.primary_set, config.target_set)
+    for skill, config in SKILL_CONFIGS.items()
+    if config.relation == "action_pair"
+    and config.primary_set is not None
+    and config.target_set is not None
 }
 
 SKILLS_REQUIRING_FIRST_OBJECT_PICKUP = {
-    'Wash',
-    'PutOn',
-    'PutIn',
-    'RunMicrowave',
-    'RunCoffeeMachine',
-    'RunToaster',
-    'CookByStoveBurner',
-    'HeatByStoveBurner',
-    'FillWater',
-    'ColdObject',
+    skill
+    for skill, config in SKILL_CONFIGS.items()
+    if 0 in config.required_pickup
 }
 
 
-def _putin_requires_open_close(receptacle: str) -> bool:
-    return receptacle in MUST_OPEN_TO_PLACE_OBJECTS_IN
+def _skill_can_generate(
+    config: SkillConfig,
+    all_objects: List[str],
+    skill_sets: Dict[str, Any],
+) -> bool:
+    if config.generation_probability <= 0:
+        return False
+    if config.generation_gate is None:
+        return True
+    return config.generation_gate(all_objects, skill_sets)
+
+
+def _can_match_skill_pair(
+    obj: str,
+    target: str,
+    config: SkillConfig,
+    skill_sets: Dict[str, Any],
+    all_objects: Optional[List[str]] = None,
+) -> bool:
+    if obj == target:
+        return False
+
+    if config.relation == "placement":
+        if obj not in skill_sets["pickupable_objects"]:
+            return False
+        if config.name == "PutIn" and target not in skill_sets["put_in_receptacles"]:
+            return False
+        return target in skill_sets["placement_restrictions"].get(obj, [])
+
+    if config.relation == "action_pair":
+        if config.primary_set is None or config.target_set is None:
+            return False
+        if not (
+            obj in skill_sets[config.primary_set]
+            and target in skill_sets[config.target_set]
+        ):
+            return False
+        if config.pair_validator is not None and all_objects is not None:
+            return config.pair_validator(obj, target, all_objects, skill_sets)
+        return True
+
+    return False
 
 
 def _required_pickupable_objects_for_subtask(subtask: Dict[str, Any]) -> List[str]:
     skill = subtask["skill"]
     objects = subtask.get("objects", [])
+    config = SKILL_CONFIGS.get(skill)
 
-    if skill == "Slice":
-        return ["Knife"]
+    if config is None:
+        return []
 
-    if skill in SKILLS_REQUIRING_FIRST_OBJECT_PICKUP and objects:
-        return [objects[0]]
+    required_objects = []
+    for requirement in config.required_pickup:
+        if isinstance(requirement, int):
+            if requirement < len(objects):
+                required_objects.append(objects[requirement])
+        else:
+            required_objects.append(requirement)
 
-    return []
+    return required_objects
 
 
 def _subtask_uses_pickupable_objects(subtask: Dict[str, Any], skill_sets: Dict[str, Any]) -> bool:
@@ -471,14 +859,12 @@ def _subtask_uses_pickupable_objects(subtask: Dict[str, Any], skill_sets: Dict[s
 
 def _required_robot_skills_for_subtask(subtask: Dict[str, Any]) -> List[str]:
     skill = subtask["skill"]
-    if skill == "PutIn" and not _putin_requires_open_close(subtask["objects"][1]):
-        return ['GoToObject', 'PickupObject', 'PutObject']
-    if skill in ACTION_SKILL_CORE_REQUIREMENTS:
-        required_skills = list(ACTION_SKILL_CORE_REQUIREMENTS[skill])
-        if skill in SPECIAL_TASK_SKILL_SET:
-            required_skills.append(skill)
-        return required_skills
-    return SKILL_TO_ROBOT_SKILLS.get(skill, [])
+    config = SKILL_CONFIGS.get(skill)
+    if config is None:
+        return []
+    if config.robot_skills_resolver is not None:
+        return config.robot_skills_resolver(subtask)
+    return list(config.robot_skills)
 
 
 def _can_place_with_skill(
@@ -487,19 +873,10 @@ def _can_place_with_skill(
     skill: str,
     skill_sets: Dict[str, Any],
 ) -> bool:
-    if obj == receptacle or obj not in skill_sets["pickupable_objects"]:
+    config = SKILL_CONFIGS.get(skill)
+    if config is None or config.relation != "placement":
         return False
-
-    if skill == "PutOn":
-        return receptacle in skill_sets["placement_restrictions"].get(obj, [])
-
-    if skill != "PutIn":
-        return False
-
-    if receptacle not in skill_sets["put_in_receptacles"]:
-        return False
-
-    return receptacle in skill_sets["placement_restrictions"].get(obj, [])
+    return _can_match_skill_pair(obj, receptacle, config, skill_sets)
 
 
 def _can_pair_with_action_skill(
@@ -507,15 +884,12 @@ def _can_pair_with_action_skill(
     appliance: str,
     skill: str,
     skill_sets: Dict[str, Any],
+    all_objects: Optional[List[str]] = None,
 ) -> bool:
-    if obj == appliance or skill not in ACTION_PAIR_SKILL_SETS:
+    config = SKILL_CONFIGS.get(skill)
+    if config is None or config.relation != "action_pair":
         return False
-
-    obj_set_name, appliance_set_name = ACTION_PAIR_SKILL_SETS[skill]
-    return (
-        obj in skill_sets[obj_set_name]
-        and appliance in skill_sets[appliance_set_name]
-    )
+    return _can_match_skill_pair(obj, appliance, config, skill_sets, all_objects)
 
 
 def _can_generate_action_skill(
@@ -523,22 +897,10 @@ def _can_generate_action_skill(
     all_objects: List[str],
     skill_sets: Dict[str, Any],
 ) -> bool:
-    object_types = set(all_objects)
-
-    if skill == "RunToaster":
-        return "Knife" in object_types and "Knife" in skill_sets["pickupable_objects"]
-
-    if skill == "CookByStoveBurner":
-        return any(
-            container in object_types
-            for container in skill_sets["stove_burner_placeable_objects"]
-        )
-
-    return True
-
-
-def _is_cookable_object(obj: str) -> bool:
-    return obj in COOKABLE_OBJECTS
+    config = SKILL_CONFIGS.get(skill)
+    if config is None:
+        return False
+    return _skill_can_generate(config, all_objects, skill_sets)
 
 
 MUTUALLY_EXCLUSIVE_STATES = {
@@ -609,81 +971,18 @@ class DataEngine:
     def subtask_to_str(self, subtask: Dict) -> str:
         skill = subtask['skill']
         objs = subtask['objects']
-        obj_strs = [o.lower() for o in objs]
-
-        if skill == 'Open':
-            return f"open the {obj_strs[0]}"
-        elif skill == 'SwitchOn':
-            return f"switch on the {obj_strs[0]}"
-        elif skill == 'Wash':
-            return f"wash the {obj_strs[0]}"
-        elif skill == 'Break':
-            return f"break the {obj_strs[0]}"
-        elif skill == 'Slice':
-            return f"slice the {obj_strs[0]}"
-        elif skill == 'PutOn':
-            return f"put {obj_strs[0]} on {obj_strs[1]}"
-        elif skill == 'PutIn':
-            return f"put {obj_strs[0]} in {obj_strs[1]}"
-        elif skill == 'RunMicrowave':
-            return f"microwave the {obj_strs[0]} in the {obj_strs[1]}"
-        elif skill == 'RunCoffeeMachine':
-            return f"make coffee in the {obj_strs[0]} using the {obj_strs[1]}"
-        elif skill == 'RunToaster':
-            return f"toast the {obj_strs[0]} in the {obj_strs[1]}"
-        elif skill == 'CookByStoveBurner':
-            return f"cook the {obj_strs[0]} on the {obj_strs[1]}"
-        elif skill == 'HeatByStoveBurner':
-            return f"heat the {obj_strs[0]} on the {obj_strs[1]}"
-        elif skill == 'FillWater':
-            return f"fill the {obj_strs[0]} with water"
-        elif skill == 'ColdObject':
-            return f"cool the {obj_strs[0]} in the {obj_strs[1]}"
-        else:
+        config = SKILL_CONFIGS.get(skill)
+        if config is None:
             return f"unknown skill: {skill}"
+        return config.text_builder(objs)
 
     def get_subtask_final_state(self, subtask: Dict) -> List[Dict]:
         skill = subtask['skill']
         objs = subtask['objects']
-        results = []
-
-        if skill == 'Open':
-            results.append({"name": objs[0], "contains": [], "states": ["OPENED"]})
-        elif skill == 'Close':
-            results.append({"name": objs[0], "contains": [], "states": ["CLOSED"]})
-        elif skill == 'SwitchOn':
-            results.append({"name": objs[0], "contains": [], "states": ["ON"]})
-        elif skill == 'SwitchOff':
-            results.append({"name": objs[0], "contains": [], "states": ["OFF"]})
-        elif skill == 'Wash':
-            results.append({"name": objs[0], "contains": [], "states": ["CLEANED"]})
-        elif skill == 'Break':
-            results.append({"name": objs[0], "contains": [], "states": ["BROKEN"]})
-        elif skill == 'Slice':
-            results.append({"name": objs[0], "contains": [], "states": ["SLICED"]})
-        elif skill == 'PutOn':
-            results.append({"name": objs[1], "contains": [objs[0]], "states": []})
-        elif skill == 'PutIn':
-            results.append({"name": objs[1], "contains": [objs[0]], "states": []})
-        elif skill == 'RunMicrowave':
-            states = ["HOT"]
-            if _is_cookable_object(objs[0]):
-                states.append("COOKED")
-            results.append({"name": objs[0], "contains": [], "states": states})
-        elif skill == 'RunCoffeeMachine':
-            results.append({"name": objs[0], "contains": [], "states": ["FILLEDWITHCOFFEE"]})
-        elif skill == 'RunToaster':
-            results.append({"name": objs[0], "contains": [], "states": ["HOT", "COOKED"]})
-        elif skill == 'CookByStoveBurner':
-            results.append({"name": objs[0], "contains": [], "states": ["COOKED"]})
-        elif skill == 'HeatByStoveBurner':
-            results.append({"name": objs[0], "contains": [], "states": ["HOT"]})
-        elif skill == 'FillWater':
-            results.append({"name": objs[0], "contains": [], "states": ["FILLEDWITHWATER"]})
-        elif skill == 'ColdObject':
-            results.append({"name": objs[0], "contains": [], "states": ["COLD"]})
-
-        return results
+        config = SKILL_CONFIGS.get(skill)
+        if config is None:
+            return []
+        return config.final_state_builder(objs)
 
     def get_task_final_state(self, subtasks: List[Dict]) -> List[Dict]:
         contains_by_name: Dict[str, List[str]] = {}
@@ -1078,98 +1377,52 @@ put sink on saltshaker, then put ladle on sinkbasin
         - 双对象技能: {'skill': 技能名, 'role': 'obj1'/'obj2', 'needed_set': 集合名称}
         """
         skills = []
-        openable_objects = skill_sets["openable_objects"]
-        switchable_objects = skill_sets["switchable_objects"]
-        washable_objects = skill_sets["washable_objects"]
-        breakable_objects = skill_sets["breakable_objects"]
-        sliceable_objects = skill_sets["sliceable_objects"]
-        pickupable_objects = skill_sets["pickupable_objects"]
         all_object_types = set(all_objects)
 
-        # 单对象技能
-        if obj in openable_objects:
-            skills.append({'skill': 'Open', 'type': 'single'})
-        if obj in switchable_objects:
-            skills.append({'skill': 'SwitchOn', 'type': 'single'})
-        if obj in washable_objects and "Sink" in all_objects:
-            skills.append({'skill': 'Wash', 'type': 'single'})
-        if obj in breakable_objects:
-            skills.append({'skill': 'Break', 'type': 'single'})
-        if obj in sliceable_objects and "Knife" in all_objects and "Knife" in pickupable_objects:
-            skills.append({'skill': 'Slice', 'type': 'single'})
-
-        # 双对象技能 PutOn
-        if obj in pickupable_objects and any(
-            target in all_object_types and _can_place_with_skill(obj, target, "PutOn", skill_sets)
-            for target in skill_sets["placement_restrictions"].get(obj, [])
-        ):
-            skills.append({
-                'skill': 'PutOn',
-                'type': 'double',
-                'role': 'obj1'
-            })
-        if any(
-            pickup in all_object_types and _can_place_with_skill(pickup, obj, "PutOn", skill_sets)
-            for pickup in pickupable_objects
-        ):
-            skills.append({
-                'skill': 'PutOn',
-                'type': 'double',
-                'role': 'obj2'
-            })
-
-        # 双对象技能 PutIn
-        if obj in pickupable_objects and any(
-            target in all_object_types and _can_place_with_skill(obj, target, "PutIn", skill_sets)
-            for target in skill_sets["put_in_receptacles"]
-        ):
-            skills.append({
-                'skill': 'PutIn',
-                'type': 'double',
-                'role': 'obj1',
-                'needed_set': 'put_in_receptacles'
-            })
-        if obj in skill_sets["put_in_receptacles"] and any(
-            pickup in all_object_types and _can_place_with_skill(pickup, obj, "PutIn", skill_sets)
-            for pickup in pickupable_objects
-        ):
-            skills.append({
-                'skill': 'PutIn',
-                'type': 'double',
-                'role': 'obj2',
-                'needed_set': 'pickupable_objects'
-            })
-
-        for action_skill, (obj_set_name, appliance_set_name) in ACTION_PAIR_SKILL_SETS.items():
-            if not _can_generate_action_skill(action_skill, all_objects, skill_sets):
+        for config in SKILL_CONFIGS.values():
+            if not _skill_can_generate(config, all_objects, skill_sets):
                 continue
 
-            obj_set = skill_sets[obj_set_name]
-            appliance_set = skill_sets[appliance_set_name]
+            if config.arity == 1:
+                if config.primary_set is None or obj in skill_sets[config.primary_set]:
+                    skills.append({'skill': config.name, 'type': 'single'})
+                continue
 
-            if obj in obj_set and any(
-                appliance in all_object_types
-                and _can_pair_with_action_skill(obj, appliance, action_skill, skill_sets)
-                for appliance in appliance_set
-            ):
-                skills.append({
-                    'skill': action_skill,
-                    'type': 'double',
-                    'role': 'obj1',
-                    'needed_set': appliance_set_name
-                })
+            if config.arity != 2:
+                continue
 
-            if obj in appliance_set and any(
-                target in all_object_types
-                and _can_pair_with_action_skill(target, obj, action_skill, skill_sets)
-                for target in obj_set
-            ):
-                skills.append({
-                    'skill': action_skill,
+            for role in config.roles:
+                if role == "obj1":
+                    if config.primary_set is not None and obj not in skill_sets[config.primary_set]:
+                        continue
+                    can_use_role = any(
+                        target in all_object_types
+                        and _can_match_skill_pair(obj, target, config, skill_sets, all_objects)
+                        for target in all_objects
+                    )
+                elif role == "obj2":
+                    if config.target_set is not None and obj not in skill_sets[config.target_set]:
+                        continue
+                    can_use_role = any(
+                        pickup in all_object_types
+                        and _can_match_skill_pair(pickup, obj, config, skill_sets, all_objects)
+                        for pickup in all_objects
+                    )
+                else:
+                    continue
+
+                if not can_use_role:
+                    continue
+
+                skill_entry = {
+                    'skill': config.name,
                     'type': 'double',
-                    'role': 'obj2',
-                    'needed_set': obj_set_name
-                })
+                    'role': role,
+                }
+                needed_set = config.needed_set_by_role.get(role)
+                if needed_set is not None:
+                    skill_entry['needed_set'] = needed_set
+                skills.append(skill_entry)
 
         return skills
 
@@ -1187,47 +1440,33 @@ put sink on saltshaker, then put ladle on sinkbasin
         if skill_sets is None:
             raise ValueError("skill_sets is required")
 
-        if skill == "PutOn" and role and exclude is not None:
+        config = SKILL_CONFIGS.get(skill) if skill is not None else None
+        if config is not None and role and exclude is not None:
             candidates = [o for o in all_objects if o != exclude]
-            if role == "obj1":
-                candidates = [
-                    receptacle for receptacle in candidates
-                    if _can_place_with_skill(exclude, receptacle, skill, skill_sets)
-                ]
-            else:
-                candidates = [
-                    pickup for pickup in candidates
-                    if _can_place_with_skill(pickup, exclude, skill, skill_sets)
-                ]
-        else:
-            if needed_set_name is None:
-                raise ValueError(f"没有足够的候选对象")
+            if needed_set_name is not None:
+                needed_set = skill_sets[needed_set_name]
+                candidates = [o for o in candidates if o in needed_set]
+            elif role == "obj1" and config.target_set is not None:
+                candidates = [o for o in candidates if o in skill_sets[config.target_set]]
+            elif role == "obj2" and config.primary_set is not None:
+                candidates = [o for o in candidates if o in skill_sets[config.primary_set]]
 
-            needed_set = skill_sets[needed_set_name]
-            candidates = [o for o in all_objects if o != exclude and o in needed_set]
-
-        if skill in ACTION_PAIR_SKILL_SETS and role and exclude is not None:
             if role == "obj1":
-                candidates = [
-                    appliance for appliance in candidates
-                    if _can_pair_with_action_skill(exclude, appliance, skill, skill_sets)
-                ]
-            else:
                 candidates = [
                     target for target in candidates
-                    if _can_pair_with_action_skill(target, exclude, skill, skill_sets)
-                ]
-        elif skill == "PutIn" and role and exclude is not None:
-            if role == "obj1":
-                candidates = [
-                    receptacle for receptacle in candidates
-                    if _can_place_with_skill(exclude, receptacle, skill, skill_sets)
+                    if _can_match_skill_pair(exclude, target, config, skill_sets, all_objects)
                 ]
             else:
                 candidates = [
                     pickup for pickup in candidates
-                    if _can_place_with_skill(pickup, exclude, skill, skill_sets)
+                    if _can_match_skill_pair(pickup, exclude, config, skill_sets, all_objects)
                 ]
+        elif needed_set_name is not None:
+            needed_set = skill_sets[needed_set_name]
+            candidates = [o for o in all_objects if o != exclude and o in needed_set]
+        else:
+            raise ValueError(f"没有足够的候选对象")
+
         if not candidates:
             raise ValueError(f"没有足够的候选对象")
         return random.choice(candidates)
@@ -1267,10 +1506,14 @@ put sink on saltshaker, then put ladle on sinkbasin
 
             applicable = self.get_applicable_skills(current_obj, all_objects, skill_sets)
 
-            filtered_applicable = [
-                skill for skill in applicable
-                if skill['skill'] not in ('PutOn', 'PutIn') or random.random() > 0.8
-            ]
+            filtered_applicable = []
+            for skill in applicable:
+                config = SKILL_CONFIGS.get(skill['skill'])
+                generation_probability = 1.0
+                if config is not None:
+                    generation_probability = config.generation_probability
+                if random.random() <= generation_probability:
+                    filtered_applicable.append(skill)
 
             # 当前 current_obj 无法抽取出合适的 skill，重新抽 current_obj 
             if not filtered_applicable:

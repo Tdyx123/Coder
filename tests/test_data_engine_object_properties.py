@@ -56,6 +56,94 @@ class DataEngineObjectPropertiesTests(unittest.TestCase):
             ]
         )
 
+    def test_all_generated_skills_are_declared_in_skill_configs(self):
+        expected_generated_skills = {
+            "Open",
+            "SwitchOn",
+            "Wash",
+            "Break",
+            "Slice",
+            "PutOn",
+            "PutIn",
+            "RunMicrowave",
+            "RunCoffeeMachine",
+            "RunToaster",
+            "CookByStoveBurner",
+            "HeatByStoveBurner",
+            "FillWater",
+            "ColdObject",
+        }
+
+        self.assertLessEqual(expected_generated_skills, set(data_engine.SKILL_CONFIGS))
+        for skill in expected_generated_skills:
+            with self.subTest(skill=skill):
+                self.assertGreater(data_engine.SKILL_CONFIGS[skill].generation_probability, 0)
+
+        self.assertEqual(data_engine.SKILL_CONFIGS["Close"].generation_probability, 0)
+        self.assertEqual(data_engine.SKILL_CONFIGS["SwitchOff"].generation_probability, 0)
+
+    def test_skill_text_final_state_and_robot_requirements_use_config(self):
+        engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
+        subtask = {"skill": "RunMicrowave", "objects": ["Potato", "Microwave"]}
+        config = data_engine.SKILL_CONFIGS["RunMicrowave"]
+
+        self.assertEqual(engine.subtask_to_str(subtask), config.text_builder(subtask["objects"]))
+        self.assertEqual(
+            engine.get_subtask_final_state(subtask),
+            config.final_state_builder(subtask["objects"]),
+        )
+        self.assertEqual(
+            data_engine._required_robot_skills_for_subtask(subtask),
+            list(config.robot_skills),
+        )
+
+    def test_temporary_skill_config_can_drive_lookup_and_generation(self):
+        engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
+        skill_sets = data_engine._build_object_skill_sets(1, self._skill_fixture_path())
+        skill_name = "Polish"
+        original_config = data_engine.SKILL_CONFIGS.get(skill_name)
+
+        def restore_config():
+            if original_config is None:
+                data_engine.SKILL_CONFIGS.pop(skill_name, None)
+            else:
+                data_engine.SKILL_CONFIGS[skill_name] = original_config
+
+        self.addCleanup(restore_config)
+        data_engine.SKILL_CONFIGS[skill_name] = data_engine.SkillConfig(
+            name=skill_name,
+            arity=1,
+            primary_set="pickupable_objects",
+            target_set=None,
+            roles=("obj1",),
+            relation="single",
+            needed_set_by_role={},
+            robot_skills=("GoToObject", "PickupObject"),
+            required_pickup=(0,),
+            text_builder=lambda objs: f"polish the {objs[0].lower()}",
+            final_state_builder=lambda objs: [
+                {"name": objs[0], "contains": [], "states": ["POLISHED"]}
+            ],
+            generation_probability=1.0,
+        )
+
+        self.assertIn(
+            {"skill": skill_name, "type": "single"},
+            engine.get_applicable_skills("Apple", ["Apple"], skill_sets),
+        )
+        self.assertEqual(
+            engine.subtask_to_str({"skill": skill_name, "objects": ["Apple"]}),
+            "polish the apple",
+        )
+        self.assertEqual(
+            engine.get_subtask_final_state({"skill": skill_name, "objects": ["Apple"]}),
+            [{"name": "Apple", "contains": [], "states": ["POLISHED"]}],
+        )
+        self.assertEqual(
+            engine.generate_task(["Apple"], 1, skill_sets, seed=1),
+            [{"skill": skill_name, "objects": ["Apple"]}],
+        )
+
     def test_normalize_scene_name_accepts_common_floor_plan_forms(self):
         self.assertEqual(data_engine._normalize_scene_name(1), "FloorPlan1")
         self.assertEqual(data_engine._normalize_scene_name("1"), "FloorPlan1")
@@ -423,6 +511,94 @@ class DataEngineObjectPropertiesTests(unittest.TestCase):
             apple_skills,
         )
         self.assertNotIn("RunMicrowave", {skill["skill"] for skill in book_skills})
+
+    def test_cook_by_stove_burner_requires_valid_pickupable_container_for_food(self):
+        engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
+        skill_sets = data_engine._build_object_skill_sets(1, self._skill_fixture_path())
+        all_objects = ["Potato", "Pan", "StoveBurner"]
+
+        potato_skills = engine.get_applicable_skills("Potato", all_objects, skill_sets)
+        stove_skills = engine.get_applicable_skills("StoveBurner", all_objects, skill_sets)
+
+        self.assertIn(
+            {
+                "skill": "CookByStoveBurner",
+                "type": "double",
+                "role": "obj1",
+                "needed_set": "stove_burner_objects",
+            },
+            potato_skills,
+        )
+        self.assertIn(
+            {
+                "skill": "CookByStoveBurner",
+                "type": "double",
+                "role": "obj2",
+                "needed_set": "cookable_objects",
+            },
+            stove_skills,
+        )
+        self.assertTrue(
+            data_engine._can_generate_action_skill(
+                "CookByStoveBurner",
+                all_objects,
+                skill_sets,
+            )
+        )
+
+    def test_cook_by_stove_burner_rejects_stove_placeable_object_that_cannot_contain_food(self):
+        engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
+        path = self._write_objects(
+            [
+                {"scene": "FloorPlan1", "objectType": "Potato", "pickupable": True, "cookable": True},
+                {"scene": "FloorPlan1", "objectType": "Kettle", "pickupable": True},
+                {"scene": "FloorPlan1", "objectType": "StoveBurner", "receptacle": True},
+            ]
+        )
+        skill_sets = data_engine._build_object_skill_sets(1, path)
+        all_objects = ["Potato", "Kettle", "StoveBurner"]
+
+        self.assertIn("Kettle", skill_sets["stove_burner_placeable_objects"])
+        self.assertNotIn("Kettle", skill_sets["put_in_receptacles"])
+        self.assertFalse(
+            data_engine._can_generate_action_skill(
+                "CookByStoveBurner",
+                all_objects,
+                skill_sets,
+            )
+        )
+        self.assertNotIn(
+            "CookByStoveBurner",
+            {skill["skill"] for skill in engine.get_applicable_skills("Potato", all_objects, skill_sets)},
+        )
+        self.assertNotIn(
+            "CookByStoveBurner",
+            {skill["skill"] for skill in engine.get_applicable_skills("StoveBurner", all_objects, skill_sets)},
+        )
+
+    def test_cook_by_stove_burner_rejects_scene_without_stove_placeable_container(self):
+        engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
+        path = self._write_objects(
+            [
+                {"scene": "FloorPlan1", "objectType": "Potato", "pickupable": True, "cookable": True},
+                {"scene": "FloorPlan1", "objectType": "StoveBurner", "receptacle": True},
+            ]
+        )
+        skill_sets = data_engine._build_object_skill_sets(1, path)
+        all_objects = ["Potato", "StoveBurner"]
+
+        self.assertEqual(skill_sets["stove_burner_placeable_objects"], [])
+        self.assertFalse(
+            data_engine._can_generate_action_skill(
+                "CookByStoveBurner",
+                all_objects,
+                skill_sets,
+            )
+        )
+        self.assertNotIn(
+            "CookByStoveBurner",
+            {skill["skill"] for skill in engine.get_applicable_skills("Potato", all_objects, skill_sets)},
+        )
 
     def test_task_final_state_open_closed_states_are_mutually_exclusive(self):
         engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
