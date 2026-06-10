@@ -70,6 +70,7 @@ class DataEngineObjectPropertiesTests(unittest.TestCase):
             "RunToaster",
             "CookByStoveBurner",
             "PrepareEgg",
+            "CookEgg",
             "HeatByStoveBurner",
             "FillWater",
             "ColdObject",
@@ -599,6 +600,80 @@ class DataEngineObjectPropertiesTests(unittest.TestCase):
             {skill["skill"] for skill in engine.get_applicable_skills("Kettle", all_objects, skill_sets)},
         )
 
+    def test_cook_egg_extends_prepare_egg_and_requires_stove_burner(self):
+        engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
+        skill_sets = data_engine._build_object_skill_sets(1, self._skill_fixture_path())
+        all_objects = ["Egg", "Pan", "Pot", "StoveBurner"]
+
+        egg_skills = engine.get_applicable_skills("Egg", all_objects, skill_sets)
+        pan_skills = engine.get_applicable_skills("Pan", all_objects, skill_sets)
+
+        self.assertIn(
+            {
+                "skill": "CookEgg",
+                "type": "double",
+                "role": "obj1",
+                "needed_set": "prepare_egg_container_objects",
+            },
+            egg_skills,
+        )
+        self.assertIn(
+            {
+                "skill": "CookEgg",
+                "type": "double",
+                "role": "obj2",
+                "needed_set": "egg_objects",
+            },
+            pan_skills,
+        )
+        self.assertTrue(
+            data_engine._can_generate_action_skill(
+                "CookEgg",
+                all_objects,
+                skill_sets,
+            )
+        )
+        self.assertEqual(
+            engine.subtask_to_str({"skill": "CookEgg", "objects": ["Egg", "Pan"]}),
+            "cook the egg in the pan",
+        )
+        self.assertEqual(
+            engine.get_subtask_final_state({"skill": "CookEgg", "objects": ["Egg", "Pan"]}),
+            [{"name": "Egg", "contains": [], "states": ["BROKEN", "COOKED"]}],
+        )
+        self.assertEqual(
+            data_engine._required_robot_skills_for_subtask(
+                {"skill": "CookEgg", "objects": ["Egg", "Pan"]}
+            ),
+            ["GoToObject", "PickupObject", "PutObject", "PrepareEgg"],
+        )
+
+    def test_cook_egg_rejects_scene_without_stove_burner(self):
+        engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
+        skill_sets = data_engine._build_object_skill_sets(1, self._skill_fixture_path())
+        all_objects = ["Egg", "Pan"]
+
+        self.assertFalse(
+            data_engine._can_generate_action_skill(
+                "CookEgg",
+                all_objects,
+                skill_sets,
+            )
+        )
+        self.assertFalse(
+            data_engine._can_pair_with_action_skill(
+                "Egg",
+                "Pan",
+                "CookEgg",
+                skill_sets,
+                all_objects,
+            )
+        )
+        self.assertNotIn(
+            "CookEgg",
+            {skill["skill"] for skill in engine.get_applicable_skills("Egg", all_objects, skill_sets)},
+        )
+
     def test_cook_by_stove_burner_requires_valid_pickupable_container_for_food(self):
         engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
         skill_sets = data_engine._build_object_skill_sets(1, self._skill_fixture_path())
@@ -805,6 +880,22 @@ class DataEngineObjectPropertiesTests(unittest.TestCase):
                 [
                     {"skill": "PrepareEgg", "objects": ["Egg", "Pan"]},
                     {"skill": "Break", "objects": ["Egg"]},
+                ]
+            )
+        )
+        self.assertFalse(
+            engine.check_subtasks(
+                [
+                    {"skill": "PrepareEgg", "objects": ["Egg", "Pan"]},
+                    {"skill": "CookEgg", "objects": ["Egg", "Pan"]},
+                ]
+            )
+        )
+        self.assertFalse(
+            engine.check_subtasks(
+                [
+                    {"skill": "Break", "objects": ["Egg"]},
+                    {"skill": "CookEgg", "objects": ["Egg", "Pan"]},
                 ]
             )
         )

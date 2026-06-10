@@ -120,7 +120,7 @@ PLACEMENT_RESTRICTIONS = {
 }
 
 COOKABLE_OBJECTS = (
-    "Egg", "EggCracked", "Potato", "PotatoSliced",
+    "Potato", "Bread",
 )
 
 WATER_FILLABLE_OBJECTS = (
@@ -270,6 +270,36 @@ def _prepare_egg_generation_gate(
             for container in skill_sets.get("prepare_egg_container_objects", [])
         )
     )
+
+
+def _scene_has_stove_burner(
+    all_objects: List[str],
+    skill_sets: Dict[str, Any],
+) -> bool:
+    scene_objects = set(all_objects)
+    return any(
+        stove_burner in scene_objects
+        for stove_burner in skill_sets.get("stove_burner_objects", [])
+    )
+
+
+def _cook_egg_generation_gate(
+    all_objects: List[str],
+    skill_sets: Dict[str, Any],
+) -> bool:
+    return (
+        _prepare_egg_generation_gate(all_objects, skill_sets)
+        and _scene_has_stove_burner(all_objects, skill_sets)
+    )
+
+
+def _cook_egg_pair_validator(
+    _egg_obj: str,
+    _container: str,
+    all_objects: List[str],
+    skill_sets: Dict[str, Any],
+) -> bool:
+    return _scene_has_stove_burner(all_objects, skill_sets)
 
 
 def _special_robot_skills(skill: str, core_skills: Tuple[str, ...]) -> Tuple[str, ...]:
@@ -486,6 +516,21 @@ SKILL_CONFIGS: Dict[str, SkillConfig] = {
         text_builder=lambda objs: f"prepare the {_lower_objects(objs)[0]} in the {_lower_objects(objs)[1]}",
         final_state_builder=_single_state_builder("BROKEN"),
         generation_gate=_prepare_egg_generation_gate,
+    ),
+    "CookEgg": SkillConfig(
+        name="CookEgg",
+        arity=2,
+        primary_set="egg_objects",
+        target_set="prepare_egg_container_objects",
+        roles=("obj1", "obj2"),
+        relation="action_pair",
+        needed_set_by_role={"obj1": "prepare_egg_container_objects", "obj2": "egg_objects"},
+        robot_skills=("GoToObject", "PickupObject", "PutObject", "PrepareEgg"),
+        required_pickup=(0,),
+        text_builder=lambda objs: f"cook the {_lower_objects(objs)[0]} in the {_lower_objects(objs)[1]}",
+        final_state_builder=lambda objs: [{"name": objs[0], "contains": [], "states": ["COOKED"]}],
+        generation_gate=_cook_egg_generation_gate,
+        pair_validator=_cook_egg_pair_validator,
     ),
     "HeatByStoveBurner": SkillConfig(
         name="HeatByStoveBurner",
@@ -1277,7 +1322,7 @@ put sink on saltshaker, then put ladle on sinkbasin
         # 先 Break 再 Wash 同一件东西
         broken_objects = []
         for subtask in subtasks:
-            if subtask["skill"] in {"Break", "PrepareEgg"}:
+            if subtask["skill"] in {"Break", "PrepareEgg", "CookEgg"}:
                 obj = subtask["objects"][0]
                 if obj in broken_objects:
                     return False
