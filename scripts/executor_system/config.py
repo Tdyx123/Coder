@@ -27,7 +27,7 @@ def parse_env_bool(name: str, value: str) -> bool:
 
 
 CLOUD_RENDERING = env_bool("CloudRendering", True)
-RENDER_IMAGE = env_bool("renderImage", True) # True
+RENDER_IMAGE = env_bool("renderImage", False) # True
 NAVIGATION_GRID_SIZE = 0.25
 AGENT_CLEARANCE_DISTANCE = 0.35
 OBJECT_FOOTPRINT_CLEARANCE = 0.05
