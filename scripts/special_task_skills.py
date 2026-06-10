@@ -9,6 +9,7 @@ SPECIAL_TASK_SKILLS = (
     "HeatByStoveBurner",
     "FillWater",
     "ColdObject",
+    "PrepareEgg",
 )
 
 SPECIAL_TASK_SKILL_SET = frozenset(SPECIAL_TASK_SKILLS)

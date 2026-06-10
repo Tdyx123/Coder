@@ -152,7 +152,6 @@
     :effect (and
       (broken ?egg)
       (cookable-by-stove_burner ?egg)
-      (cookable-by-microwave ?egg)
     )
   )
 

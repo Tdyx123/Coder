@@ -129,6 +129,7 @@ WATER_FILLABLE_OBJECTS = (
 
 MUG_OBJECTS = ("Mug",)
 BREAD_OBJECTS = ("Bread",)
+EGG_OBJECTS = ("Egg",)
 
 MICROWAVE_OBJECTS = ("Microwave",)
 COFFEE_MACHINE_OBJECTS = ("CoffeeMachine",)
@@ -240,6 +241,34 @@ def _cook_by_stove_burner_pair_validator(
     return (
         stove_burner in scene_objects
         and _cook_by_stove_burner_has_valid_container(food_obj, all_objects, skill_sets)
+    )
+
+
+def _prepare_egg_container_objects(
+    object_type_properties: Dict[str, Dict[str, bool]],
+) -> List[str]:
+    egg_receptacles = set(PLACEMENT_RESTRICTIONS.get("Egg", ()))
+    stove_placeable_objects = set(
+        _pickupable_objects_allowed_at(object_type_properties, "StoveBurner")
+    )
+    return sorted(
+        container
+        for container in egg_receptacles.intersection(stove_placeable_objects)
+        if object_type_properties.get(container, {}).get("receptacle", False)
+    )
+
+
+def _prepare_egg_generation_gate(
+    all_objects: List[str],
+    skill_sets: Dict[str, Any],
+) -> bool:
+    scene_objects = set(all_objects)
+    return (
+        any(egg in scene_objects for egg in skill_sets.get("egg_objects", []))
+        and any(
+            container in scene_objects
+            for container in skill_sets.get("prepare_egg_container_objects", [])
+        )
     )
 
 
@@ -440,6 +469,23 @@ SKILL_CONFIGS: Dict[str, SkillConfig] = {
         final_state_builder=_single_state_builder("COOKED"),
         generation_gate=_cook_by_stove_burner_generation_gate,
         pair_validator=_cook_by_stove_burner_pair_validator,
+    ),
+    "PrepareEgg": SkillConfig(
+        name="PrepareEgg",
+        arity=2,
+        primary_set="egg_objects",
+        target_set="prepare_egg_container_objects",
+        roles=("obj1", "obj2"),
+        relation="action_pair",
+        needed_set_by_role={"obj1": "prepare_egg_container_objects", "obj2": "egg_objects"},
+        robot_skills=_special_robot_skills(
+            "PrepareEgg",
+            ("GoToObject", "PickupObject", "PutObject"),
+        ),
+        required_pickup=(0,),
+        text_builder=lambda objs: f"prepare the {_lower_objects(objs)[0]} in the {_lower_objects(objs)[1]}",
+        final_state_builder=_single_state_builder("BROKEN"),
+        generation_gate=_prepare_egg_generation_gate,
     ),
     "HeatByStoveBurner": SkillConfig(
         name="HeatByStoveBurner",
@@ -730,6 +776,11 @@ def _build_object_skill_sets(
             BREAD_OBJECTS,
             require_pickupable=True,
         ),
+        "egg_objects": _objects_present(
+            object_type_properties,
+            EGG_OBJECTS,
+            require_pickupable=True,
+        ),
         "microwave_objects": _objects_present(object_type_properties, MICROWAVE_OBJECTS),
         "coffee_machine_objects": _objects_present(object_type_properties, COFFEE_MACHINE_OBJECTS),
         "toaster_objects": _objects_present(object_type_properties, TOASTER_OBJECTS),
@@ -743,6 +794,9 @@ def _build_object_skill_sets(
         "stove_burner_placeable_objects": _pickupable_objects_allowed_at(
             object_type_properties,
             "StoveBurner",
+        ),
+        "prepare_egg_container_objects": _prepare_egg_container_objects(
+            object_type_properties,
         ),
         "fridge_coldable_objects": _pickupable_objects_allowed_at(
             object_type_properties,
@@ -1223,8 +1277,11 @@ put sink on saltshaker, then put ladle on sinkbasin
         # 先 Break 再 Wash 同一件东西
         broken_objects = []
         for subtask in subtasks:
-            if subtask["skill"] == "Break":
-                broken_objects.append(subtask["objects"][0])
+            if subtask["skill"] in {"Break", "PrepareEgg"}:
+                obj = subtask["objects"][0]
+                if obj in broken_objects:
+                    return False
+                broken_objects.append(obj)
 
             if subtask["skill"] == "Wash" and subtask["objects"][0] in broken_objects:
                 return False
