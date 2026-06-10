@@ -29,18 +29,28 @@ class DataEngineObjectPropertiesTests(unittest.TestCase):
                 {"scene": "FloorPlan1", "objectType": "Knife", "pickupable": True},
                 {"scene": "FloorPlan1", "objectType": "Sink", "receptacle": True},
                 {"scene": "FloorPlan1", "objectType": "Apple", "pickupable": True},
+                {"scene": "FloorPlan1", "objectType": "Bread", "pickupable": True, "sliceable": True},
                 {"scene": "FloorPlan1", "objectType": "Book", "pickupable": True},
+                {"scene": "FloorPlan1", "objectType": "Candle", "pickupable": True},
                 {"scene": "FloorPlan1", "objectType": "Cabinet", "openable": True, "receptacle": True},
+                {"scene": "FloorPlan1", "objectType": "CoffeeMachine", "receptacle": True},
                 {"scene": "FloorPlan1", "objectType": "Drawer", "openable": True, "receptacle": True},
                 {"scene": "FloorPlan1", "objectType": "Box", "openable": True, "receptacle": True},
                 {"scene": "FloorPlan1", "objectType": "Bowl", "receptacle": True, "pickupable": True},
                 {"scene": "FloorPlan1", "objectType": "Cup", "receptacle": True, "pickupable": True},
+                {"scene": "FloorPlan1", "objectType": "Fridge", "openable": True, "receptacle": True, "toggleable": True},
+                {"scene": "FloorPlan1", "objectType": "Microwave", "openable": True, "receptacle": True},
+                {"scene": "FloorPlan1", "objectType": "Mirror", "dirtyable": True},
+                {"scene": "FloorPlan1", "objectType": "Mug", "pickupable": True, "canFillWithLiquid": True},
                 {"scene": "FloorPlan1", "objectType": "Pan", "receptacle": True, "pickupable": True},
                 {"scene": "FloorPlan1", "objectType": "Pot", "receptacle": True, "pickupable": True},
+                {"scene": "FloorPlan1", "objectType": "Potato", "pickupable": True, "cookable": True},
                 {"scene": "FloorPlan1", "objectType": "CounterTop", "receptacle": True},
                 {"scene": "FloorPlan1", "objectType": "Floor", "receptacle": True},
                 {"scene": "FloorPlan1", "objectType": "Chair", "receptacle": True},
                 {"scene": "FloorPlan1", "objectType": "Plate", "receptacle": True, "dirtyable": True, "pickupable": True},
+                {"scene": "FloorPlan1", "objectType": "StoveBurner", "receptacle": True},
+                {"scene": "FloorPlan1", "objectType": "Toaster"},
                 {"scene": "FloorPlan2", "objectType": "Egg", "breakable": False, "sliceable": False, "pickupable": True},
                 {"scene": "FloorPlan2", "objectType": "Cabinet", "openable": False, "receptacle": True},
             ]
@@ -98,6 +108,19 @@ class DataEngineObjectPropertiesTests(unittest.TestCase):
         self.assertIn("Cabinet", floor_plan_1_sets["must_open_to_place_receptacles"])
         self.assertNotIn("Bowl", floor_plan_1_sets["must_open_to_place_receptacles"])
         self.assertIn("Bowl", floor_plan_1_sets["placement_restrictions"]["Apple"])
+
+    def test_washable_objects_require_pickupable(self):
+        engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
+        skill_sets = data_engine._build_object_skill_sets(1, self._skill_fixture_path())
+
+        self.assertIn("Plate", skill_sets["washable_objects"])
+        self.assertNotIn("Mirror", skill_sets["washable_objects"])
+
+        plate_skills = engine.get_applicable_skills("Plate", ["Plate", "Sink"], skill_sets)
+        mirror_skills = engine.get_applicable_skills("Mirror", ["Mirror", "Sink"], skill_sets)
+
+        self.assertIn({"skill": "Wash", "type": "single"}, plate_skills)
+        self.assertNotIn("Wash", {skill["skill"] for skill in mirror_skills})
 
     def test_get_applicable_skills_uses_explicit_skill_sets(self):
         engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
@@ -239,18 +262,61 @@ class DataEngineObjectPropertiesTests(unittest.TestCase):
         engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
         subtask = {"skill": "RunMicrowave", "objects": ["Apple", "Microwave"]}
         obj_mass_map = {"Apple": 0.1}
+        setup_skills = list(data_engine.ACTION_SKILL_CORE_REQUIREMENTS["RunMicrowave"])
 
         base_only_robot = {
-            "skills": ["GoToObject", "PickupObject"],
+            "skills": setup_skills,
             "mass_capacity": 1,
         }
         specialist_robot = {
-            "skills": ["GoToObject", "PickupObject", "RunMicrowave"],
+            "skills": setup_skills + ["RunMicrowave"],
             "mass_capacity": 1,
         }
 
         self.assertFalse(engine._robot_can_complete_subtask(base_only_robot, subtask, obj_mass_map))
         self.assertTrue(engine._robot_can_complete_subtask(specialist_robot, subtask, obj_mass_map))
+
+    def test_special_task_requirements_include_allaction_setup_skills(self):
+        expected = {
+            "RunMicrowave": [
+                "GoToObject",
+                "PickupObject",
+                "PutObject",
+                "OpenObject",
+                "CloseObject",
+                "RunMicrowave",
+            ],
+            "RunCoffeeMachine": [
+                "GoToObject",
+                "PickupObject",
+                "PutObject",
+                "RunCoffeeMachine",
+            ],
+            "RunToaster": [
+                "GoToObject",
+                "PickupObject",
+                "SliceObject",
+                "RunToaster",
+            ],
+            "ColdObject": [
+                "GoToObject",
+                "PickupObject",
+                "PutObject",
+                "OpenObject",
+                "CloseObject",
+                "SwitchOn",
+                "ColdObject",
+            ],
+        }
+
+        for skill, required_skills in expected.items():
+            with self.subTest(skill=skill):
+                self.assertEqual(
+                    data_engine._required_robot_skills_for_subtask(
+                        {"skill": skill, "objects": ["Apple", "Microwave"]}
+                    ),
+                    required_skills,
+                )
 
     def test_placement_restrictions_filter_invalid_pairs(self):
         engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
@@ -322,6 +388,42 @@ class DataEngineObjectPropertiesTests(unittest.TestCase):
             "Chair",
         )
 
+    def test_run_toaster_requires_knife_in_scene(self):
+        engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
+        skill_sets = data_engine._build_object_skill_sets(1, self._skill_fixture_path())
+
+        without_knife = engine.get_applicable_skills("Bread", ["Bread", "Toaster"], skill_sets)
+        with_knife = engine.get_applicable_skills("Bread", ["Bread", "Toaster", "Knife"], skill_sets)
+
+        self.assertNotIn("RunToaster", {skill["skill"] for skill in without_knife})
+        self.assertIn(
+            {
+                "skill": "RunToaster",
+                "type": "double",
+                "role": "obj1",
+                "needed_set": "toaster_objects",
+            },
+            with_knife,
+        )
+
+    def test_run_microwave_only_uses_microwave_placeable_objects(self):
+        engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
+        skill_sets = data_engine._build_object_skill_sets(1, self._skill_fixture_path())
+
+        apple_skills = engine.get_applicable_skills("Apple", ["Apple", "Microwave"], skill_sets)
+        book_skills = engine.get_applicable_skills("Book", ["Book", "Microwave"], skill_sets)
+
+        self.assertIn(
+            {
+                "skill": "RunMicrowave",
+                "type": "double",
+                "role": "obj1",
+                "needed_set": "microwave_objects",
+            },
+            apple_skills,
+        )
+        self.assertNotIn("RunMicrowave", {skill["skill"] for skill in book_skills})
+
     def test_task_final_state_open_closed_states_are_mutually_exclusive(self):
         engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
 
@@ -348,6 +450,32 @@ class DataEngineObjectPropertiesTests(unittest.TestCase):
                 ]
             ),
             [{"name": "Lamp", "contains": [], "states": ["ON"]}],
+        )
+
+    def test_task_final_state_temperature_and_liquid_states_are_mutually_exclusive(self):
+        engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
+
+        self.assertEqual(
+            engine.get_task_final_state(
+                [
+                    {"skill": "HeatByStoveBurner", "objects": ["Apple", "StoveBurner"]},
+                    {"skill": "ColdObject", "objects": ["Apple", "Fridge"]},
+                ]
+            ),
+            [{"name": "Apple", "contains": [], "states": ["COLD"]}],
+        )
+        self.assertEqual(
+            engine.get_task_final_state(
+                [
+                    {"skill": "FillWater", "objects": ["Mug", "Sink"]},
+                    {"skill": "RunCoffeeMachine", "objects": ["Mug", "CoffeeMachine"]},
+                ]
+            ),
+            [{"name": "Mug", "contains": [], "states": ["FILLEDWITHCOFFEE"]}],
+        )
+        self.assertEqual(
+            engine.get_subtask_final_state({"skill": "FillWater", "objects": ["Mug", "Sink"]}),
+            [{"name": "Mug", "contains": [], "states": ["FILLEDWITHWATER"]}],
         )
 
     def test_task_final_state_accumulates_nonexclusive_states_and_ignores_duplicates(self):
@@ -395,6 +523,49 @@ class DataEngineObjectPropertiesTests(unittest.TestCase):
                     {"skill": "Open", "objects": ["Cabinet"]},
                     {"skill": "PutIn", "objects": ["Book", "Cabinet"]},
                 ]
+            )
+        )
+
+    def test_check_subtasks_rejects_non_pickupable_required_objects(self):
+        engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
+        skill_sets = data_engine._build_object_skill_sets(1, self._skill_fixture_path())
+
+        self.assertFalse(
+            engine.check_subtasks(
+                [{"skill": "Wash", "objects": ["Mirror"]}],
+                skill_sets,
+            )
+        )
+        self.assertTrue(
+            engine.check_subtasks(
+                [{"skill": "Wash", "objects": ["Plate"]}],
+                skill_sets,
+            )
+        )
+        self.assertTrue(
+            engine.check_subtasks(
+                [{"skill": "Break", "objects": ["Mirror"]}],
+                skill_sets,
+            )
+        )
+
+    def test_slice_requires_pickupable_knife(self):
+        engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
+        path = self._write_objects(
+            [
+                {"scene": "FloorPlan1", "objectType": "Bread", "sliceable": True, "pickupable": True},
+                {"scene": "FloorPlan1", "objectType": "Knife", "pickupable": False},
+            ]
+        )
+        skill_sets = data_engine._build_object_skill_sets(1, path)
+
+        skills = engine.get_applicable_skills("Bread", ["Bread", "Knife"], skill_sets)
+
+        self.assertNotIn("Slice", {skill["skill"] for skill in skills})
+        self.assertFalse(
+            engine.check_subtasks(
+                [{"skill": "Slice", "objects": ["Bread"]}],
+                skill_sets,
             )
         )
 

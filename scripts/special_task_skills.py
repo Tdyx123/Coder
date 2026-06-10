@@ -7,7 +7,6 @@ SPECIAL_TASK_SKILLS = (
     "RunToaster",
     "CookByStoveBurner",
     "HeatByStoveBurner",
-    "FireByStoveBurner",
     "FillWater",
     "ColdObject",
 )

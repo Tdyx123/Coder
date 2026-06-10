@@ -627,7 +627,6 @@ class PDDLRunConfigTests(unittest.TestCase):
                 "(runtoaster robot1 toaster bread)",
                 "(cook_by_stove_burner robot1 stove_burner egg)",
                 "(heat-by-stove-burner robot1 stove_burner kettle)",
-                "(fire_by_stove_burner robot1 stove_burner candle)",
                 "(fill_water robot1 sink mug)",
                 "(cold_object robot1 fridge apple)",
             ]
@@ -643,7 +642,6 @@ class PDDLRunConfigTests(unittest.TestCase):
                 "RunToaster",
                 "CookByStoveBurner",
                 "HeatByStoveBurner",
-                "FireByStoveBurner",
                 "FillWater",
                 "ColdObject",
             ],

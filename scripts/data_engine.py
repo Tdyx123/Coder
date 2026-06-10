@@ -128,7 +128,6 @@ WATER_FILLABLE_OBJECTS = (
 
 MUG_OBJECTS = ("Mug",)
 BREAD_OBJECTS = ("Bread",)
-CANDLE_OBJECTS = ("Candle",)
 
 MICROWAVE_OBJECTS = ("Microwave",)
 COFFEE_MACHINE_OBJECTS = ("CoffeeMachine",)
@@ -216,6 +215,17 @@ def _objects_with_property(
         object_type
         for object_type, properties in object_type_properties.items()
         if properties.get(property_name, False)
+    )
+
+
+def _objects_with_properties(
+    object_type_properties: Dict[str, Dict[str, bool]],
+    property_names: Tuple[str, ...],
+) -> List[str]:
+    return sorted(
+        object_type
+        for object_type, properties in object_type_properties.items()
+        if all(properties.get(property_name, False) for property_name in property_names)
     )
 
 
@@ -328,7 +338,10 @@ def _build_object_skill_sets(
         "breakable_objects": _objects_with_property(object_type_properties, "breakable"),
         "pickupable_objects": _objects_with_property(object_type_properties, "pickupable"),
         "sliceable_objects": _objects_with_property(object_type_properties, "sliceable"),
-        "washable_objects": _objects_with_property(object_type_properties, "dirtyable"),
+        "washable_objects": _objects_with_properties(
+            object_type_properties,
+            ("dirtyable", "pickupable"),
+        ),
         "openable_objects": _objects_with_property(object_type_properties, "openable"),
         "openable_containers": _openable_receptacles(object_type_properties),
         "has_placing_surface_objects": _non_openable_receptacles(object_type_properties),
@@ -362,17 +375,16 @@ def _build_object_skill_sets(
             BREAD_OBJECTS,
             require_pickupable=True,
         ),
-        "candle_objects": _objects_present(
-            object_type_properties,
-            CANDLE_OBJECTS,
-            require_pickupable=True,
-        ),
         "microwave_objects": _objects_present(object_type_properties, MICROWAVE_OBJECTS),
         "coffee_machine_objects": _objects_present(object_type_properties, COFFEE_MACHINE_OBJECTS),
         "toaster_objects": _objects_present(object_type_properties, TOASTER_OBJECTS),
         "stove_burner_objects": _objects_present(object_type_properties, STOVE_BURNER_OBJECTS),
         "sink_objects": _objects_present(object_type_properties, SINK_OBJECTS),
         "fridge_objects": _objects_present(object_type_properties, FRIDGE_OBJECTS),
+        "microwave_placeable_objects": _pickupable_objects_allowed_at(
+            object_type_properties,
+            "Microwave",
+        ),
         "stove_burner_placeable_objects": _pickupable_objects_allowed_at(
             object_type_properties,
             "StoveBurner",
@@ -399,30 +411,62 @@ SKILL_TO_ROBOT_SKILLS = {
 MASS_OBJECTS = ['Knife']
 
 ACTION_SKILL_CORE_REQUIREMENTS = {
-    'RunMicrowave': ['GoToObject', 'PickupObject'],
-    'RunCoffeeMachine': ['GoToObject'],
-    'RunToaster': ['GoToObject'],
-    'CookByStoveBurner': ['GoToObject', 'PickupObject'],
+    'RunMicrowave': ['GoToObject', 'PickupObject', 'PutObject', 'OpenObject', 'CloseObject'],
+    'RunCoffeeMachine': ['GoToObject', 'PickupObject', 'PutObject'],
+    'RunToaster': ['GoToObject', 'PickupObject', 'SliceObject'],
+    'CookByStoveBurner': ['GoToObject', 'PickupObject', 'PutObject'],
     'HeatByStoveBurner': ['GoToObject', 'PickupObject'],
-    'FireByStoveBurner': ['GoToObject', 'PickupObject'],
     'FillWater': ['GoToObject', 'PickupObject'],
-    'ColdObject': ['GoToObject', 'PickupObject'],
+    'ColdObject': ['GoToObject', 'PickupObject', 'PutObject', 'OpenObject', 'CloseObject', 'SwitchOn'],
 }
 
 ACTION_PAIR_SKILL_SETS = {
-    'RunMicrowave': ('pickupable_objects', 'microwave_objects'),
+    'RunMicrowave': ('microwave_placeable_objects', 'microwave_objects'),
     'RunCoffeeMachine': ('mug_objects', 'coffee_machine_objects'),
     'RunToaster': ('bread_objects', 'toaster_objects'),
     'CookByStoveBurner': ('cookable_objects', 'stove_burner_objects'),
     'HeatByStoveBurner': ('stove_burner_placeable_objects', 'stove_burner_objects'),
-    'FireByStoveBurner': ('candle_objects', 'stove_burner_objects'),
     'FillWater': ('fillable_objects', 'sink_objects'),
     'ColdObject': ('fridge_coldable_objects', 'fridge_objects'),
+}
+
+SKILLS_REQUIRING_FIRST_OBJECT_PICKUP = {
+    'Wash',
+    'PutOn',
+    'PutIn',
+    'RunMicrowave',
+    'RunCoffeeMachine',
+    'RunToaster',
+    'CookByStoveBurner',
+    'HeatByStoveBurner',
+    'FillWater',
+    'ColdObject',
 }
 
 
 def _putin_requires_open_close(receptacle: str) -> bool:
     return receptacle in MUST_OPEN_TO_PLACE_OBJECTS_IN
+
+
+def _required_pickupable_objects_for_subtask(subtask: Dict[str, Any]) -> List[str]:
+    skill = subtask["skill"]
+    objects = subtask.get("objects", [])
+
+    if skill == "Slice":
+        return ["Knife"]
+
+    if skill in SKILLS_REQUIRING_FIRST_OBJECT_PICKUP and objects:
+        return [objects[0]]
+
+    return []
+
+
+def _subtask_uses_pickupable_objects(subtask: Dict[str, Any], skill_sets: Dict[str, Any]) -> bool:
+    pickupable_objects = set(skill_sets["pickupable_objects"])
+    return all(
+        obj in pickupable_objects
+        for obj in _required_pickupable_objects_for_subtask(subtask)
+    )
 
 
 def _required_robot_skills_for_subtask(subtask: Dict[str, Any]) -> List[str]:
@@ -474,6 +518,25 @@ def _can_pair_with_action_skill(
     )
 
 
+def _can_generate_action_skill(
+    skill: str,
+    all_objects: List[str],
+    skill_sets: Dict[str, Any],
+) -> bool:
+    object_types = set(all_objects)
+
+    if skill == "RunToaster":
+        return "Knife" in object_types and "Knife" in skill_sets["pickupable_objects"]
+
+    if skill == "CookByStoveBurner":
+        return any(
+            container in object_types
+            for container in skill_sets["stove_burner_placeable_objects"]
+        )
+
+    return True
+
+
 def _is_cookable_object(obj: str) -> bool:
     return obj in COOKABLE_OBJECTS
 
@@ -483,6 +546,10 @@ MUTUALLY_EXCLUSIVE_STATES = {
     "CLOSED": "OPENED",
     "ON": "OFF",
     "OFF": "ON",
+    "HOT": "COLD",
+    "COLD": "HOT",
+    "FILLEDWITHWATER": "FILLEDWITHCOFFEE",
+    "FILLEDWITHCOFFEE": "FILLEDWITHWATER",
 }
 
 
@@ -559,17 +626,15 @@ class DataEngine:
         elif skill == 'PutIn':
             return f"put {obj_strs[0]} in {obj_strs[1]}"
         elif skill == 'RunMicrowave':
-            return f"microwave the {obj_strs[0]}"
+            return f"microwave the {obj_strs[0]} in the {obj_strs[1]}"
         elif skill == 'RunCoffeeMachine':
-            return f"make coffee in the {obj_strs[0]}"
+            return f"make coffee in the {obj_strs[0]} using the {obj_strs[1]}"
         elif skill == 'RunToaster':
-            return f"toast the {obj_strs[0]}"
+            return f"toast the {obj_strs[0]} in the {obj_strs[1]}"
         elif skill == 'CookByStoveBurner':
             return f"cook the {obj_strs[0]} on the {obj_strs[1]}"
         elif skill == 'HeatByStoveBurner':
             return f"heat the {obj_strs[0]} on the {obj_strs[1]}"
-        elif skill == 'FireByStoveBurner':
-            return f"light the {obj_strs[0]} by the {obj_strs[1]}"
         elif skill == 'FillWater':
             return f"fill the {obj_strs[0]} with water"
         elif skill == 'ColdObject':
@@ -606,17 +671,15 @@ class DataEngine:
                 states.append("COOKED")
             results.append({"name": objs[0], "contains": [], "states": states})
         elif skill == 'RunCoffeeMachine':
-            results.append({"name": objs[0], "contains": [], "states": ["FILLED_WITH_COFFEE"]})
+            results.append({"name": objs[0], "contains": [], "states": ["FILLEDWITHCOFFEE"]})
         elif skill == 'RunToaster':
             results.append({"name": objs[0], "contains": [], "states": ["HOT", "COOKED"]})
         elif skill == 'CookByStoveBurner':
             results.append({"name": objs[0], "contains": [], "states": ["COOKED"]})
         elif skill == 'HeatByStoveBurner':
             results.append({"name": objs[0], "contains": [], "states": ["HOT"]})
-        elif skill == 'FireByStoveBurner':
-            results.append({"name": objs[0], "contains": [], "states": ["ON"]})
         elif skill == 'FillWater':
-            results.append({"name": objs[0], "contains": [], "states": ["FILLED_WITH_WATER"]})
+            results.append({"name": objs[0], "contains": [], "states": ["FILLEDWITHWATER"]})
         elif skill == 'ColdObject':
             results.append({"name": objs[0], "contains": [], "states": ["COLD"]})
 
@@ -741,6 +804,9 @@ class DataEngine:
             while json.dumps(subtasks, sort_keys=True) in created_set:
                 subtasks = self.generate_task([o['name'] for o in objects], num, skill_sets)
 
+            if not self.check_subtasks(subtasks, skill_sets):
+                continue
+
             for _ in range(MAX_ROBOTS_ATTEMPTS):
                 num_robots = random.randint(2, 4)
                 robot_indices = random.sample(range(1, len(robots) + 1), num_robots)
@@ -837,10 +903,15 @@ put sink on saltshaker, then put ladle on sinkbasin
 
         return task_nl
 
-    def check_subtasks(self, subtasks):
+    def check_subtasks(self, subtasks, skill_sets: Optional[Dict[str, Any]] = None):
         # 包含重复的 subtask
         if len(subtasks) > len(set([json.dumps(subtask, sort_keys=True) for subtask in subtasks])):
             return False
+
+        if skill_sets is not None:
+            for subtask in subtasks:
+                if not _subtask_uses_pickupable_objects(subtask, skill_sets):
+                    return False
         
         # 将同一件东西搬来搬去
         mving_objects = []
@@ -940,7 +1011,7 @@ put sink on saltshaker, then put ladle on sinkbasin
                     if line:
                         created_set.add(line)
 
-        task_folder = f"data/final_test_new_0530_{complexity}"
+        task_folder = f"data/final_test_new_0609_{complexity}"
         task_folder_path = Path(task_folder)
         task_folder_path.mkdir(parents=True, exist_ok=True)
         TASK_FILE = task_folder_path.joinpath(f"FloorPlan{foor_plan}.jsonl")
@@ -1024,7 +1095,7 @@ put sink on saltshaker, then put ladle on sinkbasin
             skills.append({'skill': 'Wash', 'type': 'single'})
         if obj in breakable_objects:
             skills.append({'skill': 'Break', 'type': 'single'})
-        if obj in sliceable_objects and "Knife" in all_objects:
+        if obj in sliceable_objects and "Knife" in all_objects and "Knife" in pickupable_objects:
             skills.append({'skill': 'Slice', 'type': 'single'})
 
         # 双对象技能 PutOn
@@ -1070,6 +1141,9 @@ put sink on saltshaker, then put ladle on sinkbasin
             })
 
         for action_skill, (obj_set_name, appliance_set_name) in ACTION_PAIR_SKILL_SETS.items():
+            if not _can_generate_action_skill(action_skill, all_objects, skill_sets):
+                continue
+
             obj_set = skill_sets[obj_set_name]
             appliance_set = skill_sets[appliance_set_name]
 
@@ -1277,5 +1351,3 @@ if __name__ == "__main__":
         for floor_plan in range(1, 31):
             # data_engine.create_tasks(base + floor_plan, 5)
             data_engine.create_tasks(base + floor_plan, 30, 1)
-
-   

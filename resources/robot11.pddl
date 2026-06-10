@@ -181,7 +181,6 @@
       (at ?r ?fridge)
       (at-location ?object ?fridge)
       (not (object-open ?fridge))
-      (switch-on ?fridge)
     )
     :effect (and
         (cold ?object)
