@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
-"""Compatibility facade for the reorganized demo2 execution system."""
+"""Run a hardcoded pddlrun_llmseparate output through executor_system."""
 
-import math
+from __future__ import annotations
+
+import copy
+import json
+import re
 import sys
 import types
+from pathlib import Path
+from typing import Any, Dict, List, Sequence
 
 from executor_system import actions as _actions
 from executor_system import config as _config
@@ -11,284 +17,155 @@ from executor_system import context as _context
 from executor_system import demo_state as _demo_state
 from executor_system import dependencies as _dependencies
 from executor_system import runtime as _runtime_module
-
-robots = ["robot1", "robot2"]
-floor_no = "1"
-# ground_truth = [
-#     {"name": "Potato", "contains": [], "states": ["SLICED", "COOKED"]},
-#     {"name": "Drawer", "contains": [], "states": ["OPENED"]},
-#     {"name": "Cabinet", "contains": [], "states": ["OPENED"]},
-#     {"name": "Window", "contains": [], "states": ["BROKEN"]},
-# ]
-
-# ground_truth = [
-#     {"name": "Egg", "contains": [], "states": ["COOKED"]},
-# ]
-
-# ground_truth = [
-#     {"name": "Mug", "contains": [], "states": ["FILLEDWITHCOFFEE"]},
-# ]
-
-# ground_truth = [
-#     {"name": "Bottle", "contains": [], "states": ["FILLEDWITHWATER"]},
-# ]
-
-# ground_truth = [
-#     {"name": "Pan", "contains": [], "states": ["CLEANED"]},
-# ]
-
-# ground_truth = [
-#     {"name": "Potato", "contains": [], "states": ["COLD"]},
-# ]
-
-# ground_truth = [
-#     {"name": "Pan", "contains": [], "states": ["Hot"]},
-# ]
-
-ground_truth = [
-    {"name": "Bread", "contains": [], "states": ["COOKED"]},
-]
-
-_demo_state.set_ground_truth(ground_truth)
-
-from executor_system.action_plan import *
-from executor_system.actions import *
-from executor_system.conflict_resolver import *
-from executor_system.config import *
-from executor_system.dependencies import *
-from executor_system.executor import *
-from executor_system.executor_requests import *
-from executor_system.goals import *
-from executor_system.plan_validator import *
-from executor_system.resource_inferencer import *
-from executor_system.resource_manager import *
-from executor_system.runtime import *
-from executor_system.stage_runner import *
-from executor_system.synchronous_executor import *
-from executor_system.task_plan import *
-from executor_system.task_runner import *
-from executor_system.thor_adapter import *
-from executor_system.utils import *
-from executor_system.world_state import *
-from executor_system.task_plan import run_action_plan
+from executor_system.config import CLOUD_RENDERING, RENDER_IMAGE
+from executor_system.pddlrun_adapter import build_task_plan_from_pddlrun_paths
 from executor_system.runtime import ThorRuntime
+from executor_system.task_plan import run_action_plan
 
-for _name in dir(_actions):
-    if _name.startswith("_") and not _name.startswith("__"):
-        globals()[_name] = getattr(_actions, _name)
+import resources.robots as robot_catalog
+
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+# Hardcoded pddlrun_llmseparate outputs.
+ALLOCATE_FILE = (
+    "/home/dwb/thor/LaMMA-P/logs/intermediate_runs/"
+    "final_test_new_0528_1___308/"
+    "open_the_book,_then_open_the_drawer,_then_open_the_blinds/"
+    "20260601_001/02_allocate/02_allocate_output.txt"
+)
+PLAN_FOLDER = (
+    "/home/dwb/thor/LaMMA-P/logs/intermediate_runs/"
+    "final_test_new_0528_1___308/"
+    "open_the_book,_then_open_the_drawer,_then_open_the_blinds/"
+    "20260601_001/08_planner/outputs"
+)
+PLAN_FILES: List[str] = []
+TASK_FILE = "/home/dwb/thor/LaMMA-P/data/final_test_new_0528_1/FloorPlan308.jsonl"
+TASK_INDEX = 21
+
 
 runtime = None
+robots: List[Dict[str, Any]] = []
+floor_no = ""
+ground_truth: List[Dict[str, Any]] = []
 cv2 = _dependencies.cv2
 Controller = _dependencies.Controller
 CloudRendering = _dependencies.CloudRendering
 
 
-def run_subtask_01(robot: RobotRef) -> None:
-    # Subtask 1
-    # (gotoobject robot1 knife)
-    GoToObject(robot, "Knife")
-    # (pickupobject robot1 knife)
-    PickupObject(robot, "Knife")
-    # (gotoobject robot1 potato)
-    GoToObject(robot, "Potato")
-    # (sliceobject robot1 potato countertop knife)
-    SliceObject(robot, "Potato")
+def load_task_record(task_file: str, task_index: int) -> Dict[str, Any]:
+    path = Path(task_file).expanduser()
+    if not path.is_file():
+        raise RuntimeError(f"TASK_FILE not found: {path}")
+    if task_index < 0:
+        raise RuntimeError("TASK_INDEX must be 0-based and non-negative.")
 
-def run_subtask_slice_bread(robot: RobotRef) -> None:
-    # Subtask 1
-    # (gotoobject robot1 knife)
-    GoToObject(robot, "Knife")
-    # (pickupobject robot1 knife)
-    PickupObject(robot, "Knife")
-    # (gotoobject robot1 potato)
-    GoToObject(robot, "Bread")
-    # (sliceobject robot1 potato countertop knife)
-    SliceObject(robot, "Bread")
+    with path.open("r", encoding="utf-8") as handle:
+        for index, raw_line in enumerate(handle):
+            if index != task_index:
+                continue
+            line = raw_line.strip()
+            if not line:
+                raise RuntimeError(f"TASK_FILE line {task_index} is empty: {path}")
+            return json.loads(line)
 
-def run_subtask_toast_bread(robot: RobotRef) -> None:
-    # (gotoobject robot1 knife)
-    GoToObject(robot, "Knife")
-    # (openobject robot1 drawer)
-    OpenObject(robot, "Drawer")
-    # (pickupobject robot1 knife)
-    PickupObject(robot, "Knife")
-    # (gotoobject robot1 potato)
-    GoToObject(robot, "Bread")
-    # (sliceobject robot1 potato countertop knife)
-    SliceObject(robot, "Bread")
-    # (pickupobject robot1 bread)
-    PickupObject(robot, "Bread")
-    # (gotoobject robot1 toaster)
-    GoToObject(robot, "Toaster")
-    # (runtoaster robot1 bread)
-    RunToaster(robot, "Toaster", "Bread")
-
-def run_subtask_cook_egg(robot: RobotRef) -> None:
-    # (gotoobject robot1 fridge)
-    GoToObject(robot, "Fridge")
-    # (gotoobject robot1 fridge)
-    GoToObject(robot, "Fridge")
-    # (openobject robot1 fridge)
-    OpenObject(robot, "Fridge")
-    # (pickupobject robot1 egg)
-    PickupObject(robot, "Egg")
-    # (gotoobject robot1 pan)
-    GoToObject(robot, "Pan")
-    # (putobject robot1 egg pan)
-    PutObject(robot, "Egg", "Pan")
-    # (break robot1 egg)
-    PrepareEgg(robot, "Egg")
-    # (pickupobject robot1 pan)
-    PickupObject(robot, "Pan")
-    # (cookbystoveburner robot1 stoveburner pan food)
-    CookByStoveBurner(robot, "StoveBurner", "Pan", "Egg")
-
-def run_subtask_fill_coffee(robot: RobotRef) -> None:
-    # (gotoobject robot1 mug)
-    GoToObject(robot, "Mug")
-    # (pickupobject robot1 mug)
-    PickupObject(robot, "Mug")
-    # (gotoobject robot1 coffeemachine)
-    GoToObject(robot, "CoffeeMachine")
-    # (putobject robot1 mug coffeemachine)
-    PutObject(robot, "Mug", "CoffeeMachine")
-    # (putobject robot1 coffeemachine mug)
-    RunCoffeeMachine(robot, "CoffeeMachine", "Mug")
-
-def run_subtask_fill_water(robot: RobotRef) -> None:
-    # (gotoobject robot1 bottle)
-    GoToObject(robot, "Bottle")
-    # (pickupobject robot1 bottle)
-    PickupObject(robot, "Bottle")
-    # (gotoobject robot1 sink)
-    GoToObject(robot, "Sink")
-    # (putobject robot1 sink bottle)
-    FillWater(robot, "Sink", "Bottle")
-
-def run_subtask_clean(robot: RobotRef) -> None: 
-    # (gotoobject robot1 bottle)
-    GoToObject(robot, "Pan")
-    # (pickupobject robot1 bottle)
-    PickupObject(robot, "Pan")
-    # (gotoobject robot1 sink)
-    GoToObject(robot, "Sink")
-    # (putobject robot1 sink bottle)
-    CleanObject(robot, "Pan", "Sink")
-
-def run_subtask_cold(robot: RobotRef) -> None: 
-    # (gotoobject robot1 potato)
-    GoToObject(robot, "Potato")
-    # (pickupobject robot1 bottle)
-    PickupObject(robot, "Potato")
-    # (gotoobject robot1 fridge)
-    GoToObject(robot, "Fridge")
-    # (openobject robot1 fridge)
-    OpenObject(robot, "Fridge")
-    # (putobject robot1 potato fridge)
-    PutObject(robot, "Potato", "Fridge")
-    # (closeobject robot1 fridge)
-    CloseObject(robot, "Fridge")
-    # (coldobject robot1 fridge potato)
-    ColdObject(robot, "Fridge", "Potato")
-
-def run_subtask_heat(robot: RobotRef) -> None:
-    # (gotoobject robot1 pan)
-    GoToObject(robot, "Pan")
-    # (pickupobject robot1 egg)
-    PickupObject(robot, "Pan")
-    # (cookbystoveburner robot1 stoveburner pan food)
-    HeatByStoveBurner(robot, "StoveBurner", "Pan")
-
-def run_subtask_02(robot: RobotRef) -> None:
-    # Subtask 2
-    # (gotoobject robot1 drawer)
-    GoToObject(robot, "Drawer")
-    # (openobject robot1 drawer)
-    OpenObject(robot, "Drawer")
+    raise RuntimeError(f"TASK_INDEX {task_index} is out of range for {path}")
 
 
-def run_subtask_03(robot: RobotRef) -> None:
-    # Subtask 3
-    # (gotoobject robot1 cabinet)
-    GoToObject(robot, "Cabinet")
-    # (openobject robot1 cabinet)
-    OpenObject(robot, "Cabinet")
+def floor_plan_from_task_file(task_file: str) -> str:
+    match = re.search(r"FloorPlan(\d+)\.jsonl$", str(task_file))
+    if not match:
+        raise RuntimeError(f"Cannot infer floor plan from TASK_FILE: {task_file}")
+    return match.group(1)
 
 
-def run_subtask_04(robot: RobotRef) -> None:
-    # Subtask 4
-    # (gotoobject robot1 window)
-    GoToObject(robot, "Window")
-    # (breakobject robot1 window)
-    BreakObject(robot, "Window")
+def build_robot_team(robot_ids: Sequence[Any]) -> List[Dict[str, Any]]:
+    team: List[Dict[str, Any]] = []
+    for index, raw_robot_id in enumerate(robot_ids):
+        robot_id = int(raw_robot_id)
+        if robot_id < 1 or robot_id > len(robot_catalog.robots):
+            raise RuntimeError(f"Invalid robot id in task record: {raw_robot_id!r}")
+        robot = copy.deepcopy(robot_catalog.robots[robot_id - 1])
+        robot["name"] = f"robot{index + 1}"
+        team.append(robot)
+    if not team:
+        raise RuntimeError("Task record has no robots in 'robot list'.")
+    return team
 
 
-def run_subtask_05(robot: RobotRef) -> None:
-    # Subtask 5
-    # (gotoobject robot1 potato)
-    GoToObject(robot, "Potato")
-    # (pickupobject robot1 potato)
-    PickupObject(robot, "Potato")
-    # (gotoobject robot1 microwave)
-    GoToObject(robot, "Microwave")
-    # (openobject robot1 microwave)
-    OpenObject(robot, "Microwave")
-    # (putobject robot1 potato microwave)
-    PutObject(robot, "Potato", "Microwave")
-    # (closeobject robot1 microwave)
-    CloseObject(robot, "Microwave")
-    # (runmicrowave robot1 microwave potato)
-    RunMicrowave(robot, "Microwave", "Potato")
+def load_object_names(floor_plan: str) -> List[str]:
+    cache_path = REPO_ROOT / "data" / "ai2thor_objects_cache" / f"FloorPlan{floor_plan}.json"
+    if not cache_path.is_file():
+        return []
+
+    try:
+        cached = json.loads(cache_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return []
+
+    names: List[str] = []
+    for item in cached:
+        if isinstance(item, dict):
+            name = item.get("name") or item.get("objectType") or item.get("objectId")
+        else:
+            name = item
+        if name:
+            names.append(str(name))
+    return names
 
 
-def run_subtask_06(robot: RobotRef) -> None:
-    # Subtask 6
-    # (gotoobject robot1 potato)
-    GoToObject(robot, "Potato")
-    # (pickupobject robot1 potato)
-    PickupObject(robot, "Potato")
-    # (gotoobject robot1 fridge)
-    GoToObject(robot, "Fridge")
-    # (openobject robot1 fridge)
-    OpenObject(robot, "Fridge")
-    # (putobject robot1 potato fridge)
-    PutObject(robot, "Potato", "Fridge")
-    # (closeobject robot1 fridge)
-    CloseObject(robot, "Fridge")
-
-def run_subtask_07(robot: RobotRef) -> None:
-    # Subtask 7
-    # (gotoobject robot1 bread)
-    GoToObject(robot, "Bread")
-    # PickupObject(robot, "bread")
-    PickupObject(robot, "Bread")
-    # (gotoobject robot1 pan)
-    GoToObject(robot, "Toaster")
-    # (putobject robot1 bread pan)
-    PutObject(robot, "Bread", "Toaster")
+def transition_metric(no_trans: int, no_trans_gt: int, max_trans: int) -> float:
+    max_trans_value = max_trans + 1
+    no_trans_gt_value = no_trans_gt + 1
+    if max_trans_value == no_trans_gt_value and no_trans_gt_value == no_trans:
+        return 1.0
+    if max_trans_value == no_trans_gt_value:
+        return 0.0
+    return (max_trans_value - no_trans) / (max_trans_value - no_trans_gt_value)
 
 
 def main() -> int:
-    global runtime
+    global floor_no, ground_truth, robots, runtime
+
+    task_record = load_task_record(TASK_FILE, TASK_INDEX)
+    floor_no = floor_plan_from_task_file(TASK_FILE)
+    robots = build_robot_team(task_record.get("robot list") or [])
+    ground_truth = list(task_record.get("object_states") or [])
+    _demo_state.set_ground_truth(ground_truth)
+
+    bundle = build_task_plan_from_pddlrun_paths(
+        task=str(task_record.get("task") or ""),
+        robots=robots,
+        allocate_file=ALLOCATE_FILE,
+        plan_folder=PLAN_FOLDER,
+        plan_files=PLAN_FILES,
+        object_names=load_object_names(floor_no),
+        task_id=f"FloorPlan{floor_no}_task_{TASK_INDEX}",
+    )
+
+    if bundle.object_mapping_warnings:
+        for warning in bundle.object_mapping_warnings:
+            print(f"WARNING: {warning}")
+
     runtime = ThorRuntime(robots, floor_no, CLOUD_RENDERING, RENDER_IMAGE)
     _context.runtime = runtime
     try:
-        run_action_plan(
-            TaskPlanParser("tmp0").parse(
-                [
-                    ("Phase 1", [(robots[0], [run_subtask_toast_bread])]),
-                ]
-            )
-        )
+        run_action_plan(bundle.task_plan)
         runtime.step({"action": "Done"}, check_success=False)
+
         metrics = runtime.evaluate(ground_truth)
+        no_trans_gt = int(task_record.get("trans", 0) or 0)
+        max_trans = int(task_record.get("min_trans", task_record.get("max_trans", 0)) or 0)
+        ru = transition_metric(bundle.no_trans, no_trans_gt, max_trans)
+        sr = 1 if metrics["tc"] == 1.0 and ru == 1.0 else 0
         print(
             "SR:{sr}, TC:{tc}, GCR:{gcr}, Exec:{exec_rate}, RU:{ru}".format(
-                sr=int(metrics["sr"]),
+                sr=sr,
                 tc=int(metrics["tc"]),
                 gcr=metrics["gcr"],
                 exec_rate=metrics["exec_rate"],
-                ru=metrics["ru"],
+                ru=ru,
             )
         )
         runtime.log_unmet_goals(ground_truth)
