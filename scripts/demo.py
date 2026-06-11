@@ -11,6 +11,13 @@ import types
 from pathlib import Path
 from typing import Any, Dict, List, Sequence
 
+_SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = _SCRIPT_DIR.parent
+for path in (_SCRIPT_DIR, REPO_ROOT):
+    path_str = str(path)
+    if path_str not in sys.path:
+        sys.path.append(path_str)
+
 from executor_system import actions as _actions
 from executor_system import config as _config
 from executor_system import context as _context
@@ -24,8 +31,6 @@ from executor_system.task_plan import run_action_plan
 
 import resources.robots as robot_catalog
 
-
-REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # Hardcoded pddlrun_llmseparate outputs.
 ALLOCATE_FILE = (

@@ -16,6 +16,13 @@ from pathlib import Path
 from pprint import pformat
 from typing import Any, Dict, List, Optional, Sequence
 
+_SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = _SCRIPT_DIR.parent
+for path in (_SCRIPT_DIR, REPO_ROOT):
+    path_str = str(path)
+    if path_str not in sys.path:
+        sys.path.append(path_str)
+
 from executor_system.action_plan import Action, StagePlan, TaskPlan
 from executor_system.pddlrun_adapter import (
     PddlRunAdapterError,
@@ -25,9 +32,6 @@ from executor_system.pddlrun_adapter import (
 from run_config import normalize_floor_plan
 
 import resources.robots as robot_catalog
-
-
-REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 class PlanToCodeError(RuntimeError):
@@ -356,9 +360,11 @@ from typing import Any, Dict, List, Sequence
 
 
 REPO_ROOT = Path({code_repo_root!r})
-SCRIPTS_DIR = REPO_ROOT / "scripts"
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
+_SCRIPT_DIR = REPO_ROOT / "scripts"
+for path in (_SCRIPT_DIR, REPO_ROOT):
+    path_str = str(path)
+    if path_str not in sys.path:
+        sys.path.append(path_str)
 
 from executor_system import actions as _actions
 from executor_system import config as _config
