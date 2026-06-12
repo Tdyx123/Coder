@@ -17,6 +17,7 @@ from sft_generator import (
     check_planner_plan_count,
     check_validate_output_count,
     get_model,
+    select_latest_unique_task_runs,
 )
 
 
@@ -25,6 +26,90 @@ class TestSftGeneratorModelCheck(unittest.TestCase):
         summary_path = root / "summary.json"
         summary_path.write_text(
             json.dumps(content, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        return summary_path
+
+    def write_dataset(self, root: Path, test_set: str, floor_plan: str, records) -> Path:
+        dataset_path = root / "data" / test_set / f"FloorPlan{floor_plan}.jsonl"
+        dataset_path.parent.mkdir(parents=True, exist_ok=True)
+        dataset_path.write_text(
+            "\n".join(json.dumps(record, ensure_ascii=False) for record in records) + "\n",
+            encoding="utf-8",
+        )
+        return dataset_path
+
+    def make_valid_task_run(self, root: Path, name: str, decompose_output: str = "do task") -> Path:
+        task_run_dir = root / "task_runs" / name
+
+        (task_run_dir / "01_decompose").mkdir(parents=True)
+        (task_run_dir / "01_decompose" / "01_decompose_prompt.txt").write_text(
+            f"decompose prompt {name}",
+            encoding="utf-8",
+        )
+        (task_run_dir / "01_decompose" / "02_decompose_output.txt").write_text(
+            decompose_output,
+            encoding="utf-8",
+        )
+
+        (task_run_dir / "02_allocate").mkdir(parents=True)
+        (task_run_dir / "02_allocate" / "01_allocate_prompt.txt").write_text(
+            f"allocate prompt {name}",
+            encoding="utf-8",
+        )
+        (task_run_dir / "02_allocate" / "02_allocate_output.txt").write_text(
+            "Subtask 1: Robot 1;",
+            encoding="utf-8",
+        )
+
+        (task_run_dir / "05_problem_generation" / "prompts").mkdir(parents=True)
+        (task_run_dir / "05_problem_generation" / "outputs").mkdir(parents=True)
+        (task_run_dir / "05_problem_generation" / "prompts" / "subtask_01_prompt.txt").write_text(
+            f"problem prompt {name}",
+            encoding="utf-8",
+        )
+        (task_run_dir / "05_problem_generation" / "outputs" / "subtask_01_problem.pddl").write_text(
+            f"problem output {name}",
+            encoding="utf-8",
+        )
+
+        (task_run_dir / "07_validate" / "prompts").mkdir(parents=True)
+        (task_run_dir / "07_validate" / "outputs").mkdir(parents=True)
+        (task_run_dir / "07_validate" / "prompts" / "subtask_01_prompt.txt").write_text(
+            f"validate prompt {name}",
+            encoding="utf-8",
+        )
+        (task_run_dir / "07_validate" / "outputs" / "subtask_01_validated.pddl").write_text(
+            f"validated output {name}",
+            encoding="utf-8",
+        )
+
+        (task_run_dir / "08_planner" / "outputs").mkdir(parents=True)
+        (task_run_dir / "08_planner" / "outputs" / "subtask_01_plan.txt").write_text(
+            f"planner output {name}",
+            encoding="utf-8",
+        )
+
+        return task_run_dir
+
+    def write_pddlrun_summary(self, root: Path, pddlrun_name: str, results, test_set: str = "unit_set") -> Path:
+        summary_dir = root / "parallel_runs" / pddlrun_name
+        summary_dir.mkdir(parents=True)
+        summary_path = summary_dir / "summary.json"
+        summary_path.write_text(
+            json.dumps(
+                {
+                    "repo_root": str(root),
+                    "test_set": test_set,
+                    "summaries": [
+                        {
+                            "floor_plan": "1",
+                            "results": results,
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            ),
             encoding="utf-8",
         )
         return summary_path
@@ -188,6 +273,103 @@ class TestSftGeneratorModelCheck(unittest.TestCase):
             result = check_decompose_subtask_count(str(summary_path), 32)
 
             self.assertIs(result, False)
+
+    def test_select_latest_unique_task_runs_keeps_newest_pddlrun_for_duplicate_task_key(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self.write_dataset(
+                root,
+                "unit_set",
+                "1",
+                [{"subtasks": ["do task"], "assigned_robots": [1]}],
+            )
+            old_task_run_dir = self.make_valid_task_run(root, "old")
+            new_task_run_dir = self.make_valid_task_run(root, "new")
+
+            old_summary_path = self.write_pddlrun_summary(
+                root,
+                "pddlrun_llmseparate_20260501_000000",
+                [
+                    {
+                        "floor_plan": "1",
+                        "model": "test-model",
+                        "task_index": 0,
+                        "task": "same task",
+                        "task_run_dir": str(old_task_run_dir),
+                    }
+                ],
+            )
+            new_summary_path = self.write_pddlrun_summary(
+                root,
+                "pddlrun_llmseparate_20260502_000000",
+                [
+                    {
+                        "floor_plan": "FloorPlan1",
+                        "model": "test-model",
+                        "task_index": 0,
+                        "task": "same task",
+                        "task_run_dir": str(new_task_run_dir),
+                    }
+                ],
+            )
+
+            selected = select_latest_unique_task_runs([
+                str(old_summary_path),
+                str(new_summary_path),
+            ])
+
+            self.assertEqual(len(selected), 1)
+            self.assertEqual(selected[0]["task_key"], ("unit_set", "1", 0))
+            self.assertEqual(selected[0]["task_run_dir"], str(new_task_run_dir))
+            self.assertEqual(selected[0]["pddlrun_timestamp"], "20260502_000000")
+
+    def test_select_latest_unique_task_runs_keeps_distinct_keys_with_same_task_text(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self.write_dataset(
+                root,
+                "unit_set",
+                "1",
+                [
+                    {"subtasks": ["do first task"], "assigned_robots": [1]},
+                    {"subtasks": ["do second task"], "assigned_robots": [1]},
+                ],
+            )
+            first_task_run_dir = self.make_valid_task_run(root, "first", decompose_output="do first task")
+            second_task_run_dir = self.make_valid_task_run(root, "second", decompose_output="do second task")
+
+            summary_path = self.write_pddlrun_summary(
+                root,
+                "pddlrun_llmseparate_20260502_000000",
+                [
+                    {
+                        "floor_plan": "1",
+                        "model": "test-model",
+                        "task_index": 0,
+                        "task": "same visible task text",
+                        "task_run_dir": str(first_task_run_dir),
+                    },
+                    {
+                        "floor_plan": "1",
+                        "model": "test-model",
+                        "task_index": 1,
+                        "task": "same visible task text",
+                        "task_run_dir": str(second_task_run_dir),
+                    },
+                ],
+            )
+
+            selected = select_latest_unique_task_runs([str(summary_path)])
+
+            self.assertEqual(len(selected), 2)
+            self.assertEqual(
+                [candidate["task_key"] for candidate in selected],
+                [("unit_set", "1", 0), ("unit_set", "1", 1)],
+            )
+            self.assertEqual(
+                [candidate["task_run_dir"] for candidate in selected],
+                [str(first_task_run_dir), str(second_task_run_dir)],
+            )
 
 
 if __name__ == "__main__":

@@ -1,11 +1,46 @@
 import json
 import os
 import os.path
+import re
 
 from functools import wraps
-from typing import Dict, List, Union
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 from parsing_utils import ParsingUtils
+
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+OUTPUT_PATH_BASE = "/data/dwb/datasets/all"
+MAIN_MODEL_FILTER = "deepseek-ai/DeepSeek-V3.2"
+PDDLRUNS = [
+    "pddlrun_llmseparate_20260506_160313",
+    "pddlrun_llmseparate_20260517_140101",
+    "pddlrun_llmseparate_20260520_225427",
+    "pddlrun_llmseparate_20260526_143831",
+    "pddlrun_llmseparate_20260529_190454",
+    "pddlrun_llmseparate_20260506_162101",
+    "pddlrun_llmseparate_20260518_145253",
+    "pddlrun_llmseparate_20260521_151830",
+    "pddlrun_llmseparate_20260526_194352",
+    "pddlrun_llmseparate_20260531_213941",
+    "pddlrun_llmseparate_20260506_180812",
+    "pddlrun_llmseparate_20260518_214413",
+    "pddlrun_llmseparate_20260522_102424",
+    "pddlrun_llmseparate_20260527_135853",
+    "pddlrun_llmseparate_20260507_145350",
+    "pddlrun_llmseparate_20260519_151717",
+    "pddlrun_llmseparate_20260523_152557",
+    "pddlrun_llmseparate_20260527_220002",
+    "pddlrun_llmseparate_20260516_145201",
+    "pddlrun_llmseparate_20260520_162612",
+    "pddlrun_llmseparate_20260524_195257",
+    "pddlrun_llmseparate_20260528_153620",
+    "pddlrun_llmseparate_20260516_164415",
+    "pddlrun_llmseparate_20260520_204726",
+    "pddlrun_llmseparate_20260525_141235",
+    "pddlrun_llmseparate_20260528_222518",
+]
+
+TaskKey = Tuple[str, str, int]
 
 def read_file(path):
     with open(path, "r", encoding="utf-8") as f:
@@ -389,57 +424,164 @@ def check_planner_plan_count(summary_path: str, index: int, data_root: str = "da
     }
 
 
-def output(summary_path):
-    output_path_base = "/data/dwb/datasets/all"
+def _pddlrun_timestamp(summary_path: str) -> str:
+    pddlrun_name = os.path.basename(os.path.dirname(os.path.abspath(summary_path)))
+    match = re.search(r"(\d{8}_\d{6})$", pddlrun_name)
+    if not match:
+        return ""
 
-    model = get_model(summary_path)
+    return match.group(1)
 
-    if model.startswith("Qwen3"):
-        pass
 
-    for index, task_run_dir in enumerate(get_all_task_run_dirs(summary_path)):
-        if not _check_matched(check_decompose_subtask_count(summary_path, index)):
+def _task_key_for_result(summary_data: Dict, result: Dict) -> Optional[TaskKey]:
+    test_set = str(summary_data.get("test_set") or "").strip()
+    if not test_set:
+        return None
+
+    floor_plan = _normalize_floor_plan(result.get("floor_plan"))
+    if not floor_plan:
+        return None
+
+    if "task_index" not in result:
+        return None
+
+    try:
+        task_index = int(result["task_index"])
+    except (TypeError, ValueError):
+        return None
+
+    if task_index < 0:
+        return None
+
+    return (test_set, floor_plan, task_index)
+
+
+def _passes_sft_checks(summary_path: str, index: int, data_root: str = "data") -> bool:
+    checks = [
+        check_decompose_subtask_count,
+        check_allocate_assignment_count,
+        check_validate_output_count,
+        check_planner_plan_count,
+    ]
+    for check in checks:
+        try:
+            if not _check_matched(check(summary_path, index, data_root=data_root)):
+                return False
+        except (IndexError, TypeError, ValueError):
+            return False
+
+    return True
+
+
+def _collect_valid_sft_candidates(summary_path: str, data_root: str = "data") -> List[Dict]:
+    if not os.path.exists(summary_path):
+        return []
+
+    with open(summary_path, "r", encoding="utf-8") as f:
+        summary_data = json.load(f)
+
+    candidates = []
+    pddlrun_timestamp = _pddlrun_timestamp(summary_path)
+    flat_results = _flatten_summary_results(summary_data)
+
+    for index, result in enumerate(flat_results):
+        if not isinstance(result, dict):
             continue
-        if not _check_matched(check_allocate_assignment_count(summary_path, index)):
-            continue
-        if not _check_matched(check_validate_output_count(summary_path, index)):
-            continue
-        if not _check_matched(check_planner_plan_count(summary_path, index)):
+
+        task_key = _task_key_for_result(summary_data, result)
+        if task_key is None:
             continue
 
+        task_run_dir = result.get("task_run_dir")
+        if not task_run_dir:
+            continue
 
-        file_path0 = os.path.join(task_run_dir, "01_decompose",  "01_decompose_prompt.txt")
-        file_path1 = os.path.join(task_run_dir, "01_decompose",  "02_decompose_output.txt")
-        append_conversation(file_path0, file_path1, os.path.join(output_path_base,"01_decompose.jsonl"))
+        if not _passes_sft_checks(summary_path, index, data_root=data_root):
+            continue
 
-        file_path0 = os.path.join(task_run_dir, "02_allocate",  "01_allocate_prompt.txt")
-        file_path1 = os.path.join(task_run_dir, "02_allocate",  "02_allocate_output.txt")
-        append_conversation(file_path0, file_path1, os.path.join(output_path_base,"02_allocate.jsonl"))
+        candidates.append({
+            "task_key": task_key,
+            "task_run_dir": task_run_dir,
+            "summary_path": summary_path,
+            "pddlrun_timestamp": pddlrun_timestamp,
+            "flat_index": index,
+        })
 
-        problem_generation_path = os.path.join(task_run_dir, "05_problem_generation")
-        for f in os.listdir(os.path.join(problem_generation_path, "prompts")):
-            problem_path = os.path.join(problem_generation_path, "outputs", f.replace("_prompt.txt", "_problem.pddl"))
-            if os.path.exists(problem_path):
-                append_conversation(os.path.join(problem_generation_path, "prompts", f), problem_path, os.path.join(output_path_base,"05_problem_generation.jsonl"))
-        
-        validate_path = os.path.join(task_run_dir, "07_validate")
-        for f in os.listdir(os.path.join(validate_path, "prompts")):
-            problem_path = os.path.join(validate_path, "outputs", f.replace("_prompt.txt", "_validated.pddl"))
-            if os.path.exists(problem_path):
-                append_conversation(os.path.join(validate_path, "prompts", f), problem_path, os.path.join(output_path_base,"07_validate.jsonl"))
+    return candidates
 
 
+def select_latest_unique_task_runs(summary_paths: Sequence[str], data_root: str = "data") -> List[Dict]:
+    selected_by_task: Dict[TaskKey, Dict] = {}
+
+    for summary_path in summary_paths:
+        for candidate in _collect_valid_sft_candidates(summary_path, data_root=data_root):
+            task_key = candidate["task_key"]
+            selected = selected_by_task.get(task_key)
+            if selected is None or candidate["pddlrun_timestamp"] > selected["pddlrun_timestamp"]:
+                selected_by_task[task_key] = candidate
+
+    return [selected_by_task[task_key] for task_key in sorted(selected_by_task)]
+
+
+def _write_task_run_conversations(task_run_dir: str, output_path_base: str) -> None:
+    os.makedirs(output_path_base, exist_ok=True)
+
+    file_path0 = os.path.join(task_run_dir, "01_decompose",  "01_decompose_prompt.txt")
+    file_path1 = os.path.join(task_run_dir, "01_decompose",  "02_decompose_output.txt")
+    append_conversation(file_path0, file_path1, os.path.join(output_path_base, "01_decompose.jsonl"))
+
+    file_path0 = os.path.join(task_run_dir, "02_allocate",  "01_allocate_prompt.txt")
+    file_path1 = os.path.join(task_run_dir, "02_allocate",  "02_allocate_output.txt")
+    append_conversation(file_path0, file_path1, os.path.join(output_path_base, "02_allocate.jsonl"))
+
+    problem_generation_path = os.path.join(task_run_dir, "05_problem_generation")
+    for f in sorted(os.listdir(os.path.join(problem_generation_path, "prompts"))):
+        problem_path = os.path.join(problem_generation_path, "outputs", f.replace("_prompt.txt", "_problem.pddl"))
+        if os.path.exists(problem_path):
+            append_conversation(
+                os.path.join(problem_generation_path, "prompts", f),
+                problem_path,
+                os.path.join(output_path_base, "05_problem_generation.jsonl"),
+            )
+
+    validate_path = os.path.join(task_run_dir, "07_validate")
+    for f in sorted(os.listdir(os.path.join(validate_path, "prompts"))):
+        problem_path = os.path.join(validate_path, "outputs", f.replace("_prompt.txt", "_validated.pddl"))
+        if os.path.exists(problem_path):
+            append_conversation(
+                os.path.join(validate_path, "prompts", f),
+                problem_path,
+                os.path.join(output_path_base, "07_validate.jsonl"),
+            )
+
+
+def output_latest_unique_tasks(
+    summary_paths: Sequence[str],
+    output_path_base: str = OUTPUT_PATH_BASE,
+    data_root: str = "data",
+) -> List[Dict]:
+    selected_candidates = select_latest_unique_task_runs(summary_paths, data_root=data_root)
+
+    for candidate in selected_candidates:
+        _write_task_run_conversations(str(candidate["task_run_dir"]), output_path_base)
+
+    return selected_candidates
+
+
+def output(
+    summary_path: str,
+    output_path_base: str = OUTPUT_PATH_BASE,
+    data_root: str = "data",
+) -> List[Dict]:
+    return output_latest_unique_tasks([summary_path], output_path_base=output_path_base, data_root=data_root)
 
 
 if __name__ == "__main__":
-    
-    for pddlrun in ["pddlrun_llmseparate_20260506_160313", "pddlrun_llmseparate_20260517_140101", "pddlrun_llmseparate_20260520_225427", "pddlrun_llmseparate_20260526_143831", "pddlrun_llmseparate_20260529_190454", "pddlrun_llmseparate_20260506_162101", "pddlrun_llmseparate_20260518_145253", "pddlrun_llmseparate_20260521_151830", "pddlrun_llmseparate_20260526_194352", "pddlrun_llmseparate_20260531_213941", "pddlrun_llmseparate_20260506_180812", "pddlrun_llmseparate_20260518_214413", "pddlrun_llmseparate_20260522_102424", "pddlrun_llmseparate_20260527_135853", "pddlrun_llmseparate_20260507_145350", "pddlrun_llmseparate_20260519_151717", "pddlrun_llmseparate_20260523_152557", "pddlrun_llmseparate_20260527_220002", "pddlrun_llmseparate_20260516_145201", "pddlrun_llmseparate_20260520_162612", "pddlrun_llmseparate_20260524_195257", "pddlrun_llmseparate_20260528_153620", "pddlrun_llmseparate_20260516_164415", "pddlrun_llmseparate_20260520_204726", "pddlrun_llmseparate_20260525_141235", "pddlrun_llmseparate_20260528_222518"]:
-        summary_path = os.path.join("/home/dwb/thor/LaMMA-P/parallel_runs",                    
-            pddlrun,
-            "summary.json")
-        output(summary_path)
-    
-    
+    summary_paths = [
+        summary_path
+        for pddlrun in PDDLRUNS
+        for summary_path in [os.path.join(REPO_ROOT, "parallel_runs", pddlrun, "summary.json")]
+        if os.path.exists(summary_path) and get_model(summary_path) == MAIN_MODEL_FILTER
+    ]
 
-
-        
+    output_latest_unique_tasks(summary_paths)
