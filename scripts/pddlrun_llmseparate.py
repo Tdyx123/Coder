@@ -393,6 +393,15 @@ class TaskManager:
             return None
 
         return os.path.join(self.current_task_run_dir, "05_problem_generation/outputs")
+
+    def _ensure_raw_problem_output_dir(self) -> Optional[str]:
+        """Ensure the raw problem output directory exists for the current task run."""
+        raw_problem_file_path = self._get_raw_problem_file_path()
+        if not raw_problem_file_path:
+            return None
+
+        os.makedirs(raw_problem_file_path, exist_ok=True)
+        return raw_problem_file_path
     
     def _get_plan_file_path(self) -> Optional[str]:
         """Write a text artifact under the current task run directory."""
@@ -1107,6 +1116,7 @@ class TaskManager:
         self._write_json_artifact(subtasks_index_artifact, subtask_entries)
         self._record_artifact("problem_files", "subtasks_index", subtasks_index_artifact)
 
+        self._ensure_raw_problem_output_dir()
         problem_pddl = self.problemextracting(
             subtasks=subtasks,
             robot_assignments=robot_assignments,
