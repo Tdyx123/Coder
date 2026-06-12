@@ -51,6 +51,12 @@ FAILURE_FAIL_ROBOT = "FAIL_ROBOT"
 FAILURE_FAIL_STAGE = "FAIL_STAGE"
 FAILURE_SKIP_IF_EFFECT_ALREADY_TRUE = "SKIP_IF_EFFECT_ALREADY_TRUE"
 
+RETRYABLE_FAILURE_ACTION_TYPES = {"Teleport"}
+
+
+def action_allows_failure_retry(action: "Action") -> bool:
+    return action.action_type in RETRYABLE_FAILURE_ACTION_TYPES
+
 
 @dataclass(frozen=True)
 class Action:
@@ -63,7 +69,7 @@ class Action:
     resource_policy: Dict[str, Any] = field(default_factory=dict)
     wait_until: Optional[Callable[["WorldState"], bool]] = None
     on_conflict: str = CONFLICT_WAIT
-    on_failure: str = FAILURE_RETRY
+    on_failure: str = FAILURE_FAIL_STAGE
     max_retries: int = 2
     timeout_ticks: Optional[int] = None
     base_priority: int = 0
@@ -106,7 +112,7 @@ class Action:
             resource_policy=dict(value.get("resource_policy") or {}),
             wait_until=value.get("wait_until"),
             on_conflict=value.get("on_conflict", CONFLICT_WAIT),
-            on_failure=value.get("on_failure", FAILURE_RETRY),
+            on_failure=value.get("on_failure", FAILURE_FAIL_STAGE),
             max_retries=int(value.get("max_retries", 2)),
             timeout_ticks=value.get("timeout_ticks"),
             base_priority=int(value.get("base_priority", 0)),
@@ -763,7 +769,8 @@ class FailureHandler:
             )
             return
         if (
-            action.on_failure in {FAILURE_RETRY, FAILURE_WAIT_AND_RETRY}
+            action_allows_failure_retry(action)
+            and action.on_failure in {FAILURE_RETRY, FAILURE_WAIT_AND_RETRY}
             and retries < action.max_retries
         ):
             state.retries_by_action[action_key] = retries + 1

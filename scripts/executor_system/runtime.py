@@ -13,10 +13,6 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 from .action_plan import PlannedAction
 from .config import (
     AGENT_CLEARANCE_DISTANCE,
-    CAMERA_HEIGHT_OFFSET,
-    DIRECTIONAL_CAMERA_EDGE_INSET,
-    DIRECTIONAL_CAMERA_FOV,
-    DIRECTIONAL_CAMERA_PITCH,
     DIRECTIONAL_VIEW_NAMES,
     LOCAL_TOP_VIEW_EXTENT_SCALE,
     LOCAL_TOP_VIEW_MIN_HEIGHT,
@@ -76,6 +72,10 @@ from .utils import (
 )
 
 class ThorRuntime:
+    @staticmethod
+    def payload_allows_step_retry(payload: Dict[str, Any]) -> bool:
+        return payload.get("action") == "Teleport"
+
     def __init__(
         self,
         robot_defs: Sequence[RobotRef],
@@ -249,7 +249,7 @@ class ThorRuntime:
         for path in self.output_root.glob("agent_*"):
             if path.is_dir():
                 shutil.rmtree(path)
-        for view_name in THIRD_PARTY_VIEW_NAMES:
+        for view_name in THIRD_PARTY_VIEW_NAMES + DIRECTIONAL_VIEW_NAMES:
             view_path = self.output_root / view_name
             if view_path.is_dir():
                 shutil.rmtree(view_path)
@@ -295,9 +295,6 @@ class ThorRuntime:
             if not self.cloud_rendering:
                 log("Adding local top-view camera.")
                 self.add_third_party_view(TOP_VIEW_NAME, self.local_top_view_camera_props())
-            log("Adding directional third-party cameras.")
-            for view_name, camera_props in self.directional_view_camera_props():
-                self.add_third_party_view(view_name, camera_props)
 
         random.seed(0)
         initial_positions = []
@@ -355,43 +352,6 @@ class ThorRuntime:
             "rotation": {"x": 90.0, "y": 0.0, "z": 0.0},
         }
 
-    def directional_view_camera_props(self) -> List[Tuple[str, Dict[str, Any]]]:
-        if not self.reachable_positions:
-            return []
-
-        min_x = min(float(position["x"]) for position in self.reachable_positions)
-        max_x = max(float(position["x"]) for position in self.reachable_positions)
-        min_z = min(float(position["z"]) for position in self.reachable_positions)
-        max_z = max(float(position["z"]) for position in self.reachable_positions)
-        floor_y = min(float(position.get("y", 0.0)) for position in self.reachable_positions)
-        center_x = (min_x + max_x) / 2.0
-        center_z = (min_z + max_z) / 2.0
-        camera_y = floor_y + CAMERA_HEIGHT_OFFSET
-        x_inset = min(DIRECTIONAL_CAMERA_EDGE_INSET, max(0.0, (max_x - min_x) / 2.0))
-        z_inset = min(DIRECTIONAL_CAMERA_EDGE_INSET, max(0.0, (max_z - min_z) / 2.0))
-
-        cameras = (
-            (DIRECTIONAL_VIEW_NAMES[0], center_x, min_z + z_inset, 0.0),
-            (DIRECTIONAL_VIEW_NAMES[1], center_x, max_z - z_inset, 180.0),
-            (DIRECTIONAL_VIEW_NAMES[2], min_x + x_inset, center_z, 90.0),
-            (DIRECTIONAL_VIEW_NAMES[3], max_x - x_inset, center_z, 270.0),
-        )
-        return [
-            (
-                view_name,
-                {
-                    "fieldOfView": DIRECTIONAL_CAMERA_FOV,
-                    "position": {"x": x, "y": camera_y, "z": z},
-                    "rotation": {
-                        "x": DIRECTIONAL_CAMERA_PITCH,
-                        "y": yaw,
-                        "z": 0.0,
-                    },
-                },
-            )
-            for view_name, x, z, yaw in cameras
-        ]
-
     def initial_agent_position(
         self,
         agent_id: int,
@@ -435,9 +395,12 @@ class ThorRuntime:
         retry_on_failure: Optional[bool] = None,
         max_retries: int = 3,
     ):
-        should_retry = check_success if retry_on_failure is None else retry_on_failure
         copied_payload = dict(payload)
         copied_payload.pop("objectResources", None)
+        requested_retry = check_success if retry_on_failure is None else retry_on_failure
+        should_retry = bool(
+            requested_retry and self.payload_allows_step_retry(copied_payload)
+        )
         return self._step_with_retries(
             copied_payload,
             check_success=check_success,
@@ -455,6 +418,9 @@ class ThorRuntime:
         retry_on_failure: bool,
         max_retries: int,
     ):
+        retry_on_failure = bool(
+            retry_on_failure and self.payload_allows_step_retry(payload)
+        )
         attempts = 0
         while True:
             attempts += 1
@@ -880,7 +846,7 @@ class ThorRuntime:
             {"action": "GetReachablePositions", "agentId": agent_id},
             check_success=True,
             save_frame=False,
-            retry_on_failure=True,
+            retry_on_failure=False,
         )
         positions = event.metadata.get("actionReturn") or []
         if not positions:
@@ -2379,7 +2345,7 @@ class ThorRuntime:
             str(obj["objectId"]),
         ]
         payload["objectResources"] = list(dict.fromkeys(object_resources))
-        if force_action or action == "OpenObject":
+        if force_action:
             payload["forceAction"] = True
         if action == "PickupObject" and self.agent_holds_object(agent_id, obj["objectId"]):
             log(f"Skipping PickupObject for agent {agent_id}; already holding {obj['objectId']}")
@@ -2417,11 +2383,10 @@ class ThorRuntime:
 
         with self.stats_lock:
             self.total_exec += 1
-        retry_on_failure = action not in {"ToggleObjectOn", "ToggleObjectOff"}
         event = self.step(
             payload,
             check_success=False,
-            retry_on_failure=retry_on_failure,
+            retry_on_failure=False,
         )
         metadata = getattr(event, "metadata", {}) or {}
         error = metadata.get("errorMessage")
@@ -2485,7 +2450,7 @@ class ThorRuntime:
                 "objectResources": held_objects,
             },
             check_success=False,
-            retry_on_failure=True,
+            retry_on_failure=False,
         )
         metadata = getattr(event, "metadata", {}) or {}
         error = metadata.get("errorMessage")

@@ -26,6 +26,7 @@ from .action_plan import (
     ROBOT_EXECUTING,
     ROBOT_FINISHED_STAGE,
     ROBOT_WAITING_CONDITION,
+    action_allows_failure_retry,
 )
 
 
@@ -261,7 +262,8 @@ class Executor:
             return True
 
         if (
-            action.on_failure in {FAILURE_RETRY, FAILURE_WAIT_AND_RETRY}
+            action_allows_failure_retry(action)
+            and action.on_failure in {FAILURE_RETRY, FAILURE_WAIT_AND_RETRY}
             and retries < action.max_retries
         ):
             self.state.retries_by_action[action_key] = retries + 1

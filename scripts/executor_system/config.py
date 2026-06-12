@@ -27,7 +27,7 @@ def parse_env_bool(name: str, value: str) -> bool:
 
 
 CLOUD_RENDERING = env_bool("CloudRendering", True)
-RENDER_IMAGE = env_bool("renderImage", False) # True
+RENDER_IMAGE = env_bool("renderImage", True) # True
 NAVIGATION_GRID_SIZE = 0.25
 AGENT_CLEARANCE_DISTANCE = 0.35
 OBJECT_FOOTPRINT_CLEARANCE = 0.05
@@ -37,7 +37,7 @@ NAVIGATION_CHUNK_STEPS = 4
 INTERACTION_MAX_PASS_STEPS = 30
 TOP_VIEW_NAME = "top_view"
 DIRECTIONAL_VIEW_NAMES = ("front_view", "back_view", "left_view", "right_view")
-THIRD_PARTY_VIEW_NAMES = (TOP_VIEW_NAME,) + DIRECTIONAL_VIEW_NAMES
+THIRD_PARTY_VIEW_NAMES = (TOP_VIEW_NAME,)
 CAMERA_HEIGHT_OFFSET = 1.8
 TOP_VIEW_HEIGHT_OFFSET = -0.3
 TOP_VIEW_CAMERA_FOV = 90
