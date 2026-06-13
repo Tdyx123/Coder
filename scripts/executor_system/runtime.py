@@ -15,6 +15,7 @@ from .action_plan import PlannedAction
 from .config import (
     AGENT_CLEARANCE_DISTANCE,
     DIRECTIONAL_VIEW_NAMES,
+    GENERATE_METADATA,
     LOCAL_TOP_VIEW_EXTENT_SCALE,
     LOCAL_TOP_VIEW_MIN_HEIGHT,
     NAVIGATION_CHUNK_STEPS,
@@ -226,7 +227,9 @@ class ThorRuntime:
             print("agentId:", e.metadata.get("agentId"))
             print("position:", e.metadata["agent"]["position"])
 
-    def write_final_metadata(self) -> Path:
+    def write_final_metadata(self) -> Optional[Path]:
+        if not GENERATE_METADATA:
+            return None
         with self.controller_lock:
             last_event = (
                 None

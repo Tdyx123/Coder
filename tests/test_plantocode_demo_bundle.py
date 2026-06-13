@@ -118,10 +118,12 @@ class PlanToCodeDemoBundleTest(unittest.TestCase):
 
             self.assertEqual(result_code, 0)
             executable_plan = task_run_dir / "plan_to_code" / "executable_plan.py"
+            parallel_executable_plan = task_run_dir / "plan_to_code" / "parallel_executable_plan.py"
             summary = json.loads((root / "summary" / "plan_to_code_summary.json").read_text(encoding="utf-8"))
             details = json.loads((root / "summary" / "plan_to_code_results.json").read_text(encoding="utf-8"))
 
             self.assertTrue(executable_plan.exists())
+            self.assertFalse(parallel_executable_plan.exists())
             self.assertEqual(summary["successful_generations"], 1)
             self.assertEqual(details[0]["status"], "success")
             py_compile.compile(str(executable_plan), doraise=True)
@@ -130,6 +132,10 @@ class PlanToCodeDemoBundleTest(unittest.TestCase):
             self.assertIn("BUNDLE_DATA =", executable_text)
             self.assertIn("TaskPlan.from_dict(BUNDLE_DATA[\"task_plan\"])", executable_text)
             self.assertNotIn("build_task_plan_from_pddlrun_paths(", executable_text)
+            self.assertIn("--runner-mode", executable_text)
+            self.assertIn("os.environ[\"renderImage\"] = \"0\"", executable_text)
+            self.assertIn("DEFAULT_RUNNER_TIMEOUT_SECONDS = 100.0", executable_text)
+            self.assertIn("run_action_plan_tolerant(", executable_text)
 
             parsed = ast.parse(executable_text)
             bundle_data = None

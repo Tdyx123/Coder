@@ -350,13 +350,16 @@ def render_demo_executable(run_inputs: RunInputs, bundle: PddlRunPlanBundle) -> 
 
 from __future__ import annotations
 
+import argparse
 import copy
 import json
+import os
 import re
 import sys
+import time
 import types
 from pathlib import Path
-from typing import Any, Dict, List, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 
 REPO_ROOT = Path({code_repo_root!r})
@@ -366,6 +369,9 @@ for path in (_SCRIPT_DIR, REPO_ROOT):
     if path_str not in sys.path:
         sys.path.append(path_str)
 
+if "--runner-mode" in sys.argv[1:]:
+    os.environ["renderImage"] = "0"
+
 from executor_system import actions as _actions
 from executor_system import config as _config
 from executor_system import context as _context
@@ -374,6 +380,7 @@ from executor_system import dependencies as _dependencies
 from executor_system import runtime as _runtime_module
 from executor_system.action_plan import TaskPlan
 from executor_system.config import CLOUD_RENDERING, RENDER_IMAGE
+from executor_system.parallel_runner import run_action_plan_tolerant, write_result_json
 from executor_system.runtime import ThorRuntime
 from executor_system.task_plan import run_action_plan
 
@@ -384,6 +391,7 @@ BUNDLE_DATA = {bundle_literal}
 
 TASK_FILE = {task_file!r}
 TASK_INDEX = {task_index!r}
+DEFAULT_RUNNER_TIMEOUT_SECONDS = 100.0
 
 
 runtime = None
@@ -457,7 +465,53 @@ def build_hardcoded_bundle() -> types.SimpleNamespace:
     )
 
 
-def main() -> int:
+def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Run a hardcoded pddlrun bundle through executor_system."
+    )
+    parser.add_argument(
+        "--runner-mode",
+        action="store_true",
+        help="Run without rendering and emit machine-readable runner metrics.",
+    )
+    parser.add_argument(
+        "--metrics-output",
+        default="",
+        help="Path to write runner-mode metrics JSON.",
+    )
+    parser.add_argument(
+        "--timeout-seconds",
+        type=float,
+        default=DEFAULT_RUNNER_TIMEOUT_SECONDS,
+        help="Runner-mode total timeout in seconds.",
+    )
+    return parser.parse_args(argv)
+
+
+def runner_metrics_path(raw_path: str) -> Path:
+    if raw_path:
+        return Path(raw_path).expanduser()
+    return Path(__file__).resolve().parent / "parallel_run_result.json"
+
+
+def build_runner_result(status: str, start_time: float) -> Dict[str, Any]:
+    return {{
+        "status": status,
+        "timed_out": False,
+        "timeout_message": "",
+        "run_time_seconds": time.monotonic() - start_time,
+        "gcr": None,
+        "tc": None,
+        "sr": None,
+        "ru": None,
+        "executed_actions": 0,
+        "failed_actions": 0,
+        "failure_action_ratio": 0.0,
+        "robot_failures": [],
+    }}
+
+
+def run_standalone() -> int:
     global floor_no, ground_truth, robots, runtime
 
     task_record = load_task_record(TASK_FILE, TASK_INDEX)
@@ -500,6 +554,81 @@ def main() -> int:
         runtime.stop()
         runtime = None
         _context.runtime = None
+
+
+def run_runner_mode(args: argparse.Namespace) -> int:
+    global floor_no, ground_truth, robots, runtime
+
+    start_time = time.monotonic()
+    metrics_path = runner_metrics_path(args.metrics_output)
+    result = build_runner_result("failed", start_time)
+    return_code = 1
+
+    try:
+        task_record = load_task_record(TASK_FILE, TASK_INDEX)
+        floor_no = floor_plan_from_task_file(TASK_FILE)
+        robots = build_robot_team(task_record.get("robot list") or [])
+        ground_truth = list(task_record.get("object_states") or [])
+        _demo_state.set_ground_truth(ground_truth)
+
+        bundle = build_hardcoded_bundle()
+        if bundle.object_mapping_warnings:
+            result["object_mapping_warnings"] = list(bundle.object_mapping_warnings)
+
+        runtime = ThorRuntime(robots, floor_no, CLOUD_RENDERING, False)
+        _context.runtime = runtime
+
+        execution_report = run_action_plan_tolerant(
+            runtime,
+            bundle.task_plan,
+            timeout_seconds=args.timeout_seconds,
+        )
+        result.update(execution_report)
+        try:
+            runtime.step({{"action": "Done"}}, check_success=False, save_frame=False)
+        except RuntimeError as exc:
+            result["done_error"] = str(exc)
+
+        metrics = runtime.evaluate(ground_truth)
+        no_trans_gt = int(task_record.get("trans", 0) or 0)
+        max_trans = int(task_record.get("min_trans", task_record.get("max_trans", 0)) or 0)
+        ru = transition_metric(bundle.no_trans, no_trans_gt, max_trans)
+        result.update(
+            {{
+                "status": "timeout" if execution_report.get("timed_out") else "success",
+                "gcr": metrics["gcr"],
+                "tc": metrics["tc"],
+                "sr": 1 if metrics["tc"] == 1.0 and ru == 1.0 else 0,
+                "ru": ru,
+                "exec_rate": metrics["exec_rate"],
+            }}
+        )
+        return_code = 124 if result.get("timed_out") else 0
+    except Exception as exc:
+        result.update(
+            {{
+                "status": "failed",
+                "error": str(exc),
+            }}
+        )
+        return_code = 1
+    finally:
+        if runtime is not None:
+            runtime.stop()
+            runtime = None
+        _context.runtime = None
+        result["run_time_seconds"] = time.monotonic() - start_time
+        write_result_json(metrics_path, result)
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+
+    return return_code
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    args = parse_arguments(argv)
+    if args.runner_mode:
+        return run_runner_mode(args)
+    return run_standalone()
 
 
 class _Demo2Facade(types.ModuleType):

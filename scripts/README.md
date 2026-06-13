@@ -81,7 +81,7 @@ parallel_runs/pddlrun_llmseparate_<timestamp>/
 
 ### `plantocode.py`
 
-Translates planning outputs into AI2-THOR-executable code using LiteLLM.
+Translates planning outputs into AI2-THOR-executable Python code.
 
 ```bash
 python scripts/plantocode.py --logs-dir ./logs/task_manager_runs --validate-code
@@ -107,7 +107,29 @@ Behavior worth knowing:
 - `--validate-code` is enabled by default
 - the script scans folders matching `*_plans_*`
 - it writes summary files to `--output-dir`
-- it also writes `code_plan.py` into each original log folder for execution compatibility
+- it writes `plan_to_code/executable_plan.py` into each original log folder
+- generated `plan_to_code/executable_plan.py` can also be called with
+  `--runner-mode` for no-render metric collection
+
+### `executor_system/parallel_runner.py`
+
+Runs multiple `plantocode.py` generated `plan_to_code/executable_plan.py`
+files concurrently.
+
+```bash
+python scripts/executor_system/parallel_runner.py \
+  --root ./logs/task_manager_runs \
+  --max-workers 4 \
+  --timeout-seconds 100 \
+  --output-dir ./parallel_runner_results
+```
+
+Behavior worth knowing:
+
+- each generated file is run in a subprocess with `--runner-mode`
+- runner mode sets `renderImage=False` and skips video/metadata output
+- each subprocess has a 100 second timeout by default
+- summary metrics are written to `parallel_runner_summary.json`
 
 ### `execute_plan.py`
 
