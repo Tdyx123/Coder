@@ -941,10 +941,11 @@ class TaskManager:
             prompt = f"from pddl domain file with all possible actions: \n{domain_content}\n\n"
             prompt += objects_ai
             prompt += f"\nrobots = {robots}\n\n"
-            prompt += "robot initiate 'as not inaction robot '(which defaults location too)\n\n"
             prompt += decompose_prompt
             prompt += "# GENERAL TASK DECOMPOSITION \n"
             prompt += "Decompose and parallel subtasks where ever possible.\n"
+            prompt += "For each subtask, the robot's skills meet the assigned subtask's requirements. \n"
+            prompt += "Specifically, if a subtask involves picking up an object, the robot's mass_capacity must be strictly greater than the object's mass. \n"
             prompt += "Strictly follow the format in the examples above..\n"
             prompt += f"# Task Description: {task}"
             decompose_prompt_artifact = self.config.artifact("decompose_prompt", "01_decompose/01_decompose_prompt.txt")

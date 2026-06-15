@@ -2,6 +2,8 @@
 
 # GENERAL TASK DECOMPOSITION 
 # Decompose and parallel subtasks where ever possible
+# For each subtask, the robot's skills meet the assigned subtask's requirements.
+# Specifically, if a subtask involves picking up an object, the robot's mass_capacity must be strictly greater than the object's mass. 
 # Independent subtasks:
 # SubTask 1: Put an Egg in the Fridge. (Skills Required: GoToObject, PickupObject, OpenObject, PutObject, CloseObject)
 # SubTask 2: Prepare Apple Slices. (Skills Required: GoToObject, PickupObject, SliceObject, PutObject)
