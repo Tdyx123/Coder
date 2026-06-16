@@ -649,7 +649,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     metrics_output=metrics_output,
                     result_output=individual_result_output,
                     timeout_seconds=float(args.timeout_seconds),
-                    gpu_id=gpu_id,
+                    gpu_id=None,
                     save_all_stdout=args.save_all_stdout,
                 )
                 future_to_path[future] = executable_path
