@@ -1,5 +1,136 @@
 {
   "version": 1,
   "bad_subtasks": [
+    {
+      "floor_plan": 1,
+      "subtask": {
+        "skill": "Break",
+        "objects": [
+          "WineBottle"
+        ]
+      },
+      "reason": "WineBottle's Cabinet 无法打开"
+    },
+    {
+      "floor_plan": 1,
+      "subtask": {
+        "skill": "ColdObject",
+        "objects": [
+          "WineBottle",
+          "Fridge"
+        ]
+      },
+      "reason": "Known runner failure in FloorPlan1"
+    },
+    {
+      "floor_plan": 1,
+      "subtask": {
+        "skill": "FillWater",
+        "objects": [
+          "WineBottle",
+          "Sink"
+        ]
+      },
+      "reason": "Known runner failure in FloorPlan1"
+    },
+    {
+      "floor_plan": 1,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "WineBottle",
+          "Cabinet"
+        ]
+      },
+      "reason": "Known runner failure in FloorPlan1"
+    },
+    {
+      "floor_plan": 1,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "WineBottle",
+          "Fridge"
+        ]
+      },
+      "reason": "Known runner failure in FloorPlan1"
+    },
+    {
+      "floor_plan": 1,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "WineBottle",
+          "GarbageCan"
+        ]
+      },
+      "reason": "Known runner failure in FloorPlan1"
+    },
+    {
+      "floor_plan": 1,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "DishSponge",
+          "Cabinet"
+        ]
+      },
+      "reason": "Known runner failure in FloorPlan1"
+    },
+    {
+      "floor_plan": 1,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "WineBottle",
+          "Cabinet"
+        ]
+      },
+      "reason": "Known runner failure in FloorPlan1"
+    },
+    {
+      "floor_plan": 1,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "WineBottle",
+          "CounterTop"
+        ]
+      },
+      "reason": "Known runner failure in FloorPlan1"
+    },
+    {
+      "floor_plan": 1,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "WineBottle",
+          "Fridge"
+        ]
+      },
+      "reason": "Known runner failure in FloorPlan1"
+    },
+    {
+      "floor_plan": 1,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "WineBottle",
+          "GarbageCan"
+        ]
+      },
+      "reason": "Known runner failure in FloorPlan1"
+    },
+    {
+      "floor_plan": 1,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "WineBottle",
+          "Shelf"
+        ]
+      },
+      "reason": "Known runner failure in FloorPlan1"
+    }
   ]
 }

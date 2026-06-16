@@ -105,10 +105,24 @@ def object_action_runtime(objects, *, visible_when=None, horizon=35.0, yaw=0.0):
         refresh_visibility()
         return FakeEvent(metadata=metadata())
 
+    def teleport_to_position_direct(agent_id, target_position, *, max_retries=3):
+        calls.append(
+            {
+                "action": "Teleport",
+                "agentId": agent_id,
+                "position": dict(target_position),
+            }
+        )
+        state["position"] = dict(target_position)
+        refresh_visibility()
+
     refresh_visibility()
+    runtime._test_state = state
     runtime.agent_event = agent_event
     runtime.current_objects = current_objects
+    runtime.metadata_held_objects = lambda _agent_id: set()
     runtime.step = step
+    runtime.teleport_to_position_direct = teleport_to_position_direct
     return runtime, calls
 
 
@@ -344,6 +358,119 @@ class ExecutorRetryPolicyTest(unittest.TestCase):
 
         self.assertIs(calls[0]["forceAction"], False)
 
+    def test_dirtyobject_defaults_force_action_true(self):
+        runtime, calls = object_action_runtime(
+            [
+                {
+                    "objectId": "Plate|+00.00|+01.00|+00.00",
+                    "objectType": "Plate",
+                    "name": "Plate",
+                    "visible": True,
+                    "distance": 1.0,
+                    "dirtyable": True,
+                    "isDirty": False,
+                }
+            ],
+        )
+
+        runtime.object_action("DirtyObject", "robot1", "Plate")
+
+        self.assertIs(calls[0]["forceAction"], True)
+
+    def test_dirtyobject_global_switch_can_disable_force_action(self):
+        runtime, calls = object_action_runtime(
+            [
+                {
+                    "objectId": "Plate|+00.00|+01.00|+00.00",
+                    "objectType": "Plate",
+                    "name": "Plate",
+                    "visible": True,
+                    "distance": 1.0,
+                    "dirtyable": True,
+                    "isDirty": False,
+                }
+            ],
+        )
+
+        with patch.object(runtime_module, "DIRTY_OBJECT_FORCE_ACTION", False):
+            runtime.object_action("DirtyObject", "robot1", "Plate")
+
+        self.assertIs(calls[0]["forceAction"], False)
+
+    def test_toggleobjecton_defaults_force_action_true(self):
+        runtime, calls = object_action_runtime(
+            [
+                {
+                    "objectId": "DeskLamp|+00.00|+01.00|+00.00",
+                    "objectType": "DeskLamp",
+                    "name": "DeskLamp",
+                    "visible": True,
+                    "distance": 1.0,
+                    "isToggled": False,
+                }
+            ],
+        )
+
+        runtime.object_action("ToggleObjectOn", "robot1", "DeskLamp")
+
+        self.assertIs(calls[0]["forceAction"], True)
+
+    def test_toggleobjecton_global_switch_can_disable_force_action(self):
+        runtime, calls = object_action_runtime(
+            [
+                {
+                    "objectId": "DeskLamp|+00.00|+01.00|+00.00",
+                    "objectType": "DeskLamp",
+                    "name": "DeskLamp",
+                    "visible": True,
+                    "distance": 1.0,
+                    "isToggled": False,
+                }
+            ],
+        )
+
+        with patch.object(runtime_module, "TOGGLE_OBJECT_ON_FORCE_ACTION", False):
+            runtime.object_action("ToggleObjectOn", "robot1", "DeskLamp")
+
+        self.assertIs(calls[0]["forceAction"], False)
+
+    def test_toggleobjectoff_defaults_force_action_true(self):
+        runtime, calls = object_action_runtime(
+            [
+                {
+                    "objectId": "DeskLamp|+00.00|+01.00|+00.00",
+                    "objectType": "DeskLamp",
+                    "name": "DeskLamp",
+                    "visible": True,
+                    "distance": 1.0,
+                    "isToggled": True,
+                }
+            ],
+        )
+
+        runtime.object_action("ToggleObjectOff", "robot1", "DeskLamp")
+
+        self.assertIs(calls[0]["forceAction"], True)
+
+    def test_toggleobjectoff_global_switch_can_disable_force_action(self):
+        runtime, calls = object_action_runtime(
+            [
+                {
+                    "objectId": "DeskLamp|+00.00|+01.00|+00.00",
+                    "objectType": "DeskLamp",
+                    "name": "DeskLamp",
+                    "visible": True,
+                    "distance": 1.0,
+                    "isToggled": True,
+                }
+            ],
+        )
+
+        with patch.object(runtime_module, "TOGGLE_OBJECT_OFF_FORCE_ACTION", False):
+            runtime.object_action("ToggleObjectOff", "robot1", "DeskLamp")
+
+        self.assertIs(calls[0]["forceAction"], False)
+
     def test_put_held_object_in_receptacle_defaults_force_action_true(self):
         runtime, calls, _held_id, receptacle = put_object_payload_runtime()
 
@@ -415,6 +542,150 @@ class ExecutorRetryPolicyTest(unittest.TestCase):
 
         self.assertTrue(event.metadata["lastActionSuccess"])
         self.assertEqual(len(calls), 2)
+
+    def test_pickup_clip_error_teleports_backward_and_retries(self):
+        object_id = "Apple|+00.00|+00.90|+01.00"
+        runtime, calls = object_action_runtime(
+            [
+                {
+                    "objectId": object_id,
+                    "objectType": "Apple",
+                    "name": "Apple",
+                    "visible": True,
+                    "distance": 1.0,
+                }
+            ],
+            yaw=90.0,
+        )
+        pickup_errors = [runtime_module.PICKUP_OBJECT_CLIP_ERROR, None]
+
+        def step(payload, **_kwargs):
+            calls.append(dict(payload))
+            if payload.get("action") == "PickupObject":
+                error = pickup_errors.pop(0)
+                if error:
+                    raise RuntimeError(f"InvalidOperationException: {error}")
+                metadata = runtime.agent_event(0).metadata
+                return FakeEvent(metadata=metadata)
+            return FakeEvent(metadata=runtime.agent_event(0).metadata)
+
+        runtime.step = step
+
+        runtime.object_action("PickupObject", "robot1", "Apple")
+
+        self.assertEqual(
+            [call["action"] for call in calls],
+            ["PickupObject", "Teleport", "PickupObject"],
+        )
+        self.assertAlmostEqual(calls[1]["position"]["x"], -0.25)
+        self.assertAlmostEqual(calls[1]["position"]["y"], 0.9)
+        self.assertAlmostEqual(calls[1]["position"]["z"], 0.0)
+        self.assertEqual(runtime.total_exec, 1)
+        self.assertEqual(runtime.success_exec, 1)
+
+    def test_pickup_clip_retry_continues_after_retry_and_teleport_failures(self):
+        object_id = "Apple|+00.00|+00.90|+01.00"
+        runtime, calls = object_action_runtime(
+            [
+                {
+                    "objectId": object_id,
+                    "objectType": "Apple",
+                    "name": "Apple",
+                    "visible": True,
+                    "distance": 1.0,
+                }
+            ],
+            yaw=0.0,
+        )
+        pickup_attempts = 0
+        teleport_attempts = 0
+
+        def step(payload, **_kwargs):
+            nonlocal pickup_attempts
+            calls.append(dict(payload))
+            if payload.get("action") == "PickupObject":
+                pickup_attempts += 1
+                metadata = runtime.agent_event(0).metadata
+                if pickup_attempts < 3:
+                    metadata["lastActionSuccess"] = False
+                    metadata["errorMessage"] = runtime_module.PICKUP_OBJECT_CLIP_ERROR
+                return FakeEvent(metadata=metadata)
+            return FakeEvent(metadata=runtime.agent_event(0).metadata)
+
+        def teleport_to_position_direct(agent_id, target_position, *, max_retries=3):
+            nonlocal teleport_attempts
+            teleport_attempts += 1
+            calls.append(
+                {
+                    "action": "Teleport",
+                    "agentId": agent_id,
+                    "position": dict(target_position),
+                }
+            )
+            if teleport_attempts == 2:
+                raise RuntimeError("teleport blocked")
+            runtime._test_state["position"] = dict(target_position)
+
+        runtime.step = step
+        runtime.teleport_to_position_direct = teleport_to_position_direct
+
+        runtime.object_action("PickupObject", "robot1", "Apple")
+
+        self.assertEqual(
+            [call["action"] for call in calls],
+            [
+                "PickupObject",
+                "Teleport",
+                "PickupObject",
+                "Teleport",
+                "Teleport",
+                "PickupObject",
+            ],
+        )
+        teleport_positions = [
+            call["position"]
+            for call in calls
+            if call["action"] == "Teleport"
+        ]
+        self.assertAlmostEqual(teleport_positions[0]["z"], -0.25)
+        self.assertAlmostEqual(teleport_positions[1]["z"], -0.75)
+        self.assertAlmostEqual(teleport_positions[2]["z"], -1.0)
+        self.assertEqual(runtime.total_exec, 1)
+        self.assertEqual(runtime.success_exec, 1)
+
+    def test_pickup_non_clip_error_does_not_backoff_retry(self):
+        object_id = "Apple|+00.00|+00.90|+01.00"
+        runtime, calls = object_action_runtime(
+            [
+                {
+                    "objectId": object_id,
+                    "objectType": "Apple",
+                    "name": "Apple",
+                    "visible": True,
+                    "distance": 1.0,
+                }
+            ],
+        )
+
+        def step(payload, **_kwargs):
+            calls.append(dict(payload))
+            metadata = runtime.agent_event(0).metadata
+            metadata["lastActionSuccess"] = False
+            metadata["errorMessage"] = "object is not visible"
+            return FakeEvent(metadata=metadata)
+
+        def teleport_to_position_direct(*_args, **_kwargs):
+            raise AssertionError("non-clip Pickup failures should not teleport")
+
+        runtime.step = step
+        runtime.teleport_to_position_direct = teleport_to_position_direct
+
+        with self.assertRaisesRegex(RuntimeError, "object is not visible"):
+            runtime.object_action("PickupObject", "robot1", "Apple")
+
+        self.assertEqual([call["action"] for call in calls], ["PickupObject"])
+        self.assertEqual(runtime.total_exec, 1)
+        self.assertEqual(runtime.success_exec, 0)
 
     def test_non_teleport_action_retry_policy_fails_without_rerunning(self):
         class FailingRuntime:

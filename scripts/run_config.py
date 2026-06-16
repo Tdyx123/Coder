@@ -1,4 +1,5 @@
 import copy
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Type, Union
 
@@ -6,6 +7,7 @@ import yaml
 
 
 CONFIG_FILE_NAME = "pddlrun_llmseparate_config.yaml"
+FAST_DOWNWARD_ENV_VAR = "FAST_DOWNWARD_PATH"
 
 
 DEFAULT_RUN_CONFIG: Dict[str, Any] = {
@@ -165,6 +167,9 @@ class RunConfig:
 
     @property
     def planner_executable(self) -> Path:
+        shared_planner = os.getenv(FAST_DOWNWARD_ENV_VAR)
+        if shared_planner:
+            return Path(shared_planner).expanduser().resolve()
         return self.path("planner", "executable")
 
     def allaction_domain_path(self) -> Path:

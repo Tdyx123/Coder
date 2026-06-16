@@ -56,6 +56,12 @@ ALL_GENERATED_EXECUTOR_SKILLS = [
     "ThrowObject",
 ]
 
+PARENT_CONTAINER_ACCESS_ACTIONS = {
+    "PickupObject",
+    "BreakObject",
+    "SliceObject",
+}
+
 
 @dataclass(frozen=True)
 class EnumeratedSubtask:
@@ -78,6 +84,7 @@ class GeneratedSubtask:
     task_text: str
     object_states: List[Dict[str, Any]]
     actions: List[Dict[str, Any]]
+    pre_task_actions: List[Dict[str, Any]]
 
 
 def normalize_floor_plan(value: Any) -> int:
@@ -506,6 +513,47 @@ def _parent_container_for_action_arg(
     )
 
 
+def _action_args(item: Dict[str, Any]) -> List[Any]:
+    args = item.get("parameters", {}).get("args", [])
+    return args if isinstance(args, list) else []
+
+
+def _last_goto_action_index(actions: Sequence[Dict[str, Any]], target: Any) -> Optional[int]:
+    for index in range(len(actions) - 1, -1, -1):
+        item = actions[index]
+        if item.get("action_type") != "GoToObject":
+            continue
+        if _action_args(item)[:1] == [target]:
+            return index
+    return None
+
+
+def _container_aliases(container: Any) -> Set[str]:
+    container_text = str(container)
+    # Parent metadata uses objectId, while generated templates may use objectType.
+    return {container_text, container_text.split("|", 1)[0]}
+
+
+def _container_is_open(container: Any, opened_containers: Set[str]) -> bool:
+    return bool(_container_aliases(container) & opened_containers)
+
+
+def _mark_container_open(container: Any, opened_containers: Set[str]) -> None:
+    opened_containers.update(_container_aliases(container))
+
+
+def _mark_container_closed(container: Any, opened_containers: Set[str]) -> None:
+    opened_containers.difference_update(_container_aliases(container))
+
+
+def _parent_access_actions(parent: str, opened_containers: Set[str]) -> List[Dict[str, Any]]:
+    actions = [action("GoToObject", parent)]
+    if not _container_is_open(parent, opened_containers):
+        actions.append(action("OpenObject", parent))
+        _mark_container_open(parent, opened_containers)
+    return actions
+
+
 def _insert_parent_open_actions(
     actions: List[Dict[str, Any]],
     open_parent_by_object: Optional[Dict[str, str]] = None,
@@ -514,24 +562,35 @@ def _insert_parent_open_actions(
         return actions
 
     updated: List[Dict[str, Any]] = []
+    opened_containers: Set[str] = set()
     for item in actions:
-        if item.get("action_type") in {"PickupObject", "BreakObject"}:
-            args = item.get("parameters", {}).get("args", [])
+        action_type = item.get("action_type")
+        args = _action_args(item)
+
+        if action_type == "OpenObject" and args:
+            target = args[0]
+            if _container_is_open(target, opened_containers):
+                continue
+            _mark_container_open(target, opened_containers)
+            updated.append(item)
+            continue
+
+        if action_type == "CloseObject" and args:
+            _mark_container_closed(args[0], opened_containers)
+            updated.append(item)
+            continue
+
+        if action_type in PARENT_CONTAINER_ACCESS_ACTIONS:
             if args:
-                parent = _parent_container_for_action_arg(args[0], open_parent_by_object)
+                target = args[0]
+                parent = _parent_container_for_action_arg(target, open_parent_by_object)
                 if parent:
-                    previous = updated[-1] if updated else None
-                    previous_args = (
-                        previous.get("parameters", {}).get("args", [])
-                        if previous is not None
-                        else []
-                    )
-                    if not (
-                        previous is not None
-                        and previous.get("action_type") == "OpenObject"
-                        and previous_args[:1] == [parent]
-                    ):
-                        updated.append(action("OpenObject", parent))
+                    access_actions = _parent_access_actions(parent, opened_containers)
+                    goto_index = _last_goto_action_index(updated, target)
+                    if goto_index is None:
+                        updated.extend(access_actions)
+                    else:
+                        updated[goto_index:goto_index] = access_actions
         updated.append(item)
 
     return updated
@@ -703,26 +762,44 @@ def build_actions_for_subtask(
     raise ValueError(f"Unsupported subtask skill: {skill}")
 
 
+def build_pre_task_actions_for_subtask(subtask: Dict[str, Any]) -> List[Dict[str, Any]]:
+    if subtask.get("skill") != "Wash":
+        return []
+
+    objects = list(subtask.get("objects", []))
+    if not objects:
+        return []
+
+    return [action("DirtyObject", objects[0])]
+
+
 def build_bundle_data(
     *,
     task_id: str,
     task_text: str,
     actions: List[Dict[str, Any]],
+    pre_task_actions: Optional[List[Dict[str, Any]]] = None,
     plan_file: Optional[Path] = None,
 ) -> Dict[str, Any]:
+    task_plan: Dict[str, Any] = {
+        "task_id": task_id,
+        "stages": [
+            {
+                "stage_id": "Phase 1",
+                "robot_action_queues": {
+                    ROBOT_ID: actions,
+                },
+            }
+        ],
+    }
+    if pre_task_actions:
+        task_plan["pre_task_action_queues"] = {
+            ROBOT_ID: pre_task_actions,
+        }
+
     return {
         "task": task_text,
-        "task_plan": {
-            "task_id": task_id,
-            "stages": [
-                {
-                    "stage_id": "Phase 1",
-                    "robot_action_queues": {
-                        ROBOT_ID: actions,
-                    },
-                }
-            ],
-        },
+        "task_plan": task_plan,
         "no_trans": len(actions),
         "phases": [[{"subtask_id": 1, "robot_number": 1}]],
         "plan_files": {"1": str(plan_file) if plan_file is not None else ""},
@@ -1131,6 +1208,9 @@ def prepare_generated_subtasks(
             skill_sets,
             open_parent_by_floor[item.floor_plan],
         )
+        pre_task_actions = build_pre_task_actions_for_subtask(
+            item.subtask,
+        )
         generated.append(
             GeneratedSubtask(
                 floor_plan=item.floor_plan,
@@ -1140,6 +1220,7 @@ def prepare_generated_subtasks(
                 task_text=construct_subtask_name(item.subtask),
                 object_states=engine.get_task_final_state([item.subtask]),
                 actions=actions,
+                pre_task_actions=pre_task_actions,
             )
         )
 
@@ -1166,6 +1247,7 @@ def write_flat_outputs(
             task_id=f"FloorPlan{item.floor_plan}_single_subtask_{item.floor_index}",
             task_text=item.task_text,
             actions=item.actions,
+            pre_task_actions=item.pre_task_actions,
         )
 
         try:
@@ -1240,6 +1322,7 @@ def write_outputs(
             task_id=f"FloorPlan{item.floor_plan}_single_subtask_{item.floor_index}",
             task_text=item.task_text,
             actions=item.actions,
+            pre_task_actions=item.pre_task_actions,
             plan_file=None if manifest_only else task_dir / "subtask_plan.txt",
         )
 

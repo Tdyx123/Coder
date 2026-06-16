@@ -88,6 +88,7 @@ class PlanToCodeDemoBundleTest(unittest.TestCase):
                     "floor_plan": "6",
                     "task_index": 0,
                     "task_run_dir": str(task_run_dir),
+                    "gpu_device": 0,
                 },
             )
 
@@ -113,7 +114,14 @@ class PlanToCodeDemoBundleTest(unittest.TestCase):
             )
 
             result_code = plantocode_main(
-                ["--logs-dir", str(root / "logs"), "--output-dir", str(root / "summary")]
+                [
+                    "--logs-dir",
+                    str(root / "logs"),
+                    "--output-dir",
+                    str(root / "summary"),
+                    "--gpu-device",
+                    "1",
+                ]
             )
 
             self.assertEqual(result_code, 0)
@@ -136,6 +144,7 @@ class PlanToCodeDemoBundleTest(unittest.TestCase):
             self.assertIn("os.environ[\"renderImage\"] = \"0\"", executable_text)
             self.assertIn("DEFAULT_RUNNER_TIMEOUT_SECONDS = 100.0", executable_text)
             self.assertIn("run_action_plan_tolerant(", executable_text)
+            self.assertIn("gpu_device=bundle.gpu_device", executable_text)
 
             parsed = ast.parse(executable_text)
             bundle_data = None
@@ -148,6 +157,8 @@ class PlanToCodeDemoBundleTest(unittest.TestCase):
 
             self.assertIsNotNone(bundle_data)
             self.assertEqual(bundle_data["no_trans"], 6)
+            self.assertEqual(bundle_data["gpu_device"], 1)
+            self.assertEqual(details[0]["gpu_device"], 1)
             self.assertEqual(len(bundle_data["task_plan"]["stages"]), 2)
             first_stage = bundle_data["task_plan"]["stages"][0]
             second_stage = bundle_data["task_plan"]["stages"][1]

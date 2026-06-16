@@ -568,12 +568,17 @@ class GenerateSingleSubtaskCodeTests(unittest.TestCase):
         self.assertEqual(
             self._action_pairs(generated[0].actions),
             [
-                ("GoToObject", ["Plate"]),
+                ("GoToObject", ["Cabinet|+01.00|+00.00|+00.00"]),
                 ("OpenObject", ["Cabinet|+01.00|+00.00|+00.00"]),
+                ("GoToObject", ["Plate"]),
                 ("PickupObject", ["Plate"]),
                 ("GoToObject", ["Sink"]),
                 ("CleanObject", ["Plate"]),
             ],
+        )
+        self.assertEqual(
+            self._action_pairs(generated[0].pre_task_actions),
+            [("DirtyObject", ["Plate"])],
         )
 
     def test_break_target_inside_openable_container_opens_parent_first(self):
@@ -609,9 +614,113 @@ class GenerateSingleSubtaskCodeTests(unittest.TestCase):
         self.assertEqual(
             self._action_pairs(generated[0].actions),
             [
-                ("GoToObject", ["Vase"]),
+                ("GoToObject", ["Box|-01.00|+00.00|+00.00"]),
                 ("OpenObject", ["Box|-01.00|+00.00|+00.00"]),
+                ("GoToObject", ["Vase"]),
                 ("BreakObject", ["Vase"]),
+            ],
+        )
+
+    def test_slice_target_inside_openable_container_opens_parent_first(self):
+        objects_path = self._write_properties(
+            [
+                {
+                    "scene": "FloorPlan1",
+                    "objectType": "Egg",
+                    "objectId": "Egg|+00.10|+00.20|+00.30",
+                    "pickupable": True,
+                    "sliceable": True,
+                    "parentReceptacles": ["Fridge|-02.00|+00.00|+01.00"],
+                },
+                {
+                    "scene": "FloorPlan1",
+                    "objectType": "Fridge",
+                    "objectId": "Fridge|-02.00|+00.00|+01.00",
+                    "openable": True,
+                    "receptacle": True,
+                },
+                {
+                    "scene": "FloorPlan1",
+                    "objectType": "Knife",
+                    "objectId": "Knife|-01.70|+00.79|-00.22",
+                    "pickupable": True,
+                    "parentReceptacles": ["Drawer|-01.56|+00.84|-00.20"],
+                },
+                {
+                    "scene": "FloorPlan1",
+                    "objectType": "Drawer",
+                    "objectId": "Drawer|-01.56|+00.84|-00.20",
+                    "openable": True,
+                    "receptacle": True,
+                },
+            ]
+        )
+
+        generated = generator.prepare_generated_subtasks(
+            [
+                generator.EnumeratedSubtask(
+                    floor_plan=1,
+                    subtask={"skill": "Slice", "objects": ["Egg"]},
+                )
+            ],
+            objects_path,
+        )
+
+        self.assertEqual(
+            self._action_pairs(generated[0].actions),
+            [
+                ("GoToObject", ["Drawer|-01.56|+00.84|-00.20"]),
+                ("OpenObject", ["Drawer|-01.56|+00.84|-00.20"]),
+                ("GoToObject", ["Knife"]),
+                ("PickupObject", ["Knife"]),
+                ("GoToObject", ["Fridge|-02.00|+00.00|+01.00"]),
+                ("OpenObject", ["Fridge|-02.00|+00.00|+01.00"]),
+                ("GoToObject", ["Egg"]),
+                ("SliceObject", ["Egg"]),
+            ],
+        )
+
+    def test_reuses_already_open_parent_container_for_later_put(self):
+        objects_path = self._write_properties(
+            [
+                {
+                    "scene": "FloorPlan1",
+                    "objectType": "Egg",
+                    "objectId": "Egg|+00.10|+00.20|+00.30",
+                    "pickupable": True,
+                    "parentReceptacles": ["Fridge|-02.00|+00.00|+01.00"],
+                },
+                {
+                    "scene": "FloorPlan1",
+                    "objectType": "Fridge",
+                    "objectId": "Fridge|-02.00|+00.00|+01.00",
+                    "openable": True,
+                    "receptacle": True,
+                },
+            ]
+        )
+
+        generated = generator.prepare_generated_subtasks(
+            [
+                generator.EnumeratedSubtask(
+                    floor_plan=1,
+                    subtask={"skill": "ColdObject", "objects": ["Egg", "Fridge"]},
+                )
+            ],
+            objects_path,
+        )
+
+        self.assertEqual(
+            self._action_pairs(generated[0].actions),
+            [
+                ("GoToObject", ["Fridge|-02.00|+00.00|+01.00"]),
+                ("OpenObject", ["Fridge|-02.00|+00.00|+01.00"]),
+                ("GoToObject", ["Egg"]),
+                ("PickupObject", ["Egg"]),
+                ("GoToObject", ["Fridge"]),
+                ("PutObject", ["Egg", "Fridge"]),
+                ("CloseObject", ["Fridge"]),
+                ("ColdObject", ["Fridge", "Egg"]),
             ],
         )
 
@@ -654,6 +763,36 @@ class GenerateSingleSubtaskCodeTests(unittest.TestCase):
                 ("GoToObject", ["Sink"]),
                 ("CleanObject", ["Plate"]),
             ],
+        )
+        self.assertEqual(
+            self._action_pairs(generated[0].pre_task_actions),
+            [("DirtyObject", ["Plate"])],
+        )
+
+    def test_wash_bundle_adds_dirty_pre_task_without_counting_no_trans(self):
+        subtask = {"skill": "Wash", "objects": ["Plate"]}
+        actions = generator.build_actions_for_subtask(subtask, {})
+        pre_task_actions = generator.build_pre_task_actions_for_subtask(subtask)
+
+        bundle = generator.build_bundle_data(
+            task_id="task",
+            task_text="wash the plate",
+            actions=actions,
+            pre_task_actions=pre_task_actions,
+        )
+
+        self.assertEqual(bundle["no_trans"], len(actions))
+        self.assertEqual(
+            self._action_pairs(
+                bundle["task_plan"]["pre_task_action_queues"]["robot1"]
+            ),
+            [("DirtyObject", ["Plate"])],
+        )
+        self.assertEqual(
+            self._action_pairs(
+                bundle["task_plan"]["stages"][0]["robot_action_queues"]["robot1"]
+            ),
+            self._action_pairs(actions),
         )
 
     def test_default_limit_generation_writes_only_flat_executables(self):

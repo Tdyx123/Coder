@@ -18,6 +18,8 @@ from executor_system.parallel_runner import (
     main as parallel_runner_main,
     run_action_plan_tolerant,
 )
+import executor_system.parallel_runner as parallel_runner
+from executor_system.runtime import PICKUP_OBJECT_CLIP_ERROR
 
 
 class FakeEvent:
@@ -68,6 +70,7 @@ def write_fake_generated_script(
                 "#!/usr/bin/env python3",
                 "import argparse",
                 "import json",
+                "import os",
                 "import time",
                 "from pathlib import Path",
                 "parser = argparse.ArgumentParser()",
@@ -86,6 +89,8 @@ def write_fake_generated_script(
                 "    'failed_actions': 0,",
                 "    'failure_action_ratio': 0.0,",
                 f"    'robot_failures': {robot_failures!r},",
+                "    'cuda_visible_devices': os.environ.get('CUDA_VISIBLE_DEVICES'),",
+                "    'lammap_parallel_gpu_id': os.environ.get('LAMMAP_PARALLEL_GPU_ID'),",
                 "}",
                 "Path(args.metrics_output).write_text(json.dumps(result), encoding='utf-8')",
                 f"raise SystemExit({returncode!r})",
@@ -131,6 +136,107 @@ class ParallelRunnerCliTest(unittest.TestCase):
             self.assertEqual(sorted(output_dir.glob("result_*.json")), [])
             self.assertTrue(
                 all("stdout" not in result for result in summary["results"])
+            )
+
+    def test_default_gpu_ids_cycle_after_eight_executables(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            output_dir = root / "runner_results"
+            scripts = []
+            for index in range(10):
+                script = root / f"run_{index:02d}" / "plan_to_code" / "executable_plan.py"
+                write_fake_generated_script(script)
+                scripts.append(script)
+
+            result_code = parallel_runner_main(
+                [
+                    *(str(script) for script in scripts),
+                    "--output-dir",
+                    str(output_dir),
+                    "--max-workers",
+                    "10",
+                    "--timeout-seconds",
+                    "5",
+                ]
+            )
+
+            self.assertEqual(result_code, 0)
+            summary = json.loads(
+                (output_dir / "parallel_runner_summary.json").read_text(encoding="utf-8")
+            )
+            expected_gpu_ids = [0, 1, 2, 3, 4, 5, 6, 7, 0, 1]
+            self.assertEqual(
+                [result["gpu_id"] for result in summary["results"]],
+                expected_gpu_ids,
+            )
+            self.assertEqual(
+                [result["cuda_visible_devices"] for result in summary["results"]],
+                [str(gpu_id) for gpu_id in expected_gpu_ids],
+            )
+            self.assertEqual(
+                [result["lammap_parallel_gpu_id"] for result in summary["results"]],
+                [str(gpu_id) for gpu_id in expected_gpu_ids],
+            )
+
+    def test_custom_global_gpu_ids_are_used_in_order(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            output_dir = root / "runner_results"
+            scripts = []
+            for index in range(5):
+                script = root / f"custom_{index:02d}" / "plan_to_code" / "executable_plan.py"
+                write_fake_generated_script(script)
+                scripts.append(script)
+
+            with patch.object(parallel_runner, "GPU_IDS", [2, 4]):
+                result_code = parallel_runner_main(
+                    [
+                        *(str(script) for script in scripts),
+                        "--output-dir",
+                        str(output_dir),
+                        "--max-workers",
+                        "5",
+                        "--timeout-seconds",
+                        "5",
+                    ]
+                )
+
+            self.assertEqual(result_code, 0)
+            summary = json.loads(
+                (output_dir / "parallel_runner_summary.json").read_text(encoding="utf-8")
+            )
+            expected_gpu_ids = [2, 4, 2, 4, 2]
+            self.assertEqual(
+                [result["gpu_id"] for result in summary["results"]],
+                expected_gpu_ids,
+            )
+            self.assertEqual(
+                [result["cuda_visible_devices"] for result in summary["results"]],
+                [str(gpu_id) for gpu_id in expected_gpu_ids],
+            )
+
+    def test_empty_gpu_ids_returns_clear_error(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            script = root / "run" / "plan_to_code" / "executable_plan.py"
+            write_fake_generated_script(script)
+            output = io.StringIO()
+
+            with patch.object(parallel_runner, "GPU_IDS", []), redirect_stdout(output):
+                result_code = parallel_runner_main(
+                    [
+                        str(script),
+                        "--output-dir",
+                        str(root / "runner_results"),
+                        "--timeout-seconds",
+                        "5",
+                    ]
+                )
+
+            self.assertEqual(result_code, 1)
+            self.assertIn(
+                "GPU_IDS must contain at least one GPU id",
+                output.getvalue(),
             )
 
     def test_write_individual_results_writes_per_task_json_files(self):
@@ -451,6 +557,40 @@ class TolerantExecutorTest(unittest.TestCase):
                         "robot1": [
                             Action("TeleportObjectToHand", {"args": ("Apple",)}),
                             Action("PickupObject", {"args": ("Apple",)}),
+                        ],
+                    },
+                )
+            ],
+        )
+
+        with patch("executor_system.action_plan.AI2ThorAdapter.execute", fake_execute):
+            result = run_action_plan_tolerant(runtime, plan, timeout_seconds=5)
+
+        self.assertEqual(result["executed_actions"], 1)
+        self.assertEqual(result["failed_actions"], 0)
+        self.assertEqual(result["failure_action_ratio"], 0.0)
+        self.assertEqual(len(result["robot_failures"]), 1)
+        self.assertTrue(result["robot_failures"][0]["ignored_for_failure_ratio"])
+
+    def test_pickup_clip_failure_is_not_counted_as_failed_action(self):
+        runtime = FakeRuntime()
+
+        def fake_execute(_adapter, _robot_id, action, **_kwargs):
+            if action.action_type == "PickupObject":
+                raise RuntimeError(
+                    f"InvalidOperationException: {PICKUP_OBJECT_CLIP_ERROR}"
+                )
+            return FakeEvent()
+
+        plan = TaskPlan(
+            "task",
+            [
+                StagePlan(
+                    "Phase 1",
+                    {
+                        "robot1": [
+                            Action("PickupObject", {"args": ("Apple",)}),
+                            Action("PutObject", {"args": ("Apple", "Table")}),
                         ],
                     },
                 )

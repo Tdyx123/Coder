@@ -44,6 +44,15 @@ pip install -r requirements.txt
 
 The project requires the [Fast Downward Planner](https://github.com/aibasel/downward/).
 
+This repository can also share one local Fast Downward build with sibling projects by setting:
+
+```bash
+export FAST_DOWNWARD_PATH=/home/dwb/thor/LaMMA-P/downward/fast-downward.py
+```
+
+When `FAST_DOWNWARD_PATH` is set, LaMMA-P uses it before the configured
+`planner.executable` value in `scripts/pddlrun_llmseparate_config.yaml`.
+
 ```bash
 git submodule update --init --recursive
 cd downward

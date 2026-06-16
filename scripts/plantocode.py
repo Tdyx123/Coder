@@ -252,12 +252,67 @@ def resolve_manifest_plan_files(task_run_dir: Path) -> List[Path]:
     return plan_files
 
 
-def build_bundle_for_run(run_inputs: RunInputs) -> PddlRunPlanBundle:
+def parse_gpu_device_value(value: Any, source: str) -> Optional[int]:
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        raise PlanToCodeError(f"{source} must be a non-negative integer.")
+    if isinstance(value, int):
+        gpu_device = value
+    elif isinstance(value, str):
+        try:
+            gpu_device = int(value)
+        except ValueError as exc:
+            raise PlanToCodeError(f"{source} must be a non-negative integer.") from exc
+    else:
+        raise PlanToCodeError(f"{source} must be a non-negative integer.")
+    if gpu_device < 0:
+        raise PlanToCodeError(f"{source} must be a non-negative integer.")
+    return gpu_device
+
+
+def parse_gpu_device_argument(value: str) -> int:
+    try:
+        gpu_device = parse_gpu_device_value(value, "--gpu-device")
+    except PlanToCodeError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+    if gpu_device is None:
+        raise argparse.ArgumentTypeError("--gpu-device must be a non-negative integer.")
+    return gpu_device
+
+
+def manifest_gpu_device(manifest: Dict[str, Any]) -> Optional[int]:
+    if "gpu_device" in manifest:
+        gpu_device = parse_gpu_device_value(
+            manifest.get("gpu_device"),
+            "run_manifest.json gpu_device",
+        )
+        if gpu_device is not None:
+            return gpu_device
+
+    runtime_config = manifest.get("runtime")
+    if isinstance(runtime_config, dict) and "gpu_device" in runtime_config:
+        return parse_gpu_device_value(
+            runtime_config.get("gpu_device"),
+            "run_manifest.json runtime.gpu_device",
+        )
+    return None
+
+
+def build_bundle_for_run(
+    run_inputs: RunInputs,
+    gpu_device: Optional[int] = None,
+) -> PddlRunPlanBundle:
     floor_plan = str(run_inputs.manifest.get("floor_plan"))
     robots = robots_for_encoding(run_inputs)
     object_names = load_object_names(run_inputs.data_repo_root, floor_plan, run_inputs.task_context)
     plan_files = resolve_manifest_plan_files(run_inputs.task_run_dir)
     plan_folder = run_inputs.task_run_dir / "08_planner" / "outputs"
+    resolved_gpu_device = (
+        gpu_device
+        if gpu_device is not None
+        else manifest_gpu_device(run_inputs.manifest)
+    )
 
     return build_task_plan_from_pddlrun_paths(
         task=str(run_inputs.task_record.get("task") or run_inputs.task_context.get("task") or ""),
@@ -267,6 +322,7 @@ def build_bundle_for_run(run_inputs: RunInputs) -> PddlRunPlanBundle:
         plan_files=plan_files,
         object_names=object_names,
         task_id=f"FloorPlan{normalize_floor_plan(floor_plan)}_task_{run_inputs.task_index}",
+        gpu_device=resolved_gpu_device,
     )
 
 
@@ -332,6 +388,7 @@ def serialize_bundle(bundle: PddlRunPlanBundle) -> Dict[str, Any]:
         },
         "object_mappings": dict(bundle.object_mappings),
         "object_mapping_warnings": list(bundle.object_mapping_warnings),
+        "gpu_device": bundle.gpu_device,
     }
 
 
@@ -462,6 +519,7 @@ def build_hardcoded_bundle() -> types.SimpleNamespace:
         plan_files=BUNDLE_DATA["plan_files"],
         object_mappings=BUNDLE_DATA["object_mappings"],
         object_mapping_warnings=BUNDLE_DATA["object_mapping_warnings"],
+        gpu_device=BUNDLE_DATA.get("gpu_device"),
     )
 
 
@@ -526,7 +584,13 @@ def run_standalone() -> int:
         for warning in bundle.object_mapping_warnings:
             print(f"WARNING: {{warning}}")
 
-    runtime = ThorRuntime(robots, floor_no, CLOUD_RENDERING, RENDER_IMAGE)
+    runtime = ThorRuntime(
+        robots,
+        floor_no,
+        CLOUD_RENDERING,
+        RENDER_IMAGE,
+        gpu_device=bundle.gpu_device,
+    )
     _context.runtime = runtime
     try:
         run_action_plan(bundle.task_plan)
@@ -575,7 +639,13 @@ def run_runner_mode(args: argparse.Namespace) -> int:
         if bundle.object_mapping_warnings:
             result["object_mapping_warnings"] = list(bundle.object_mapping_warnings)
 
-        runtime = ThorRuntime(robots, floor_no, CLOUD_RENDERING, False)
+        runtime = ThorRuntime(
+            robots,
+            floor_no,
+            CLOUD_RENDERING,
+            False,
+            gpu_device=bundle.gpu_device,
+        )
         _context.runtime = runtime
 
         execution_report = run_action_plan_tolerant(
@@ -678,7 +748,11 @@ def compile_python(path: Path) -> None:
     py_compile.compile(str(path), doraise=True)
 
 
-def process_task_run(task_run_dir: Path, validate_code: bool) -> Dict[str, Any]:
+def process_task_run(
+    task_run_dir: Path,
+    validate_code: bool,
+    gpu_device: Optional[int] = None,
+) -> Dict[str, Any]:
     start_time = time.time()
     result: Dict[str, Any] = {
         "task_run_dir": str(task_run_dir),
@@ -688,7 +762,7 @@ def process_task_run(task_run_dir: Path, validate_code: bool) -> Dict[str, Any]:
 
     try:
         run_inputs = load_run_inputs(task_run_dir)
-        bundle = build_bundle_for_run(run_inputs)
+        bundle = build_bundle_for_run(run_inputs, gpu_device=gpu_device)
         executable_plan = render_demo_executable(run_inputs, bundle)
 
         compile(executable_plan, "executable_plan.py", "exec")
@@ -709,6 +783,7 @@ def process_task_run(task_run_dir: Path, validate_code: bool) -> Dict[str, Any]:
                 "task_index": run_inputs.task_index,
                 "phase_count": len(bundle.task_plan.stages),
                 "no_trans": bundle.no_trans,
+                "gpu_device": bundle.gpu_device,
                 "object_mappings": dict(bundle.object_mappings),
                 "object_mapping_warnings": list(bundle.object_mapping_warnings),
                 "generated": {
@@ -794,6 +869,15 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Directory to save generation summaries.",
     )
     parser.add_argument(
+        "--gpu-device",
+        type=parse_gpu_device_argument,
+        default=None,
+        help=(
+            "Optional AI2-THOR gpu_device for generated bundles. "
+            "CLI value overrides run_manifest.json gpu_device/runtime.gpu_device."
+        ),
+    )
+    parser.add_argument(
         "--batch-size",
         type=int,
         default=3,
@@ -857,7 +941,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     processed_results: List[Dict[str, Any]] = []
     for index, task_run_dir in enumerate(task_run_dirs, start=1):
         print(f"[{index}/{len(task_run_dirs)}] Generating demo bundle script: {task_run_dir}")
-        result = process_task_run(task_run_dir, args.validate_code)
+        result = process_task_run(
+            task_run_dir,
+            args.validate_code,
+            gpu_device=args.gpu_device,
+        )
         processed_results.append(result)
         if result.get("success"):
             print(f"  ✓ {result['generated']['executable_plan']}")

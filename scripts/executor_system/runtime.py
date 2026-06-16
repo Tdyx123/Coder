@@ -78,6 +78,17 @@ LOOK_DEGREES_INCREMENT = 0.1
 PUT_OBJECT_FORCE_ACTION = True
 OPEN_OBJECT_FORCE_ACTION = True
 CLOSE_OBJECT_FORCE_ACTION = True
+DIRTY_OBJECT_FORCE_ACTION = True
+TOGGLE_OBJECT_ON_FORCE_ACTION = True
+TOGGLE_OBJECT_OFF_FORCE_ACTION = True
+PICKUP_OBJECT_CLIP_ERROR = (
+    "Picking up object would cause it to collide and clip into something!"
+)
+PICKUP_OBJECT_CLIP_BACKOFF_DISTANCES = (0.25, 0.5, 0.75)
+
+
+def is_pickup_object_clip_error(value: Any) -> bool:
+    return PICKUP_OBJECT_CLIP_ERROR.casefold() in str(value or "").casefold()
 
 
 def _normalize_look_degrees(degrees: Any) -> float:
@@ -110,6 +121,7 @@ class ThorRuntime:
         floor: str,
         cloud_rendering: bool,
         render_image: bool,
+        gpu_device: Optional[int] = None,
     ) -> None:
         require_dependencies()
         self.robots = list(robot_defs)
@@ -119,6 +131,7 @@ class ThorRuntime:
         self.floor = floor
         self.cloud_rendering = cloud_rendering
         self.render_image = render_image
+        self.gpu_device = gpu_device
         self.physical_agent_count = self.resolve_physical_agent_count()
         self.agent_mode = self.resolve_agent_mode()
         self.controller_headless = not self.render_image
@@ -241,6 +254,8 @@ class ThorRuntime:
         }
         if self.cloud_rendering:
             controller_args["platform"] = CloudRendering
+        if self.gpu_device is not None:
+            controller_args["gpu_device"] = self.gpu_device
         return Controller(**controller_args)
 
     def print_agent_metadata(self, event) -> None:
@@ -2363,6 +2378,65 @@ class ThorRuntime:
             force_action=True,
         )
 
+    def pickup_clip_backoff_position(
+        self,
+        agent_id: int,
+        distance: float,
+    ) -> Dict[str, float]:
+        metadata = self.agent_event(agent_id).metadata
+        agent = metadata.get("agent", {})
+        position = dict(agent.get("position") or self.current_agent_position(agent_id))
+        rotation = agent.get("rotation", {})
+        yaw = math.radians(float(rotation.get("y", 0.0) or 0.0))
+        position["x"] = float(position.get("x", 0.0)) - math.sin(yaw) * distance
+        position["z"] = float(position.get("z", 0.0)) - math.cos(yaw) * distance
+        return position
+
+    def retry_pickup_after_clip_error(
+        self,
+        agent_id: int,
+        payload: Dict[str, Any],
+        initial_event: Optional[Any],
+    ) -> Optional[Any]:
+        last_event = initial_event
+        for distance in PICKUP_OBJECT_CLIP_BACKOFF_DISTANCES:
+            target_position = self.pickup_clip_backoff_position(agent_id, distance)
+            try:
+                self.teleport_to_position_direct(agent_id, target_position)
+            except Exception as exc:
+                log(
+                    "PickupObject clip backoff teleport failed for agent "
+                    f"{agent_id} by {distance}: {exc}"
+                )
+                continue
+
+            try:
+                retry_event = self.step(
+                    payload,
+                    check_success=False,
+                    retry_on_failure=False,
+                )
+            except Exception as exc:
+                if not is_pickup_object_clip_error(exc):
+                    raise
+                log(
+                    "PickupObject still clipped after moving agent "
+                    f"{agent_id} back by {distance}; trying another distance."
+                )
+                continue
+            metadata = getattr(retry_event, "metadata", {}) or {}
+            error = metadata.get("errorMessage")
+            last_event = retry_event
+            if metadata.get("lastActionSuccess", not bool(error)):
+                return retry_event
+            if not is_pickup_object_clip_error(error):
+                return retry_event
+            log(
+                "PickupObject still clipped after moving agent "
+                f"{agent_id} back by {distance}; trying another distance."
+            )
+        return last_event
+
     def object_action_by_object(
         self,
         action: str,
@@ -2389,6 +2463,12 @@ class ThorRuntime:
                 payload["forceAction"] = OPEN_OBJECT_FORCE_ACTION
             elif action == "CloseObject":
                 payload["forceAction"] = CLOSE_OBJECT_FORCE_ACTION
+            elif action == "DirtyObject":
+                payload["forceAction"] = DIRTY_OBJECT_FORCE_ACTION
+            elif action == "ToggleObjectOn":
+                payload["forceAction"] = TOGGLE_OBJECT_ON_FORCE_ACTION
+            elif action == "ToggleObjectOff":
+                payload["forceAction"] = TOGGLE_OBJECT_OFF_FORCE_ACTION
             elif force_action:
                 payload["forceAction"] = True
         if action == "PickupObject" and self.agent_holds_object(agent_id, obj["objectId"]):
@@ -2427,14 +2507,32 @@ class ThorRuntime:
 
         with self.stats_lock:
             self.total_exec += 1
-        event = self.step(
-            payload,
-            check_success=False,
-            retry_on_failure=False,
-        )
+        try:
+            event = self.step(
+                payload,
+                check_success=False,
+                retry_on_failure=False,
+            )
+        except Exception as exc:
+            if not (action == "PickupObject" and is_pickup_object_clip_error(exc)):
+                raise
+            retry_event = self.retry_pickup_after_clip_error(agent_id, payload, None)
+            if retry_event is None:
+                raise
+            event = retry_event
         metadata = getattr(event, "metadata", {}) or {}
         error = metadata.get("errorMessage")
         if not metadata.get("lastActionSuccess", not bool(error)):
+            if action == "PickupObject" and is_pickup_object_clip_error(error):
+                event = self.retry_pickup_after_clip_error(agent_id, payload, event)
+                metadata = getattr(event, "metadata", {}) or {}
+                error = metadata.get("errorMessage")
+                if metadata.get("lastActionSuccess", not bool(error)):
+                    with self.stats_lock:
+                        self.success_exec += 1
+                    self.record_agent_held_object(agent_id, str(obj["objectId"]))
+                    self.record_operated_object_name(obj)
+                    return event
             if action == "PutObject":
                 self.log_put_object_failure_held_items(agent_id)
             if action in {"ToggleObjectOn", "ToggleObjectOff"}:

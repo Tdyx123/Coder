@@ -153,7 +153,13 @@ def main() -> int:
         for warning in bundle.object_mapping_warnings:
             print(f"WARNING: {warning}")
 
-    runtime = ThorRuntime(robots, floor_no, CLOUD_RENDERING, RENDER_IMAGE)
+    runtime = ThorRuntime(
+        robots,
+        floor_no,
+        CLOUD_RENDERING,
+        RENDER_IMAGE,
+        gpu_device=bundle.gpu_device,
+    )
     _context.runtime = runtime
     try:
         run_action_plan(bundle.task_plan)

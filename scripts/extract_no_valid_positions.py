@@ -153,6 +153,161 @@ def find_nearest_held_object_before_error(stdout: str, error: str) -> Optional[s
     return held_object
 
 
+def is_no_valid_put_failure(failure: Any) -> bool:
+    if not isinstance(failure, dict):
+        return False
+
+    error = str(failure.get("error") or "")
+    if NO_VALID_POSITIONS not in error:
+        return False
+
+    action_type = str(failure.get("action_type") or "")
+    return action_type == "PutObject"
+
+
+def result_has_no_valid_put_failure(result: Dict[str, Any]) -> bool:
+    return any(
+        is_no_valid_put_failure(failure)
+        for failure in (result.get("robot_failures") or [])
+    )
+
+
+def success_count(results: Iterable[Dict[str, Any]]) -> int:
+    return sum(
+        1
+        for result in results
+        if result.get("returncode") == 0 and not result.get("timed_out")
+    )
+
+
+def failure_count(results: Iterable[Dict[str, Any]]) -> int:
+    return sum(
+        1
+        for result in results
+        if result.get("returncode") not in (0, None) and not result.get("timed_out")
+    )
+
+
+def timeout_count(results: Iterable[Dict[str, Any]]) -> int:
+    return sum(1 for result in results if result.get("timed_out"))
+
+
+def safe_count(value: Any) -> int:
+    return value if isinstance(value, int) else 0
+
+
+def all_subtasks_passed(result: Dict[str, Any]) -> bool:
+    total = safe_count(result.get("total"))
+    tc = safe_count(result.get("tc"))
+    return total > 0 and tc == total
+
+
+def refresh_flat_summary_counts(summary: Dict[str, Any]) -> None:
+    results = summary.get("results")
+    if not isinstance(results, list):
+        return
+
+    summary["total_results"] = len(results)
+    summary["success_count"] = success_count(results)
+    summary["failure_count"] = failure_count(results)
+    summary["timeout_count"] = timeout_count(results)
+
+
+def refresh_floor_summary_counts(floor_summary: Dict[str, Any]) -> None:
+    results = floor_summary.get("results")
+    if not isinstance(results, list):
+        return
+
+    floor_summary["task_count"] = len(results)
+    floor_summary["success_count"] = sum(
+        1 for result in results if result.get("status") == "success"
+    )
+    floor_summary["failure_count"] = sum(
+        1 for result in results if result.get("status") != "success"
+    )
+    floor_summary["all_pass_count"] = sum(
+        1 for result in results if all_subtasks_passed(result)
+    )
+    floor_summary["pass_one_count"] = sum(
+        1 for result in results if safe_count(result.get("tc")) > 0
+    )
+
+
+def refresh_nested_summary_counts(summary: Dict[str, Any]) -> None:
+    summaries = summary.get("summaries")
+    if not isinstance(summaries, list):
+        return
+
+    floor_summaries = [
+        floor_summary
+        for floor_summary in summaries
+        if isinstance(floor_summary, dict)
+    ]
+    for floor_summary in floor_summaries:
+        refresh_floor_summary_counts(floor_summary)
+
+    summary["success_count"] = sum(
+        safe_count(floor_summary.get("success_count"))
+        for floor_summary in floor_summaries
+    )
+    summary["failure_count"] = sum(
+        safe_count(floor_summary.get("failure_count"))
+        for floor_summary in floor_summaries
+    )
+    summary["all_pass_count"] = sum(
+        safe_count(floor_summary.get("all_pass_count"))
+        for floor_summary in floor_summaries
+    )
+    summary["pass_one_count"] = sum(
+        safe_count(floor_summary.get("pass_one_count"))
+        for floor_summary in floor_summaries
+    )
+
+
+def prune_no_valid_put_results(summary: Dict[str, Any]) -> int:
+    removed = 0
+
+    summaries = summary.get("summaries")
+    if isinstance(summaries, list):
+        for floor_summary in summaries:
+            if not isinstance(floor_summary, dict):
+                continue
+            results = floor_summary.get("results")
+            if not isinstance(results, list):
+                continue
+
+            kept_results = [
+                result
+                for result in results
+                if not (
+                    isinstance(result, dict)
+                    and result_has_no_valid_put_failure(result)
+                )
+            ]
+            removed += len(results) - len(kept_results)
+            floor_summary["results"] = kept_results
+
+        refresh_nested_summary_counts(summary)
+        return removed
+
+    results = summary.get("results")
+    if not isinstance(results, list):
+        return 0
+
+    kept_results = [
+        result
+        for result in results
+        if not (
+            isinstance(result, dict)
+            and result_has_no_valid_put_failure(result)
+        )
+    ]
+    removed = len(results) - len(kept_results)
+    summary["results"] = kept_results
+    refresh_flat_summary_counts(summary)
+    return removed
+
+
 def extract_records(summary: Dict[str, Any]) -> List[Dict[str, str]]:
     records: List[Dict[str, str]] = []
 
@@ -165,9 +320,9 @@ def extract_records(summary: Dict[str, Any]) -> List[Dict[str, str]]:
         used_context_indexes: Set[int] = set()
 
         for failure_index, failure in enumerate(result.get("robot_failures") or []):
-            error = str(failure.get("error") or "")
-            if NO_VALID_POSITIONS not in error:
+            if not is_no_valid_put_failure(failure):
                 continue
+            error = str(failure.get("error") or "")
 
             floorplan = parse_floorplan(stdout)
             placed_object = find_context_object(error, contexts, used_context_indexes)
@@ -217,10 +372,10 @@ def unique_records(records: Iterable[Dict[str, str]]) -> List[Dict[str, str]]:
     return unique
 
 
-def write_json(path: Path, records: List[Dict[str, str]]) -> None:
+def write_json(path: Path, data: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        json.dumps(records, indent=2, ensure_ascii=False) + "\n",
+        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
 
@@ -239,11 +394,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if args.unique:
             records = unique_records(records)
         write_json(output_path, records)
+        removed_count = prune_no_valid_put_results(summary)
+        write_json(input_path, summary)
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
     print(f"Wrote {len(records)} record(s) to {output_path}")
+    print(f"Removed {removed_count} result(s) from {input_path}")
     return 0
 
 

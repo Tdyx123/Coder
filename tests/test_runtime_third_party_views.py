@@ -23,6 +23,17 @@ def runtime_without_init():
     return object.__new__(ThorRuntime)
 
 
+def runtime_for_controller(gpu_device=None):
+    runtime = runtime_without_init()
+    runtime.floor = "6"
+    runtime.agent_mode = "default"
+    runtime.physical_agent_count = 1
+    runtime.controller_headless = True
+    runtime.cloud_rendering = False
+    runtime.gpu_device = gpu_device
+    return runtime
+
+
 class RuntimeThirdPartyViewsTest(unittest.TestCase):
     def test_third_party_view_names_only_include_top_view(self):
         self.assertEqual(THIRD_PARTY_VIEW_NAMES, (TOP_VIEW_NAME,))
@@ -87,6 +98,26 @@ class RuntimeThirdPartyViewsTest(unittest.TestCase):
             runtime.generate_video()
 
         which.assert_not_called()
+
+    def test_create_controller_omits_gpu_device_when_unset(self):
+        runtime = runtime_for_controller()
+
+        with patch.object(ThorRuntime, "ensure_display"), patch(
+            "executor_system.runtime.Controller"
+        ) as controller:
+            runtime.create_controller()
+
+        self.assertNotIn("gpu_device", controller.call_args.kwargs)
+
+    def test_create_controller_passes_gpu_device_when_set(self):
+        runtime = runtime_for_controller(gpu_device=0)
+
+        with patch.object(ThorRuntime, "ensure_display"), patch(
+            "executor_system.runtime.Controller"
+        ) as controller:
+            runtime.create_controller()
+
+        self.assertEqual(controller.call_args.kwargs["gpu_device"], 0)
 
 
 if __name__ == "__main__":

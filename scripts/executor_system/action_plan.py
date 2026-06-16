@@ -52,6 +52,8 @@ FAILURE_FAIL_STAGE = "FAIL_STAGE"
 FAILURE_SKIP_IF_EFFECT_ALREADY_TRUE = "SKIP_IF_EFFECT_ALREADY_TRUE"
 
 RETRYABLE_FAILURE_ACTION_TYPES = {"Teleport"}
+DEFAULT_PRE_TASK_STAGE_ID = "PreTask"
+PRE_TASK_ROBOT_ID = "robot1"
 
 
 def action_allows_failure_retry(action: "Action") -> bool:
@@ -162,14 +164,31 @@ class StagePlan:
     synchronization_policy: str = SYNC_BARRIER_AT_STAGE_END
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "StagePlan":
+    def _action_queues_from_any(
+        cls,
+        raw_queues: Any,
+        *,
+        field_name: str,
+        robot_id_override: Optional[str] = None,
+    ) -> Dict[str, List[Action]]:
+        if not isinstance(raw_queues, dict):
+            raise RuntimeError(f"{field_name} must be a mapping of robot id to actions.")
         queues: Dict[str, List[Action]] = {}
-        raw_queues = data.get("robot_action_queues") or {}
         for robot_id, actions in raw_queues.items():
-            queues[str(robot_id)] = [
-                Action.from_any(action).with_robot(str(robot_id))
-                for action in actions
-            ]
+            target_robot_id = robot_id_override or str(robot_id)
+            queues.setdefault(target_robot_id, []).extend(
+                Action.from_any(action).with_robot(target_robot_id)
+                for action in (actions or ())
+            )
+        return queues
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "StagePlan":
+        raw_queues = data.get("robot_action_queues") or {}
+        queues = cls._action_queues_from_any(
+            raw_queues,
+            field_name="robot_action_queues",
+        )
         return cls(
             stage_id=str(data.get("stage_id") or data.get("id") or "stage"),
             robot_action_queues=queues,
@@ -181,6 +200,44 @@ class StagePlan:
             ),
         )
 
+    @classmethod
+    def pre_task_from_dict(cls, data: Dict[str, Any]) -> Optional["StagePlan"]:
+        raw_queues = data.get("pre_task_action_queues") or {}
+        if not raw_queues:
+            return None
+        if not isinstance(raw_queues, dict):
+            raise RuntimeError(
+                "pre_task_action_queues must be a mapping of robot id to actions."
+            )
+
+        invalid_robot_ids = [
+            str(robot_id)
+            for robot_id, actions in raw_queues.items()
+            if str(robot_id) != PRE_TASK_ROBOT_ID and actions
+        ]
+        if invalid_robot_ids:
+            raise RuntimeError(
+                "pre_task_action_queues can only target "
+                f"{PRE_TASK_ROBOT_ID!r}; got {invalid_robot_ids!r}."
+            )
+
+        queues = cls._action_queues_from_any(
+            raw_queues,
+            field_name="pre_task_action_queues",
+            robot_id_override=PRE_TASK_ROBOT_ID,
+        )
+        queues = {
+            robot_id: actions
+            for robot_id, actions in queues.items()
+            if actions
+        }
+        if not queues:
+            return None
+        return cls(
+            stage_id=str(data.get("pre_task_stage_id") or DEFAULT_PRE_TASK_STAGE_ID),
+            robot_action_queues=queues,
+        )
+
 
 @dataclass
 class MultiStageActionPlan:
@@ -190,9 +247,13 @@ class MultiStageActionPlan:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "MultiStageActionPlan":
+        stages = [StagePlan.from_dict(stage) for stage in data.get("stages", [])]
+        pre_task_stage = StagePlan.pre_task_from_dict(data)
+        if pre_task_stage is not None:
+            stages.insert(0, pre_task_stage)
         return cls(
             task_id=str(data.get("task_id") or "task"),
-            stages=[StagePlan.from_dict(stage) for stage in data.get("stages", [])],
+            stages=stages,
             global_success_condition=data.get("global_success_condition"),
         )
 

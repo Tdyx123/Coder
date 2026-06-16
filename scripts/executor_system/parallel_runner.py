@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -41,10 +42,27 @@ from executor_system.action_plan import (  # noqa: E402
     WorldState,
 )
 from executor_system.executor import Executor, PhaseCoordinator  # noqa: E402
+from executor_system.runtime import is_pickup_object_clip_error  # noqa: E402
 
 
 DEFAULT_TIMEOUT_SECONDS = 100.0
+GPU_IDS = list(range(8))
 IGNORED_FAILURE_ACTION_TYPES = {"Teleport", "TeleportObjectToHand"}
+
+
+def gpu_id_for_index(index: int) -> int:
+    if not GPU_IDS:
+        raise RuntimeError("GPU_IDS must contain at least one GPU id.")
+    return int(GPU_IDS[(index - 1) % len(GPU_IDS)])
+
+
+def failure_ignored_for_ratio(action: Action, exc: BaseException) -> bool:
+    if action.action_type in IGNORED_FAILURE_ACTION_TYPES:
+        return True
+    return (
+        action.action_type == "PickupObject"
+        and is_pickup_object_clip_error(exc)
+    )
 
 
 class PlanExecutionTimeout(TimeoutError):
@@ -81,7 +99,7 @@ class TolerantRunStats:
         action_index: int,
         exc: BaseException,
     ) -> None:
-        ignored = action.action_type in IGNORED_FAILURE_ACTION_TYPES
+        ignored = failure_ignored_for_ratio(action, exc)
         failure = {
             "stage_id": stage_id,
             "robot_id": robot_id,
@@ -424,9 +442,14 @@ def run_generated_executable(
     metrics_output: Path,
     result_output: Optional[Path],
     timeout_seconds: float,
+    gpu_id: int,
     save_all_stdout: bool = False,
 ) -> Dict[str, Any]:
     start_time = time.monotonic()
+    gpu_id_text = str(gpu_id)
+    child_env = os.environ.copy()
+    child_env["CUDA_VISIBLE_DEVICES"] = gpu_id_text
+    child_env["LAMMAP_PARALLEL_GPU_ID"] = gpu_id_text
     command = [
         sys.executable,
         str(executable_path),
@@ -443,6 +466,7 @@ def run_generated_executable(
             stderr=subprocess.PIPE,
             text=True,
             timeout=timeout_seconds,
+            env=child_env,
         )
     except subprocess.TimeoutExpired as exc:
         result = {
@@ -457,6 +481,8 @@ def run_generated_executable(
             "robot_failures": [],
             "returncode": 124,
             "executable_path": str(executable_path),
+            "gpu_id": gpu_id,
+            "cuda_visible_devices": gpu_id_text,
             "stdout": exc.stdout or "",
             "stderr": exc.stderr or "",
         }
@@ -488,6 +514,8 @@ def run_generated_executable(
     result.setdefault("robot_failures", [])
     result["returncode"] = completed.returncode
     result["executable_path"] = str(executable_path)
+    result["gpu_id"] = gpu_id
+    result["cuda_visible_devices"] = gpu_id_text
     result["stdout"] = completed.stdout
     result["stderr"] = completed.stderr
     prune_stdout_for_result(result, save_all_stdout=save_all_stdout)
@@ -587,6 +615,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if not executable_paths:
         print("ERROR: no generated executable_plan.py files were provided or discovered")
         return 1
+    try:
+        gpu_id_for_index(1)
+    except RuntimeError as exc:
+        print(f"ERROR: {exc}")
+        return 1
 
     output_dir = Path(args.output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -598,7 +631,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         with ThreadPoolExecutor(max_workers=args.max_workers) as executor:
             future_to_path = {}
             future_to_result_output: Dict[Any, Optional[Path]] = {}
+            future_to_gpu_id: Dict[Any, int] = {}
             for index, executable_path in enumerate(executable_paths, start=1):
+                gpu_id = gpu_id_for_index(index)
                 individual_result_output = (
                     result_path_for(output_dir, executable_path, index)
                     if args.write_individual_results
@@ -614,13 +649,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     metrics_output=metrics_output,
                     result_output=individual_result_output,
                     timeout_seconds=float(args.timeout_seconds),
+                    gpu_id=gpu_id,
                     save_all_stdout=args.save_all_stdout,
                 )
                 future_to_path[future] = executable_path
                 future_to_result_output[future] = individual_result_output
+                future_to_gpu_id[future] = gpu_id
 
             for future in as_completed(future_to_path):
                 executable_path = future_to_path[future]
+                gpu_id = future_to_gpu_id[future]
                 try:
                     result = future.result()
                 except Exception as exc:
@@ -635,6 +673,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         "robot_failures": [],
                         "returncode": 1,
                         "executable_path": str(executable_path),
+                        "gpu_id": gpu_id,
+                        "cuda_visible_devices": str(gpu_id),
                         "error": str(exc),
                     }
                     prune_stdout_for_result(
