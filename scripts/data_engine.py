@@ -789,6 +789,7 @@ def _build_object_skill_sets(
             ("dirtyable", "pickupable"),
         ),
         "openable_objects": _objects_with_property(object_type_properties, "openable"),
+        "receptacle_objects": _objects_with_property(object_type_properties, "receptacle"),
         "openable_containers": _openable_receptacles(object_type_properties),
         "has_placing_surface_objects": _non_openable_receptacles(object_type_properties),
         "switchable_objects": _objects_with_property(object_type_properties, "toggleable"),
@@ -909,6 +910,9 @@ def _can_match_skill_pair(
 
     if config.relation == "placement":
         if obj not in skill_sets["pickupable_objects"]:
+            return False
+        receptacle_objects = skill_sets.get("receptacle_objects")
+        if receptacle_objects is not None and target not in receptacle_objects:
             return False
         if config.name == "PutIn" and target not in skill_sets["put_in_receptacles"]:
             return False

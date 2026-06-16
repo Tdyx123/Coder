@@ -1,0 +1,142 @@
+[
+  {
+    "floorplan": "FloorPlan1",
+    "object": "Apple",
+    "receptacle": "Bowl"
+  },
+  {
+    "floorplan": "FloorPlan1",
+    "object": "Book",
+    "receptacle": "Cabinet"
+  },
+  {
+    "floorplan": "FloorPlan1",
+    "object": "Book",
+    "receptacle": "Drawer"
+  },
+  {
+    "floorplan": "FloorPlan1",
+    "object": "Lettuce",
+    "receptacle": "Bowl"
+  },
+  {
+    "floorplan": "FloorPlan1",
+    "object": "Lettuce",
+    "receptacle": "Pan"
+  },
+  {
+    "floorplan": "FloorPlan1",
+    "object": "Lettuce",
+    "receptacle": "Pot"
+  },
+  {
+    "floorplan": "FloorPlan1",
+    "object": "PepperShaker",
+    "receptacle": "Drawer"
+  },
+  {
+    "floorplan": "FloorPlan1",
+    "object": "SaltShaker",
+    "receptacle": "Drawer"
+  },
+  {
+    "floorplan": "FloorPlan1",
+    "object": "SoapBottle",
+    "receptacle": "Drawer"
+  },
+  {
+    "floorplan": "FloorPlan1",
+    "object": "Tomato",
+    "receptacle": "Bowl"
+  },
+  {
+    "floorplan": "FloorPlan1",
+    "object": "Tomato",
+    "receptacle": "Pot"
+  },
+  {
+    "floorplan": "FloorPlan1",
+    "object": "Apple",
+    "receptacle": "Bowl"
+  },
+  {
+    "floorplan": "FloorPlan1",
+    "object": "Book",
+    "receptacle": "Cabinet"
+  },
+  {
+    "floorplan": "FloorPlan1",
+    "object": "Book",
+    "receptacle": "Drawer"
+  },
+  {
+    "floorplan": "FloorPlan1",
+    "object": "Book",
+    "receptacle": "Shelf"
+  },
+  {
+    "floorplan": "FloorPlan1",
+    "object": "Book",
+    "receptacle": "Stool"
+  },
+  {
+    "floorplan": "FloorPlan1",
+    "object": "Bread",
+    "receptacle": "Plate"
+  },
+  {
+    "floorplan": "FloorPlan1",
+    "object": "DishSponge",
+    "receptacle": "Shelf"
+  },
+  {
+    "floorplan": "FloorPlan1",
+    "object": "Lettuce",
+    "receptacle": "Bowl"
+  },
+  {
+    "floorplan": "FloorPlan1",
+    "object": "Lettuce",
+    "receptacle": "Pan"
+  },
+  {
+    "floorplan": "FloorPlan1",
+    "object": "Lettuce",
+    "receptacle": "Plate"
+  },
+  {
+    "floorplan": "FloorPlan1",
+    "object": "Lettuce",
+    "receptacle": "Pot"
+  },
+  {
+    "floorplan": "FloorPlan1",
+    "object": "PepperShaker",
+    "receptacle": "Drawer"
+  },
+  {
+    "floorplan": "FloorPlan1",
+    "object": "SaltShaker",
+    "receptacle": "Drawer"
+  },
+  {
+    "floorplan": "FloorPlan1",
+    "object": "SoapBottle",
+    "receptacle": "Drawer"
+  },
+  {
+    "floorplan": "FloorPlan1",
+    "object": "Statue",
+    "receptacle": "CounterTop"
+  },
+  {
+    "floorplan": "FloorPlan1",
+    "object": "Tomato",
+    "receptacle": "Bowl"
+  },
+  {
+    "floorplan": "FloorPlan1",
+    "object": "Tomato",
+    "receptacle": "Pot"
+  }
+]

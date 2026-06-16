@@ -1,7 +1,9 @@
+import io
 import json
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -48,9 +50,18 @@ class FakeRuntime:
         return FakeEvent()
 
 
-def write_fake_generated_script(path: Path, *, sleep_seconds=0.0, returncode=0, gcr=1.0):
+def write_fake_generated_script(
+    path: Path,
+    *,
+    sleep_seconds=0.0,
+    returncode=0,
+    gcr=1.0,
+    robot_failures=None,
+    stdout_text="",
+):
     path.parent.mkdir(parents=True, exist_ok=True)
     status = "success" if returncode == 0 else "failed"
+    robot_failures = [] if robot_failures is None else robot_failures
     path.write_text(
         "\n".join(
             [
@@ -65,6 +76,7 @@ def write_fake_generated_script(path: Path, *, sleep_seconds=0.0, returncode=0, 
                 "parser.add_argument('--timeout-seconds', type=float, default=100.0)",
                 "args = parser.parse_args()",
                 f"time.sleep({sleep_seconds!r})",
+                f"print({stdout_text!r})" if stdout_text else "pass",
                 "result = {",
                 f"    'status': {status!r},",
                 "    'timed_out': False,",
@@ -73,7 +85,7 @@ def write_fake_generated_script(path: Path, *, sleep_seconds=0.0, returncode=0, 
                 "    'executed_actions': 2,",
                 "    'failed_actions': 0,",
                 "    'failure_action_ratio': 0.0,",
-                "    'robot_failures': [],",
+                f"    'robot_failures': {robot_failures!r},",
                 "}",
                 "Path(args.metrics_output).write_text(json.dumps(result), encoding='utf-8')",
                 f"raise SystemExit({returncode!r})",
@@ -91,8 +103,8 @@ class ParallelRunnerCliTest(unittest.TestCase):
             first = root / "a" / "plan_to_code" / "executable_plan.py"
             second = root / "b" / "plan_to_code" / "executable_plan.py"
             output_dir = root / "runner_results"
-            write_fake_generated_script(first, gcr=0.5)
-            write_fake_generated_script(second, gcr=1.0)
+            write_fake_generated_script(first, gcr=0.5, stdout_text="first stdout")
+            write_fake_generated_script(second, gcr=1.0, stdout_text="second stdout")
 
             result_code = parallel_runner_main(
                 [
@@ -116,6 +128,93 @@ class ParallelRunnerCliTest(unittest.TestCase):
             self.assertEqual(summary["failure_count"], 0)
             self.assertEqual(summary["timeout_count"], 0)
             self.assertEqual(sorted(result["gcr"] for result in summary["results"]), [0.5, 1.0])
+            self.assertEqual(sorted(output_dir.glob("result_*.json")), [])
+            self.assertTrue(
+                all("stdout" not in result for result in summary["results"])
+            )
+
+    def test_write_individual_results_writes_per_task_json_files(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            first = root / "a" / "plan_to_code" / "executable_plan.py"
+            second = root / "b" / "plan_to_code" / "executable_plan.py"
+            output_dir = root / "runner_results"
+            write_fake_generated_script(first, gcr=0.5, stdout_text="first stdout")
+            write_fake_generated_script(second, gcr=1.0, stdout_text="second stdout")
+
+            result_code = parallel_runner_main(
+                [
+                    str(first),
+                    str(second),
+                    "--output-dir",
+                    str(output_dir),
+                    "--write-individual-results",
+                    "--max-workers",
+                    "2",
+                    "--timeout-seconds",
+                    "5",
+                ]
+            )
+
+            self.assertEqual(result_code, 0)
+            result_files = sorted(output_dir.glob("result_*.json"))
+            self.assertEqual(len(result_files), 2)
+            result_jsons = [
+                json.loads(path.read_text(encoding="utf-8")) for path in result_files
+            ]
+            self.assertEqual(sorted(result["gcr"] for result in result_jsons), [0.5, 1.0])
+            self.assertTrue(all("stdout" not in result for result in result_jsons))
+
+    def test_stdout_is_kept_when_robot_failures_are_present(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            script = root / "run" / "plan_to_code" / "executable_plan.py"
+            output_dir = root / "runner_results"
+            write_fake_generated_script(
+                script,
+                stdout_text="failure stdout",
+                robot_failures=[{"robot_id": "robot1", "error": "failed"}],
+            )
+
+            result_code = parallel_runner_main(
+                [
+                    str(script),
+                    "--output-dir",
+                    str(output_dir),
+                    "--timeout-seconds",
+                    "5",
+                ]
+            )
+
+            self.assertEqual(result_code, 0)
+            summary = json.loads(
+                (output_dir / "parallel_runner_summary.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(summary["results"][0]["stdout"], "failure stdout\n")
+
+    def test_save_all_stdout_keeps_stdout_without_robot_failures(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            script = root / "run" / "plan_to_code" / "executable_plan.py"
+            output_dir = root / "runner_results"
+            write_fake_generated_script(script, stdout_text="plain stdout")
+
+            result_code = parallel_runner_main(
+                [
+                    str(script),
+                    "--output-dir",
+                    str(output_dir),
+                    "--save-all-stdout",
+                    "--timeout-seconds",
+                    "5",
+                ]
+            )
+
+            self.assertEqual(result_code, 0)
+            summary = json.loads(
+                (output_dir / "parallel_runner_summary.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(summary["results"][0]["stdout"], "plain stdout\n")
 
     def test_root_discovery_runs_generated_files(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -141,6 +240,94 @@ class ParallelRunnerCliTest(unittest.TestCase):
             )
             self.assertEqual(summary["total_results"], 1)
             self.assertEqual(summary["results"][0]["executable_path"], str(script.resolve()))
+
+    def test_py_dir_runs_direct_child_python_files(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            py_dir = root / "generated"
+            first = py_dir / "first.py"
+            second = py_dir / "second.py"
+            output_dir = root / "runner_results"
+            write_fake_generated_script(first, gcr=0.25)
+            write_fake_generated_script(second, gcr=0.75)
+
+            result_code = parallel_runner_main(
+                [
+                    "--py-dir",
+                    str(py_dir),
+                    "--output-dir",
+                    str(output_dir),
+                    "--max-workers",
+                    "2",
+                    "--timeout-seconds",
+                    "5",
+                ]
+            )
+
+            self.assertEqual(result_code, 0)
+            summary = json.loads(
+                (output_dir / "parallel_runner_summary.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(summary["total_results"], 2)
+            self.assertEqual(summary["success_count"], 2)
+            self.assertEqual(sorted(result["gcr"] for result in summary["results"]), [0.25, 0.75])
+            self.assertEqual(
+                [result["executable_path"] for result in summary["results"]],
+                [str(first.resolve()), str(second.resolve())],
+            )
+
+    def test_py_dir_does_not_recurse_into_subdirectories(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            py_dir = root / "generated"
+            direct = py_dir / "direct.py"
+            nested = py_dir / "nested" / "ignored.py"
+            output_dir = root / "runner_results"
+            write_fake_generated_script(direct)
+            write_fake_generated_script(nested, returncode=9, gcr=0.0)
+
+            result_code = parallel_runner_main(
+                [
+                    "--py-dir",
+                    str(py_dir),
+                    "--output-dir",
+                    str(output_dir),
+                    "--timeout-seconds",
+                    "5",
+                ]
+            )
+
+            self.assertEqual(result_code, 0)
+            summary = json.loads(
+                (output_dir / "parallel_runner_summary.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(summary["total_results"], 1)
+            self.assertEqual(summary["results"][0]["executable_path"], str(direct.resolve()))
+
+    def test_py_dir_missing_directory_returns_error(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            missing = root / "missing"
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                result_code = parallel_runner_main(["--py-dir", str(missing)])
+
+            self.assertEqual(result_code, 1)
+            self.assertIn("Python script directory not found", output.getvalue())
+
+    def test_py_dir_empty_directory_returns_error(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            py_dir = root / "empty"
+            py_dir.mkdir()
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                result_code = parallel_runner_main(["--py-dir", str(py_dir)])
+
+            self.assertEqual(result_code, 1)
+            self.assertIn("No Python scripts found in directory", output.getvalue())
 
     def test_timeout_is_recorded_without_blocking_other_tasks(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

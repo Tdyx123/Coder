@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run plantocode-generated executables concurrently and collect metrics."""
+"""Run generated Python executables concurrently and collect metrics."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import hashlib
 import json
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -371,6 +372,7 @@ def run_action_plan_tolerant(
 def discover_executable_plans(
     explicit_paths: Sequence[str],
     root: Optional[str],
+    py_dirs: Sequence[str] = (),
 ) -> List[Path]:
     candidates: List[Path] = []
     for raw_path in explicit_paths:
@@ -379,6 +381,14 @@ def discover_executable_plans(
         candidates.extend(
             sorted(Path(root).expanduser().rglob("plan_to_code/executable_plan.py"))
         )
+    for raw_dir in py_dirs:
+        py_dir = Path(raw_dir).expanduser()
+        if not py_dir.is_dir():
+            raise RuntimeError(f"Python script directory not found: {py_dir}")
+        py_files = sorted(py_dir.glob("*.py"))
+        if not py_files:
+            raise RuntimeError(f"No Python scripts found in directory: {py_dir}")
+        candidates.extend(py_files)
 
     seen = set()
     resolved: List[Path] = []
@@ -398,11 +408,23 @@ def result_path_for(output_dir: Path, executable_path: Path, index: int) -> Path
     return output_dir / f"result_{index:04d}_{digest}.json"
 
 
+def prune_stdout_for_result(
+    result: Dict[str, Any],
+    *,
+    save_all_stdout: bool,
+) -> Dict[str, Any]:
+    if not save_all_stdout and not result.get("robot_failures"):
+        result.pop("stdout", None)
+    return result
+
+
 def run_generated_executable(
     executable_path: Path,
     *,
     metrics_output: Path,
+    result_output: Optional[Path],
     timeout_seconds: float,
+    save_all_stdout: bool = False,
 ) -> Dict[str, Any]:
     start_time = time.monotonic()
     command = [
@@ -438,7 +460,9 @@ def run_generated_executable(
             "stdout": exc.stdout or "",
             "stderr": exc.stderr or "",
         }
-        write_result_json(metrics_output, result)
+        prune_stdout_for_result(result, save_all_stdout=save_all_stdout)
+        if result_output is not None:
+            write_result_json(result_output, result)
         return result
 
     if metrics_output.is_file():
@@ -466,7 +490,9 @@ def run_generated_executable(
     result["executable_path"] = str(executable_path)
     result["stdout"] = completed.stdout
     result["stderr"] = completed.stderr
-    write_result_json(metrics_output, result)
+    prune_stdout_for_result(result, save_all_stdout=save_all_stdout)
+    if result_output is not None:
+        write_result_json(result_output, result)
     return result
 
 
@@ -492,7 +518,7 @@ def build_summary(results: Sequence[Dict[str, Any]], start_time: float) -> Dict[
 
 def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run multiple plantocode-generated executable_plan.py files in parallel."
+        description="Run multiple generated Python executable files in parallel."
     )
     parser.add_argument(
         "executable_plans",
@@ -502,6 +528,12 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--root",
         help="Root directory to recursively search for plan_to_code/executable_plan.py.",
+    )
+    parser.add_argument(
+        "--py-dir",
+        action="append",
+        default=[],
+        help="Directory whose direct child *.py files should be run.",
     )
     parser.add_argument(
         "--max-workers",
@@ -518,7 +550,17 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         default="./parallel_runner_results",
-        help="Directory for per-task result JSON files and the summary.",
+        help="Directory for the summary and optional per-task result JSON files.",
+    )
+    parser.add_argument(
+        "--write-individual-results",
+        action="store_true",
+        help="Write per-task result_*.json files in --output-dir.",
+    )
+    parser.add_argument(
+        "--save-all-stdout",
+        action="store_true",
+        help="Keep stdout in every result instead of only results with robot_failures.",
     )
     return parser.parse_args(argv)
 
@@ -533,7 +575,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 1
 
     try:
-        executable_paths = discover_executable_plans(args.executable_plans, args.root)
+        executable_paths = discover_executable_plans(
+            args.executable_plans,
+            args.root,
+            args.py_dir,
+        )
     except RuntimeError as exc:
         print(f"ERROR: {exc}")
         return 1
@@ -547,39 +593,60 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     start_time = time.monotonic()
     results: List[Dict[str, Any]] = []
 
-    with ThreadPoolExecutor(max_workers=args.max_workers) as executor:
-        future_to_path = {}
-        for index, executable_path in enumerate(executable_paths, start=1):
-            metrics_output = result_path_for(output_dir, executable_path, index)
-            future = executor.submit(
-                run_generated_executable,
-                executable_path,
-                metrics_output=metrics_output,
-                timeout_seconds=float(args.timeout_seconds),
-            )
-            future_to_path[future] = executable_path
+    with tempfile.TemporaryDirectory(prefix="parallel_runner_metrics_") as temp_dir:
+        temp_metrics_dir = Path(temp_dir)
+        with ThreadPoolExecutor(max_workers=args.max_workers) as executor:
+            future_to_path = {}
+            future_to_result_output: Dict[Any, Optional[Path]] = {}
+            for index, executable_path in enumerate(executable_paths, start=1):
+                individual_result_output = (
+                    result_path_for(output_dir, executable_path, index)
+                    if args.write_individual_results
+                    else None
+                )
+                metrics_output = individual_result_output or (
+                    temp_metrics_dir
+                    / result_path_for(output_dir, executable_path, index).name
+                )
+                future = executor.submit(
+                    run_generated_executable,
+                    executable_path,
+                    metrics_output=metrics_output,
+                    result_output=individual_result_output,
+                    timeout_seconds=float(args.timeout_seconds),
+                    save_all_stdout=args.save_all_stdout,
+                )
+                future_to_path[future] = executable_path
+                future_to_result_output[future] = individual_result_output
 
-        for future in as_completed(future_to_path):
-            executable_path = future_to_path[future]
-            try:
-                result = future.result()
-            except Exception as exc:
-                result = {
-                    "status": "failed",
-                    "timed_out": False,
-                    "run_time_seconds": 0.0,
-                    "gcr": None,
-                    "executed_actions": 0,
-                    "failed_actions": 0,
-                    "failure_action_ratio": 0.0,
-                    "robot_failures": [],
-                    "returncode": 1,
-                    "executable_path": str(executable_path),
-                    "error": str(exc),
-                }
-            results.append(result)
-            status = result.get("status", "unknown")
-            print(f"{status}: {executable_path}")
+            for future in as_completed(future_to_path):
+                executable_path = future_to_path[future]
+                try:
+                    result = future.result()
+                except Exception as exc:
+                    result = {
+                        "status": "failed",
+                        "timed_out": False,
+                        "run_time_seconds": 0.0,
+                        "gcr": None,
+                        "executed_actions": 0,
+                        "failed_actions": 0,
+                        "failure_action_ratio": 0.0,
+                        "robot_failures": [],
+                        "returncode": 1,
+                        "executable_path": str(executable_path),
+                        "error": str(exc),
+                    }
+                    prune_stdout_for_result(
+                        result,
+                        save_all_stdout=args.save_all_stdout,
+                    )
+                    result_output = future_to_result_output[future]
+                    if result_output is not None:
+                        write_result_json(result_output, result)
+                results.append(result)
+                status = result.get("status", "unknown")
+                print(f"{status}: {executable_path}")
 
     results.sort(key=lambda result: str(result.get("executable_path", "")))
     summary = build_summary(results, start_time)

@@ -199,6 +199,23 @@ class DataEngineObjectPropertiesTests(unittest.TestCase):
         self.assertNotIn("Bowl", floor_plan_1_sets["must_open_to_place_receptacles"])
         self.assertIn("Bowl", floor_plan_1_sets["placement_restrictions"]["Apple"])
 
+    def test_puton_target_must_be_receptacle(self):
+        path = self._write_objects(
+            [
+                {"scene": "FloorPlan1", "objectType": "Apple", "pickupable": True},
+                {"scene": "FloorPlan1", "objectType": "Sink", "receptacle": False},
+                {"scene": "FloorPlan1", "objectType": "SinkBasin", "receptacle": True},
+            ]
+        )
+        skill_sets = data_engine._build_object_skill_sets(1, path)
+
+        self.assertFalse(
+            data_engine._can_place_with_skill("Apple", "Sink", "PutOn", skill_sets)
+        )
+        self.assertTrue(
+            data_engine._can_place_with_skill("Apple", "SinkBasin", "PutOn", skill_sets)
+        )
+
     def test_washable_objects_require_pickupable(self):
         engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
         skill_sets = data_engine._build_object_skill_sets(1, self._skill_fixture_path())

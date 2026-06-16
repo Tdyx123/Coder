@@ -111,6 +111,45 @@ Behavior worth knowing:
 - generated `plan_to_code/executable_plan.py` can also be called with
   `--runner-mode` for no-render metric collection
 
+### `generate_single_subtask_code.py`
+
+Generates standalone executable Python files for feasible single subtasks.
+
+```bash
+python scripts/generate_single_subtask_code.py \
+  --floor-plans 1 \
+  --output-dir ./data/single_subtask_code
+```
+
+The generator reads `data/bad_single_subtasks.json` by default, when present,
+and excludes matching bad subtasks before applying `--limit`.
+
+Bad subtask config format:
+
+```json
+{
+  "version": 1,
+  "bad_subtasks": [
+    {
+      "floor_plan": 1,
+      "subtask": {"skill": "Break", "objects": ["WineBottle"]},
+      "reason": "Known runner failure in FloorPlan1"
+    }
+  ]
+}
+```
+
+Behavior worth knowing:
+
+- pass `--bad-subtasks-config PATH` to use a different JSON file
+- `floor_plan` accepts either `1` or `"FloorPlan1"`
+- omit `floor_plan` or set it to `null` to filter the subtask on every floor
+- matching is exact on `skill` and ordered `objects`
+- filtering affects only the current generation run; old files already in an
+  output directory are not deleted, so regenerate into an empty directory or
+  clear stale outputs when changing the bad subtask list
+- generated summaries include `excluded_subtasks` and `bad_subtasks_config`
+
 ### `executor_system/parallel_runner.py`
 
 Runs multiple `plantocode.py` generated `plan_to_code/executable_plan.py`
@@ -124,12 +163,28 @@ python scripts/executor_system/parallel_runner.py \
   --output-dir ./parallel_runner_results
 ```
 
+Run every Python file directly under a directory:
+
+```bash
+python scripts/executor_system/parallel_runner.py \
+  --py-dir ./data/single_subtask_code \
+  --max-workers 4 \
+  --timeout-seconds 100 \
+  --output-dir ./parallel_runner_results
+```
+
 Behavior worth knowing:
 
 - each generated file is run in a subprocess with `--runner-mode`
+- `--root` recursively discovers `plan_to_code/executable_plan.py` files
+- `--py-dir` runs direct child `*.py` files from the given directory
 - runner mode sets `renderImage=False` and skips video/metadata output
 - each subprocess has a 100 second timeout by default
 - summary metrics are written to `parallel_runner_summary.json`
+- per-task `result_*.json` files are not written by default; pass
+  `--write-individual-results` to save them
+- `stdout` is kept only for results with `robot_failures` by default; pass
+  `--save-all-stdout` to keep it for every result
 
 ### `execute_plan.py`
 

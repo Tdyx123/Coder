@@ -13,7 +13,7 @@ from .goals import (
     record_groundtruth_state,
     state_satisfied,
 )
-from .utils import RobotRef, object_center, object_key, require_prepare_egg_target
+from .utils import RobotRef, log, object_center, object_key, require_prepare_egg_target
 
 @dataclass
 class _PlannedActionContext:
@@ -193,6 +193,38 @@ def _find_sink_basin(robot: RobotRef, sink: Any) -> Dict[str, Any]:
         return sink_basin[0]
 
     raise RuntimeError(f"Could not find SinkBasin for sink {sink!r}.")
+
+
+def _fillwater_sinkbasin_putobject_has_no_positions(
+    exc: BaseException,
+    sink_basin: Dict[str, Any],
+) -> bool:
+    message = str(exc)
+    normalized = message.casefold()
+    sink_basin_values = (
+        sink_basin.get("objectId"),
+        sink_basin.get("objectType"),
+        sink_basin.get("name"),
+    )
+    has_sink_basin_context = "sinkbasin" in normalized or any(
+        "sinkbasin" in str(value).casefold()
+        for value in sink_basin_values
+        if value
+    )
+    return (
+        "putobject" in normalized
+        and has_sink_basin_context
+        and "no valid positions to place object found" in normalized
+    )
+
+
+def _discount_skipped_runtime_attempt(runtime_obj: Any) -> None:
+    lock = getattr(runtime_obj, "stats_lock", None)
+    if lock is None:
+        runtime_obj.total_exec = max(0, int(getattr(runtime_obj, "total_exec", 0)) - 1)
+        return
+    with lock:
+        runtime_obj.total_exec = max(0, int(getattr(runtime_obj, "total_exec", 0)) - 1)
 
 
 def _object_is_toggled_on(obj: Dict[str, Any]) -> bool:
@@ -531,7 +563,16 @@ def FillWater(robot: RobotRef, sink: Any, obj: Any) -> None:
     if _object_has_liquid(runtime_obj.find_object(obj, agent_id=agent_id)):
         runtime_obj.object_action("EmptyLiquidFromObject", robot, obj)
     sink_basin = _find_sink_basin(robot, sink)
-    PutObject(robot, obj, sink_basin["objectId"])
+    try:
+        PutObject(robot, obj, sink_basin["objectId"])
+    except RuntimeError as exc:
+        if not _fillwater_sinkbasin_putobject_has_no_positions(exc, sink_basin):
+            raise
+        _discount_skipped_runtime_attempt(runtime_obj)
+        log(
+            "Skipping FillWater SinkBasin PutObject because no valid "
+            f"placement position was found: {exc}"
+        )
     SwitchOn(robot, "Faucet")
     try:
         runtime_obj.object_action(

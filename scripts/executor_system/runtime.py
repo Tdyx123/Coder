@@ -20,9 +20,6 @@ from .config import (
     LOCAL_TOP_VIEW_MIN_HEIGHT,
     NAVIGATION_CHUNK_STEPS,
     NAVIGATION_GRID_SIZE,
-    OPEN_OBJECT_HORIZON_MAX,
-    OPEN_OBJECT_HORIZON_MIN,
-    OPEN_OBJECT_YAW_SCAN_DEGREES,
     PLACEMENT_RESTRICTIONS,
     parse_env_bool,
     TELEPORT_CANDIDATE_LIMIT,
@@ -75,6 +72,32 @@ from .utils import (
     yaw_to_face,
     log,
 )
+
+LOOK_ACTIONS = {"LookUp", "LookDown"}
+LOOK_DEGREES_INCREMENT = 0.1
+PUT_OBJECT_FORCE_ACTION = True
+OPEN_OBJECT_FORCE_ACTION = True
+CLOSE_OBJECT_FORCE_ACTION = True
+
+
+def _normalize_look_degrees(degrees: Any) -> float:
+    value = float(degrees)
+    if value == 0.0:
+        return 0.0
+    sign = -1.0 if value < 0 else 1.0
+    magnitude = abs(value)
+    steps = math.floor(magnitude / LOOK_DEGREES_INCREMENT + 0.5)
+    rounded = steps * LOOK_DEGREES_INCREMENT
+    if rounded == 0.0:
+        rounded = LOOK_DEGREES_INCREMENT
+    return sign * round(rounded, 1)
+
+
+def _normalize_look_payload(payload: Dict[str, Any]) -> None:
+    if payload.get("action") not in LOOK_ACTIONS or "degrees" not in payload:
+        return
+    payload["degrees"] = _normalize_look_degrees(payload["degrees"])
+
 
 class ThorRuntime:
     @staticmethod
@@ -211,7 +234,7 @@ class ThorRuntime:
             "snapToGrid": False,
             "gridSize": 0.25,
             "rotateStepDegrees": 20,
-            "visibilityDistance": 100,
+            "visibilityDistance": 5,
             "fieldOfView": 90,
             "agentCount": self.physical_agent_count,
             "headless": self.controller_headless,
@@ -253,6 +276,9 @@ class ThorRuntime:
         )
 
     def prepare_output_dirs(self) -> None:
+        if not self.render_image:
+            return
+
         for path in self.output_root.glob("agent_*"):
             if path.is_dir():
                 shutil.rmtree(path)
@@ -404,6 +430,7 @@ class ThorRuntime:
     ):
         copied_payload = dict(payload)
         copied_payload.pop("objectResources", None)
+        _normalize_look_payload(copied_payload)
         requested_retry = check_success if retry_on_failure is None else retry_on_failure
         should_retry = bool(
             requested_retry and self.payload_allows_step_retry(copied_payload)
@@ -562,6 +589,9 @@ class ThorRuntime:
         )
 
     def save_frames(self, event) -> None:
+        if not self.render_image:
+            return
+
         events = list(getattr(event, "events", None) or [event])
         wrote_frame = False
         for i, agent_event in enumerate(events[: self.physical_agent_count]):
@@ -1622,201 +1652,6 @@ class ThorRuntime:
         action = "RotateRight" if delta > 0 else "RotateLeft"
         self._step_direct({"action": action, "degrees": abs(delta), "agentId": agent_id})
 
-    def _current_agent_yaw(self, agent_id: int) -> float:
-        metadata = self.agent_event(agent_id).metadata
-        rotation = metadata.get("agent", {}).get("rotation", {})
-        return float(rotation.get("y", 0.0))
-
-    def _current_agent_horizon(self, agent_id: int) -> float:
-        metadata = self.agent_event(agent_id).metadata
-        agent = metadata.get("agent", {})
-        return float(agent.get("cameraHorizon", 0.0))
-
-    def _current_agent_camera_position(self, agent_id: int) -> Dict[str, float]:
-        metadata = self.agent_event(agent_id).metadata
-        agent = metadata.get("agent", {})
-        for key in ("cameraPosition", "camera_position"):
-            camera_position = agent.get(key)
-            if isinstance(camera_position, dict) and {"x", "y", "z"}.issubset(camera_position):
-                return dict(camera_position)
-        camera = agent.get("camera")
-        if isinstance(camera, dict):
-            camera_position = camera.get("position")
-            if isinstance(camera_position, dict) and {"x", "y", "z"}.issubset(camera_position):
-                return dict(camera_position)
-        position = agent.get("position")
-        if isinstance(position, dict) and {"x", "y", "z"}.issubset(position):
-            return dict(position)
-        return self.current_agent_position(agent_id)
-
-    def _clamp_open_object_horizon(self, horizon: float) -> float:
-        return max(
-            OPEN_OBJECT_HORIZON_MIN,
-            min(OPEN_OBJECT_HORIZON_MAX, float(horizon)),
-        )
-
-    def _target_horizon_for_object(self, agent_id: int, target: Dict[str, float]) -> float:
-        camera_position = self._current_agent_camera_position(agent_id)
-        horizontal_distance = max(
-            distance_pts(position_to_tuple(camera_position), position_to_tuple(target)),
-            0.1,
-        )
-        vertical_delta = float(camera_position.get("y", 0.0)) - float(target.get("y", 0.0))
-        horizon = math.degrees(math.atan2(vertical_delta, horizontal_distance))
-        return self._clamp_open_object_horizon(horizon)
-
-    def _open_object_horizon_candidates(
-        self,
-        agent_id: int,
-        target: Dict[str, float],
-    ) -> List[float]:
-        recommended = self._target_horizon_for_object(agent_id, target)
-        current = self._current_agent_horizon(agent_id)
-        candidates = [
-            recommended,
-            recommended - 15.0,
-            recommended + 15.0,
-            0.0,
-            current,
-            OPEN_OBJECT_HORIZON_MIN,
-            OPEN_OBJECT_HORIZON_MAX,
-        ]
-        unique_candidates: List[float] = []
-        seen = set()
-        for candidate in candidates:
-            clamped = self._clamp_open_object_horizon(candidate)
-            key = round(clamped, 3)
-            if key in seen:
-                continue
-            seen.add(key)
-            unique_candidates.append(clamped)
-        return unique_candidates
-
-    def _set_agent_horizon_for_scan(self, agent_id: int, target_horizon: float) -> bool:
-        target = self._clamp_open_object_horizon(target_horizon)
-        max_step_degrees = 30.0
-        for _ in range(8):
-            current = self._current_agent_horizon(agent_id)
-            delta = target - current
-            if abs(delta) < 1e-2:
-                return True
-            degrees = min(abs(delta), max_step_degrees)
-            action = "LookDown" if delta > 0 else "LookUp"
-            event = self.step(
-                {"action": action, "degrees": degrees, "agentId": agent_id},
-                check_success=False,
-                retry_on_failure=False,
-            )
-            if step_event_failed(event):
-                log(
-                    f"Could not adjust camera horizon for agent {agent_id} "
-                    f"toward {target}: {event_error_message(event) or 'no error message returned'}"
-                )
-                return False
-            next_horizon = self._current_agent_horizon(agent_id)
-            if abs(next_horizon - current) < 1e-3:
-                return abs(target - next_horizon) < 1e-2
-        return abs(target - self._current_agent_horizon(agent_id)) < 1.0
-
-    def _set_agent_yaw_for_scan(self, agent_id: int, target_yaw: float) -> bool:
-        current_yaw = self._current_agent_yaw(agent_id)
-        delta = shortest_yaw_delta(target_yaw % 360.0, current_yaw)
-        if abs(delta) < 1e-3:
-            return True
-        action = "RotateRight" if delta > 0 else "RotateLeft"
-        event = self.step(
-            {"action": action, "degrees": abs(delta), "agentId": agent_id},
-            check_success=False,
-            retry_on_failure=False,
-        )
-        if step_event_failed(event):
-            log(
-                f"Could not rotate agent {agent_id} toward yaw {target_yaw}: "
-                f"{event_error_message(event) or 'no error message returned'}"
-            )
-            return False
-        return True
-
-    def _visible_object_by_id(self, agent_id: int, object_id: str) -> Optional[Dict[str, Any]]:
-        obj = self.current_object_by_id(agent_id, object_id)
-        if obj is not None and bool(obj.get("visible", False)):
-            return obj
-        return None
-
-    def _prepare_open_object_target_visibility(
-        self,
-        agent_id: int,
-        obj: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        object_id = str(obj.get("objectId") or "")
-        if not object_id:
-            return obj
-
-        visible_obj = self._visible_object_by_id(agent_id, object_id)
-        if visible_obj is not None:
-            return visible_obj
-
-        center = object_center(obj)
-        if center is None:
-            raise RuntimeError(
-                f"OpenObject target {object_id} has no usable center for visibility scan."
-            )
-
-        base_yaw = self._current_agent_yaw(agent_id)
-        horizon_candidates = self._open_object_horizon_candidates(agent_id, center)
-        log(f"Preparing OpenObject visibility for agent {agent_id} on {object_id}.")
-        for yaw_offset in OPEN_OBJECT_YAW_SCAN_DEGREES:
-            if not self._set_agent_yaw_for_scan(agent_id, base_yaw + float(yaw_offset)):
-                continue
-            visible_obj = self._visible_object_by_id(agent_id, object_id)
-            if visible_obj is not None:
-                return visible_obj
-            for horizon in horizon_candidates:
-                if not self._set_agent_horizon_for_scan(agent_id, horizon):
-                    continue
-                visible_obj = self._visible_object_by_id(agent_id, object_id)
-                if visible_obj is not None:
-                    return visible_obj
-
-        raise RuntimeError(
-            f"OpenObject target {object_id} is not visible for agent {agent_id} "
-            "after view scan; cannot safely interact."
-        )
-
-    def _should_skip_physical_open_object(
-        self,
-        action: str,
-        obj_name: Any,
-        obj: Dict[str, Any],
-    ) -> bool:
-        if action != "OpenObject":
-            return False
-        object_id_base = str(obj.get("objectId") or "").split("|", 1)[0]
-        target_keys = {
-            object_key(obj_name),
-            object_key(obj.get("objectType") or ""),
-            object_key(obj.get("name") or ""),
-            object_key(object_id_base),
-        }
-        return "blinds" in target_keys
-
-    def _skip_physical_open_object(
-        self,
-        agent_id: int,
-        obj_name: Any,
-        obj: Dict[str, Any],
-    ):
-        log(
-            "Skipping physical OpenObject for Blinds "
-            f"{obj.get('objectId')} on agent {agent_id}; marking OPENED."
-        )
-        with self.stats_lock:
-            self.total_exec += 1
-            self.success_exec += 1
-        self.record_operated_object_name(obj)
-        record_verified_goal_state(obj_name, "OPENED")
-        return self.agent_event(agent_id)
-
     def handoff_held_object_direct(
         self,
         from_agent_id: int,
@@ -2349,7 +2184,7 @@ class ThorRuntime:
             "action": "PutObject",
             "objectId": receptacle["objectId"],
             "agentId": agent_id,
-            "forceAction": False,
+            "forceAction": PUT_OBJECT_FORCE_ACTION,
             "objectResources": [
                 *self.agent_held_objects_for(agent_id),
                 receptacle["objectId"],
@@ -2477,10 +2312,6 @@ class ThorRuntime:
                 obj = self.prepare_hand_for_pickup(robot, obj_name, obj)
         else:
             obj = self.find_object(obj_name, agent_id=agent_id)
-            if self._should_skip_physical_open_object(action, obj_name, obj):
-                return self._skip_physical_open_object(agent_id, obj_name, obj)
-            if action == "OpenObject":
-                obj = self._prepare_open_object_target_visibility(agent_id, obj)
         if action == "PickupObject":
             log(f"PickupObject name: {self.object_name_for_log(obj)}")
         elif action == "PutObject":
@@ -2551,8 +2382,15 @@ class ThorRuntime:
             str(obj["objectId"]),
         ]
         payload["objectResources"] = list(dict.fromkeys(object_resources))
-        if force_action:
-            payload["forceAction"] = True
+        if "forceAction" not in payload:
+            if action == "PutObject":
+                payload["forceAction"] = PUT_OBJECT_FORCE_ACTION
+            elif action == "OpenObject":
+                payload["forceAction"] = OPEN_OBJECT_FORCE_ACTION
+            elif action == "CloseObject":
+                payload["forceAction"] = CLOSE_OBJECT_FORCE_ACTION
+            elif force_action:
+                payload["forceAction"] = True
         if action == "PickupObject" and self.agent_holds_object(agent_id, obj["objectId"]):
             log(f"Skipping PickupObject for agent {agent_id}; already holding {obj['objectId']}")
             with self.stats_lock:
@@ -2616,6 +2454,16 @@ class ThorRuntime:
             )
         with self.stats_lock:
             self.success_exec += 1
+        if action == "OpenObject":
+            object_id = str(obj["objectId"])
+            opened_obj = self.current_object_by_id(agent_id, object_id)
+            if opened_obj is None:
+                for metadata_obj in metadata.get("objects") or []:
+                    if str(metadata_obj.get("objectId") or "") == object_id:
+                        opened_obj = metadata_obj
+                        break
+            openness = "unknown" if opened_obj is None else opened_obj.get("openness", "unknown")
+            log(f"OpenObject openness: {object_id} openness={openness}")
         if action == "PickupObject":
             self.record_agent_held_object(agent_id, str(obj["objectId"]))
         elif action in {"PutObject", "ThrowObject"}:
@@ -2740,6 +2588,9 @@ class ThorRuntime:
         return missing_goals
 
     def generate_video(self) -> None:
+        if not self.render_image:
+            return
+
         if shutil.which("ffmpeg") is None:
             log("ffmpeg not found; skipping video generation.")
             return
