@@ -31,6 +31,7 @@ DEFAULT_OBJECT_PROPERTIES_PATH = REPO_ROOT / "data" / "all_ai2thor_objects.json"
 DEFAULT_BAD_SUBTASKS_CONFIG = REPO_ROOT / "data" / "bad_single_subtasks.json"
 DEFAULT_NO_VALID_POSITIONS_PATH = REPO_ROOT / "data" / "no_valid_positions.json"
 ROBOT_ID = "robot1"
+BREAK_OBJECT_BLACKLIST: Set[str] = {"CoffeeMachine"}
 
 ALL_GENERATED_EXECUTOR_SKILLS = [
     "GoToObject",
@@ -307,6 +308,10 @@ def _object_type_from_action_arg(value: Any) -> str:
     return str(value).strip().split("|", 1)[0]
 
 
+def _is_break_object_blacklisted(value: Any) -> bool:
+    return _object_type_from_action_arg(value) in BREAK_OBJECT_BLACKLIST
+
+
 def _put_object_no_valid_position_key(
     floor_plan: int,
     action_item: Dict[str, Any],
@@ -377,6 +382,8 @@ def enumerate_single_subtasks_for_floor(
         for skill_entry in engine.get_applicable_skills(obj, all_objects, skill_sets):
             skill_name = skill_entry["skill"]
             if skill_entry["type"] == "single":
+                if skill_name == "Break" and _is_break_object_blacklisted(obj):
+                    continue
                 subtask = {"skill": skill_name, "objects": [obj]}
                 if engine.check_subtasks([subtask], skill_sets):
                     subtasks_by_key[_subtask_key(subtask)] = subtask
@@ -645,6 +652,9 @@ def build_actions_for_subtask(
         return finish([action("GoToObject", obj), action("SwitchOn", obj)])
     if skill == "Break":
         obj = objects[0]
+        if _is_break_object_blacklisted(obj):
+            object_type = _object_type_from_action_arg(obj)
+            raise ValueError(f"BreakObject is blacklisted for object type: {object_type}")
         return finish([action("GoToObject", obj), action("BreakObject", obj)])
     if skill == "Wash":
         obj = objects[0]
@@ -762,15 +772,82 @@ def build_actions_for_subtask(
     raise ValueError(f"Unsupported subtask skill: {skill}")
 
 
-def build_pre_task_actions_for_subtask(subtask: Dict[str, Any]) -> List[Dict[str, Any]]:
-    if subtask.get("skill") != "Wash":
-        return []
+LIQUID_BOOL_FIELDS = (
+    "isFilledWithLiquid",
+    "isFilledWithWater",
+    "isFilledWithCoffee",
+)
 
+LIQUID_VALUE_FIELDS = (
+    "fillLiquid",
+    "filledLiquid",
+    "liquid",
+    "liquidType",
+    "filledWith",
+    "filled_with",
+)
+
+
+def _object_has_initial_liquid(item: Dict[str, Any]) -> bool:
+    if any(bool(item.get(field)) for field in LIQUID_BOOL_FIELDS):
+        return True
+    return any(bool(item.get(field)) for field in LIQUID_VALUE_FIELDS)
+
+
+def _object_metadata_aliases(item: Dict[str, Any]) -> Set[str]:
+    aliases: Set[str] = set()
+    for field in ("objectType", "name", "objectId"):
+        value = item.get(field)
+        if not isinstance(value, str):
+            continue
+        text = value.strip()
+        if not text:
+            continue
+        aliases.add(text)
+        if field == "objectId":
+            object_type = text.split("|", 1)[0].strip()
+            if object_type:
+                aliases.add(object_type)
+    return aliases
+
+
+def _object_metadata_matches_target(item: Dict[str, Any], target: Any) -> bool:
+    target_text = str(target).strip()
+    if not target_text:
+        return False
+    return target_text in _object_metadata_aliases(item)
+
+
+def _target_has_initial_liquid(
+    target: Any,
+    floor_objects: Optional[Sequence[Dict[str, Any]]] = None,
+) -> bool:
+    if not floor_objects:
+        return False
+    return any(
+        _object_metadata_matches_target(item, target) and _object_has_initial_liquid(item)
+        for item in floor_objects
+    )
+
+
+def build_pre_task_actions_for_subtask(
+    subtask: Dict[str, Any],
+    floor_objects: Optional[Sequence[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
     objects = list(subtask.get("objects", []))
     if not objects:
         return []
 
-    return [action("DirtyObject", objects[0])]
+    if subtask.get("skill") == "Wash":
+        return [action("DirtyObject", objects[0])]
+
+    if subtask.get("skill") == "FillWater" and _target_has_initial_liquid(
+        objects[0],
+        floor_objects,
+    ):
+        return [action("EmptyLiquid", objects[0])]
+
+    return []
 
 
 def build_bundle_data(
@@ -1187,6 +1264,7 @@ def prepare_generated_subtasks(
     engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
     floor_counts: Dict[int, int] = {}
     skill_sets_by_floor: Dict[int, Dict[str, Any]] = {}
+    floor_objects_by_floor: Dict[int, List[Dict[str, Any]]] = {}
     open_parent_by_floor: Dict[int, Dict[str, str]] = {}
     generated: List[GeneratedSubtask] = []
 
@@ -1198,9 +1276,12 @@ def prepare_generated_subtasks(
                 item.floor_plan,
                 object_properties_path,
             )
-            floor_objects = load_floor_object_metadata(item.floor_plan, object_properties_path)
+            floor_objects_by_floor[item.floor_plan] = load_floor_object_metadata(
+                item.floor_plan,
+                object_properties_path,
+            )
             open_parent_by_floor[item.floor_plan] = build_openable_parent_container_map(
-                floor_objects
+                floor_objects_by_floor[item.floor_plan]
             )
         skill_sets = skill_sets_by_floor[item.floor_plan]
         actions = build_actions_for_subtask(
@@ -1210,6 +1291,7 @@ def prepare_generated_subtasks(
         )
         pre_task_actions = build_pre_task_actions_for_subtask(
             item.subtask,
+            floor_objects_by_floor[item.floor_plan],
         )
         generated.append(
             GeneratedSubtask(

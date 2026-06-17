@@ -372,6 +372,16 @@ def unique_records(records: Iterable[Dict[str, str]]) -> List[Dict[str, str]]:
     return unique
 
 
+def read_existing_output_records(path: Path) -> List[Dict[str, str]]:
+    if not path.is_file():
+        return []
+
+    existing_records = read_json(path)
+    if not isinstance(existing_records, list):
+        raise ValueError(f"Expected output JSON array in {path}")
+    return existing_records
+
+
 def write_json(path: Path, data: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -391,16 +401,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             raise ValueError(f"Expected summary JSON object in {input_path}")
 
         records = extract_records(summary)
+        existing_records = read_existing_output_records(output_path)
+        output_records = existing_records + records
         if args.unique:
-            records = unique_records(records)
-        write_json(output_path, records)
+            output_records = unique_records(output_records)
+        write_json(output_path, output_records)
         removed_count = prune_no_valid_put_results(summary)
         write_json(input_path, summary)
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
-    print(f"Wrote {len(records)} record(s) to {output_path}")
+    print(
+        f"Wrote {len(output_records)} record(s) to {output_path} "
+        f"({len(records)} extracted, {len(existing_records)} existing)"
+    )
     print(f"Removed {removed_count} result(s) from {input_path}")
     return 0
 

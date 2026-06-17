@@ -266,6 +266,15 @@ def run_fillwater_with_runtime(runtime):
         runtime_context.runtime = previous_runtime
 
 
+def run_emptyliquid_with_runtime(runtime):
+    previous_runtime = runtime_context.runtime
+    runtime_context.runtime = runtime
+    try:
+        return executor_actions.EmptyLiquid("robot1", "Mug")
+    finally:
+        runtime_context.runtime = previous_runtime
+
+
 class ExecutorRetryPolicyTest(unittest.TestCase):
     def setUp(self):
         with ground_truth_lock:
@@ -396,6 +405,135 @@ class ExecutorRetryPolicyTest(unittest.TestCase):
             runtime.object_action("DirtyObject", "robot1", "Plate")
 
         self.assertIs(calls[0]["forceAction"], False)
+
+    def test_emptyliquid_defaults_force_action_true(self):
+        runtime, calls = object_action_runtime(
+            [
+                {
+                    "objectId": "Mug|+00.00|+01.00|+00.00",
+                    "objectType": "Mug",
+                    "name": "Mug",
+                    "visible": True,
+                    "distance": 1.0,
+                    "isFilledWithLiquid": True,
+                    "fillLiquid": "water",
+                }
+            ],
+        )
+
+        runtime.object_action("EmptyLiquidFromObject", "robot1", "Mug")
+
+        self.assertIs(calls[0]["forceAction"], True)
+
+    def test_emptyliquid_global_switch_can_disable_force_action(self):
+        runtime, calls = object_action_runtime(
+            [
+                {
+                    "objectId": "Mug|+00.00|+01.00|+00.00",
+                    "objectType": "Mug",
+                    "name": "Mug",
+                    "visible": True,
+                    "distance": 1.0,
+                    "isFilledWithLiquid": True,
+                    "fillLiquid": "water",
+                }
+            ],
+        )
+
+        with patch.object(runtime_module, "EMPTY_LIQUID_FORCE_ACTION", False):
+            runtime.object_action("EmptyLiquidFromObject", "robot1", "Mug")
+
+        self.assertIs(calls[0]["forceAction"], False)
+
+    def test_find_stoveburner_prefers_empty_receptacle_object_ids(self):
+        occupied_id = "StoveBurner|+00.00|+00.92|+00.00"
+        empty_id = "StoveBurner|+02.00|+00.92|+00.00"
+        runtime, _calls = object_action_runtime(
+            [
+                {
+                    "objectId": occupied_id,
+                    "objectType": "StoveBurner",
+                    "name": "StoveBurner",
+                    "visible": True,
+                    "distance": 0.1,
+                    "receptacleObjectIds": ["Pan|+00.00|+00.95|+00.00"],
+                },
+                {
+                    "objectId": empty_id,
+                    "objectType": "StoveBurner",
+                    "name": "StoveBurner",
+                    "visible": False,
+                    "distance": 9.0,
+                    "receptacleObjectIds": [],
+                },
+            ]
+        )
+
+        selected = runtime.find_object("StoveBurner", agent_id=0)
+
+        self.assertEqual(selected["objectId"], empty_id)
+
+    def test_find_stoveburner_prefers_empty_parent_receptacles(self):
+        occupied_id = "StoveBurner|+00.00|+00.92|+00.00"
+        empty_id = "StoveBurner|+02.00|+00.92|+00.00"
+        runtime, _calls = object_action_runtime(
+            [
+                {
+                    "objectId": occupied_id,
+                    "objectType": "StoveBurner",
+                    "name": "StoveBurner",
+                    "visible": True,
+                    "distance": 0.1,
+                    "receptacleObjectIds": [],
+                },
+                {
+                    "objectId": empty_id,
+                    "objectType": "StoveBurner",
+                    "name": "StoveBurner",
+                    "visible": False,
+                    "distance": 9.0,
+                    "receptacleObjectIds": [],
+                },
+                {
+                    "objectId": "Pan|+00.00|+00.95|+00.00",
+                    "objectType": "Pan",
+                    "name": "Pan",
+                    "parentReceptacles": [occupied_id],
+                },
+            ]
+        )
+
+        selected = runtime.find_object("StoveBurner", agent_id=0)
+
+        self.assertEqual(selected["objectId"], empty_id)
+
+    def test_find_stoveburner_keeps_existing_order_when_all_occupied(self):
+        visible_id = "StoveBurner|+00.00|+00.92|+00.00"
+        hidden_id = "StoveBurner|+02.00|+00.92|+00.00"
+        runtime, _calls = object_action_runtime(
+            [
+                {
+                    "objectId": hidden_id,
+                    "objectType": "StoveBurner",
+                    "name": "StoveBurner",
+                    "visible": False,
+                    "distance": 1.0,
+                    "receptacleObjectIds": ["Pot|+02.00|+00.95|+00.00"],
+                },
+                {
+                    "objectId": visible_id,
+                    "objectType": "StoveBurner",
+                    "name": "StoveBurner",
+                    "visible": True,
+                    "distance": 9.0,
+                    "receptacleObjectIds": ["Pan|+00.00|+00.95|+00.00"],
+                },
+            ]
+        )
+
+        selected = runtime.find_object("StoveBurner", agent_id=0)
+
+        self.assertEqual(selected["objectId"], visible_id)
 
     def test_toggleobjecton_defaults_force_action_true(self):
         runtime, calls = object_action_runtime(
@@ -653,6 +791,305 @@ class ExecutorRetryPolicyTest(unittest.TestCase):
         self.assertEqual(runtime.total_exec, 1)
         self.assertEqual(runtime.success_exec, 1)
 
+    def test_pickup_target_visibility_exception_scans_view_and_retries(self):
+        object_id = "Apple|+00.00|+00.90|+01.00"
+        runtime, calls = object_action_runtime(
+            [
+                {
+                    "objectId": object_id,
+                    "objectType": "Apple",
+                    "name": "Apple",
+                    "visible": True,
+                    "distance": 1.0,
+                }
+            ],
+            horizon=35.0,
+        )
+        base_step = runtime.step
+        pickup_attempts = 0
+
+        def step(payload, **kwargs):
+            nonlocal pickup_attempts
+            if payload.get("action") != "PickupObject":
+                return base_step(payload, **kwargs)
+            calls.append(dict(payload))
+            pickup_attempts += 1
+            if pickup_attempts == 1:
+                raise RuntimeError(
+                    "NullReferenceException: "
+                    f"{runtime_module.PICKUP_OBJECT_TARGET_VISIBILITY_ERROR}"
+                )
+            return FakeEvent(metadata=runtime.agent_event(0).metadata)
+
+        runtime.step = step
+
+        runtime.object_action("PickupObject", "robot1", "Apple")
+
+        self.assertEqual(
+            [call["action"] for call in calls],
+            ["PickupObject", "LookUp", "PickupObject"],
+        )
+        self.assertEqual(calls[1]["degrees"], 10.0)
+        self.assertEqual(runtime._test_state["horizon"], 25.0)
+        self.assertEqual(runtime.total_exec, 1)
+        self.assertEqual(runtime.success_exec, 1)
+
+    def test_pickup_target_visibility_event_scans_all_offsets_and_restores(self):
+        object_id = "Apple|+00.00|+00.90|+01.00"
+        runtime, calls = object_action_runtime(
+            [
+                {
+                    "objectId": object_id,
+                    "objectType": "Apple",
+                    "name": "Apple",
+                    "visible": True,
+                    "distance": 1.0,
+                }
+            ],
+            horizon=35.0,
+        )
+        base_step = runtime.step
+        pickup_horizons = []
+
+        def step(payload, **kwargs):
+            if payload.get("action") != "PickupObject":
+                return base_step(payload, **kwargs)
+            calls.append(dict(payload))
+            pickup_horizons.append(runtime._test_state["horizon"])
+            metadata = runtime.agent_event(0).metadata
+            metadata["lastActionSuccess"] = False
+            metadata["errorMessage"] = (
+                runtime_module.PICKUP_OBJECT_TARGET_VISIBILITY_ERROR
+            )
+            return FakeEvent(metadata=metadata)
+
+        runtime.step = step
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            runtime_module.PICKUP_OBJECT_TARGET_VISIBILITY_ERROR,
+        ):
+            runtime.object_action("PickupObject", "robot1", "Apple")
+
+        self.assertEqual(
+            pickup_horizons,
+            [35.0, 25.0, 15.0, 5.0, 45.0, 55.0, 65.0],
+        )
+        self.assertEqual(
+            [
+                call["action"]
+                for call in calls
+                if call["action"] in {"LookUp", "LookDown"}
+            ],
+            [
+                "LookUp",
+                "LookUp",
+                "LookUp",
+                "LookDown",
+                "LookDown",
+                "LookDown",
+                "LookUp",
+            ],
+        )
+        self.assertEqual(runtime._test_state["horizon"], 35.0)
+        self.assertEqual(runtime.total_exec, 1)
+        self.assertEqual(runtime.success_exec, 0)
+
+    def test_break_target_visibility_exception_scans_view_and_retries(self):
+        object_id = "Window|+00.00|+01.50|+01.00"
+        runtime, calls = object_action_runtime(
+            [
+                {
+                    "objectId": object_id,
+                    "objectType": "Window",
+                    "name": "Window",
+                    "visible": True,
+                    "distance": 1.0,
+                }
+            ],
+            horizon=35.0,
+        )
+        base_step = runtime.step
+        break_attempts = 0
+
+        def step(payload, **kwargs):
+            nonlocal break_attempts
+            if payload.get("action") != "BreakObject":
+                return base_step(payload, **kwargs)
+            calls.append(dict(payload))
+            break_attempts += 1
+            if break_attempts == 1:
+                raise RuntimeError(
+                    "NullReferenceException: "
+                    f"{runtime_module.PICKUP_OBJECT_TARGET_VISIBILITY_ERROR}"
+                )
+            return FakeEvent(metadata=runtime.agent_event(0).metadata)
+
+        runtime.step = step
+
+        runtime.object_action("BreakObject", "robot1", "Window")
+
+        self.assertEqual(
+            [call["action"] for call in calls],
+            ["BreakObject", "LookUp", "BreakObject"],
+        )
+        self.assertEqual(calls[1]["degrees"], 10.0)
+        self.assertEqual(runtime._test_state["horizon"], 25.0)
+        self.assertEqual(runtime.total_exec, 1)
+        self.assertEqual(runtime.success_exec, 1)
+
+    def test_break_target_visibility_event_scans_all_offsets_and_restores(self):
+        object_id = "Window|+00.00|+01.50|+01.00"
+        runtime, calls = object_action_runtime(
+            [
+                {
+                    "objectId": object_id,
+                    "objectType": "Window",
+                    "name": "Window",
+                    "visible": True,
+                    "distance": 1.0,
+                }
+            ],
+            horizon=35.0,
+        )
+        base_step = runtime.step
+        break_horizons = []
+
+        def step(payload, **kwargs):
+            if payload.get("action") != "BreakObject":
+                return base_step(payload, **kwargs)
+            calls.append(dict(payload))
+            break_horizons.append(runtime._test_state["horizon"])
+            metadata = runtime.agent_event(0).metadata
+            metadata["lastActionSuccess"] = False
+            metadata["errorMessage"] = (
+                runtime_module.PICKUP_OBJECT_TARGET_VISIBILITY_ERROR
+            )
+            return FakeEvent(metadata=metadata)
+
+        runtime.step = step
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            runtime_module.PICKUP_OBJECT_TARGET_VISIBILITY_ERROR,
+        ):
+            runtime.object_action("BreakObject", "robot1", "Window")
+
+        self.assertEqual(
+            break_horizons,
+            [35.0, 25.0, 15.0, 5.0, 45.0, 55.0, 65.0],
+        )
+        self.assertEqual(
+            [
+                call["action"]
+                for call in calls
+                if call["action"] in {"LookUp", "LookDown"}
+            ],
+            [
+                "LookUp",
+                "LookUp",
+                "LookUp",
+                "LookDown",
+                "LookDown",
+                "LookDown",
+                "LookUp",
+            ],
+        )
+        self.assertEqual(runtime._test_state["horizon"], 35.0)
+        self.assertEqual(runtime.total_exec, 1)
+        self.assertEqual(runtime.success_exec, 0)
+
+    def test_break_non_visibility_error_does_not_scan_or_backoff(self):
+        object_id = "Vase|+00.00|+00.90|+01.00"
+        runtime, calls = object_action_runtime(
+            [
+                {
+                    "objectId": object_id,
+                    "objectType": "Vase",
+                    "name": "Vase",
+                    "visible": True,
+                    "distance": 1.0,
+                }
+            ],
+        )
+
+        def step(payload, **_kwargs):
+            calls.append(dict(payload))
+            metadata = runtime.agent_event(0).metadata
+            metadata["lastActionSuccess"] = False
+            metadata["errorMessage"] = runtime_module.PICKUP_OBJECT_CLIP_ERROR
+            return FakeEvent(metadata=metadata)
+
+        def teleport_to_position_direct(*_args, **_kwargs):
+            raise AssertionError("BreakObject clip failures should not teleport")
+
+        runtime.step = step
+        runtime.teleport_to_position_direct = teleport_to_position_direct
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            runtime_module.PICKUP_OBJECT_CLIP_ERROR,
+        ):
+            runtime.object_action("BreakObject", "robot1", "Vase")
+
+        self.assertEqual([call["action"] for call in calls], ["BreakObject"])
+        self.assertEqual(runtime.total_exec, 1)
+        self.assertEqual(runtime.success_exec, 0)
+
+    def test_break_egg_visibility_retry_records_broken_goal_state(self):
+        object_id = "Egg|+00.00|+00.90|+01.00"
+        broken_object_id = "EggCracked|+00.00|+00.90|+01.00"
+        runtime, calls = object_action_runtime(
+            [
+                {
+                    "objectId": object_id,
+                    "objectType": "Egg",
+                    "name": "Egg",
+                    "visible": True,
+                    "distance": 1.0,
+                }
+            ],
+            horizon=35.0,
+        )
+        base_step = runtime.step
+        break_attempts = 0
+
+        def step(payload, **kwargs):
+            nonlocal break_attempts
+            if payload.get("action") != "BreakObject":
+                return base_step(payload, **kwargs)
+            calls.append(dict(payload))
+            break_attempts += 1
+            if break_attempts == 1:
+                raise RuntimeError(
+                    "NullReferenceException: "
+                    f"{runtime_module.PICKUP_OBJECT_TARGET_VISIBILITY_ERROR}"
+                )
+            runtime._test_state["objects"].append(
+                {
+                    "objectId": broken_object_id,
+                    "objectType": "EggCracked",
+                    "name": "EggCracked",
+                    "visible": True,
+                    "distance": 1.0,
+                }
+            )
+            return FakeEvent(metadata=runtime.agent_event(0).metadata)
+
+        runtime.step = step
+
+        runtime.object_action("BreakObject", "robot1", "Egg")
+
+        self.assertEqual(
+            [call["action"] for call in calls],
+            ["BreakObject", "LookUp", "BreakObject"],
+        )
+        self.assertTrue(goal_state_verified("Egg", "BROKEN"))
+        self.assertIn("egg", runtime.operated_object_names)
+        self.assertIn("eggcracked", runtime.operated_object_names)
+        self.assertEqual(runtime.total_exec, 1)
+        self.assertEqual(runtime.success_exec, 1)
+
     def test_pickup_non_clip_error_does_not_backoff_retry(self):
         object_id = "Apple|+00.00|+00.90|+01.00"
         runtime, calls = object_action_runtime(
@@ -863,6 +1300,15 @@ class ExecutorRetryPolicyTest(unittest.TestCase):
         runtime.object_action("CloseObject", "robot1", "Blinds")
 
         self.assertEqual([call["action"] for call in calls], ["CloseObject"])
+
+    def test_emptyliquid_helper_calls_empty_liquid_from_object(self):
+        runtime = FillWaterRuntime(put_error=None)
+        runtime.mug["fillLiquid"] = "water"
+
+        run_emptyliquid_with_runtime(runtime)
+
+        self.assertEqual(runtime.calls, [("EmptyLiquidFromObject", "Mug")])
+        self.assertEqual(runtime.mug["fillLiquid"], "")
 
     def test_fillwater_skips_sinkbasin_putobject_no_valid_positions(self):
         runtime = FillWaterRuntime(

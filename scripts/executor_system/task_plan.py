@@ -62,6 +62,7 @@ _ACTION_HELPER_NAMES = (
     "SliceObject",
     "CleanObject",
     "DirtyObject",
+    "EmptyLiquid",
     "RunMicrowave",
     "RunCoffeeMachine",
     "RunToaster",

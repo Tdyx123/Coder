@@ -64,6 +64,8 @@ ACTION_ALIASES = {
     "sliceobject": "SliceObject",
     "cleanobject": "CleanObject",
     "dirtyobject": "DirtyObject",
+    "emptyliquid": "EmptyLiquid",
+    "emptyliquidfromobject": "EmptyLiquid",
     "runmicrowave": "RunMicrowave",
     "runcoffeemachine": "RunCoffeeMachine",
     "runtoaster": "RunToaster",
@@ -267,6 +269,7 @@ def encode_plan_action(
         "CloseObject",
         "BreakObject",
         "DirtyObject",
+        "EmptyLiquid",
     }:
         _require_args(action, 2)
         obj = resolver.resolve(action.args[1])

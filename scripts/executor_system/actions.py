@@ -157,6 +157,11 @@ def DirtyObject(robot: RobotRef, obj_name: Any) -> None:
     get_runtime().object_action("DirtyObject", robot, obj_name)
 
 
+def EmptyLiquid(robot: RobotRef, obj_name: Any) -> None:
+    _consume_planned_action("EmptyLiquid", obj_name)
+    get_runtime().object_action("EmptyLiquidFromObject", robot, obj_name)
+
+
 def _current_object_by_id(agent_id: int, object_id: str) -> Dict[str, Any]:
     for obj in current_objects(agent_id):
         if obj.get("objectId") == object_id:

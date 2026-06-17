@@ -368,6 +368,7 @@ class PlanValidator:
         "SliceObject",
         "CleanObject",
         "DirtyObject",
+        "EmptyLiquid",
         "RunMicrowave",
         "RunCoffeeMachine",
         "RunToaster",
@@ -543,6 +544,7 @@ class ResourceInferencer:
         "SliceObject",
         "CleanObject",
         "DirtyObject",
+        "EmptyLiquid",
         "RunMicrowave",
         "RunCoffeeMachine",
         "RunToaster",
@@ -673,6 +675,7 @@ class ResourceInferencer:
             "SliceObject",
             "CleanObject",
             "DirtyObject",
+            "EmptyLiquid",
             "ColdObject",
             "ThrowObject",
         }:
@@ -945,6 +948,8 @@ class AI2ThorAdapter:
             "DirtyObject",
         }:
             return self.runtime.object_action(action.action_type, robot_id, args[0])
+        if action.action_type == "EmptyLiquid":
+            return self.runtime.object_action("EmptyLiquidFromObject", robot_id, args[0])
         if action.action_type == "ThrowObject":
             return self.runtime.throw_object(robot_id)
         return self.call_generated_helper(robot_id, action)

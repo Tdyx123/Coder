@@ -1,4 +1,5 @@
 import copy
+import ast
 import json
 import os
 import argparse
@@ -10,7 +11,7 @@ import time
 import re
 import shutil
 import sys
-from typing import List, Dict, Tuple, Optional, Union, Any
+from typing import List, Dict, Tuple, Optional, Union, Any, Set
 import uuid
 
 from ai2thor_object_cache import get_ai2_thor_objects_cached
@@ -815,8 +816,20 @@ class TaskManager:
                 #print("decomposed plan:\n", decomposed_plan)
                 #print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
 
+                key_objects = self._extract_key_objects_from_decomposition(decomposed_plan, objects_ai)
+                key_objects_artifact = "02_allocate/00_key_objects.json"
+                self._write_json_artifact(key_objects_artifact, key_objects)
+                self._record_artifact("allocate", "key_objects", key_objects_artifact)
+                self._persist_manifest()
+                print(f"✓ Matched {len(key_objects)} key objects")
+
                 # Generate and store allocation plan
-                allocated_plan = self._generate_allocation_plan(decomposed_plan, robots, objects_ai)
+                allocated_plan = self._generate_allocation_plan(
+                    decomposed_plan,
+                    robots,
+                    objects_ai,
+                    key_objects=key_objects,
+                )
                 self.allocated_plan.append(allocated_plan)
                 print("✓ Allocation plan generated")
                 #print("Allocation Plan:\n", allocated_plan)
@@ -930,6 +943,276 @@ class TaskManager:
         """
         return ParsingUtils.extract_robot_assignments(sequence_operations)
 
+    @staticmethod
+    def _object_match_key(value: str) -> str:
+        return re.sub(r'[^a-z0-9]+', '', str(value).lower())
+
+    def _parse_objects_ai(self, objects_ai: Union[str, List[Any]]) -> List[Dict[str, Any]]:
+        """Parse the floorplan object list while preserving object properties."""
+        if not objects_ai:
+            return []
+
+        parsed: Any
+        if isinstance(objects_ai, list):
+            parsed = objects_ai
+        else:
+            text = str(objects_ai).strip()
+            objects_marker = re.search(r'\bobjects\s*=', text, re.IGNORECASE)
+            if objects_marker:
+                text = text[objects_marker.end():].strip()
+
+            start = text.find("[")
+            end = text.rfind("]")
+            if start != -1 and end != -1 and start <= end:
+                text = text[start:end + 1]
+
+            try:
+                parsed = ast.literal_eval(text)
+            except (SyntaxError, ValueError):
+                return []
+
+        if not isinstance(parsed, list):
+            return []
+
+        objects: List[Dict[str, Any]] = []
+        seen: Set[str] = set()
+        for item in parsed:
+            if isinstance(item, dict) and isinstance(item.get("name"), str):
+                name = item["name"]
+                key = self._object_match_key(name)
+                if key and key not in seen:
+                    seen.add(key)
+                    objects.append(dict(item))
+            elif isinstance(item, str):
+                key = self._object_match_key(item)
+                if key and key not in seen:
+                    seen.add(key)
+                    objects.append({"name": item})
+
+        return objects
+
+    def _object_name_aliases(self, name: str) -> List[str]:
+        """Return text aliases for object-style names such as LightSwitch."""
+        raw = str(name).strip()
+        if not raw:
+            return []
+
+        camel_spaced = re.sub(r'(?<=[a-z0-9])(?=[A-Z])', ' ', raw)
+        camel_spaced = re.sub(r'(?<=[A-Z])(?=[A-Z][a-z])', ' ', camel_spaced)
+        word_spaced = re.sub(r'[\s_\-]+', ' ', camel_spaced).strip()
+        compact = re.sub(r'[\s_\-]+', '', raw)
+        snake = re.sub(r'\s+', '_', word_spaced.lower())
+        hyphen = re.sub(r'\s+', '-', word_spaced.lower())
+
+        aliases = [
+            raw,
+            raw.lower(),
+            word_spaced,
+            word_spaced.lower(),
+            compact,
+            compact.lower(),
+            snake,
+            hyphen,
+        ]
+
+        deduped: List[str] = []
+        seen: Set[str] = set()
+        for alias in aliases:
+            alias = alias.strip()
+            key = alias.lower()
+            if alias and key not in seen:
+                seen.add(key)
+                deduped.append(alias)
+        return deduped
+
+    def _text_contains_alias(self, text: str, alias: str) -> bool:
+        tokens = re.findall(r'[a-z0-9]+', alias.lower())
+        if not tokens:
+            return False
+        pattern = r'(?<![a-z0-9])' + r'[\s_\-]*'.join(re.escape(token) for token in tokens) + r'(?![a-z0-9])'
+        return re.search(pattern, text.lower()) is not None
+
+    def _text_contains_name(self, text: str, name: str) -> bool:
+        return any(self._text_contains_alias(text, alias) for alias in self._object_name_aliases(name))
+
+    def _extract_key_objects_from_decomposition(
+        self,
+        decomposed_plan: str,
+        objects_ai: Union[str, List[Any]],
+    ) -> List[Dict[str, Any]]:
+        """Find floorplan objects mentioned in the decomposed plan."""
+        floorplan_objects = self._parse_objects_ai(objects_ai)
+        if not decomposed_plan or not floorplan_objects:
+            return []
+
+        key_objects: List[Dict[str, Any]] = []
+        for obj in floorplan_objects:
+            name = obj.get("name")
+            if isinstance(name, str) and self._text_contains_name(decomposed_plan, name):
+                key_objects.append(obj)
+        return key_objects
+
+    def _extract_pddl_action_blocks(self, domain_content: str) -> List[Dict[str, Any]]:
+        """Extract top-level PDDL action blocks using balanced parentheses."""
+        if not domain_content:
+            return []
+
+        action_re = re.compile(r'\(\s*:action\s+([^\s()]+)', re.IGNORECASE)
+        blocks: List[Dict[str, Any]] = []
+
+        for match in action_re.finditer(domain_content):
+            start = match.start()
+            depth = 0
+            end: Optional[int] = None
+            for idx in range(start, len(domain_content)):
+                char = domain_content[idx]
+                if char == "(":
+                    depth += 1
+                elif char == ")":
+                    depth -= 1
+                    if depth == 0:
+                        end = idx + 1
+                        break
+
+            if end is None:
+                return []
+
+            blocks.append({
+                "name": match.group(1),
+                "start": start,
+                "end": end,
+                "text": domain_content[start:end],
+            })
+
+        return blocks
+
+    def _allocation_object_action_hints(self, key_objects: List[Dict[str, Any]]) -> Set[str]:
+        object_action_hints = {
+            "lightswitch": {"SwitchOn", "SwitchOff"},
+            "faucet": {"SwitchOn", "SwitchOff", "FillWater"},
+            "sink": {"CleanObject", "FillWater"},
+            "sinkbasin": {"CleanObject", "FillWater"},
+            "microwave": {"OpenObject", "CloseObject", "PutObject", "RunMicrowave"},
+            "fridge": {"OpenObject", "CloseObject", "PutObject", "ColdObject"},
+            "toaster": {"RunToaster"},
+            "coffeemachine": {"RunCoffeeMachine"},
+            "stoveburner": {"CookByStoveBurner", "HeatByStoveBurner", "PrepareEgg", "FireByStoveBurner"},
+            "stoveknob": {"SwitchOn", "SwitchOff"},
+            "cabinet": {"OpenObject", "CloseObject", "PutObject"},
+            "drawer": {"OpenObject", "CloseObject", "PutObject"},
+            "egg": {"PrepareEgg"},
+            "bread": {"RunToaster", "SliceObject"},
+            "mug": {"FillWater", "RunCoffeeMachine"},
+            "knife": {"PickupObject", "SliceObject"},
+            "butterknife": {"PickupObject", "SliceObject"},
+        }
+
+        hints: Set[str] = set()
+        for obj in key_objects:
+            name = obj.get("name")
+            if isinstance(name, str):
+                hints.update(object_action_hints.get(self._object_match_key(name), set()))
+        return hints
+
+    def _required_action_names_for_allocation(
+        self,
+        decomposed_plan: str,
+        action_names: List[str],
+    ) -> Set[str]:
+        required: Set[str] = set()
+        for action_name in action_names:
+            if self._text_contains_name(decomposed_plan, action_name):
+                required.add(action_name)
+        return required
+
+    def _trim_robot_domain_for_allocation(
+        self,
+        domain_content: str,
+        decomposed_plan: str,
+        key_objects: List[Dict[str, Any]],
+    ) -> str:
+        """Return a prompt-only robot domain cropped to relevant actions."""
+        if not domain_content or not key_objects:
+            return domain_content
+
+        action_blocks = self._extract_pddl_action_blocks(domain_content)
+        if not action_blocks:
+            return domain_content
+
+        action_names = [str(block["name"]) for block in action_blocks]
+        required_actions = self._required_action_names_for_allocation(decomposed_plan, action_names)
+        hinted_actions = self._allocation_object_action_hints(key_objects)
+        key_object_names = [
+            str(obj["name"])
+            for obj in key_objects
+            if isinstance(obj, dict) and isinstance(obj.get("name"), str)
+        ]
+
+        kept_names: Set[str] = set()
+        kept_blocks: List[Dict[str, Any]] = []
+        for block in action_blocks:
+            action_name = str(block["name"])
+            block_text = str(block["text"])
+            matches_key_object_type = any(
+                self._text_contains_name(block_text, object_name)
+                for object_name in key_object_names
+            )
+            if action_name in required_actions or action_name in hinted_actions or matches_key_object_type:
+                kept_names.add(action_name)
+                kept_blocks.append(block)
+
+        if kept_blocks and "GoToObject" not in kept_names:
+            go_to_block = next((block for block in action_blocks if block["name"] == "GoToObject"), None)
+            if go_to_block:
+                kept_blocks.insert(0, go_to_block)
+                kept_names.add("GoToObject")
+
+        if not kept_blocks:
+            return domain_content
+
+        first_action_start = int(action_blocks[0]["start"])
+        last_action_end = int(action_blocks[-1]["end"])
+        prefix = domain_content[:first_action_start].rstrip()
+        suffix = domain_content[last_action_end:].strip()
+        trimmed = prefix + "\n\n" + "\n\n".join(str(block["text"]).rstrip() for block in kept_blocks)
+        if suffix:
+            trimmed += "\n" + suffix
+        return trimmed.strip() + "\n"
+
+    def _build_cropped_robot_domains_for_allocation(
+        self,
+        robots: List[dict],
+        decomposed_plan: str,
+        key_objects: List[Dict[str, Any]],
+    ) -> str:
+        sections: List[str] = []
+        for idx, robot in enumerate(robots, start=1):
+            local_robot_name = str(robot.get("name") or f"robot{idx}")
+            real_robot_name = self.current_robot_domain_names.get(local_robot_name, local_robot_name)
+            domain_path = self.config.robot_domain_path(f"{real_robot_name}.pddl")
+            try:
+                domain_content = self.file_processor.read_file(str(domain_path))
+            except PDDLError as exc:
+                sections.append(
+                    f"# Robot allocation name: {local_robot_name}\n"
+                    f"# Real PDDL domain file: {real_robot_name}.pddl\n"
+                    f"# Domain unavailable for allocation prompt: {exc}"
+                )
+                continue
+
+            cropped_domain = self._trim_robot_domain_for_allocation(
+                domain_content,
+                decomposed_plan,
+                key_objects,
+            )
+            sections.append(
+                f"# Robot allocation name: {local_robot_name}\n"
+                f"# Real PDDL domain file: {real_robot_name}.pddl\n"
+                f"{cropped_domain.rstrip()}"
+            )
+
+        return "\n\n".join(sections)
+
     def _generate_decomposed_plan(self, task: str, domain_content: str, robots: List[dict], objects_ai: str) -> str:
         """Generate decomposed plan for a task."""
         try:
@@ -969,11 +1252,25 @@ class TaskManager:
         except Exception as e:
             raise PDDLError(f"Error generating decomposed plan: {str(e)}")
     
-    def _generate_allocation_plan(self, decomposed_plan: str, robots: List[dict], objects_ai: str) -> str:
+    def _generate_allocation_plan(
+        self,
+        decomposed_plan: str,
+        robots: List[dict],
+        objects_ai: str,
+        key_objects: Optional[List[Dict[str, Any]]] = None,
+    ) -> str:
         """Generate allocation plan for decomposed tasks.
         
         """
         try:
+            if key_objects is None:
+                key_objects = self._extract_key_objects_from_decomposition(decomposed_plan, objects_ai)
+            cropped_robot_domains = self._build_cropped_robot_domains_for_allocation(
+                robots,
+                decomposed_plan,
+                key_objects,
+            )
+
             # Read allocation prompt file
             prompt_file = self.config.prompt_file(f"{self.prompt_allocation_set}_solution.txt")
             with open(prompt_file, "r", encoding="utf-8") as allocated_prompt_file:
@@ -987,9 +1284,16 @@ class TaskManager:
             prompt += f"\n# Scenario: There are {len(robots)} robots available. The task should be performed using the minimum number of robots necessary. Robot should be assigned to subtasks that match its skills and mass capacity. Using your reasoning come up with a solution to satisfy all constraints."
             prompt += f"\n\nrobots = {robots}"
             prompt += f"\n{objects_ai}"
+            prompt += f"\nkey_objects = {key_objects}"
+            if cropped_robot_domains:
+                prompt += "\n\n# CROPPED ROBOT PDDL DOMAINS FOR ALLOCATION\n"
+                prompt += cropped_robot_domains
             prompt += f"\n\n# IMPORTANT: The AI should ensure that the robots assigned to the tasks have all the necessary skills to perform the tasks. IMPORTANT: Determine whether the subtasks must be performed sequentially or in parallel, or a combination of both and allocate robots based on availability. "
             prompt += f"\n# SOLUTION\n"
             prompt += f"\n# Additional Output Rules:"
+            prompt += f"\n# - Use key_objects and the cropped robot PDDL domains as allocation context only; the original robot domain files are not modified."
+            prompt += f"\n# - Assign robots using the task-local robot ids from robots = ..., even when a cropped domain section names the real PDDL file."
+            prompt += f"\n# - Judge robot capability using robot skills, mass capacity, key_objects, and the cropped domain actions."
             prompt += f"\n# - Only assign a robot if it has every required skill."
             prompt += f"\n{SPECIAL_TASK_SKILL_PROMPT_RULE}"
             prompt += f"\n# - If multiple robots satisfy all constraints equally, choose the robot with the smallest robot number/name order."
@@ -1004,6 +1308,9 @@ class TaskManager:
             prompt += f"\n# - Do not output self-corrections or extra explanation after the final '# Sequence of Operations:' block.\n"
             allocate_prompt_artifact = self.config.artifact("allocate_prompt", "02_allocate/01_allocate_prompt.txt")
             allocate_output_artifact = self.config.artifact("allocate_output", "02_allocate/02_allocate_output.txt")
+            cropped_domains_artifact = "02_allocate/00_cropped_robot_domains.txt"
+            self._write_text_artifact(cropped_domains_artifact, cropped_robot_domains)
+            self._record_artifact("allocate", "cropped_robot_domains", cropped_domains_artifact)
             self._write_text_artifact(allocate_prompt_artifact, prompt)
             self._record_artifact("allocate", "prompt", allocate_prompt_artifact)
             

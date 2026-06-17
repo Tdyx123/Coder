@@ -216,6 +216,107 @@ class ExtractNoValidPositionsTest(unittest.TestCase):
                 [1, 2],
             )
 
+    def test_main_appends_to_existing_output_records(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            summary_path = root / "summary.json"
+            output_path = root / "no_valid_positions.json"
+            write_json(
+                output_path,
+                [
+                    {
+                        "floorplan": "FloorPlan1",
+                        "object": "Mug",
+                        "receptacle": "CounterTop",
+                    }
+                ],
+            )
+            write_json(
+                summary_path,
+                {
+                    "results": [
+                        no_valid_put_result(
+                            floorplan="FloorPlan2",
+                            held_object="Pot",
+                            receptacle="Fridge",
+                        )
+                    ]
+                },
+            )
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                result = main(["--input", str(summary_path), "--output", str(output_path)])
+
+            self.assertEqual(result, 0)
+            self.assertEqual(
+                read_json(output_path),
+                [
+                    {
+                        "floorplan": "FloorPlan1",
+                        "object": "Mug",
+                        "receptacle": "CounterTop",
+                    },
+                    {
+                        "floorplan": "FloorPlan2",
+                        "object": "Pot",
+                        "receptacle": "Fridge",
+                    },
+                ],
+            )
+
+    def test_main_unique_deduplicates_existing_and_extracted_records(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            summary_path = root / "summary.json"
+            output_path = root / "no_valid_positions.json"
+            existing_record = {
+                "floorplan": "FloorPlan2",
+                "object": "Pot",
+                "receptacle": "Fridge",
+            }
+            write_json(output_path, [existing_record])
+            write_json(
+                summary_path,
+                {
+                    "results": [
+                        no_valid_put_result(
+                            floorplan="FloorPlan2",
+                            held_object="Pot",
+                            receptacle="Fridge",
+                        ),
+                        no_valid_put_result(
+                            floorplan="FloorPlan3",
+                            held_object="Bowl",
+                            receptacle="Cabinet",
+                        ),
+                    ]
+                },
+            )
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                result = main(
+                    [
+                        "--input",
+                        str(summary_path),
+                        "--output",
+                        str(output_path),
+                        "--unique",
+                    ]
+                )
+
+            self.assertEqual(result, 0)
+            self.assertEqual(
+                read_json(output_path),
+                [
+                    existing_record,
+                    {
+                        "floorplan": "FloorPlan3",
+                        "object": "Bowl",
+                        "receptacle": "Cabinet",
+                    },
+                ],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

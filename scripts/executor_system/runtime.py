@@ -81,14 +81,35 @@ CLOSE_OBJECT_FORCE_ACTION = True
 DIRTY_OBJECT_FORCE_ACTION = True
 TOGGLE_OBJECT_ON_FORCE_ACTION = True
 TOGGLE_OBJECT_OFF_FORCE_ACTION = True
+EMPTY_LIQUID_FORCE_ACTION = True
 PICKUP_OBJECT_CLIP_ERROR = (
     "Picking up object would cause it to collide and clip into something!"
 )
 PICKUP_OBJECT_CLIP_BACKOFF_DISTANCES = (0.25, 0.5, 0.75)
+PICKUP_OBJECT_TARGET_VISIBILITY_ERROR = (
+    "Target object not found within the specified visibility"
+)
+PICKUP_OBJECT_TARGET_VISIBILITY_LOOK_OFFSETS = (
+    -10.0,
+    -20.0,
+    -30.0,
+    10.0,
+    20.0,
+    30.0,
+)
+OBJECT_ACTION_TARGET_VISIBILITY_RETRY_ACTIONS = {"PickupObject", "BreakObject"}
 
 
 def is_pickup_object_clip_error(value: Any) -> bool:
     return PICKUP_OBJECT_CLIP_ERROR.casefold() in str(value or "").casefold()
+
+
+def is_object_action_target_visibility_error(value: Any) -> bool:
+    return PICKUP_OBJECT_TARGET_VISIBILITY_ERROR.casefold() in str(value or "").casefold()
+
+
+def is_pickup_object_target_visibility_error(value: Any) -> bool:
+    return is_object_action_target_visibility_error(value)
 
 
 def _normalize_look_degrees(degrees: Any) -> float:
@@ -807,11 +828,38 @@ class ThorRuntime:
         )
         return bool(operated_object_name_candidate_keys(obj) & names)
 
+    def stove_burner_occupied(
+        self,
+        burner: Dict[str, Any],
+        objects: Sequence[Dict[str, Any]],
+    ) -> bool:
+        if burner.get("receptacleObjectIds"):
+            return True
+
+        burner_id = str(burner.get("objectId") or "")
+        if not burner_id:
+            return False
+        for obj in objects:
+            if str(obj.get("objectId") or "") == burner_id:
+                continue
+            parent_receptacles = obj.get("parentReceptacles") or []
+            if any(burner_id == str(parent) for parent in parent_receptacles if parent):
+                return True
+        return False
+
     def find_objects(self, pattern: Any, agent_id: Optional[int] = None) -> List[Dict[str, Any]]:
-        matches = [obj for obj in self.current_objects(agent_id) if matches_object(pattern, obj)]
+        objects = list(self.current_objects(agent_id))
+        matches = [obj for obj in objects if matches_object(pattern, obj)]
         operated_object_names = self.operated_object_names_snapshot()
         sliceable_key = sliceable_food_query_key(pattern)
         egg_query = is_egg_query(pattern)
+        prefer_empty_stove_burner = object_key(pattern) == "stoveburner"
+
+        def stove_burner_occupancy_rank(obj: Dict[str, Any]) -> int:
+            if not prefer_empty_stove_burner:
+                return 0
+            return int(self.stove_burner_occupied(obj, objects))
+
         if agent_id is not None:
             if sliceable_key is not None:
                 matches.sort(
@@ -829,6 +877,7 @@ class ThorRuntime:
             elif egg_query:
                 matches.sort(
                     key=lambda obj: (
+                        stove_burner_occupancy_rank(obj),
                         not is_broken_egg_object(obj),
                         not self.object_name_was_operated(obj, operated_object_names),
                         not bool(obj.get("visible", False)),
@@ -839,6 +888,7 @@ class ThorRuntime:
             else:
                 matches.sort(
                     key=lambda obj: (
+                        stove_burner_occupancy_rank(obj),
                         not self.object_name_was_operated(obj, operated_object_names),
                         not bool(obj.get("visible", False)),
                         object_distance(obj),
@@ -861,6 +911,7 @@ class ThorRuntime:
         elif egg_query:
             matches.sort(
                 key=lambda obj: (
+                    stove_burner_occupancy_rank(obj),
                     not is_broken_egg_object(obj),
                     not self.object_name_was_operated(obj, operated_object_names),
                     not bool(obj.get("visible", False)),
@@ -871,6 +922,7 @@ class ThorRuntime:
         else:
             matches.sort(
                 key=lambda obj: (
+                    stove_burner_occupancy_rank(obj),
                     not self.object_name_was_operated(obj, operated_object_names),
                 )
             )
@@ -2437,6 +2489,157 @@ class ThorRuntime:
             )
         return last_event
 
+    def camera_horizon(
+        self,
+        agent_id: int,
+        event: Optional[Any] = None,
+    ) -> Optional[float]:
+        metadata = getattr(event, "metadata", {}) if event is not None else {}
+        agent = metadata.get("agent", {}) if isinstance(metadata, dict) else {}
+        horizon = agent.get("cameraHorizon")
+        if horizon is None:
+            try:
+                metadata = self.agent_event(agent_id).metadata
+            except Exception:
+                return None
+            agent = metadata.get("agent", {}) if isinstance(metadata, dict) else {}
+            horizon = agent.get("cameraHorizon")
+        try:
+            return float(horizon)
+        except (TypeError, ValueError):
+            return None
+
+    def try_look_to_camera_horizon(
+        self,
+        agent_id: int,
+        target_horizon: float,
+        *,
+        action_name: str = "PickupObject",
+    ) -> bool:
+        current_horizon = self.camera_horizon(agent_id)
+        if current_horizon is None:
+            return False
+        delta = float(target_horizon) - current_horizon
+        if abs(delta) < 1e-3:
+            return True
+        action = "LookDown" if delta > 0.0 else "LookUp"
+        try:
+            event = self.step(
+                {"action": action, "degrees": abs(delta), "agentId": agent_id},
+                check_success=False,
+                retry_on_failure=False,
+            )
+        except Exception as exc:
+            log(
+                f"{action_name} visibility look adjustment failed for agent "
+                f"{agent_id}: {exc}"
+            )
+            return False
+        metadata = getattr(event, "metadata", {}) or {}
+        error = metadata.get("errorMessage")
+        if metadata.get("lastActionSuccess", not bool(error)):
+            return True
+        log(
+            f"{action_name} visibility look adjustment failed for agent "
+            f"{agent_id}: {error or 'no error message returned'}"
+        )
+        return False
+
+    def retry_object_action_after_target_visibility_error(
+        self,
+        action: str,
+        agent_id: int,
+        payload: Dict[str, Any],
+        initial_event: Optional[Any],
+    ) -> Optional[Any]:
+        initial_horizon = self.camera_horizon(agent_id, initial_event)
+        if initial_horizon is None:
+            return initial_event
+
+        last_event = initial_event
+        restore_horizon = True
+        try:
+            for offset in PICKUP_OBJECT_TARGET_VISIBILITY_LOOK_OFFSETS:
+                target_horizon = initial_horizon + offset
+                if not self.try_look_to_camera_horizon(
+                    agent_id,
+                    target_horizon,
+                    action_name=action,
+                ):
+                    continue
+
+                try:
+                    retry_event = self.step(
+                        payload,
+                        check_success=False,
+                        retry_on_failure=False,
+                    )
+                except Exception as exc:
+                    if action == "PickupObject" and is_pickup_object_clip_error(exc):
+                        retry_event = self.retry_pickup_after_clip_error(
+                            agent_id,
+                            payload,
+                            None,
+                        )
+                        if retry_event is None:
+                            continue
+                    elif is_object_action_target_visibility_error(exc):
+                        log(
+                            f"{action} target still outside visibility for agent "
+                            f"{agent_id} after camera offset {offset:g}; "
+                            "trying another angle."
+                        )
+                        continue
+                    else:
+                        raise
+
+                metadata = getattr(retry_event, "metadata", {}) or {}
+                error = metadata.get("errorMessage")
+                last_event = retry_event
+                if metadata.get("lastActionSuccess", not bool(error)):
+                    restore_horizon = False
+                    return retry_event
+                if action == "PickupObject" and is_pickup_object_clip_error(error):
+                    retry_event = self.retry_pickup_after_clip_error(
+                        agent_id,
+                        payload,
+                        retry_event,
+                    )
+                    metadata = getattr(retry_event, "metadata", {}) or {}
+                    error = metadata.get("errorMessage")
+                    last_event = retry_event
+                    if metadata.get("lastActionSuccess", not bool(error)):
+                        restore_horizon = False
+                    return retry_event
+                if not is_object_action_target_visibility_error(error):
+                    return retry_event
+                log(
+                    f"{action} target still outside visibility for agent "
+                    f"{agent_id} after camera offset {offset:g}; "
+                    "trying another angle."
+                )
+            return last_event
+        finally:
+            if restore_horizon:
+                self.try_look_to_camera_horizon(
+                    agent_id,
+                    initial_horizon,
+                    action_name=action,
+                )
+
+    def retry_pickup_after_target_visibility_error(
+        self,
+        agent_id: int,
+        payload: Dict[str, Any],
+        initial_event: Optional[Any],
+    ) -> Optional[Any]:
+        return self.retry_object_action_after_target_visibility_error(
+            "PickupObject",
+            agent_id,
+            payload,
+            initial_event,
+        )
+
     def object_action_by_object(
         self,
         action: str,
@@ -2469,6 +2672,8 @@ class ThorRuntime:
                 payload["forceAction"] = TOGGLE_OBJECT_ON_FORCE_ACTION
             elif action == "ToggleObjectOff":
                 payload["forceAction"] = TOGGLE_OBJECT_OFF_FORCE_ACTION
+            elif action == "EmptyLiquidFromObject":
+                payload["forceAction"] = EMPTY_LIQUID_FORCE_ACTION
             elif force_action:
                 payload["forceAction"] = True
         if action == "PickupObject" and self.agent_holds_object(agent_id, obj["objectId"]):
@@ -2507,6 +2712,7 @@ class ThorRuntime:
 
         with self.stats_lock:
             self.total_exec += 1
+        target_visibility_retry_attempted = False
         try:
             event = self.step(
                 payload,
@@ -2514,42 +2720,66 @@ class ThorRuntime:
                 retry_on_failure=False,
             )
         except Exception as exc:
-            if not (action == "PickupObject" and is_pickup_object_clip_error(exc)):
+            if action == "PickupObject" and is_pickup_object_clip_error(exc):
+                retry_event = self.retry_pickup_after_clip_error(agent_id, payload, None)
+            elif (
+                action in OBJECT_ACTION_TARGET_VISIBILITY_RETRY_ACTIONS
+                and is_object_action_target_visibility_error(exc)
+            ):
+                target_visibility_retry_attempted = True
+                retry_event = self.retry_object_action_after_target_visibility_error(
+                    action,
+                    agent_id,
+                    payload,
+                    None,
+                )
+            else:
                 raise
-            retry_event = self.retry_pickup_after_clip_error(agent_id, payload, None)
             if retry_event is None:
                 raise
             event = retry_event
         metadata = getattr(event, "metadata", {}) or {}
         error = metadata.get("errorMessage")
         if not metadata.get("lastActionSuccess", not bool(error)):
+            recovered_from_failure = False
             if action == "PickupObject" and is_pickup_object_clip_error(error):
                 event = self.retry_pickup_after_clip_error(agent_id, payload, event)
                 metadata = getattr(event, "metadata", {}) or {}
                 error = metadata.get("errorMessage")
-                if metadata.get("lastActionSuccess", not bool(error)):
-                    with self.stats_lock:
-                        self.success_exec += 1
-                    self.record_agent_held_object(agent_id, str(obj["objectId"]))
-                    self.record_operated_object_name(obj)
-                    return event
-            if action == "PutObject":
-                self.log_put_object_failure_held_items(agent_id)
-            if action in {"ToggleObjectOn", "ToggleObjectOff"}:
-                observed_obj = self.current_object_by_id(agent_id, obj["objectId"])
-                if (
-                    observed_obj is not None
-                    and self.toggle_error_matches_desired_state(action, error or "")
-                    and self.toggle_state_matches(action, observed_obj)
-                ):
-                    with self.stats_lock:
-                        self.success_exec += 1
-                    self.record_operated_object_name(observed_obj)
-                    return event
-            raise RuntimeError(
-                f"{action} failed for agent {agent_id} on {obj['objectId']}: "
-                f"{error or 'no error message returned'}"
-            )
+                recovered_from_failure = metadata.get("lastActionSuccess", not bool(error))
+            if (
+                not recovered_from_failure
+                and action in OBJECT_ACTION_TARGET_VISIBILITY_RETRY_ACTIONS
+                and not target_visibility_retry_attempted
+                and is_object_action_target_visibility_error(error)
+            ):
+                event = self.retry_object_action_after_target_visibility_error(
+                    action,
+                    agent_id,
+                    payload,
+                    event,
+                )
+                metadata = getattr(event, "metadata", {}) or {}
+                error = metadata.get("errorMessage")
+                recovered_from_failure = metadata.get("lastActionSuccess", not bool(error))
+            if not recovered_from_failure:
+                if action == "PutObject":
+                    self.log_put_object_failure_held_items(agent_id)
+                if action in {"ToggleObjectOn", "ToggleObjectOff"}:
+                    observed_obj = self.current_object_by_id(agent_id, obj["objectId"])
+                    if (
+                        observed_obj is not None
+                        and self.toggle_error_matches_desired_state(action, error or "")
+                        and self.toggle_state_matches(action, observed_obj)
+                    ):
+                        with self.stats_lock:
+                            self.success_exec += 1
+                        self.record_operated_object_name(observed_obj)
+                        return event
+                raise RuntimeError(
+                    f"{action} failed for agent {agent_id} on {obj['objectId']}: "
+                    f"{error or 'no error message returned'}"
+                )
         with self.stats_lock:
             self.success_exec += 1
         if action == "OpenObject":

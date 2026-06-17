@@ -28,7 +28,7 @@ from pddlrun_llmseparate import (
     build_robot_team,
     load_run_config,
 )
-from merge_conversation import (
+from sft_generator import (
     check_allocate_assignment_count,
     check_decompose_subtask_count,
     check_planner_plan_count,
@@ -1333,6 +1333,154 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertIn("(ready robot15)", captured["prompt"])
             self.assertIn("(near robot150)", captured["prompt"])
             self.assertNotIn("(define (domain robot1)", captured["prompt"])
+
+    def test_key_objects_match_floorplan_objects_in_decomposition(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            manager = TaskManager(tmp_dir, "test-model")
+
+            objects_ai = (
+                "\n\nobjects = ["
+                "{'name': 'LightSwitch', 'mass': 0.0}, "
+                "{'name': 'Apple', 'mass': 0.2}, "
+                "{'name': 'Pan', 'mass': 0.6}"
+                "]"
+            )
+            decomposed_plan = (
+                "#SubTask 1: Turn off the light switch\n"
+                "Skills Required: GoToObject, SwitchOff\n"
+                "The robot should go to the light switch and switch it off.\n"
+                "This sentence says parallel, but short object names must not match inside other words."
+            )
+
+            key_objects = manager._extract_key_objects_from_decomposition(decomposed_plan, objects_ai)
+
+            self.assertEqual([item["name"] for item in key_objects], ["LightSwitch"])
+
+    def test_trim_robot_domain_for_allocation_keeps_relevant_actions(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            manager = TaskManager(tmp_dir, "test-model")
+            domain = (
+                "(define (domain robot1)\n"
+                "  (:requirements :strips)\n"
+                "  (:types robot object microwave toaster - object)\n"
+                "  (:predicates (at ?r - robot ?o - object) (hot ?o - object))\n"
+                "  (:action GoToObject\n"
+                "    :parameters (?r - robot ?o - object)\n"
+                "    :effect (and (at ?r ?o))\n"
+                "  )\n"
+                "  (:action RunMicrowave\n"
+                "    :parameters (?r - robot ?m - microwave ?item - object)\n"
+                "    :precondition (and (at ?r ?m))\n"
+                "    :effect (and (hot ?item))\n"
+                "  )\n"
+                "  (:action RunToaster\n"
+                "    :parameters (?r - robot ?t - toaster ?item - object)\n"
+                "    :precondition (and (at ?r ?t))\n"
+                "    :effect (and (hot ?item))\n"
+                "  )\n"
+                ")"
+            )
+            decomposed_plan = (
+                "#SubTask 1: Heat the apple in the microwave\n"
+                "Skills Required: GoToObject, RunMicrowave\n"
+            )
+
+            trimmed = manager._trim_robot_domain_for_allocation(
+                domain,
+                decomposed_plan,
+                [{"name": "Microwave", "mass": 7.0}],
+            )
+
+            self.assertIn("(:requirements :strips)", trimmed)
+            self.assertIn("(:predicates", trimmed)
+            self.assertIn("(:action GoToObject", trimmed)
+            self.assertIn("(:action RunMicrowave", trimmed)
+            self.assertNotIn("(:action RunToaster", trimmed)
+            self.assertTrue(trimmed.rstrip().endswith(")"))
+
+    def test_trim_robot_domain_for_allocation_falls_back_when_unsafe(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            manager = TaskManager(tmp_dir, "test-model")
+            domain = "(define (domain robot1) (:action Bad"
+
+            self.assertEqual(
+                manager._trim_robot_domain_for_allocation(
+                    domain,
+                    "#SubTask 1: Use the microwave",
+                    [],
+                ),
+                domain,
+            )
+            self.assertEqual(
+                manager._trim_robot_domain_for_allocation(
+                    domain,
+                    "#SubTask 1: Use the microwave",
+                    [{"name": "Microwave"}],
+                ),
+                domain,
+            )
+
+    def test_allocation_prompt_includes_key_objects_and_cropped_domain(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            resources_dir = root / "resources"
+            prompt_dir = root / "prompts" / "v1"
+            resources_dir.mkdir(parents=True)
+            prompt_dir.mkdir(parents=True)
+            (prompt_dir / "pddl_train_task_allocationsep_solution.txt").write_text(
+                "# allocation example\n",
+                encoding="utf-8",
+            )
+            (resources_dir / "robot1.pddl").write_text(
+                "(define (domain robot1)\n"
+                "  (:requirements :strips)\n"
+                "  (:types robot object microwave toaster - object)\n"
+                "  (:predicates (at ?r - robot ?o - object) (hot ?o - object))\n"
+                "  (:action GoToObject\n"
+                "    :parameters (?r - robot ?o - object)\n"
+                "    :effect (and (at ?r ?o))\n"
+                "  )\n"
+                "  (:action RunMicrowave\n"
+                "    :parameters (?r - robot ?m - microwave ?item - object)\n"
+                "    :effect (and (hot ?item))\n"
+                "  )\n"
+                "  (:action RunToaster\n"
+                "    :parameters (?r - robot ?t - toaster ?item - object)\n"
+                "    :effect (and (hot ?item))\n"
+                "  )\n"
+                ")",
+                encoding="utf-8",
+            )
+
+            manager = TaskManager(str(root), "test-model", config=RunConfig(root))
+            captured = {}
+
+            def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
+                captured["prompt"] = messages[-1]["content"]
+                return {}, "# Sequence of Operations:\nSubtask 1: Robot 1;"
+
+            decomposed_plan = (
+                "#SubTask 1: Heat the apple in the microwave\n"
+                "Skills Required: GoToObject, RunMicrowave\n"
+            )
+            with patch.object(manager.llm, "query_model", side_effect=fake_query_model):
+                manager._generate_allocation_plan(
+                    decomposed_plan,
+                    robots=[{
+                        "name": "robot1",
+                        "skills": ["GoToObject", "RunMicrowave"],
+                        "mass_capacity": 100,
+                    }],
+                    objects_ai="\n\nobjects = [{'name': 'Microwave', 'mass': 7.0}, {'name': 'Toaster', 'mass': 1.0}]",
+                    key_objects=[{"name": "Microwave", "mass": 7.0}],
+                )
+
+            prompt = captured["prompt"]
+            self.assertIn("key_objects = [{'name': 'Microwave', 'mass': 7.0}]", prompt)
+            self.assertIn("# CROPPED ROBOT PDDL DOMAINS FOR ALLOCATION", prompt)
+            self.assertIn("# Robot allocation name: robot1", prompt)
+            self.assertIn("(:action RunMicrowave", prompt)
+            self.assertNotIn("(:action RunToaster", prompt)
 
     def test_domain_robot_replacement_does_not_replace_partial_tokens(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

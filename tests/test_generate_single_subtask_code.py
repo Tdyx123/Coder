@@ -426,6 +426,65 @@ class GenerateSingleSubtaskCodeTests(unittest.TestCase):
             subtask_keys,
         )
 
+    def test_break_blacklist_excludes_breakable_objects_from_enumeration(self):
+        objects_path = self._write_properties(
+            [
+                {
+                    "scene": "FloorPlan1",
+                    "objectType": "CoffeeMachine",
+                    "breakable": True,
+                },
+                {
+                    "scene": "FloorPlan1",
+                    "objectType": "Vase",
+                    "breakable": True,
+                },
+            ]
+        )
+
+        subtasks = generator.enumerate_single_subtasks_for_floor(
+            1,
+            ["CoffeeMachine", "Vase"],
+            objects_path,
+        )
+        subtask_keys = {
+            json.dumps(subtask, sort_keys=True)
+            for subtask in subtasks
+        }
+
+        self.assertNotIn(
+            json.dumps({"skill": "Break", "objects": ["CoffeeMachine"]}, sort_keys=True),
+            subtask_keys,
+        )
+        self.assertIn(
+            json.dumps({"skill": "Break", "objects": ["Vase"]}, sort_keys=True),
+            subtask_keys,
+        )
+
+    def test_break_blacklist_rejects_direct_action_template(self):
+        with self.assertRaisesRegex(ValueError, "CoffeeMachine"):
+            generator.build_actions_for_subtask(
+                {"skill": "Break", "objects": ["CoffeeMachine"]},
+                {},
+            )
+        with self.assertRaisesRegex(ValueError, "CoffeeMachine"):
+            generator.build_actions_for_subtask(
+                {
+                    "skill": "Break",
+                    "objects": ["CoffeeMachine|+00.10|+00.20|+00.30"],
+                },
+                {},
+            )
+
+        actions = generator.build_actions_for_subtask(
+            {"skill": "Break", "objects": ["Vase"]},
+            {},
+        )
+        self.assertEqual(
+            self._action_pairs(actions),
+            [("GoToObject", ["Vase"]), ("BreakObject", ["Vase"])],
+        )
+
     def test_enumeration_excludes_non_receptacle_put_targets(self):
         objects_path = self._write_properties(
             [
@@ -787,6 +846,104 @@ class GenerateSingleSubtaskCodeTests(unittest.TestCase):
                 bundle["task_plan"]["pre_task_action_queues"]["robot1"]
             ),
             [("DirtyObject", ["Plate"])],
+        )
+        self.assertEqual(
+            self._action_pairs(
+                bundle["task_plan"]["stages"][0]["robot_action_queues"]["robot1"]
+            ),
+            self._action_pairs(actions),
+        )
+
+    def test_fillwater_target_with_initial_liquid_adds_emptyliquid_pre_task(self):
+        objects_path = self._write_properties(
+            [
+                {
+                    "scene": "FloorPlan1",
+                    "objectType": "Mug",
+                    "objectId": "Mug|+00.10|+00.20|+00.30",
+                    "name": "Mug_123",
+                    "pickupable": True,
+                    "canFillWithLiquid": True,
+                    "isFilledWithLiquid": True,
+                    "fillLiquid": None,
+                },
+                {"scene": "FloorPlan1", "objectType": "Sink", "receptacle": True},
+            ]
+        )
+
+        generated = generator.prepare_generated_subtasks(
+            [
+                generator.EnumeratedSubtask(
+                    floor_plan=1,
+                    subtask={"skill": "FillWater", "objects": ["Mug", "Sink"]},
+                )
+            ],
+            objects_path,
+        )
+
+        self.assertEqual(
+            self._action_pairs(generated[0].actions),
+            [
+                ("GoToObject", ["Mug"]),
+                ("PickupObject", ["Mug"]),
+                ("GoToObject", ["Sink"]),
+                ("FillWater", ["Sink", "Mug"]),
+            ],
+        )
+        self.assertEqual(
+            self._action_pairs(generated[0].pre_task_actions),
+            [("EmptyLiquid", ["Mug"])],
+        )
+
+    def test_fillwater_target_without_initial_liquid_has_no_emptyliquid_pre_task(self):
+        objects_path = self._write_properties(
+            [
+                {
+                    "scene": "FloorPlan1",
+                    "objectType": "Mug",
+                    "objectId": "Mug|+00.10|+00.20|+00.30",
+                    "pickupable": True,
+                    "canFillWithLiquid": True,
+                    "isFilledWithLiquid": False,
+                    "fillLiquid": None,
+                },
+                {"scene": "FloorPlan1", "objectType": "Sink", "receptacle": True},
+            ]
+        )
+
+        generated = generator.prepare_generated_subtasks(
+            [
+                generator.EnumeratedSubtask(
+                    floor_plan=1,
+                    subtask={"skill": "FillWater", "objects": ["Mug", "Sink"]},
+                )
+            ],
+            objects_path,
+        )
+
+        self.assertEqual(generated[0].pre_task_actions, [])
+
+    def test_fillwater_bundle_adds_emptyliquid_pre_task_without_counting_no_trans(self):
+        subtask = {"skill": "FillWater", "objects": ["Mug", "Sink"]}
+        actions = generator.build_actions_for_subtask(subtask, {})
+        pre_task_actions = generator.build_pre_task_actions_for_subtask(
+            subtask,
+            [{"objectType": "Mug", "isFilledWithLiquid": True}],
+        )
+
+        bundle = generator.build_bundle_data(
+            task_id="task",
+            task_text="fill the mug with water",
+            actions=actions,
+            pre_task_actions=pre_task_actions,
+        )
+
+        self.assertEqual(bundle["no_trans"], len(actions))
+        self.assertEqual(
+            self._action_pairs(
+                bundle["task_plan"]["pre_task_action_queues"]["robot1"]
+            ),
+            [("EmptyLiquid", ["Mug"])],
         )
         self.assertEqual(
             self._action_pairs(
