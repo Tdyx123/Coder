@@ -1027,6 +1027,2865 @@
         ]
       },
       "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 1,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "DishSponge",
+          "Bowl"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 1,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "DishSponge",
+          "Drawer"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 1,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "DishSponge",
+          "Pot"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 2,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "ButterKnife",
+          "Cup"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 2,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "ButterKnife",
+          "Pan"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 2,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "ButterKnife",
+          "Plate"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 10,
+      "subtask": {
+        "skill": "CookEgg",
+        "objects": [
+          "Egg",
+          "Pot"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 10,
+      "subtask": {
+        "skill": "HeatByStoveBurner",
+        "objects": [
+          "Pot",
+          "StoveBurner"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 10,
+      "subtask": {
+        "skill": "PrepareEgg",
+        "objects": [
+          "Egg",
+          "Pot"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 10,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pan",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 10,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pot",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 10,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pot",
+          "StoveBurner"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 11,
+      "subtask": {
+        "skill": "CookEgg",
+        "objects": [
+          "Egg",
+          "Pot"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 11,
+      "subtask": {
+        "skill": "FillWater",
+        "objects": [
+          "Pot",
+          "Sink"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 11,
+      "subtask": {
+        "skill": "HeatByStoveBurner",
+        "objects": [
+          "Pot",
+          "StoveBurner"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 11,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Bowl",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 11,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Kettle",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 11,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Lettuce",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 11,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pan",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 11,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Plate",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 11,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pot",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 11,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pot",
+          "StoveBurner"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 12,
+      "subtask": {
+        "skill": "CookByStoveBurner",
+        "objects": [
+          "Potato",
+          "StoveBurner"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 12,
+      "subtask": {
+        "skill": "CookEgg",
+        "objects": [
+          "Egg",
+          "Pan"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 12,
+      "subtask": {
+        "skill": "CookEgg",
+        "objects": [
+          "Egg",
+          "Pot"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 12,
+      "subtask": {
+        "skill": "HeatByStoveBurner",
+        "objects": [
+          "Pan",
+          "StoveBurner"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 12,
+      "subtask": {
+        "skill": "HeatByStoveBurner",
+        "objects": [
+          "Pot",
+          "StoveBurner"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 12,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Bowl",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 12,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Lettuce",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 12,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pan",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 12,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pan",
+          "StoveBurner"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 12,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Plate",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 12,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pot",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 12,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pot",
+          "StoveBurner"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 12,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Tomato",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 12,
+      "subtask": {
+        "skill": "RunToaster",
+        "objects": [
+          "Bread",
+          "Toaster"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 13,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pot",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 14,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Bowl",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 14,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pan",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 14,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Plate",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 14,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pot",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 14,
+      "subtask": {
+        "skill": "Slice",
+        "objects": [
+          "Egg"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 15,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Bowl",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 15,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Kettle",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 15,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Lettuce",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 15,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pan",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 15,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Plate",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 15,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pot",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 16,
+      "subtask": {
+        "skill": "ColdObject",
+        "objects": [
+          "Pot",
+          "Fridge"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 16,
+      "subtask": {
+        "skill": "CookEgg",
+        "objects": [
+          "Egg",
+          "Pot"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 16,
+      "subtask": {
+        "skill": "FillWater",
+        "objects": [
+          "Pot",
+          "Sink"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 16,
+      "subtask": {
+        "skill": "HeatByStoveBurner",
+        "objects": [
+          "Pot",
+          "StoveBurner"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 16,
+      "subtask": {
+        "skill": "PrepareEgg",
+        "objects": [
+          "Egg",
+          "Pot"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 16,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "Pot",
+          "Cabinet"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 16,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "Pot",
+          "Fridge"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 16,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pot",
+          "Cabinet"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 16,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pot",
+          "CounterTop"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 16,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pot",
+          "DiningTable"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 16,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pot",
+          "Fridge"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 16,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pot",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 16,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pot",
+          "StoveBurner"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 16,
+      "subtask": {
+        "skill": "Wash",
+        "objects": [
+          "Pot"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "Break",
+        "objects": [
+          "Egg"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "Break",
+        "objects": [
+          "Mug"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "ColdObject",
+        "objects": [
+          "Egg",
+          "Fridge"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "ColdObject",
+        "objects": [
+          "Mug",
+          "Fridge"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "CookByStoveBurner",
+        "objects": [
+          "Potato",
+          "StoveBurner"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "CookEgg",
+        "objects": [
+          "Egg",
+          "Pan"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "CookEgg",
+        "objects": [
+          "Egg",
+          "Pot"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "FillWater",
+        "objects": [
+          "Mug",
+          "Sink"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "HeatByStoveBurner",
+        "objects": [
+          "Kettle",
+          "StoveBurner"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "HeatByStoveBurner",
+        "objects": [
+          "Pan",
+          "StoveBurner"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PrepareEgg",
+        "objects": [
+          "Egg",
+          "Pan"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PrepareEgg",
+        "objects": [
+          "Egg",
+          "Pot"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "Egg",
+          "Bowl"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "Egg",
+          "Fridge"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "Egg",
+          "GarbageCan"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "Egg",
+          "Microwave"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "Egg",
+          "Pan"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "Egg",
+          "Pot"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "Mug",
+          "Cabinet"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "Mug",
+          "Fridge"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "Mug",
+          "Microwave"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "ButterKnife",
+          "Mug"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Egg",
+          "Bowl"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Egg",
+          "CounterTop"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Egg",
+          "DiningTable"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Egg",
+          "Fridge"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Egg",
+          "GarbageCan"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Egg",
+          "Microwave"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Egg",
+          "Pan"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Egg",
+          "Plate"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Egg",
+          "Pot"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Egg",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Kettle",
+          "StoveBurner"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Knife",
+          "Mug"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Mug",
+          "Cabinet"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Mug",
+          "CoffeeMachine"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Mug",
+          "CounterTop"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Mug",
+          "DiningTable"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Mug",
+          "Fridge"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Mug",
+          "Microwave"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Mug",
+          "Plate"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Mug",
+          "Shelf"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Mug",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pan",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pan",
+          "StoveBurner"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "RunCoffeeMachine",
+        "objects": [
+          "Mug",
+          "CoffeeMachine"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "RunMicrowave",
+        "objects": [
+          "Egg",
+          "Microwave"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "RunMicrowave",
+        "objects": [
+          "Mug",
+          "Microwave"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "Slice",
+        "objects": [
+          "Egg"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 17,
+      "subtask": {
+        "skill": "Wash",
+        "objects": [
+          "Mug"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 18,
+      "subtask": {
+        "skill": "CookEgg",
+        "objects": [
+          "Egg",
+          "Pan"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 18,
+      "subtask": {
+        "skill": "CookEgg",
+        "objects": [
+          "Egg",
+          "Pot"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 18,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Bowl",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 18,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Kettle",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 18,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pan",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 18,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Plate",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 18,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pot",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 19,
+      "subtask": {
+        "skill": "CookEgg",
+        "objects": [
+          "Egg",
+          "Pot"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 19,
+      "subtask": {
+        "skill": "HeatByStoveBurner",
+        "objects": [
+          "Pot",
+          "StoveBurner"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 19,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pan",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 19,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pot",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 19,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pot",
+          "StoveBurner"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "Break",
+        "objects": [
+          "Mug"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "ColdObject",
+        "objects": [
+          "Mug",
+          "Fridge"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "CookEgg",
+        "objects": [
+          "Egg",
+          "Pan"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "CookEgg",
+        "objects": [
+          "Egg",
+          "Pot"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "FillWater",
+        "objects": [
+          "Mug",
+          "Sink"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "FillWater",
+        "objects": [
+          "Pot",
+          "Sink"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "HeatByStoveBurner",
+        "objects": [
+          "Pot",
+          "StoveBurner"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "DishSponge",
+          "Bowl"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "DishSponge",
+          "Cabinet"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "DishSponge",
+          "Drawer"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "DishSponge",
+          "GarbageCan"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "DishSponge",
+          "Pan"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "DishSponge",
+          "Pot"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "Mug",
+          "Cabinet"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "Mug",
+          "Fridge"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "Mug",
+          "Microwave"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "DishSponge",
+          "Bowl"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "DishSponge",
+          "Cabinet"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "DishSponge",
+          "CounterTop"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "DishSponge",
+          "DiningTable"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "DishSponge",
+          "Drawer"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "DishSponge",
+          "GarbageCan"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "DishSponge",
+          "Pan"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "DishSponge",
+          "Plate"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "DishSponge",
+          "Pot"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "DishSponge",
+          "Shelf"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "DishSponge",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Mug",
+          "Cabinet"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Mug",
+          "CoffeeMachine"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Mug",
+          "CounterTop"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Mug",
+          "DiningTable"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Mug",
+          "Fridge"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Mug",
+          "Microwave"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Mug",
+          "Plate"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Mug",
+          "Shelf"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Mug",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pot",
+          "StoveBurner"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "RunCoffeeMachine",
+        "objects": [
+          "Mug",
+          "CoffeeMachine"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "RunMicrowave",
+        "objects": [
+          "Mug",
+          "Microwave"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 20,
+      "subtask": {
+        "skill": "Wash",
+        "objects": [
+          "Mug"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 6,
+      "subtask": {
+        "skill": "Break",
+        "objects": [
+          "Egg"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 6,
+      "subtask": {
+        "skill": "ColdObject",
+        "objects": [
+          "Egg",
+          "Fridge"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 6,
+      "subtask": {
+        "skill": "CookEgg",
+        "objects": [
+          "Egg",
+          "Pan"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 6,
+      "subtask": {
+        "skill": "CookEgg",
+        "objects": [
+          "Egg",
+          "Pot"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 6,
+      "subtask": {
+        "skill": "PrepareEgg",
+        "objects": [
+          "Egg",
+          "Pan"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 6,
+      "subtask": {
+        "skill": "PrepareEgg",
+        "objects": [
+          "Egg",
+          "Pot"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 6,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "Egg",
+          "Bowl"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 6,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "Egg",
+          "Fridge"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 6,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "Egg",
+          "GarbageCan"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 6,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "Egg",
+          "Microwave"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 6,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "Egg",
+          "Pan"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 6,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "Egg",
+          "Pot"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 6,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "Egg",
+          "Sink"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 6,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Apple",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 6,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Bowl",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 6,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Cup",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 6,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Egg",
+          "Bowl"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 6,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Egg",
+          "CounterTop"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 6,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Egg",
+          "Fridge"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 6,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Egg",
+          "GarbageCan"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 6,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Egg",
+          "Microwave"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 6,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Egg",
+          "Pan"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 6,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Egg",
+          "Plate"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 6,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Egg",
+          "Pot"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 6,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Egg",
+          "Sink"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 6,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Egg",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 6,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Kettle",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 6,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Mug",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 6,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pan",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 6,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Plate",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 6,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pot",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 6,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Tomato",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 6,
+      "subtask": {
+        "skill": "RunMicrowave",
+        "objects": [
+          "Egg",
+          "Microwave"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 6,
+      "subtask": {
+        "skill": "Slice",
+        "objects": [
+          "Egg"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 7,
+      "subtask": {
+        "skill": "HeatByStoveBurner",
+        "objects": [
+          "Pot",
+          "StoveBurner"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 7,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Egg",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 7,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pot",
+          "StoveBurner"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "ColdObject",
+        "objects": [
+          "Bread",
+          "Fridge"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "ColdObject",
+        "objects": [
+          "Lettuce",
+          "Fridge"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "ColdObject",
+        "objects": [
+          "Pan",
+          "Fridge"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "ColdObject",
+        "objects": [
+          "Pot",
+          "Fridge"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "ColdObject",
+        "objects": [
+          "Tomato",
+          "Fridge"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "CookByStoveBurner",
+        "objects": [
+          "Potato",
+          "StoveBurner"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "CookEgg",
+        "objects": [
+          "Egg",
+          "Pot"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PrepareEgg",
+        "objects": [
+          "Egg",
+          "Pot"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "Bread",
+          "Fridge"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "Lettuce",
+          "Fridge"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "Pan",
+          "Fridge"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "Pen",
+          "Drawer"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "Pen",
+          "GarbageCan"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "Pot",
+          "Fridge"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "Tomato",
+          "Bowl"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "Tomato",
+          "Fridge"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "Tomato",
+          "GarbageCan"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "Tomato",
+          "Pot"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutIn",
+        "objects": [
+          "Tomato",
+          "Sink"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Bowl",
+          "Fridge"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Bowl",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Bread",
+          "Fridge"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "ButterKnife",
+          "CounterTop"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "ButterKnife",
+          "Mug"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Kettle",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Kettle",
+          "StoveBurner"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Knife",
+          "Mug"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Mug",
+          "Cabinet"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pan",
+          "Fridge"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pan",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pen",
+          "CounterTop"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pen",
+          "Drawer"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pen",
+          "GarbageCan"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pen",
+          "Mug"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pen",
+          "Stool"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Plate",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pot",
+          "Fridge"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pot",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "SoapBottle",
+          "Sink"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Tomato",
+          "Bowl"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Tomato",
+          "CounterTop"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Tomato",
+          "Fridge"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Tomato",
+          "GarbageCan"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Tomato",
+          "Plate"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Tomato",
+          "Pot"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Tomato",
+          "Sink"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Tomato",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "RunToaster",
+        "objects": [
+          "Bread",
+          "Toaster"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "Slice",
+        "objects": [
+          "Tomato"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 8,
+      "subtask": {
+        "skill": "Wash",
+        "objects": [
+          "Bowl"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 9,
+      "subtask": {
+        "skill": "ColdObject",
+        "objects": [
+          "Cup",
+          "Fridge"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 9,
+      "subtask": {
+        "skill": "CookEgg",
+        "objects": [
+          "Egg",
+          "Pot"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 9,
+      "subtask": {
+        "skill": "PrepareEgg",
+        "objects": [
+          "Egg",
+          "Pot"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 9,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Cup",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 9,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Mug",
+          "CoffeeMachine"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 9,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pan",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 9,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Plate",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 9,
+      "subtask": {
+        "skill": "PutOn",
+        "objects": [
+          "Pot",
+          "SinkBasin"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 9,
+      "subtask": {
+        "skill": "RunCoffeeMachine",
+        "objects": [
+          "Mug",
+          "CoffeeMachine"
+        ]
+      },
+      "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 9,
+      "subtask": {
+        "skill": "RunToaster",
+        "objects": [
+          "Bread",
+          "Toaster"
+        ]
+      },
+      "reason": "Failed in parallel runner"
     }
   ]
 }

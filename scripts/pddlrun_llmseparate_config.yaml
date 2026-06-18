@@ -10,6 +10,7 @@ data:
   dataset_dir: data
   prompt_template_dir: prompts/v1
   ai2thor_objects_cache_dir: data/ai2thor_objects_cache
+  ai2thor_objects_file: data/all_ai2thor_objects.json
 
 resources:
   resources_dir: resources

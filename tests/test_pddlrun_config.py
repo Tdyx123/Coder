@@ -112,6 +112,7 @@ class PDDLRunConfigTests(unittest.TestCase):
                         "data": {
                             "dataset_dir": "fixtures/data",
                             "ai2thor_objects_cache_dir": "cache/objects",
+                            "ai2thor_objects_file": "cache/all_objects.json",
                         },
                         "planner": {"executable": "planner/fd.py"},
                     }
@@ -124,6 +125,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertEqual(config.storage_base_dir, root / "custom" / "intermediate")
             self.assertEqual(config.dataset_file("final_test", "FloorPlan15"), root / "fixtures" / "data" / "final_test" / "FloorPlan15.jsonl")
             self.assertEqual(config.ai2thor_objects_cache_dir, root / "cache" / "objects")
+            self.assertEqual(config.ai2thor_objects_file, root / "cache" / "all_objects.json")
             self.assertEqual(config.planner_executable, root / "planner" / "fd.py")
 
     def test_available_test_sets_lists_floor_plan_dataset_dirs(self):
@@ -162,6 +164,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertEqual(config.task_manager_runs_dir, root / "logs" / "task_manager_runs")
             self.assertEqual(config.dataset_file("final_test", 6), root / "data" / "final_test" / "FloorPlan6.jsonl")
             self.assertEqual(config.ai2thor_objects_cache_dir, root / "data" / "ai2thor_objects_cache")
+            self.assertEqual(config.ai2thor_objects_file, root / "data" / "all_ai2thor_objects.json")
 
     def test_prepare_task_run_dir_uses_dataset_floorplan_layout(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -510,6 +513,74 @@ class PDDLRunConfigTests(unittest.TestCase):
                 any(str(call.args[0]).endswith("08_planner/stdout/task_stdout.txt") and call.args[1] == "planner stdout"
                     for call in write_file.call_args_list)
             )
+
+    def test_run_fake_validator_copies_raw_problem_without_llm_call(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manager = TaskManager(str(root), "test-model", config=RunConfig(root))
+            manager.current_task_run_dir = str(root / "task_run")
+            manager.current_task_manifest = {"artifacts": {}}
+            Path(manager.current_task_run_dir).mkdir(parents=True)
+
+            raw_problem_dir = Path(manager._get_raw_problem_file_path())
+            raw_problem_dir.mkdir(parents=True, exist_ok=True)
+            raw_problem = raw_problem_dir / "subtask_01_problem.pddl"
+            raw_content = "\n".join([
+                "(define (problem subtask_01_problem)",
+                "  (:domain robot1)",
+                "  (:objects robot1 apple)",
+                "  (:init (available apple))",
+                "  (:goal (and (available apple)))",
+                ")",
+            ])
+            raw_problem.write_text(raw_content, encoding="utf-8")
+
+            with patch.object(manager.llm, "query_model") as query_model:
+                manager.run_fake_validator()
+
+            query_model.assert_not_called()
+            validated_problem = (
+                Path(manager._get_validated_problem_file_path())
+                / "subtask_01_problem_validated.pddl"
+            )
+            raw_validated = (
+                Path(manager.current_task_run_dir)
+                / "07_validate/outputs/subtask_01_problem_validated.raw.txt"
+            )
+            validate_input = (
+                Path(manager.current_task_run_dir)
+                / "07_validate/inputs/subtask_01_problem_input.pddl"
+            )
+            validate_prompt = (
+                Path(manager.current_task_run_dir)
+                / "07_validate/prompts/subtask_01_problem_prompt.txt"
+            )
+
+            self.assertEqual(validated_problem.read_text(encoding="utf-8"), raw_content)
+            self.assertEqual(raw_validated.read_text(encoding="utf-8"), raw_content)
+            self.assertEqual(validate_input.read_text(encoding="utf-8"), raw_content)
+            self.assertFalse(validate_prompt.exists())
+
+            validation_manifest = (
+                Path(manager.current_task_run_dir)
+                / manager.current_task_manifest["artifacts"]["validate"]["manifest"]
+            )
+            validation_records = json.loads(validation_manifest.read_text(encoding="utf-8"))
+            self.assertEqual(validation_records[0]["status"], "fake_validated")
+            self.assertEqual(validation_records[0]["validated_problem_path"], "07_validate/outputs/subtask_01_problem_validated.pddl")
+
+    def test_validate_and_plan_uses_fake_validator_call_site(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            manager = TaskManager(tmp_dir, "test-model")
+
+            with patch.object(manager, "run_fake_validator") as run_fake_validator, \
+                    patch.object(manager, "run_llmvalidator") as run_llmvalidator, \
+                    patch.object(manager, "run_planners") as run_planners:
+                manager._validate_and_plan()
+
+            run_fake_validator.assert_called_once_with()
+            run_llmvalidator.assert_not_called()
+            run_planners.assert_called_once_with()
 
     def test_v2_validate_and_plan_uses_validated_allaction_problem(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1281,6 +1352,13 @@ class PDDLRunConfigTests(unittest.TestCase):
             prompt_dir.mkdir(parents=True)
             (resources_dir / "robot15.pddl").write_text(
                 "(define (domain robot15)\n"
+                "  (:types robot object)\n"
+                "  (:predicates\n"
+                "    (ready ?robot - robot)\n"
+                "    (near ?robot - robot)\n"
+                "    (object-open ?object - object)\n"
+                "    (at-location ?object - object ?location - object)\n"
+                "  )\n"
                 "  (:action UseRobot15\n"
                 "    :parameters (?robot - robot)\n"
                 "    :precondition (and (ready robot15) (near robot150))\n"
@@ -1320,6 +1398,18 @@ class PDDLRunConfigTests(unittest.TestCase):
                 file_processor=manager.file_processor,
                 objects_ai="\n\nobjects = []",
                 prompt_allocation_set="pddl_train_task_allocationsep",
+                key_object_pddl_states=[
+                    {
+                        "object": "Drawer",
+                        "object_type": "Drawer",
+                        "object_id": "Drawer|+01.00|+00.20|-00.30",
+                        "facts": [
+                            "(object-open Drawer)",
+                            "(at-location Drawer CounterTop)",
+                            "(switch-on Drawer)",
+                        ],
+                    }
+                ],
             )
 
             self.assertIn("(:domain robot15)", result[0])
@@ -1333,6 +1423,90 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertIn("(ready robot15)", captured["prompt"])
             self.assertIn("(near robot150)", captured["prompt"])
             self.assertNotIn("(define (domain robot1)", captured["prompt"])
+            self.assertIn("key_object_pddl_states = [", captured["prompt"])
+            self.assertIn("(object-open Drawer)", captured["prompt"])
+            self.assertIn("(at-location Drawer CounterTop)", captured["prompt"])
+            self.assertNotIn("(switch-on Drawer)", captured["prompt"])
+            self.assertNotIn("object_id", captured["prompt"])
+
+    def test_problemextracting_uses_subtask_specific_key_object_states(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            resources_dir = root / "resources"
+            prompt_dir = root / "prompts" / "v1"
+            resources_dir.mkdir(parents=True)
+            prompt_dir.mkdir(parents=True)
+            (resources_dir / "robot1.pddl").write_text(
+                "(define (domain robot1)\n"
+                "  (:types robot object)\n"
+                "  (:predicates\n"
+                "    (object-open ?object - object)\n"
+                "    (switch-on ?object - object)\n"
+                "  )\n"
+                ")",
+                encoding="utf-8",
+            )
+            (prompt_dir / "pddl_train_task_allocationsep_problem.txt").write_text("# example\n", encoding="utf-8")
+            manager = TaskManager(str(root), "test-model", config=RunConfig(root))
+            captured_prompts = []
+
+            class FakeLLM:
+                def query_model(self, messages, model, max_tokens=None, frequency_penalty=0):
+                    captured_prompts.append(messages[-1]["content"])
+                    return {}, (
+                        "(define (problem generated)\n"
+                        "  (:domain robot1)\n"
+                        "  (:objects robot1 - robot)\n"
+                        "  (:init)\n"
+                        ")"
+                    )
+
+            manager.problemextracting(
+                subtasks=[
+                    "#SubTask 1: Open the drawer",
+                    "#SubTask 2: Switch on the light",
+                ],
+                robot_assignments={1: 1, 2: 1},
+                llm=FakeLLM(),
+                model="test-model",
+                file_processor=manager.file_processor,
+                objects_ai="\n\nobjects = []",
+                prompt_allocation_set="pddl_train_task_allocationsep",
+                key_object_pddl_states=[
+                    {
+                        "object": "Drawer",
+                        "object_type": "object",
+                        "facts": ["(object-open Drawer)"],
+                    },
+                    {
+                        "object": "LightSwitch",
+                        "object_type": "object",
+                        "facts": ["(switch-on LightSwitch)"],
+                    },
+                ],
+                key_object_pddl_states_by_subtask={
+                    1: [
+                        {
+                            "object": "Drawer",
+                            "object_type": "object",
+                            "facts": ["(object-open Drawer)"],
+                        }
+                    ],
+                    2: [
+                        {
+                            "object": "LightSwitch",
+                            "object_type": "object",
+                            "facts": ["(switch-on LightSwitch)"],
+                        }
+                    ],
+                },
+            )
+
+            self.assertEqual(len(captured_prompts), 2)
+            self.assertIn("(object-open Drawer)", captured_prompts[0])
+            self.assertNotIn("(switch-on LightSwitch)", captured_prompts[0])
+            self.assertIn("(switch-on LightSwitch)", captured_prompts[1])
+            self.assertNotIn("(object-open Drawer)", captured_prompts[1])
 
     def test_key_objects_match_floorplan_objects_in_decomposition(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1355,6 +1529,190 @@ class PDDLRunConfigTests(unittest.TestCase):
             key_objects = manager._extract_key_objects_from_decomposition(decomposed_plan, objects_ai)
 
             self.assertEqual([item["name"] for item in key_objects], ["LightSwitch"])
+
+    def test_key_objects_split_by_subtask_without_cross_contamination(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            manager = TaskManager(tmp_dir, "test-model")
+
+            objects_ai = (
+                "\n\nobjects = ["
+                "{'name': 'LightSwitch', 'mass': 0.0}, "
+                "{'name': 'Apple', 'mass': 0.2}, "
+                "{'name': 'Pan', 'mass': 0.6}"
+                "]"
+            )
+            subtasks = [
+                "#SubTask 1: Turn off the light switch\n"
+                "The robot should go to the light switch and switch it off.",
+                "#SubTask 2: Pick up the apple\n"
+                "The robot should pick up the apple.",
+                "#SubTask 3: Move near the counter\n"
+                "This subtask does not name a floorplan object.",
+            ]
+
+            key_objects_by_subtask = manager._extract_key_objects_by_subtask(subtasks, objects_ai)
+            key_objects = manager._combine_key_objects_by_subtask(key_objects_by_subtask)
+
+            self.assertEqual(
+                {
+                    subtask_idx: [item["name"] for item in subtask_key_objects]
+                    for subtask_idx, subtask_key_objects in key_objects_by_subtask.items()
+                },
+                {
+                    1: ["LightSwitch"],
+                    2: ["Apple"],
+                    3: [],
+                },
+            )
+            self.assertEqual([item["name"] for item in key_objects], ["LightSwitch", "Apple"])
+
+    def test_key_object_pddl_states_filter_floorplan_and_convert_supported_facts(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            resources_dir = root / "resources"
+            resources_dir.mkdir(parents=True)
+            (resources_dir / "allactionrobot.pddl").write_text(
+                "(define (domain allactionrobot)\n"
+                "  (:types robot object knife microwave toaster coffee_machine fridge stove_burner sink mug bread egg - object)\n"
+                "  (:predicates\n"
+                "    (at-location ?object - object ?location - object)\n"
+                "    (object-open ?object - object)\n"
+                "    (switch-on ?object - object)\n"
+                "    (placable_on_stove_burner ?object - object)\n"
+                "    (cookable-by-microwave ?object - object)\n"
+                "    (cookable-by-stove_burner ?object - object)\n"
+                "  )\n"
+                ")",
+                encoding="utf-8",
+            )
+            metadata_path = root / "data" / "all_ai2thor_objects.json"
+            write_json(
+                metadata_path,
+                [
+                    {
+                        "scene": "FloorPlan1",
+                        "objectType": "Drawer",
+                        "objectId": "Drawer|+01.00|+00.20|-00.30",
+                        "openable": True,
+                        "isOpen": True,
+                    },
+                    {
+                        "scene": "FloorPlan1",
+                        "objectType": "Drawer",
+                        "objectId": "Drawer|+01.00|+00.60|-00.30",
+                        "openable": True,
+                        "isOpen": False,
+                    },
+                    {
+                        "scene": "FloorPlan1",
+                        "objectType": "LightSwitch",
+                        "objectId": "LightSwitch|+00.10|+01.20|+00.30",
+                        "toggleable": True,
+                        "isToggled": True,
+                    },
+                    {
+                        "scene": "FloorPlan1",
+                        "objectType": "Apple",
+                        "objectId": "Apple|+00.10|+01.15|+00.30",
+                        "parentReceptacles": ["CounterTop|+00.00|+01.00|+00.00"],
+                        "isSliced": False,
+                        "isCooked": True,
+                    },
+                    {
+                        "scene": "FloorPlan1",
+                        "objectType": "CounterTop",
+                        "objectId": "CounterTop|+00.00|+01.00|+00.00",
+                    },
+                    {
+                        "scene": "FloorPlan1",
+                        "objectType": "Mug",
+                        "objectId": "Mug|+00.20|+01.15|+00.30",
+                    },
+                    {
+                        "scene": "FloorPlan1",
+                        "objectType": "Bread",
+                        "objectId": "Bread|+00.20|+01.15|+00.30",
+                        "isSliced": True,
+                    },
+                    {
+                        "scene": "FloorPlan1",
+                        "objectType": "Pot",
+                        "objectId": "Pot|+00.40|+01.15|+00.30",
+                    },
+                    {
+                        "scene": "FloorPlan1",
+                        "objectType": "Potato",
+                        "objectId": "Potato|+00.50|+01.15|+00.30",
+                    },
+                    {
+                        "scene": "FloorPlan2",
+                        "objectType": "Drawer",
+                        "objectId": "Drawer|+09.00|+00.20|-00.30",
+                        "openable": True,
+                        "isOpen": True,
+                    },
+                ],
+            )
+            manager = TaskManager(
+                str(root),
+                "test-model",
+                config=RunConfig(root),
+                floor_plan="FloorPlan1",
+            )
+            domain = (
+                "(define (domain robot1)\n"
+                "  (:predicates\n"
+                "    (at-location ?object - object ?location - object)\n"
+                "    (object-open ?object - object)\n"
+                "    (switch-on ?object - object)\n"
+                "    (placable_on_stove_burner ?object - object)\n"
+                "    (cookable-by-microwave ?object - object)\n"
+                "    (cookable-by-stove_burner ?object - object)\n"
+                "  )\n"
+                ")"
+            )
+
+            states = manager._build_key_object_pddl_states(
+                [
+                    {"name": "Drawer"},
+                    {"name": "LightSwitch"},
+                    {"name": "Apple"},
+                    {"name": "Mug"},
+                    {"name": "Pot"},
+                    {"name": "Potato"},
+                ],
+                domain,
+            )
+
+            self.assertEqual([item["object"] for item in states if item["object_type"] == "object" and item["object"].startswith("Drawer")], ["Drawer_1", "Drawer_2"])
+            self.assertIn("LightSwitch", [item["object"] for item in states])
+            self.assertNotIn("Bread", [item["object"] for item in states])
+            for item in states:
+                self.assertNotIn("object_id", item)
+                for related_object in item.get("related_objects", []):
+                    self.assertNotIn("object_id", related_object)
+
+            facts_by_object = {
+                item["object"]: "\n".join(item["facts"])
+                for item in states
+            }
+            types_by_object = {item["object"]: item["object_type"] for item in states}
+
+            self.assertEqual(types_by_object["Mug"], "mug")
+            self.assertEqual(types_by_object["Apple"], "object")
+            self.assertEqual(types_by_object["Drawer_1"], "object")
+            self.assertIn("(switch-on LightSwitch)", facts_by_object["LightSwitch"])
+            self.assertIn("(at-location Apple CounterTop)", facts_by_object["Apple"])
+            self.assertIn("(cookable-by-microwave Apple)", facts_by_object["Apple"])
+            self.assertIn("(placable_on_stove_burner Pot)", facts_by_object["Pot"])
+            self.assertIn("(cookable-by-stove_burner Potato)", facts_by_object["Potato"])
+            self.assertNotIn("(sliced Apple)", facts_by_object["Apple"])
+            self.assertNotIn("(cooked Apple)", facts_by_object["Apple"])
+
+            open_drawer = next(item for item in states if "(object-open" in "\n".join(item["facts"]))
+            closed_drawer = next(item for item in states if item["object"] == "Drawer_2")
+            self.assertIn("(object-open Drawer_1)", "\n".join(open_drawer["facts"]))
+            self.assertNotIn("(object-open", "\n".join(closed_drawer["facts"]))
 
     def test_trim_robot_domain_for_allocation_keeps_relevant_actions(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1473,14 +1831,29 @@ class PDDLRunConfigTests(unittest.TestCase):
                     }],
                     objects_ai="\n\nobjects = [{'name': 'Microwave', 'mass': 7.0}, {'name': 'Toaster', 'mass': 1.0}]",
                     key_objects=[{"name": "Microwave", "mass": 7.0}],
+                    key_objects_by_subtask={1: [{"name": "Microwave", "mass": 7.0}]},
                 )
 
             prompt = captured["prompt"]
             self.assertIn("key_objects = [{'name': 'Microwave', 'mass': 7.0}]", prompt)
+            self.assertIn("key_objects_by_subtask = {1: [{'name': 'Microwave', 'mass': 7.0}]}", prompt)
             self.assertIn("# CROPPED ROBOT PDDL DOMAINS FOR ALLOCATION", prompt)
             self.assertIn("# Robot allocation name: robot1", prompt)
             self.assertIn("(:action RunMicrowave", prompt)
             self.assertNotIn("(:action RunToaster", prompt)
+
+    def test_problem_generation_fewshot_includes_key_object_pddl_states(self):
+        prompt = (ROOT / "prompts" / "v1" / "pddl_train_task_allocationsep_problem.txt").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("key_object_pddl_states = [", prompt)
+        self.assertIn("(at-location Potato CounterTop_1)", prompt)
+        self.assertIn("(cookable-by-stove_burner Potato)", prompt)
+        self.assertIn("CounterTop_1 CounterTop_2 - object", prompt)
+        self.assertNotIn("object_id", prompt)
+        self.assertIn("Copy its facts into (:init)", prompt)
+        self.assertIn("do not output raw AI2-THOR fields", prompt)
 
     def test_domain_robot_replacement_does_not_replace_partial_tokens(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

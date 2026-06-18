@@ -57,10 +57,11 @@ ALL_GENERATED_EXECUTOR_SKILLS = [
     "ThrowObject",
 ]
 
-PARENT_CONTAINER_ACCESS_ACTIONS = {
-    "PickupObject",
-    "BreakObject",
-    "SliceObject",
+PARENT_CONTAINER_ACCESS_ARG_INDEX = {
+    "PickupObject": 0,
+    "BreakObject": 0,
+    "SliceObject": 0,
+    "PutObject": 1,
 }
 
 
@@ -587,17 +588,17 @@ def _insert_parent_open_actions(
             updated.append(item)
             continue
 
-        if action_type in PARENT_CONTAINER_ACCESS_ACTIONS:
-            if args:
-                target = args[0]
-                parent = _parent_container_for_action_arg(target, open_parent_by_object)
-                if parent:
-                    access_actions = _parent_access_actions(parent, opened_containers)
-                    goto_index = _last_goto_action_index(updated, target)
-                    if goto_index is None:
-                        updated.extend(access_actions)
-                    else:
-                        updated[goto_index:goto_index] = access_actions
+        access_arg_index = PARENT_CONTAINER_ACCESS_ARG_INDEX.get(str(action_type))
+        if access_arg_index is not None and len(args) > access_arg_index:
+            target = args[access_arg_index]
+            parent = _parent_container_for_action_arg(target, open_parent_by_object)
+            if parent:
+                access_actions = _parent_access_actions(parent, opened_containers)
+                goto_index = _last_goto_action_index(updated, target)
+                if goto_index is None:
+                    updated.extend(access_actions)
+                else:
+                    updated[goto_index:goto_index] = access_actions
         updated.append(item)
 
     return updated

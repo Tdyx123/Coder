@@ -23,6 +23,7 @@ DEFAULT_RUN_CONFIG: Dict[str, Any] = {
         "dataset_dir": "data",
         "prompt_template_dir": "prompts/v1",
         "ai2thor_objects_cache_dir": "data/ai2thor_objects_cache",
+        "ai2thor_objects_file": "data/all_ai2thor_objects.json",
     },
     "resources": {
         "resources_dir": "resources",
@@ -164,6 +165,10 @@ class RunConfig:
     @property
     def ai2thor_objects_cache_dir(self) -> Path:
         return self.path("data", "ai2thor_objects_cache_dir")
+
+    @property
+    def ai2thor_objects_file(self) -> Path:
+        return self.path("data", "ai2thor_objects_file")
 
     @property
     def planner_executable(self) -> Path:

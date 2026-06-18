@@ -816,10 +816,29 @@ class TaskManager:
                 #print("decomposed plan:\n", decomposed_plan)
                 #print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
 
-                key_objects = self._extract_key_objects_from_decomposition(decomposed_plan, objects_ai)
+                subtasks = ParsingUtils.extract_subtasks(decomposed_plan)
+                key_objects_by_subtask = self._extract_key_objects_by_subtask(subtasks, objects_ai)
+                key_objects = self._combine_key_objects_by_subtask(key_objects_by_subtask)
                 key_objects_artifact = "02_allocate/00_key_objects.json"
+                key_objects_by_subtask_artifact = "02_allocate/00_key_objects_by_subtask.json"
                 self._write_json_artifact(key_objects_artifact, key_objects)
                 self._record_artifact("allocate", "key_objects", key_objects_artifact)
+                self._write_json_artifact(key_objects_by_subtask_artifact, key_objects_by_subtask)
+                self._record_artifact("allocate", "key_objects_by_subtask", key_objects_by_subtask_artifact)
+                key_object_pddl_states = self._build_key_object_pddl_states(
+                    key_objects,
+                    domain_content,
+                )
+                key_object_pddl_states_by_subtask = {
+                    subtask_idx: self._build_key_object_pddl_states(subtask_key_objects, domain_content)
+                    for subtask_idx, subtask_key_objects in key_objects_by_subtask.items()
+                }
+                key_object_states_artifact = "05_problem_generation/key_object_pddl_states.json"
+                key_object_states_by_subtask_artifact = "05_problem_generation/key_object_pddl_states_by_subtask.json"
+                self._write_json_artifact(key_object_states_artifact, key_object_pddl_states)
+                self._record_artifact("problem_files", "key_object_pddl_states", key_object_states_artifact)
+                self._write_json_artifact(key_object_states_by_subtask_artifact, key_object_pddl_states_by_subtask)
+                self._record_artifact("problem_files", "key_object_pddl_states_by_subtask", key_object_states_by_subtask_artifact)
                 self._persist_manifest()
                 print(f"✓ Matched {len(key_objects)} key objects")
 
@@ -829,6 +848,7 @@ class TaskManager:
                     robots,
                     objects_ai,
                     key_objects=key_objects,
+                    key_objects_by_subtask=key_objects_by_subtask,
                 )
                 self.allocated_plan.append(allocated_plan)
                 print("✓ Allocation plan generated")
@@ -836,13 +856,18 @@ class TaskManager:
                 #print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
                 
                 # Extract subtasks and robot assignments
-                subtasks = ParsingUtils.extract_subtasks(decomposed_plan)
                 sequence_operations = self._extract_sequence_operations(allocated_plan)
                 robot_assignments = self._extract_robot_assignments(sequence_operations)
                 print(f"✓ Extracted {len(subtasks)} subtasks with robot assignments")
 
                 # Generate and store problem files
-                _ = self._generate_problem_files(subtasks, robot_assignments, objects_ai)
+                _ = self._generate_problem_files(
+                    subtasks,
+                    robot_assignments,
+                    objects_ai,
+                    key_object_pddl_states=key_object_pddl_states,
+                    key_object_pddl_states_by_subtask=key_object_pddl_states_by_subtask,
+                )
                 print("✓ Problem files generated")
                 
                 #input("Press Enter to continue")
@@ -1052,6 +1077,398 @@ class TaskManager:
                 key_objects.append(obj)
         return key_objects
 
+    def _extract_key_objects_by_subtask(
+        self,
+        subtasks: List[str],
+        objects_ai: Union[str, List[Any]],
+    ) -> Dict[int, List[Dict[str, Any]]]:
+        """Find floorplan objects mentioned in each decomposed subtask."""
+        key_objects_by_subtask: Dict[int, List[Dict[str, Any]]] = {
+            subtask_idx: []
+            for subtask_idx, _ in enumerate(subtasks, start=1)
+        }
+        floorplan_objects = self._parse_objects_ai(objects_ai)
+        if not subtasks or not floorplan_objects:
+            return key_objects_by_subtask
+
+        for subtask_idx, subtask in enumerate(subtasks, start=1):
+            for obj in floorplan_objects:
+                name = obj.get("name")
+                if isinstance(name, str) and self._text_contains_name(subtask, name):
+                    key_objects_by_subtask[subtask_idx].append(obj)
+
+        return key_objects_by_subtask
+
+    def _combine_key_objects_by_subtask(
+        self,
+        key_objects_by_subtask: Dict[int, List[Dict[str, Any]]],
+    ) -> List[Dict[str, Any]]:
+        """Deduplicate split key objects into the legacy flat key_objects shape."""
+        key_objects: List[Dict[str, Any]] = []
+        seen: Set[str] = set()
+        for subtask_key_objects in key_objects_by_subtask.values():
+            for obj in subtask_key_objects:
+                name = obj.get("name")
+                if not isinstance(name, str):
+                    continue
+                key = self._object_match_key(name)
+                if key and key not in seen:
+                    seen.add(key)
+                    key_objects.append(obj)
+        return key_objects
+
+    @staticmethod
+    def _pddl_safe_object_token(value: Any, fallback: str = "object") -> str:
+        """Convert AI2-THOR identifiers into conservative PDDL object tokens."""
+        fallback_token = re.sub(r'[^A-Za-z0-9_]+', '_', str(fallback) or "object").strip('_') or "object"
+        raw = str(value).strip() if value is not None else ""
+        if not raw:
+            raw = fallback_token
+
+        raw = raw.replace("+", "_pos_").replace("-", "_neg_")
+        token = re.sub(r'[^A-Za-z0-9_]+', '_', raw)
+        token = re.sub(r'_+', '_', token).strip('_')
+        if not token:
+            token = fallback_token
+        if re.match(r'^[0-9]', token):
+            token = f"{fallback_token}_{token}"
+        return token
+
+    def _scene_name_for_ai2thor_metadata(self) -> Optional[str]:
+        if not self.floor_plan:
+            return None
+        floor_plan_id = normalize_floor_plan(str(self.floor_plan))
+        if not floor_plan_id:
+            return None
+        return f"FloorPlan{floor_plan_id}"
+
+    def _load_floor_ai2thor_metadata(self) -> List[Dict[str, Any]]:
+        """Load instance-level AI2-THOR metadata for the current floor plan."""
+        scene_name = self._scene_name_for_ai2thor_metadata()
+        if not scene_name:
+            return []
+
+        try:
+            metadata_path = self.config.ai2thor_objects_file
+        except AttributeError:
+            metadata_path = Path(self.base_path) / "data" / "all_ai2thor_objects.json"
+
+        try:
+            with open(metadata_path, "r", encoding="utf-8") as metadata_file:
+                raw_metadata = json.load(metadata_file)
+        except (OSError, json.JSONDecodeError):
+            return []
+
+        if not isinstance(raw_metadata, list):
+            return []
+
+        return [
+            dict(item)
+            for item in raw_metadata
+            if isinstance(item, dict) and item.get("scene") == scene_name
+        ]
+
+    def _object_token_maps_for_metadata(
+        self,
+        floor_objects: List[Dict[str, Any]],
+    ) -> Tuple[Dict[str, int], Dict[str, str]]:
+        object_type_counts: Dict[str, int] = {}
+        for item in floor_objects:
+            object_type = item.get("objectType")
+            if isinstance(object_type, str) and object_type:
+                key = self._object_match_key(object_type)
+                object_type_counts[key] = object_type_counts.get(key, 0) + 1
+
+        token_by_object_id: Dict[str, str] = {}
+        object_type_indices: Dict[str, int] = {}
+        for item in floor_objects:
+            object_type = item.get("objectType")
+            if not isinstance(object_type, str) or not object_type:
+                continue
+            key = self._object_match_key(object_type)
+            object_type_indices[key] = object_type_indices.get(key, 0) + 1
+            base_token = self._pddl_safe_object_token(object_type, "object")
+            token = (
+                base_token
+                if object_type_counts.get(key, 0) == 1
+                else f"{base_token}_{object_type_indices[key]}"
+            )
+            object_id = item.get("objectId")
+            if isinstance(object_id, str) and object_id:
+                token_by_object_id[object_id] = token
+
+        return object_type_counts, token_by_object_id
+
+    def _metadata_object_token(
+        self,
+        item: Dict[str, Any],
+        object_type_counts: Dict[str, int],
+        token_by_object_id: Dict[str, str],
+    ) -> str:
+        object_id = item.get("objectId")
+        if isinstance(object_id, str) and object_id in token_by_object_id:
+            return token_by_object_id[object_id]
+
+        object_type = item.get("objectType")
+        type_text = object_type if isinstance(object_type, str) and object_type else "object"
+        type_key = self._object_match_key(type_text)
+        if object_type_counts.get(type_key, 0) == 1:
+            return self._pddl_safe_object_token(type_text, "object")
+
+        return f"{self._pddl_safe_object_token(type_text, 'object')}_1"
+
+    def _object_token_for_ai2thor_object_id(
+        self,
+        object_id: str,
+        token_by_object_id: Dict[str, str],
+    ) -> str:
+        if object_id in token_by_object_id:
+            return token_by_object_id[object_id]
+
+        object_type = object_id.split("|", 1)[0].strip() or "object"
+        return self._pddl_safe_object_token(object_type, "object")
+
+    @staticmethod
+    def _first_parent_receptacle(item: Dict[str, Any]) -> Optional[str]:
+        parents = item.get("parentReceptacles")
+        if isinstance(parents, str):
+            return parents if parents else None
+        if isinstance(parents, list):
+            for parent in parents:
+                if isinstance(parent, str) and parent:
+                    return parent
+        return None
+
+    def _extract_pddl_predicate_names(self, domain_content: str) -> Set[str]:
+        """Extract declared predicate names from a PDDL domain."""
+        if not domain_content:
+            return set()
+
+        start_match = re.search(r'\(\s*:predicates\b', domain_content, re.IGNORECASE)
+        if not start_match:
+            return set()
+
+        start = start_match.start()
+        depth = 0
+        end: Optional[int] = None
+        for idx in range(start, len(domain_content)):
+            char = domain_content[idx]
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth == 0:
+                    end = idx + 1
+                    break
+
+        if end is None:
+            return set()
+
+        predicates_block = domain_content[start:end]
+        return set(re.findall(r'\(\s*([A-Za-z][A-Za-z0-9_-]*)\b', predicates_block))
+
+    def _extract_pddl_type_names(self, domain_content: str) -> Set[str]:
+        """Extract declared type names from a PDDL domain."""
+        if not domain_content:
+            return set()
+
+        start_match = re.search(r'\(\s*:types\b', domain_content, re.IGNORECASE)
+        if not start_match:
+            return set()
+
+        start = start_match.start()
+        depth = 0
+        end: Optional[int] = None
+        for idx in range(start, len(domain_content)):
+            char = domain_content[idx]
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth == 0:
+                    end = idx + 1
+                    break
+
+        if end is None:
+            return set()
+
+        types_block = re.sub(r';.*', '', domain_content[start:end])
+        tokens = re.findall(r'[A-Za-z][A-Za-z0-9_-]*|-', types_block)
+        return {
+            token
+            for token in tokens
+            if token not in {"types", ":types", "-"}
+        }
+
+    def _allaction_pddl_type_names(self) -> Set[str]:
+        try:
+            domain_content = self.file_processor.read_file(str(self.config.allaction_domain_path()))
+        except PDDLError:
+            return {"object"}
+        return self._extract_pddl_type_names(domain_content) or {"object"}
+
+    @staticmethod
+    def _normalize_ai2thor_type_to_pddl_type(object_type: str) -> str:
+        spaced = re.sub(r'(?<=[a-z0-9])(?=[A-Z])', '_', str(object_type).strip())
+        spaced = re.sub(r'(?<=[A-Z])(?=[A-Z][a-z])', '_', spaced)
+        return re.sub(r'[^A-Za-z0-9_]+', '_', spaced).strip('_').lower()
+
+    def _pddl_type_for_ai2thor_object_type(
+        self,
+        object_type: str,
+        allaction_types: Set[str],
+    ) -> str:
+        candidate = self._normalize_ai2thor_type_to_pddl_type(object_type)
+        return candidate if candidate in allaction_types else "object"
+
+    @staticmethod
+    def _predicate_name_from_fact(fact: str) -> Optional[str]:
+        match = re.match(r'\(\s*([A-Za-z][A-Za-z0-9_-]*)\b', str(fact).strip())
+        return match.group(1) if match else None
+
+    def _build_key_object_facts(
+        self,
+        item: Dict[str, Any],
+        object_token: str,
+        parent_token: Optional[str],
+        supported_predicates: Set[str],
+    ) -> List[str]:
+        facts: List[str] = []
+
+        def add_fact(predicate: str, fact: str) -> None:
+            if predicate in supported_predicates:
+                facts.append(fact)
+
+        object_type_key = self._object_match_key(item.get("objectType", ""))
+        if parent_token:
+            add_fact("at-location", f"(at-location {object_token} {parent_token})")
+        if bool(item.get("isOpen")):
+            add_fact("object-open", f"(object-open {object_token})")
+        if bool(item.get("isToggled")):
+            add_fact("switch-on", f"(switch-on {object_token})")
+        if object_type_key in {"kettle", "pan", "pot"}:
+            add_fact("placable_on_stove_burner", f"(placable_on_stove_burner {object_token})")
+        if object_type_key in {"apple", "bread"}:
+            add_fact("cookable-by-microwave", f"(cookable-by-microwave {object_token})")
+        if object_type_key in {"potato", "tomato"}:
+            add_fact("cookable-by-stove_burner", f"(cookable-by-stove_burner {object_token})")
+
+        return facts
+
+    def _build_key_object_pddl_states(
+        self,
+        key_objects: List[Dict[str, Any]],
+        domain_content: str,
+    ) -> List[Dict[str, Any]]:
+        """Convert key AI2-THOR objects into PDDL-ready state facts."""
+        if not key_objects:
+            return []
+
+        key_object_types = {
+            self._object_match_key(obj.get("name", ""))
+            for obj in key_objects
+            if isinstance(obj, dict) and isinstance(obj.get("name"), str)
+        }
+        key_object_types.discard("")
+        if not key_object_types:
+            return []
+
+        floor_objects = self._load_floor_ai2thor_metadata()
+        if not floor_objects:
+            return []
+
+        supported_predicates = self._extract_pddl_predicate_names(domain_content)
+        object_type_counts, token_by_object_id = self._object_token_maps_for_metadata(floor_objects)
+        floor_object_by_id = {
+            item["objectId"]: item
+            for item in floor_objects
+            if isinstance(item.get("objectId"), str) and item.get("objectId")
+        }
+        allaction_types = self._allaction_pddl_type_names()
+        states: List[Dict[str, Any]] = []
+
+        for item in floor_objects:
+            object_type = item.get("objectType")
+            if not isinstance(object_type, str) or self._object_match_key(object_type) not in key_object_types:
+                continue
+
+            object_token = self._metadata_object_token(item, object_type_counts, token_by_object_id)
+            parent_id = self._first_parent_receptacle(item)
+            parent_token = (
+                self._object_token_for_ai2thor_object_id(parent_id, token_by_object_id)
+                if parent_id
+                else None
+            )
+            facts = self._build_key_object_facts(
+                item,
+                object_token,
+                parent_token,
+                supported_predicates,
+            )
+            state_entry: Dict[str, Any] = {
+                "object": object_token,
+                "object_type": self._pddl_type_for_ai2thor_object_type(object_type, allaction_types),
+                "facts": facts,
+            }
+            if parent_id and parent_token:
+                parent_item = floor_object_by_id.get(parent_id, {})
+                parent_object_type = parent_item.get("objectType")
+                parent_pddl_type = (
+                    self._pddl_type_for_ai2thor_object_type(parent_object_type, allaction_types)
+                    if isinstance(parent_object_type, str)
+                    else "object"
+                )
+                state_entry["related_objects"] = [
+                    {
+                        "object": parent_token,
+                        "object_type": parent_pddl_type,
+                        "role": "parentReceptacle",
+                    }
+                ]
+            states.append(state_entry)
+
+        return states
+
+    def _filter_key_object_pddl_states_for_domain(
+        self,
+        key_object_pddl_states: Optional[List[Dict[str, Any]]],
+        domain_content: str,
+    ) -> List[Dict[str, Any]]:
+        if not key_object_pddl_states:
+            return []
+
+        supported_predicates = self._extract_pddl_predicate_names(domain_content)
+        filtered_states: List[Dict[str, Any]] = []
+        for entry in key_object_pddl_states:
+            if not isinstance(entry, dict):
+                continue
+            facts = entry.get("facts", [])
+            filtered_entry = {
+                key: value
+                for key, value in entry.items()
+                if key != "object_id"
+            }
+            related_objects = filtered_entry.get("related_objects")
+            if isinstance(related_objects, list):
+                filtered_entry["related_objects"] = [
+                    {
+                        key: value
+                        for key, value in related_object.items()
+                        if key != "object_id"
+                    }
+                    for related_object in related_objects
+                    if isinstance(related_object, dict)
+                ]
+            filtered_entry["facts"] = [
+                fact
+                for fact in facts
+                if isinstance(fact, str)
+                and self._predicate_name_from_fact(fact) in supported_predicates
+            ]
+            filtered_states.append(filtered_entry)
+
+        return filtered_states
+
     def _extract_pddl_action_blocks(self, domain_content: str) -> List[Dict[str, Any]]:
         """Extract top-level PDDL action blocks using balanced parentheses."""
         if not domain_content:
@@ -1258,13 +1675,26 @@ class TaskManager:
         robots: List[dict],
         objects_ai: str,
         key_objects: Optional[List[Dict[str, Any]]] = None,
+        key_objects_by_subtask: Optional[Dict[int, List[Dict[str, Any]]]] = None,
     ) -> str:
         """Generate allocation plan for decomposed tasks.
         
         """
         try:
+            if key_objects_by_subtask is None:
+                subtasks = ParsingUtils.extract_subtasks(decomposed_plan)
+                if subtasks:
+                    key_objects_by_subtask = self._extract_key_objects_by_subtask(subtasks, objects_ai)
+                else:
+                    key_objects_by_subtask = {}
             if key_objects is None:
-                key_objects = self._extract_key_objects_from_decomposition(decomposed_plan, objects_ai)
+                key_objects = (
+                    self._combine_key_objects_by_subtask(key_objects_by_subtask)
+                    if key_objects_by_subtask
+                    else self._extract_key_objects_from_decomposition(decomposed_plan, objects_ai)
+                )
+            if not key_objects_by_subtask and key_objects:
+                key_objects_by_subtask = {1: key_objects}
             cropped_robot_domains = self._build_cropped_robot_domains_for_allocation(
                 robots,
                 decomposed_plan,
@@ -1285,15 +1715,16 @@ class TaskManager:
             prompt += f"\n\nrobots = {robots}"
             prompt += f"\n{objects_ai}"
             prompt += f"\nkey_objects = {key_objects}"
+            prompt += f"\nkey_objects_by_subtask = {key_objects_by_subtask}"
             if cropped_robot_domains:
                 prompt += "\n\n# CROPPED ROBOT PDDL DOMAINS FOR ALLOCATION\n"
                 prompt += cropped_robot_domains
             prompt += f"\n\n# IMPORTANT: The AI should ensure that the robots assigned to the tasks have all the necessary skills to perform the tasks. IMPORTANT: Determine whether the subtasks must be performed sequentially or in parallel, or a combination of both and allocate robots based on availability. "
             prompt += f"\n# SOLUTION\n"
             prompt += f"\n# Additional Output Rules:"
-            prompt += f"\n# - Use key_objects and the cropped robot PDDL domains as allocation context only; the original robot domain files are not modified."
+            prompt += f"\n# - Use key_objects, key_objects_by_subtask, and the cropped robot PDDL domains as allocation context only; the original robot domain files are not modified."
             prompt += f"\n# - Assign robots using the task-local robot ids from robots = ..., even when a cropped domain section names the real PDDL file."
-            prompt += f"\n# - Judge robot capability using robot skills, mass capacity, key_objects, and the cropped domain actions."
+            prompt += f"\n# - Judge robot capability using robot skills, mass capacity, each subtask's key_objects_by_subtask entry, and the cropped domain actions."
             prompt += f"\n# - Only assign a robot if it has every required skill."
             prompt += f"\n{SPECIAL_TASK_SKILL_PROMPT_RULE}"
             prompt += f"\n# - If multiple robots satisfy all constraints equally, choose the robot with the smallest robot number/name order."
@@ -1398,6 +1829,8 @@ class TaskManager:
         subtasks: List[str],
         robot_assignments: Dict[int, int],
         objects_ai: str,
+        key_object_pddl_states: Optional[List[Dict[str, Any]]] = None,
+        key_object_pddl_states_by_subtask: Optional[Dict[int, List[Dict[str, Any]]]] = None,
     ) -> List[str]:
         """Generate PDDL problem files from subtasks and robot assignments.
 
@@ -1405,6 +1838,8 @@ class TaskManager:
             subtasks: List of subtask text
             robot_assignments: Dict mapping subtask index to robot number
             objects_ai: AI objects description
+            key_object_pddl_states: PDDL-ready state facts for key objects
+            key_object_pddl_states_by_subtask: PDDL-ready state facts keyed by subtask index
 
         Returns:
             List[str]: Generated PDDL problem files
@@ -1432,7 +1867,9 @@ class TaskManager:
             model=self.model,
             file_processor=self.file_processor,
             objects_ai=objects_ai,
-            prompt_allocation_set=self.prompt_allocation_set
+            prompt_allocation_set=self.prompt_allocation_set,
+            key_object_pddl_states=key_object_pddl_states,
+            key_object_pddl_states_by_subtask=key_object_pddl_states_by_subtask,
         )
         self._write_json_artifact(
             generated_problem_files_artifact,
@@ -1452,7 +1889,9 @@ class TaskManager:
             model: str,
             file_processor: 'FileProcessor',
             objects_ai: str,
-            prompt_allocation_set: str
+            prompt_allocation_set: str,
+            key_object_pddl_states: Optional[List[Dict[str, Any]]] = None,
+            key_object_pddl_states_by_subtask: Optional[Dict[int, List[Dict[str, Any]]]] = None,
         ) -> List[str]:
         """Extract problem files from subtasks using precomputed robot assignments.
 
@@ -1464,6 +1903,8 @@ class TaskManager:
             file_processor: File processor instance
             objects_ai: AI objects description
             prompt_allocation_set: Prompt template name
+            key_object_pddl_states: PDDL-ready state facts for key objects
+            key_object_pddl_states_by_subtask: PDDL-ready state facts keyed by subtask index
 
         Returns:
             List[str]: Generated PDDL problem files
@@ -1484,6 +1925,21 @@ class TaskManager:
 
             problem_fileexamplepath = self.config.prompt_file(f"{prompt_allocation_set}_problem.txt")
             problem_examplecontent = file_processor.read_file(str(problem_fileexamplepath)) or ""
+            subtask_key_object_states = key_object_pddl_states
+            if key_object_pddl_states_by_subtask is not None:
+                if subtask_idx in key_object_pddl_states_by_subtask:
+                    subtask_key_object_states = key_object_pddl_states_by_subtask[subtask_idx]
+                else:
+                    subtask_key_object_states = key_object_pddl_states_by_subtask.get(str(subtask_idx), [])
+            domain_key_object_states = self._filter_key_object_pddl_states_for_domain(
+                subtask_key_object_states,
+                domain_content,
+            )
+            key_object_pddl_states_text = json.dumps(
+                domain_key_object_states,
+                ensure_ascii=False,
+                indent=2,
+            )
 
             prompt = (
                 "\n" + problem_examplecontent +
@@ -1491,8 +1947,13 @@ class TaskManager:
                 "Subtask examination from action perspective:" + subtask +
                 "\nDomain file content:" + domain_content +
                 "\n based on the objects available for potential usage below." + objects_ai +
+                "\nkey_object_pddl_states = " + key_object_pddl_states_text +
                 "\nTask description: generate the problem file. Based on the objects above, "
                 "the domain file preconditions, actions, and subtask examination. "
+                "Use key_object_pddl_states as PDDL-ready context: declare every object token "
+                "referenced by those entries and copy applicable facts into (:init). "
+                "Do not emit raw AI2-THOR state fields such as isOpen or isToggled; emit only "
+                "predicates declared in the domain file. "
                 f"IMPORTANT {normalized_robot_name} is only the task-local allocation name. "
                 f"The real PDDL domain and robot object for this subtask is {real_robot_name}. "
                 f"IMPORTANT the generated problem must use (:domain {real_robot_name}) and "
@@ -1561,9 +2022,9 @@ class TaskManager:
     def _validate_and_plan(self):
         """Validate and plan all problem files."""
         try:
-            # First run LLM validator
-            #print("Running LLM validator...")
-            self.run_llmvalidator()
+            # First run fake validator
+            #print("Running fake validator...")
+            self.run_fake_validator()
             #input("Press Enter to continue")
             # Wait for validation to complete
             #print("Waiting 50 seconds for validation to complete...")
@@ -1576,6 +2037,54 @@ class TaskManager:
             
         except Exception as e:
             raise PDDLError(f"Error in validation and planning: {str(e)}")
+
+    def run_fake_validator(self) -> None:
+        """Copy generated problem files into the validation output directory."""
+        try:
+            raw_problem_file_path = self._get_raw_problem_file_path()
+            if not raw_problem_file_path or not os.path.exists(raw_problem_file_path):
+                print("no raw problem_file")
+                return
+
+            problem_files = sorted(f for f in os.listdir(raw_problem_file_path) if f.endswith('.pddl'))
+            validation_records = []
+            for problem_file in problem_files:
+                try:
+                    problem_file_full = os.path.join(raw_problem_file_path, problem_file)
+                    problem_content = self.file_processor.read_file(problem_file_full)
+                    safe_name = self._sanitize_filename(problem_file.replace(".pddl", ""))
+                    input_path = f"07_validate/inputs/{safe_name}_input.pddl"
+                    output_path0 = f"07_validate/outputs/{safe_name}_validated.raw.txt"
+                    output_path1 = f"07_validate/outputs/{safe_name}_validated.pddl"
+                    self._write_text_artifact(input_path, problem_content)
+                    self._write_text_artifact(output_path0, problem_content)
+                    self._write_text_artifact(output_path1, problem_content)
+                    validation_records.append({
+                        "problem_file": problem_file,
+                        "source_problem_path": os.path.join("05_problem_generation/outputs", problem_file),
+                        "input_path": input_path,
+                        "raw_output_path": output_path0,
+                        "validated_problem_path": output_path1,
+                        "status": "fake_validated",
+                    })
+
+                except Exception as e:
+                    print(f"Error processing file {problem_file}: {str(e)}")
+                    validation_records.append({
+                        "problem_file": problem_file,
+                        "status": "error",
+                        "error": str(e),
+                    })
+                    continue
+
+            validation_manifest_path = self.config.artifact("validation_manifest", "07_validate/validation_manifest.json")
+            self._write_json_artifact(validation_manifest_path, validation_records)
+            self._record_artifact("validate", "manifest", validation_manifest_path)
+            self._persist_manifest()
+
+        except Exception as e:
+            print(f"Error in run_fake_validator: {str(e)}")
+            raise
 
     def run_llmvalidator(self) -> None:
         """Run LLM validation on problem files."""

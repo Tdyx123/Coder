@@ -159,18 +159,20 @@ def put_object_payload_runtime():
 
 
 class FillWaterRuntime:
-    def __init__(self, *, put_error):
+    def __init__(self, *, put_error, fill_on_faucet_on=False):
         self.robot_agent_map = {"robot1": 0}
         self.physical_agent_count = 1
         self.stats_lock = threading.Lock()
         self.total_exec = 0
         self.success_exec = 0
         self.put_error = put_error
+        self.fill_on_faucet_on = fill_on_faucet_on
         self.calls = []
         self.mug = {
             "objectId": "Mug|+00.00|+00.90|+00.00",
             "objectType": "Mug",
             "name": "Mug",
+            "isFilledWithLiquid": False,
             "fillLiquid": "",
         }
         self.sink_basin = {
@@ -242,8 +244,10 @@ class FillWaterRuntime:
             self.held_objects.setdefault(0, set()).add(self.mug["objectId"])
         elif action == "FillObjectWithLiquid":
             self.mug["fillLiquid"] = (action_parameters or {}).get("fillLiquid", "water")
+            self.mug["isFilledWithLiquid"] = True
         elif action == "EmptyLiquidFromObject":
             self.mug["fillLiquid"] = ""
+            self.mug["isFilledWithLiquid"] = False
 
         with self.stats_lock:
             self.success_exec += 1
@@ -254,6 +258,9 @@ class FillWaterRuntime:
         with self.stats_lock:
             self.total_exec += 1
             self.success_exec += 1
+        if action == "ToggleObjectOn" and self.fill_on_faucet_on:
+            self.mug["isFilledWithLiquid"] = True
+            self.mug["fillLiquid"] = "water"
         return FakeEvent()
 
 
@@ -1205,6 +1212,41 @@ class ExecutorRetryPolicyTest(unittest.TestCase):
         self.assertEqual(teleport_calls, candidates)
         self.assertEqual(len(face_calls), 2)
 
+    def test_teleport_candidates_backfill_from_global_reachable_positions(self):
+        runtime = runtime_without_init()
+        target = {"x": 0.0, "y": 0.0, "z": 0.0}
+        current_position = {"x": 3.25, "y": 0.0, "z": 0.0}
+        blocked_position = {"x": 0.5, "y": 0.0, "z": 0.0}
+        runtime.reachable_positions = [current_position]
+        runtime.global_reachable_positions = [
+            current_position,
+            *[
+                {"x": 0.25 * index, "y": 0.0, "z": 0.0}
+                for index in range(1, 13)
+            ],
+        ]
+        blocker_bounds = (
+            "Blocker|+00.50|+00.00|+00.00",
+            (0.45, 0.55, -1.0, 1.0, -0.05, 0.05),
+            0.0,
+        )
+        runtime.scene_object_bounds = lambda _agent_id: [blocker_bounds]
+
+        candidates = runtime.teleport_candidate_positions(
+            target,
+            agent_id=0,
+            include_agent_positions=False,
+        )
+
+        candidate_keys = [position_to_grid_key(position) for position in candidates]
+        self.assertEqual(len(candidates), runtime_module.TELEPORT_CANDIDATE_LIMIT)
+        self.assertEqual(len(candidate_keys), len(set(candidate_keys)))
+        self.assertNotIn(position_to_grid_key(blocked_position), candidate_keys)
+        self.assertEqual(
+            [position["x"] for position in candidates],
+            [0.25, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 3.25],
+        )
+
     def test_open_object_skips_physical_action_for_blinds(self):
         object_id = "Blinds|-00.40|+02.16|-01.92"
         runtime, calls = object_action_runtime(
@@ -1309,6 +1351,22 @@ class ExecutorRetryPolicyTest(unittest.TestCase):
 
         self.assertEqual(runtime.calls, [("EmptyLiquidFromObject", "Mug")])
         self.assertEqual(runtime.mug["fillLiquid"], "")
+
+    def test_fillwater_skips_fill_action_when_object_already_has_water(self):
+        runtime = FillWaterRuntime(put_error=None, fill_on_faucet_on=True)
+
+        run_fillwater_with_runtime(runtime)
+
+        self.assertEqual(
+            [call[0] for call in runtime.calls],
+            [
+                "PutObject",
+                "ToggleObjectOn",
+                "ToggleObjectOff",
+                "PickupObject",
+            ],
+        )
+        self.assertEqual(runtime.mug["fillLiquid"], "water")
 
     def test_fillwater_skips_sinkbasin_putobject_no_valid_positions(self):
         runtime = FillWaterRuntime(

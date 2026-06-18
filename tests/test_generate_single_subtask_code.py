@@ -783,6 +783,55 @@ class GenerateSingleSubtaskCodeTests(unittest.TestCase):
             ],
         )
 
+    def test_put_receptacle_inside_openable_container_opens_parent_first(self):
+        objects_path = self._write_properties(
+            [
+                {
+                    "scene": "FloorPlan1",
+                    "objectType": "Apple",
+                    "objectId": "Apple|+00.10|+00.20|+00.30",
+                    "pickupable": True,
+                },
+                {
+                    "scene": "FloorPlan1",
+                    "objectType": "Bowl",
+                    "objectId": "Bowl|-00.50|+00.80|+00.40",
+                    "pickupable": True,
+                    "receptacle": True,
+                    "parentReceptacles": ["Cabinet|+01.00|+00.00|+00.00"],
+                },
+                {
+                    "scene": "FloorPlan1",
+                    "objectType": "Cabinet",
+                    "objectId": "Cabinet|+01.00|+00.00|+00.00",
+                    "openable": True,
+                    "receptacle": True,
+                },
+            ]
+        )
+
+        generated = generator.prepare_generated_subtasks(
+            [
+                generator.EnumeratedSubtask(
+                    floor_plan=1,
+                    subtask={"skill": "PutIn", "objects": ["Apple", "Bowl"]},
+                )
+            ],
+            objects_path,
+        )
+
+        self.assertEqual(
+            self._action_pairs(generated[0].actions),
+            [
+                ("GoToObject", ["Apple"]),
+                ("PickupObject", ["Apple"]),
+                ("GoToObject", ["Cabinet|+01.00|+00.00|+00.00"]),
+                ("OpenObject", ["Cabinet|+01.00|+00.00|+00.00"]),
+                ("GoToObject", ["Bowl"]),
+                ("PutObject", ["Apple", "Bowl"]),
+            ],
+        )
+
     def test_pickup_target_on_non_openable_parent_does_not_open_parent(self):
         objects_path = self._write_properties(
             [

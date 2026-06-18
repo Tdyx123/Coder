@@ -580,12 +580,13 @@ def FillWater(robot: RobotRef, sink: Any, obj: Any) -> None:
         )
     SwitchOn(robot, "Faucet")
     try:
-        runtime_obj.object_action(
-            "FillObjectWithLiquid",
-            robot,
-            obj,
-            action_parameters={"fillLiquid": "water"},
-        )
+        if not object_filled_with_water(runtime_obj.find_object(obj, agent_id=agent_id)):
+            runtime_obj.object_action(
+                "FillObjectWithLiquid",
+                robot,
+                obj,
+                action_parameters={"fillLiquid": "water"},
+            )
         filled = True
     finally:
         SwitchOff(robot, "Faucet")

@@ -107,8 +107,23 @@ Objects Involved: potato, knife
 
 #based on the objects availiable for potential usage below."
 objects = [{'name': 'SaltShaker', 'mass': 1.0}, {'name': 'SoapBottle', 'mass': 5.0}, {'name': 'Bowl', 'mass': 3.0}, {'name': 'CounterTop', 'mass': 2}, {'name': 'Drawer', 'mass': 5}, {'name': 'Vase', 'mass': 1}, {'name': 'Lettuce', 'mass': 5}, {'name': 'Plate', 'mass': 5}, {'name': 'Potato', 'mass': 2}, {'name': 'Pan', 'mass': 5}, {'name': 'Window', 'mass': 4}, {'name': 'Fridge', 'mass': 4}, {'name': 'Sink', 'mass': 5}, {'name': 'Stool', 'mass': 6}, {'name': 'DiningTable', 'mass': 6}, {'name': 'HousePlant', 'mass': 2}, {'name': 'Chair', 'mass': 6}, {'name': 'Cup', 'mass': 3}, {'name': 'Shelf', 'mass': 6}, {'name': 'StoveKnob', 'mass': 3}, {'name': 'ButterKnife', 'mass': 6}, {'name': 'Bread', 'mass': 2}, {'name': 'DishSponge', 'mass': 4}, {'name': 'Floor', 'mass': 4}, {'name': 'PepperShaker', 'mass': 2}, {'name': 'Spatula', 'mass': 2}, {'name': 'StoveBurner', 'mass': 4}, {'name': 'Statue', 'mass': 1}, {'name': 'Kettle', 'mass': 2}, {'name': 'Apple', 'mass': 4}, {'name': 'WineBottle', 'mass': 5}, {'name': 'Knife', 'mass': 6}, {'name': 'GarbageCan', 'mass': 5}, {'name': 'Microwave', 'mass': 5}, {'name': 'LightSwitch', 'mass': 6}, {'name': 'Pot', 'mass': 2}, {'name': 'Egg', 'mass': 3}, {'name': 'Mug', 'mass': 2}, {'name': 'CoffeeMachine', 'mass': 6}, {'name': 'Faucet', 'mass': 6}, {'name': 'Tomato', 'mass': 4}, {'name': 'Spoon', 'mass': 2}, {'name': 'Fork', 'mass': 4.8}, {'name': 'Toaster', 'mass': 1}, {'name': 'Book', 'mass': 6}, {'name': 'SinkBasin', 'mass': 6}, {'name': 'Cabinet', 'mass': 1}, {'name': 'ShelvingUnit', 'mass': 3}]
+key_object_pddl_states = [
+  {
+    'object': 'Potato',
+    'object_type': 'object',
+    'facts': ['(at-location Potato CounterTop_1)', '(cookable-by-stove_burner Potato)'],
+    'related_objects': [{'object': 'CounterTop_1', 'object_type': 'object', 'role': 'parentReceptacle'}]
+  },
+  {
+    'object': 'Knife',
+    'object_type': 'knife',
+    'facts': ['(at-location Knife CounterTop_2)'],
+    'related_objects': [{'object': 'CounterTop_2', 'object_type': 'object', 'role': 'parentReceptacle'}]
+  }
+]
 
 #Task description: generate the problem file. Step by step, based on the objects potential useful availiable above, the domain file precondition, actions and subtask examination. Note that the robot initate as not inaction is enough(the statement includes robot location)
+#Use key_object_pddl_states as PDDL-ready context. Copy its facts into (:init), declare every object token referenced by those facts in (:objects) using the listed object_type, and do not output raw AI2-THOR fields such as isOpen, isToggled, isBroken, or parentReceptacles.
 #IMPORTANT, strictly follow the structure ,stop generate after the Problem file is generated.
 #To generate the problem file for the given domain and task of slicing a potato, we need to follow these steps:
 #Let's start by defining the objects and their initial states based on the provided list and task description.
@@ -117,22 +132,23 @@ objects = [{'name': 'SaltShaker', 'mass': 1.0}, {'name': 'SoapBottle', 'mass': 5
 #Objects Involved:
 
     Robots: robot1
-    object: potato
-    object: knife
-    Inital location of potato,knife
+    object: Potato
+    object: Knife
+    related location objects from key_object_pddl_states: CounterTop_1, CounterTop_2
 
 #Initial States:
 
 
-    at-location potato counterTop
-    at-location knife counterTop
+    (at-location Potato CounterTop_1)
+    (cookable-by-stove_burner Potato)
+    (at-location Knife CounterTop_2)
     not (inaction robot1)
 
 #Step 2: Define Goals
 
 Goals:
 
-    sliced potato
+    sliced Potato
 
 pddl
 
@@ -140,19 +156,20 @@ pddl
   (:domain robot1)
   (:objects
     robot1 - robot
-    potato - object
-    knife - object
-    counterTop - object
+    Potato - object
+    Knife - knife
+    CounterTop_1 CounterTop_2 - object
     robot1_init_location - object
   )
   (:init
     (at robot1 robot1_init_location)
-    (at-location potato counterTop)
-    (at-location knife counterTop)
+    (at-location Potato CounterTop_1)
+    (cookable-by-stove_burner Potato)
+    (at-location Knife CounterTop_2)
     not (inaction robot1)
   )
   (:goal
-    (sliced potato)
+    (sliced Potato)
   )
 )
 

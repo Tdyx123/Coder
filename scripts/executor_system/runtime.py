@@ -173,6 +173,7 @@ class ThorRuntime:
         self.agent_held_object_overrides: Dict[int, Set[str]] = {}
         self.agent_held_object_overrides_lock = threading.Lock()
         self.reachable_positions: List[Dict[str, float]] = []
+        self.global_reachable_positions: List[Dict[str, float]] = []
 
         if self.show_windows:
             log("OpenCV camera preview windows enabled.")
@@ -356,9 +357,14 @@ class ThorRuntime:
 
         log("Loading reachable positions.")
         event = self.step({"action": "GetReachablePositions"}, save_frame=False)
-        self.reachable_positions = event.metadata.get("actionReturn") or []
+        self.reachable_positions = [
+            dict(position) for position in (event.metadata.get("actionReturn") or [])
+        ]
         if not self.reachable_positions:
             raise RuntimeError("AI2-THOR returned no reachable positions.")
+        self.global_reachable_positions = [
+            dict(position) for position in self.reachable_positions
+        ]
 
         if self.top_view_enabled:
             if not self.cloud_rendering:
@@ -1151,12 +1157,35 @@ class ThorRuntime:
             for position in candidates_by_key.values()
             if self.teleport_position_clear_of_scene_objects(position, object_bounds)
         ]
+        target_tuple = position_to_tuple(target)
+        if len(candidates) < TELEPORT_CANDIDATE_LIMIT:
+            candidate_keys = {
+                position_to_grid_key(position)
+                for position in candidates
+            }
+            global_candidates = [
+                dict(position)
+                for position in getattr(self, "global_reachable_positions", []) or []
+                if position_to_grid_key(position) not in candidate_keys
+                and self.teleport_position_clear_of_scene_objects(position, object_bounds)
+            ]
+            global_candidates.sort(
+                key=lambda position: distance_pts(position_to_tuple(position), target_tuple)
+            )
+            for position in global_candidates:
+                candidate_key = position_to_grid_key(position)
+                if candidate_key in candidate_keys:
+                    continue
+                candidates.append(position)
+                candidate_keys.add(candidate_key)
+                if len(candidates) >= TELEPORT_CANDIDATE_LIMIT:
+                    break
+
         if not candidates:
             raise RuntimeError(
                 f"No reachable teleport candidate for agent {agent_id} near {target}."
             )
 
-        target_tuple = position_to_tuple(target)
         candidates.sort(
             key=lambda position: distance_pts(position_to_tuple(position), target_tuple)
         )
