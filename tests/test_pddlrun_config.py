@@ -1672,18 +1672,18 @@ class PDDLRunConfigTests(unittest.TestCase):
                 ")"
             )
 
-            states = manager._build_key_object_pddl_states(
-                [
-                    {"name": "Drawer"},
-                    {"name": "LightSwitch"},
-                    {"name": "Apple"},
-                    {"name": "Mug"},
-                    {"name": "Pot"},
-                    {"name": "Potato"},
-                ],
-                domain,
-            )
+            key_object_inputs = [
+                {"name": "Drawer"},
+                {"name": "LightSwitch"},
+                {"name": "Apple"},
+                {"name": "Mug"},
+                {"name": "Pot"},
+                {"name": "Potato"},
+            ]
+            states = manager._build_key_object_pddl_states(key_object_inputs, domain)
+            context = manager._build_key_object_pddl_context(key_object_inputs, domain)
 
+            self.assertEqual(context["states"], states)
             self.assertEqual([item["object"] for item in states if item["object_type"] == "object" and item["object"].startswith("Drawer")], ["Drawer_1", "Drawer_2"])
             self.assertIn("LightSwitch", [item["object"] for item in states])
             self.assertNotIn("Bread", [item["object"] for item in states])
@@ -1691,6 +1691,34 @@ class PDDLRunConfigTests(unittest.TestCase):
                 self.assertNotIn("object_id", item)
                 for related_object in item.get("related_objects", []):
                     self.assertNotIn("object_id", related_object)
+
+            bindings_by_object = {
+                item["object"]: item
+                for item in context["object_id_bindings"]
+            }
+            self.assertEqual(
+                bindings_by_object["Drawer_1"]["object_id"],
+                "Drawer|+01.00|+00.20|-00.30",
+            )
+            self.assertEqual(bindings_by_object["Drawer_1"]["object_type"], "Drawer")
+            self.assertEqual(bindings_by_object["Drawer_1"]["number"], 1)
+            self.assertEqual(bindings_by_object["Drawer_1"]["count"], 2)
+            self.assertTrue(bindings_by_object["Drawer_1"]["multiple"])
+            self.assertEqual(bindings_by_object["Drawer_1"]["roles"], ["key_object"])
+            self.assertEqual(
+                bindings_by_object["Drawer_2"]["object_id"],
+                "Drawer|+01.00|+00.60|-00.30",
+            )
+            self.assertEqual(bindings_by_object["Drawer_2"]["number"], 2)
+            self.assertFalse(bindings_by_object["LightSwitch"]["multiple"])
+            self.assertEqual(bindings_by_object["LightSwitch"]["count"], 1)
+            self.assertEqual(bindings_by_object["LightSwitch"]["roles"], ["key_object"])
+            self.assertEqual(
+                bindings_by_object["CounterTop"]["object_id"],
+                "CounterTop|+00.00|+01.00|+00.00",
+            )
+            self.assertEqual(bindings_by_object["CounterTop"]["roles"], ["parentReceptacle"])
+            self.assertNotIn("Bread", bindings_by_object)
 
             facts_by_object = {
                 item["object"]: "\n".join(item["facts"])

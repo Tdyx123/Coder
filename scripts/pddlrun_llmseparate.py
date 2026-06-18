@@ -825,20 +825,36 @@ class TaskManager:
                 self._record_artifact("allocate", "key_objects", key_objects_artifact)
                 self._write_json_artifact(key_objects_by_subtask_artifact, key_objects_by_subtask)
                 self._record_artifact("allocate", "key_objects_by_subtask", key_objects_by_subtask_artifact)
-                key_object_pddl_states = self._build_key_object_pddl_states(
+                key_object_pddl_context = self._build_key_object_pddl_context(
                     key_objects,
                     domain_content,
                 )
-                key_object_pddl_states_by_subtask = {
-                    subtask_idx: self._build_key_object_pddl_states(subtask_key_objects, domain_content)
+                key_object_pddl_states = key_object_pddl_context["states"]
+                key_object_id_bindings = key_object_pddl_context["object_id_bindings"]
+                key_object_pddl_context_by_subtask = {
+                    subtask_idx: self._build_key_object_pddl_context(subtask_key_objects, domain_content)
                     for subtask_idx, subtask_key_objects in key_objects_by_subtask.items()
+                }
+                key_object_pddl_states_by_subtask = {
+                    subtask_idx: subtask_context["states"]
+                    for subtask_idx, subtask_context in key_object_pddl_context_by_subtask.items()
+                }
+                key_object_id_bindings_by_subtask = {
+                    subtask_idx: subtask_context["object_id_bindings"]
+                    for subtask_idx, subtask_context in key_object_pddl_context_by_subtask.items()
                 }
                 key_object_states_artifact = "05_problem_generation/key_object_pddl_states.json"
                 key_object_states_by_subtask_artifact = "05_problem_generation/key_object_pddl_states_by_subtask.json"
+                key_object_id_bindings_artifact = "05_problem_generation/key_object_id_bindings.json"
+                key_object_id_bindings_by_subtask_artifact = "05_problem_generation/key_object_id_bindings_by_subtask.json"
                 self._write_json_artifact(key_object_states_artifact, key_object_pddl_states)
                 self._record_artifact("problem_files", "key_object_pddl_states", key_object_states_artifact)
                 self._write_json_artifact(key_object_states_by_subtask_artifact, key_object_pddl_states_by_subtask)
                 self._record_artifact("problem_files", "key_object_pddl_states_by_subtask", key_object_states_by_subtask_artifact)
+                self._write_json_artifact(key_object_id_bindings_artifact, key_object_id_bindings)
+                self._record_artifact("problem_files", "key_object_id_bindings", key_object_id_bindings_artifact)
+                self._write_json_artifact(key_object_id_bindings_by_subtask_artifact, key_object_id_bindings_by_subtask)
+                self._record_artifact("problem_files", "key_object_id_bindings_by_subtask", key_object_id_bindings_by_subtask_artifact)
                 self._persist_manifest()
                 print(f"✓ Matched {len(key_objects)} key objects")
 
@@ -1168,10 +1184,11 @@ class TaskManager:
             if isinstance(item, dict) and item.get("scene") == scene_name
         ]
 
-    def _object_token_maps_for_metadata(
+    def _build_floor_object_numbering(
         self,
         floor_objects: List[Dict[str, Any]],
-    ) -> Tuple[Dict[str, int], Dict[str, str]]:
+    ) -> Dict[str, Any]:
+        """Build one scene-wide numbering table for AI2-THOR objects."""
         object_type_counts: Dict[str, int] = {}
         for item in floor_objects:
             object_type = item.get("objectType")
@@ -1179,7 +1196,8 @@ class TaskManager:
                 key = self._object_match_key(object_type)
                 object_type_counts[key] = object_type_counts.get(key, 0) + 1
 
-        token_by_object_id: Dict[str, str] = {}
+        numbered_objects: List[Dict[str, Any]] = []
+        by_object_id: Dict[str, Dict[str, Any]] = {}
         object_type_indices: Dict[str, int] = {}
         for item in floor_objects:
             object_type = item.get("objectType")
@@ -1187,46 +1205,136 @@ class TaskManager:
                 continue
             key = self._object_match_key(object_type)
             object_type_indices[key] = object_type_indices.get(key, 0) + 1
+            number = object_type_indices[key]
+            count = object_type_counts.get(key, 1)
             base_token = self._pddl_safe_object_token(object_type, "object")
             token = (
                 base_token
-                if object_type_counts.get(key, 0) == 1
-                else f"{base_token}_{object_type_indices[key]}"
+                if count == 1
+                else f"{base_token}_{number}"
             )
             object_id = item.get("objectId")
+            object_id_text = object_id if isinstance(object_id, str) else ""
+            entry = {
+                "object": token,
+                "object_type": object_type,
+                "object_id": object_id_text,
+                "number": number,
+                "count": count,
+                "multiple": count > 1,
+            }
+            numbered_objects.append(entry)
             if isinstance(object_id, str) and object_id:
-                token_by_object_id[object_id] = token
+                by_object_id[object_id] = entry
 
-        return object_type_counts, token_by_object_id
+        return {
+            "objects": numbered_objects,
+            "by_object_id": by_object_id,
+            "type_counts": object_type_counts,
+        }
 
-    def _metadata_object_token(
+    def _object_token_maps_for_metadata(
+        self,
+        floor_objects: List[Dict[str, Any]],
+    ) -> Tuple[Dict[str, int], Dict[str, str]]:
+        floor_object_numbering = self._build_floor_object_numbering(floor_objects)
+        type_counts = floor_object_numbering.get("type_counts", {})
+        by_object_id = floor_object_numbering.get("by_object_id", {})
+        token_by_object_id = {
+            object_id: entry["object"]
+            for object_id, entry in by_object_id.items()
+            if isinstance(object_id, str)
+            and isinstance(entry, dict)
+            and isinstance(entry.get("object"), str)
+        }
+        return type_counts, token_by_object_id
+
+    def _object_numbering_entry_for_metadata(
         self,
         item: Dict[str, Any],
-        object_type_counts: Dict[str, int],
-        token_by_object_id: Dict[str, str],
-    ) -> str:
+        floor_object_numbering: Dict[str, Any],
+    ) -> Dict[str, Any]:
         object_id = item.get("objectId")
-        if isinstance(object_id, str) and object_id in token_by_object_id:
-            return token_by_object_id[object_id]
+        by_object_id = floor_object_numbering.get("by_object_id", {})
+        if isinstance(by_object_id, dict) and isinstance(object_id, str) and object_id in by_object_id:
+            entry = by_object_id[object_id]
+            if isinstance(entry, dict):
+                return entry
 
         object_type = item.get("objectType")
         type_text = object_type if isinstance(object_type, str) and object_type else "object"
         type_key = self._object_match_key(type_text)
-        if object_type_counts.get(type_key, 0) == 1:
-            return self._pddl_safe_object_token(type_text, "object")
+        type_counts = floor_object_numbering.get("type_counts", {})
+        count = type_counts.get(type_key, 0) if isinstance(type_counts, dict) else 0
+        count = count or 1
+        base_token = self._pddl_safe_object_token(type_text, "object")
+        object_token = base_token if count == 1 else f"{base_token}_1"
+        return {
+            "object": object_token,
+            "object_type": type_text,
+            "object_id": object_id if isinstance(object_id, str) else "",
+            "number": 1,
+            "count": count,
+            "multiple": count > 1,
+        }
 
-        return f"{self._pddl_safe_object_token(type_text, 'object')}_1"
+    def _metadata_object_token(
+        self,
+        item: Dict[str, Any],
+        floor_object_numbering: Dict[str, Any],
+        token_by_object_id: Optional[Dict[str, str]] = None,
+    ) -> str:
+        if token_by_object_id is not None:
+            object_id = item.get("objectId")
+            if isinstance(object_id, str) and object_id in token_by_object_id:
+                return token_by_object_id[object_id]
+
+            object_type = item.get("objectType")
+            type_text = object_type if isinstance(object_type, str) and object_type else "object"
+            type_key = self._object_match_key(type_text)
+            count = floor_object_numbering.get(type_key, 0) if isinstance(floor_object_numbering, dict) else 0
+            if count == 1:
+                return self._pddl_safe_object_token(type_text, "object")
+            return f"{self._pddl_safe_object_token(type_text, 'object')}_1"
+
+        return str(self._object_numbering_entry_for_metadata(item, floor_object_numbering)["object"])
+
+    def _object_numbering_entry_for_ai2thor_object_id(
+        self,
+        object_id: str,
+        floor_object_numbering: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        by_object_id = floor_object_numbering.get("by_object_id", {})
+        if isinstance(by_object_id, dict) and object_id in by_object_id:
+            entry = by_object_id[object_id]
+            if isinstance(entry, dict):
+                return entry
+
+        object_type = object_id.split("|", 1)[0].strip() or "object"
+        return {
+            "object": self._pddl_safe_object_token(object_type, "object"),
+            "object_type": object_type,
+            "object_id": object_id,
+            "number": 1,
+            "count": 1,
+            "multiple": False,
+        }
 
     def _object_token_for_ai2thor_object_id(
         self,
         object_id: str,
-        token_by_object_id: Dict[str, str],
+        floor_object_numbering: Dict[str, Any],
     ) -> str:
-        if object_id in token_by_object_id:
-            return token_by_object_id[object_id]
+        if "by_object_id" not in floor_object_numbering:
+            token = floor_object_numbering.get(object_id)
+            if isinstance(token, str):
+                return token
 
-        object_type = object_id.split("|", 1)[0].strip() or "object"
-        return self._pddl_safe_object_token(object_type, "object")
+        entry = self._object_numbering_entry_for_ai2thor_object_id(
+            object_id,
+            floor_object_numbering,
+        )
+        return str(entry["object"])
 
     @staticmethod
     def _first_parent_receptacle(item: Dict[str, Any]) -> Optional[str]:
@@ -1361,8 +1469,16 @@ class TaskManager:
         domain_content: str,
     ) -> List[Dict[str, Any]]:
         """Convert key AI2-THOR objects into PDDL-ready state facts."""
+        return self._build_key_object_pddl_context(key_objects, domain_content)["states"]
+
+    def _build_key_object_pddl_context(
+        self,
+        key_objects: List[Dict[str, Any]],
+        domain_content: str,
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """Convert key objects into PDDL states plus object-token bindings."""
         if not key_objects:
-            return []
+            return {"states": [], "object_id_bindings": []}
 
         key_object_types = {
             self._object_match_key(obj.get("name", ""))
@@ -1371,14 +1487,14 @@ class TaskManager:
         }
         key_object_types.discard("")
         if not key_object_types:
-            return []
+            return {"states": [], "object_id_bindings": []}
 
         floor_objects = self._load_floor_ai2thor_metadata()
         if not floor_objects:
-            return []
+            return {"states": [], "object_id_bindings": []}
 
         supported_predicates = self._extract_pddl_predicate_names(domain_content)
-        object_type_counts, token_by_object_id = self._object_token_maps_for_metadata(floor_objects)
+        floor_object_numbering = self._build_floor_object_numbering(floor_objects)
         floor_object_by_id = {
             item["objectId"]: item
             for item in floor_objects
@@ -1386,17 +1502,49 @@ class TaskManager:
         }
         allaction_types = self._allaction_pddl_type_names()
         states: List[Dict[str, Any]] = []
+        bindings_by_object_id: Dict[str, Dict[str, Any]] = {}
+
+        def record_binding(entry: Dict[str, Any], role: str) -> None:
+            object_id = entry.get("object_id")
+            object_token = entry.get("object")
+            object_type = entry.get("object_type")
+            if not isinstance(object_id, str) or not object_id or not isinstance(object_token, str):
+                return
+
+            binding = bindings_by_object_id.get(object_id)
+            if binding is None:
+                binding = {
+                    "object": object_token,
+                    "object_type": object_type if isinstance(object_type, str) and object_type else "object",
+                    "object_id": object_id,
+                    "number": entry.get("number", 1),
+                    "count": entry.get("count", 1),
+                    "multiple": bool(entry.get("multiple", False)),
+                    "roles": [],
+                }
+                bindings_by_object_id[object_id] = binding
+
+            roles = binding.setdefault("roles", [])
+            if isinstance(roles, list) and role not in roles:
+                roles.append(role)
 
         for item in floor_objects:
             object_type = item.get("objectType")
             if not isinstance(object_type, str) or self._object_match_key(object_type) not in key_object_types:
                 continue
 
-            object_token = self._metadata_object_token(item, object_type_counts, token_by_object_id)
+            object_entry = self._object_numbering_entry_for_metadata(item, floor_object_numbering)
+            object_token = str(object_entry["object"])
+            record_binding(object_entry, "key_object")
             parent_id = self._first_parent_receptacle(item)
-            parent_token = (
-                self._object_token_for_ai2thor_object_id(parent_id, token_by_object_id)
+            parent_entry = (
+                self._object_numbering_entry_for_ai2thor_object_id(parent_id, floor_object_numbering)
                 if parent_id
+                else None
+            )
+            parent_token = (
+                str(parent_entry["object"])
+                if parent_entry
                 else None
             )
             facts = self._build_key_object_facts(
@@ -1425,9 +1573,14 @@ class TaskManager:
                         "role": "parentReceptacle",
                     }
                 ]
+                if parent_entry:
+                    record_binding(parent_entry, "parentReceptacle")
             states.append(state_entry)
 
-        return states
+        return {
+            "states": states,
+            "object_id_bindings": list(bindings_by_object_id.values()),
+        }
 
     def _filter_key_object_pddl_states_for_domain(
         self,
