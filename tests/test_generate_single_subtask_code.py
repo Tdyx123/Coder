@@ -627,8 +627,8 @@ class GenerateSingleSubtaskCodeTests(unittest.TestCase):
         self.assertEqual(
             self._action_pairs(generated[0].actions),
             [
-                ("GoToObject", ["Cabinet|+01.00|+00.00|+00.00"]),
-                ("OpenObject", ["Cabinet|+01.00|+00.00|+00.00"]),
+                ("GoToObject", ["Cabinet"]),
+                ("OpenObject", ["Cabinet"]),
                 ("GoToObject", ["Plate"]),
                 ("PickupObject", ["Plate"]),
                 ("GoToObject", ["Sink"]),
@@ -673,8 +673,8 @@ class GenerateSingleSubtaskCodeTests(unittest.TestCase):
         self.assertEqual(
             self._action_pairs(generated[0].actions),
             [
-                ("GoToObject", ["Box|-01.00|+00.00|+00.00"]),
-                ("OpenObject", ["Box|-01.00|+00.00|+00.00"]),
+                ("GoToObject", ["Box"]),
+                ("OpenObject", ["Box"]),
                 ("GoToObject", ["Vase"]),
                 ("BreakObject", ["Vase"]),
             ],
@@ -728,12 +728,12 @@ class GenerateSingleSubtaskCodeTests(unittest.TestCase):
         self.assertEqual(
             self._action_pairs(generated[0].actions),
             [
-                ("GoToObject", ["Drawer|-01.56|+00.84|-00.20"]),
-                ("OpenObject", ["Drawer|-01.56|+00.84|-00.20"]),
+                ("GoToObject", ["Drawer"]),
+                ("OpenObject", ["Drawer"]),
                 ("GoToObject", ["Knife"]),
                 ("PickupObject", ["Knife"]),
-                ("GoToObject", ["Fridge|-02.00|+00.00|+01.00"]),
-                ("OpenObject", ["Fridge|-02.00|+00.00|+01.00"]),
+                ("GoToObject", ["Fridge"]),
+                ("OpenObject", ["Fridge"]),
                 ("GoToObject", ["Egg"]),
                 ("SliceObject", ["Egg"]),
             ],
@@ -772,8 +772,8 @@ class GenerateSingleSubtaskCodeTests(unittest.TestCase):
         self.assertEqual(
             self._action_pairs(generated[0].actions),
             [
-                ("GoToObject", ["Fridge|-02.00|+00.00|+01.00"]),
-                ("OpenObject", ["Fridge|-02.00|+00.00|+01.00"]),
+                ("GoToObject", ["Fridge"]),
+                ("OpenObject", ["Fridge"]),
                 ("GoToObject", ["Egg"]),
                 ("PickupObject", ["Egg"]),
                 ("GoToObject", ["Fridge"]),
@@ -825,12 +825,193 @@ class GenerateSingleSubtaskCodeTests(unittest.TestCase):
             [
                 ("GoToObject", ["Apple"]),
                 ("PickupObject", ["Apple"]),
-                ("GoToObject", ["Cabinet|+01.00|+00.00|+00.00"]),
-                ("OpenObject", ["Cabinet|+01.00|+00.00|+00.00"]),
+                ("GoToObject", ["Cabinet"]),
+                ("OpenObject", ["Cabinet"]),
                 ("GoToObject", ["Bowl"]),
                 ("PutObject", ["Apple", "Bowl"]),
             ],
         )
+
+    def test_multi_instance_explicit_object_uses_number_one_alias_and_binding(self):
+        first_drawer_id = "Drawer|+01.00|+00.20|-00.30"
+        second_drawer_id = "Drawer|+01.00|+00.60|-00.30"
+        objects_path = self._write_properties(
+            [
+                {
+                    "scene": "FloorPlan1",
+                    "objectType": "Drawer",
+                    "objectId": first_drawer_id,
+                    "openable": True,
+                },
+                {
+                    "scene": "FloorPlan1",
+                    "objectType": "Drawer",
+                    "objectId": second_drawer_id,
+                    "openable": True,
+                },
+            ]
+        )
+
+        generated = generator.prepare_generated_subtasks(
+            [
+                generator.EnumeratedSubtask(
+                    floor_plan=1,
+                    subtask={"skill": "Open", "objects": ["Drawer"]},
+                )
+            ],
+            objects_path,
+        )
+
+        self.assertEqual(len(generated), 1)
+        self.assertEqual(generated[0].task_text, "open the drawer")
+        self.assertEqual(
+            generated[0].subtask,
+            {"skill": "Open", "objects": ["Drawer_1"]},
+        )
+        self.assertEqual(
+            self._action_pairs(generated[0].actions),
+            [
+                ("GoToObject", ["Drawer_1"]),
+                ("OpenObject", ["Drawer_1"]),
+            ],
+        )
+        self.assertEqual(
+            generated[0].object_states,
+            [{"name": "Drawer_1", "contains": [], "states": ["OPENED"]}],
+        )
+
+        self.assertEqual(len(generated[0].object_id_bindings), 1)
+        binding = generated[0].object_id_bindings[0]
+        self.assertEqual(binding["object"], "Drawer_1")
+        self.assertEqual(binding["object_type"], "Drawer")
+        self.assertEqual(binding["object_id"], first_drawer_id)
+        self.assertEqual(binding["number"], 1)
+        self.assertEqual(binding["count"], 2)
+        self.assertTrue(binding["multiple"])
+        self.assertIn("subtask_object", binding["roles"])
+        self.assertIn("action_object", binding["roles"])
+        self.assertIn("goal_object", binding["roles"])
+
+    def test_mixed_task_only_binds_multi_instance_objects(self):
+        first_bowl_id = "Bowl|+00.00|+00.80|+00.00"
+        objects_path = self._write_properties(
+            [
+                {
+                    "scene": "FloorPlan1",
+                    "objectType": "Apple",
+                    "objectId": "Apple|+01.00|+00.90|+00.00",
+                    "pickupable": True,
+                },
+                {
+                    "scene": "FloorPlan1",
+                    "objectType": "Bowl",
+                    "objectId": first_bowl_id,
+                    "pickupable": True,
+                    "receptacle": True,
+                },
+                {
+                    "scene": "FloorPlan1",
+                    "objectType": "Bowl",
+                    "objectId": "Bowl|+01.00|+00.80|+00.00",
+                    "pickupable": True,
+                    "receptacle": True,
+                },
+            ]
+        )
+
+        generated = generator.prepare_generated_subtasks(
+            [
+                generator.EnumeratedSubtask(
+                    floor_plan=1,
+                    subtask={"skill": "PutIn", "objects": ["Apple", "Bowl"]},
+                )
+            ],
+            objects_path,
+        )
+
+        self.assertEqual(
+            self._action_pairs(generated[0].actions),
+            [
+                ("GoToObject", ["Apple"]),
+                ("PickupObject", ["Apple"]),
+                ("GoToObject", ["Bowl_1"]),
+                ("PutObject", ["Apple", "Bowl_1"]),
+            ],
+        )
+        self.assertEqual(
+            generated[0].object_states,
+            [{"name": "Bowl_1", "contains": ["Apple"], "states": []}],
+        )
+        self.assertEqual(
+            [binding["object"] for binding in generated[0].object_id_bindings],
+            ["Bowl_1"],
+        )
+        self.assertEqual(generated[0].object_id_bindings[0]["object_id"], first_bowl_id)
+
+    def test_parent_container_uses_child_metadata_instance_binding(self):
+        cabinet_ids = [
+            "Cabinet|+00.00|+00.00|+00.00",
+            "Cabinet|+01.00|+00.00|+00.00",
+            "Cabinet|+02.00|+00.00|+00.00",
+        ]
+        objects_path = self._write_properties(
+            [
+                {
+                    "scene": "FloorPlan1",
+                    "objectType": "Apple",
+                    "objectId": "Apple|+00.10|+00.20|+00.30",
+                    "pickupable": True,
+                    "sliceable": True,
+                },
+                {
+                    "scene": "FloorPlan1",
+                    "objectType": "Knife",
+                    "objectId": "Knife|-01.70|+00.79|-00.22",
+                    "pickupable": True,
+                    "parentReceptacles": [cabinet_ids[2]],
+                },
+                *[
+                    {
+                        "scene": "FloorPlan1",
+                        "objectType": "Cabinet",
+                        "objectId": cabinet_id,
+                        "openable": True,
+                        "receptacle": True,
+                    }
+                    for cabinet_id in cabinet_ids
+                ],
+            ]
+        )
+
+        generated = generator.prepare_generated_subtasks(
+            [
+                generator.EnumeratedSubtask(
+                    floor_plan=1,
+                    subtask={"skill": "Slice", "objects": ["Apple"]},
+                )
+            ],
+            objects_path,
+        )
+
+        self.assertEqual(
+            self._action_pairs(generated[0].actions),
+            [
+                ("GoToObject", ["Cabinet_3"]),
+                ("OpenObject", ["Cabinet_3"]),
+                ("GoToObject", ["Knife"]),
+                ("PickupObject", ["Knife"]),
+                ("GoToObject", ["Apple"]),
+                ("SliceObject", ["Apple"]),
+            ],
+        )
+        self.assertEqual(len(generated[0].object_id_bindings), 1)
+        binding = generated[0].object_id_bindings[0]
+        self.assertEqual(binding["object"], "Cabinet_3")
+        self.assertEqual(binding["object_id"], cabinet_ids[2])
+        self.assertEqual(binding["number"], 3)
+        self.assertEqual(binding["count"], 3)
+        self.assertIn("parentReceptacle", binding["roles"])
+        self.assertIn("action_object", binding["roles"])
 
     def test_pickup_target_on_non_openable_parent_does_not_open_parent(self):
         objects_path = self._write_properties(
@@ -1108,6 +1289,75 @@ class GenerateSingleSubtaskCodeTests(unittest.TestCase):
                 self.assertIn("EMBEDDED_TASK_RECORD = None", executable_text)
                 self.assertNotIn("build_robot_team(task_record", executable_text)
                 generator.compile_python(executable)
+
+    def test_output_layouts_preserve_object_id_bindings(self):
+        binding = {
+            "object": "Drawer_1",
+            "object_type": "Drawer",
+            "object_id": "Drawer|+01.00|+00.20|-00.30",
+            "number": 1,
+            "count": 2,
+            "multiple": True,
+            "roles": ["subtask_object", "action_object", "goal_object"],
+        }
+        generated = [
+            generator.GeneratedSubtask(
+                floor_plan=1,
+                floor_index=0,
+                global_index=1,
+                subtask={"skill": "Open", "objects": ["Drawer_1"]},
+                task_text="open the drawer",
+                object_states=[
+                    {"name": "Drawer_1", "contains": [], "states": ["OPENED"]}
+                ],
+                actions=[
+                    generator.action("GoToObject", "Drawer_1"),
+                    generator.action("OpenObject", "Drawer_1"),
+                ],
+                pre_task_actions=[],
+                object_id_bindings=[binding],
+            )
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output_dir = Path(tmp_dir) / "full"
+            summary = generator.write_outputs(
+                generated,
+                output_dir,
+                overwrite=True,
+            )
+            self.assertEqual(summary["failed_generations"], 0)
+
+            task_dir = next((output_dir / "FloorPlan1").iterdir())
+            task_record = json.loads(
+                (task_dir / "task_record.json").read_text(encoding="utf-8")
+            )
+            bundle = json.loads(
+                (task_dir / "plan_bundle.json").read_text(encoding="utf-8")
+            )
+            manifest_record = json.loads(
+                (output_dir / "manifest.jsonl").read_text(encoding="utf-8").strip()
+            )
+            self.assertEqual(task_record["object_id_bindings"], [binding])
+            self.assertEqual(bundle["object_id_bindings"], [binding])
+            self.assertEqual(manifest_record["object_id_bindings"], [binding])
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output_dir = Path(tmp_dir) / "flat"
+            summary = generator.write_flat_outputs(
+                generated,
+                output_dir,
+                overwrite=True,
+            )
+            self.assertEqual(summary["failed_generations"], 0)
+
+            executable_text = (
+                output_dir / "1_00001_executable_plan.py"
+            ).read_text(encoding="utf-8")
+            self.assertIn("'object_id_bindings':", executable_text)
+            self.assertIn("'object': 'Drawer_1'", executable_text)
+            self.assertIn("'object_id': 'Drawer|+01.00|+00.20|-00.30'", executable_text)
+            generator.compile_python(output_dir / "1_00001_executable_plan.py")
 
     def test_manifest_only_requires_full_layout(self):
         with redirect_stderr(io.StringIO()):

@@ -172,6 +172,11 @@ class ThorRuntime:
         self.operated_object_names_lock = threading.Lock()
         self.agent_held_object_overrides: Dict[int, Set[str]] = {}
         self.agent_held_object_overrides_lock = threading.Lock()
+        self.object_alias_bindings: Dict[str, Dict[str, Any]] = {}
+        self.object_alias_key_to_token: Dict[str, str] = {}
+        self.object_alias_by_object_id: Dict[str, Set[str]] = {}
+        self.object_alias_warnings: Set[str] = set()
+        self.object_alias_lock = threading.Lock()
         self.reachable_positions: List[Dict[str, float]] = []
         self.global_reachable_positions: List[Dict[str, float]] = []
 
@@ -748,6 +753,384 @@ class ThorRuntime:
                 return list(event.metadata.get("objects", []))
             return list(self.controller.last_event.metadata.get("objects", []))
 
+    def _ensure_object_alias_state(self) -> None:
+        if not hasattr(self, "object_alias_bindings"):
+            self.object_alias_bindings = {}
+        if not hasattr(self, "object_alias_key_to_token"):
+            self.object_alias_key_to_token = {}
+        if not hasattr(self, "object_alias_by_object_id"):
+            self.object_alias_by_object_id = {}
+        if not hasattr(self, "object_alias_warnings"):
+            self.object_alias_warnings = set()
+        if not hasattr(self, "object_alias_lock"):
+            self.object_alias_lock = threading.Lock()
+
+    def _iter_object_id_bindings(self, bindings: Any) -> List[Dict[str, Any]]:
+        if bindings is None:
+            return []
+        if isinstance(bindings, list):
+            return [dict(item) for item in bindings if isinstance(item, dict)]
+        if isinstance(bindings, dict):
+            nested = bindings.get("object_id_bindings") or bindings.get("bindings")
+            if isinstance(nested, list):
+                return [dict(item) for item in nested if isinstance(item, dict)]
+            flattened: List[Dict[str, Any]] = []
+            for item in bindings.values():
+                flattened.extend(self._iter_object_id_bindings(item))
+            return flattened
+        return []
+
+    def object_alias_keys_for_binding(self, binding: Dict[str, Any]) -> List[str]:
+        keys: List[str] = []
+        object_token = binding.get("object")
+        if isinstance(object_token, str) and object_token:
+            keys.append(object_key(object_token))
+
+        object_type = binding.get("object_type")
+        try:
+            number = int(binding.get("number") or 0)
+        except (TypeError, ValueError):
+            number = 0
+        if isinstance(object_type, str) and object_type:
+            if number > 0:
+                keys.append(object_key(f"{object_type}_{number}"))
+                keys.append(object_key(f"{object_type}{number}"))
+            if not bool(binding.get("multiple")):
+                keys.append(object_key(object_type))
+        return list(dict.fromkeys(key for key in keys if key))
+
+    def register_object_id_bindings(self, bindings: Any) -> None:
+        self._ensure_object_alias_state()
+        for raw_binding in self._iter_object_id_bindings(bindings):
+            object_token = raw_binding.get("object")
+            object_id = raw_binding.get("object_id")
+            if not isinstance(object_token, str) or not object_token:
+                continue
+            if not isinstance(object_id, str) or not object_id:
+                continue
+
+            binding = dict(raw_binding)
+            binding["object"] = object_token
+            binding["object_id"] = object_id
+            current_obj = self._current_object_by_id_optional(None, object_id)
+            if current_obj is not None:
+                self._refresh_binding_from_object(binding, current_obj)
+            elif "last_position" not in binding:
+                position = object_center({"objectId": object_id})
+                if position:
+                    binding["last_position"] = dict(position)
+
+            with self.object_alias_lock:
+                old_binding = self.object_alias_bindings.get(object_token)
+                if old_binding:
+                    old_id = str(old_binding.get("object_id") or "")
+                    if old_id:
+                        self.object_alias_by_object_id.get(old_id, set()).discard(object_token)
+                self.object_alias_bindings[object_token] = binding
+                self.object_alias_by_object_id.setdefault(object_id, set()).add(object_token)
+                for key in self.object_alias_keys_for_binding(binding):
+                    self.object_alias_key_to_token[key] = object_token
+
+    def _refresh_binding_from_object(
+        self,
+        binding: Dict[str, Any],
+        obj: Dict[str, Any],
+    ) -> None:
+        object_id = str(obj.get("objectId") or "")
+        if object_id:
+            binding["object_id"] = object_id
+        object_type = obj.get("objectType") or object_id.split("|", 1)[0]
+        if object_type:
+            binding["object_type"] = str(object_type)
+        position = object_center(obj)
+        if position:
+            binding["last_position"] = dict(position)
+
+    def _current_object_by_id_optional(
+        self,
+        agent_id: Optional[int],
+        object_id: Any,
+        objects: Optional[Sequence[Dict[str, Any]]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        object_id_text = str(object_id or "")
+        if not object_id_text:
+            return None
+        try:
+            candidates = list(objects) if objects is not None else self.current_objects(agent_id)
+        except Exception:
+            return None
+        for obj in candidates:
+            if str(obj.get("objectId") or "") == object_id_text:
+                return dict(obj)
+        return None
+
+    def object_alias_token_for_pattern(self, pattern: Any) -> Optional[str]:
+        self._ensure_object_alias_state()
+        key = object_key(pattern)
+        if not key:
+            return None
+        with self.object_alias_lock:
+            return self.object_alias_key_to_token.get(key)
+
+    def object_alias_current_id(self, pattern: Any) -> Optional[str]:
+        token = self.object_alias_token_for_pattern(pattern)
+        if token is None:
+            return None
+        with self.object_alias_lock:
+            binding = self.object_alias_bindings.get(token)
+            object_id = str((binding or {}).get("object_id") or "")
+        return object_id or None
+
+    def _object_alias_binding_snapshot(self, token: str) -> Optional[Dict[str, Any]]:
+        self._ensure_object_alias_state()
+        with self.object_alias_lock:
+            binding = self.object_alias_bindings.get(token)
+            return dict(binding) if binding else None
+
+    def _warn_object_alias_once(self, message: str) -> None:
+        self._ensure_object_alias_state()
+        with self.object_alias_lock:
+            if message in self.object_alias_warnings:
+                return
+            self.object_alias_warnings.add(message)
+        log(f"WARNING: {message}")
+
+    def resolve_object_alias(self, pattern: Any, agent_id: Optional[int] = None) -> Any:
+        token = self.object_alias_token_for_pattern(pattern)
+        if token is None:
+            return pattern
+
+        binding = self._object_alias_binding_snapshot(token)
+        if not binding:
+            return pattern
+
+        object_id = str(binding.get("object_id") or "")
+        if object_id and self._current_object_by_id_optional(agent_id, object_id) is not None:
+            return object_id
+
+        repaired_id = self.repair_object_alias(token, agent_id=agent_id)
+        if repaired_id:
+            return repaired_id
+        if object_id:
+            self._warn_object_alias_once(
+                f"Could not refresh object alias {token!r}; using stale objectId {object_id!r}."
+            )
+            return object_id
+        return pattern
+
+    def _set_object_alias_current_object(
+        self,
+        token: str,
+        obj: Dict[str, Any],
+    ) -> Optional[str]:
+        object_id = str(obj.get("objectId") or "")
+        if not object_id:
+            return None
+        self._ensure_object_alias_state()
+        with self.object_alias_lock:
+            binding = self.object_alias_bindings.get(token)
+            if binding is None:
+                return None
+            old_id = str(binding.get("object_id") or "")
+            if old_id and old_id != object_id:
+                old_tokens = self.object_alias_by_object_id.get(old_id)
+                if old_tokens is not None:
+                    old_tokens.discard(token)
+                    if not old_tokens:
+                        self.object_alias_by_object_id.pop(old_id, None)
+            self._refresh_binding_from_object(binding, obj)
+            self.object_alias_by_object_id.setdefault(object_id, set()).add(token)
+            for key in self.object_alias_keys_for_binding(binding):
+                self.object_alias_key_to_token[key] = token
+        return object_id
+
+    def _event_objects(self, event: Any) -> List[Dict[str, Any]]:
+        metadata = getattr(event, "metadata", {}) or {}
+        objects = metadata.get("objects") or []
+        return [dict(obj) for obj in objects if isinstance(obj, dict)]
+
+    def repair_object_alias(
+        self,
+        token: str,
+        *,
+        agent_id: Optional[int] = None,
+        objects: Optional[Sequence[Dict[str, Any]]] = None,
+        preferred_parent_id: Optional[str] = None,
+        transform: Optional[str] = None,
+        exclude_object_ids: Sequence[str] = (),
+    ) -> Optional[str]:
+        binding = self._object_alias_binding_snapshot(token)
+        if not binding:
+            return None
+
+        old_id = str(binding.get("object_id") or "")
+        object_type = str(binding.get("object_type") or old_id.split("|", 1)[0] or "")
+        object_type_key = object_key(object_type)
+        candidates = list(objects) if objects is not None else None
+        if candidates is None:
+            try:
+                candidates = self.current_objects(agent_id)
+            except Exception:
+                candidates = []
+
+        if transform is None:
+            current = self._current_object_by_id_optional(agent_id, old_id, candidates)
+            if current is not None:
+                return self._set_object_alias_current_object(token, current)
+
+        excluded = {str(object_id) for object_id in exclude_object_ids if object_id}
+        matched: List[Dict[str, Any]] = []
+        for obj in candidates:
+            object_id = str(obj.get("objectId") or "")
+            if not object_id or object_id in excluded:
+                continue
+            if transform == "sliced":
+                if is_sliced_food_object_for_base(old_id or object_type or token, obj):
+                    matched.append(dict(obj))
+                continue
+            if transform == "broken":
+                if is_broken_egg_object(obj):
+                    matched.append(dict(obj))
+                continue
+            obj_type = obj.get("objectType") or object_id.split("|", 1)[0]
+            if object_type_key and object_key(obj_type) != object_type_key:
+                continue
+            matched.append(dict(obj))
+
+        if not matched:
+            self._warn_object_alias_once(
+                f"Could not find a current object for alias {token!r}."
+            )
+            return None
+
+        last_position = binding.get("last_position")
+        if not isinstance(last_position, dict):
+            last_position = object_center({"objectId": old_id})
+        mapped_ids = set(self.object_alias_by_object_id)
+        if old_id:
+            mapped_ids.discard(old_id)
+        preferred_parent_id = str(preferred_parent_id or "")
+
+        def candidate_score(obj: Dict[str, Any]) -> Tuple[int, int, float, float, str]:
+            object_id = str(obj.get("objectId") or "")
+            parents = [str(parent) for parent in obj.get("parentReceptacles") or [] if parent]
+            parent_rank = 0 if preferred_parent_id and preferred_parent_id in parents else 1
+            mapped_rank = 1 if object_id in mapped_ids else 0
+            center = object_center(obj)
+            if center and isinstance(last_position, dict):
+                try:
+                    distance = distance_pts(
+                        position_to_tuple(center),
+                        position_to_tuple(last_position),
+                    )
+                except (KeyError, TypeError, ValueError):
+                    distance = 999999.0
+            else:
+                distance = 999999.0
+            return (
+                parent_rank,
+                mapped_rank,
+                distance,
+                object_distance(obj),
+                object_id,
+            )
+
+        selected = min(matched, key=candidate_score)
+        return self._set_object_alias_current_object(token, selected)
+
+    def update_object_alias_for_pattern(
+        self,
+        pattern: Any,
+        obj_or_object_id: Any,
+        *,
+        agent_id: Optional[int] = None,
+        objects: Optional[Sequence[Dict[str, Any]]] = None,
+    ) -> Optional[str]:
+        token = self.object_alias_token_for_pattern(pattern)
+        if token is None:
+            return None
+        if isinstance(obj_or_object_id, dict):
+            obj = obj_or_object_id
+        else:
+            obj = self._current_object_by_id_optional(agent_id, obj_or_object_id, objects)
+            if obj is None:
+                obj = {"objectId": str(obj_or_object_id or "")}
+        return self._set_object_alias_current_object(token, obj)
+
+    def update_object_aliases_for_object_ids(
+        self,
+        object_ids: Sequence[Any],
+        *,
+        agent_id: Optional[int] = None,
+        event: Any = None,
+        preferred_parent_id: Optional[str] = None,
+        transform: Optional[str] = None,
+        exclude_object_ids: Sequence[str] = (),
+    ) -> None:
+        self._ensure_object_alias_state()
+        event_objects = self._event_objects(event) if event is not None else None
+        for raw_object_id in object_ids:
+            object_id = str(raw_object_id or "")
+            if not object_id:
+                continue
+            with self.object_alias_lock:
+                tokens = list(self.object_alias_by_object_id.get(object_id, set()))
+            for token in tokens:
+                self.repair_object_alias(
+                    token,
+                    agent_id=agent_id,
+                    objects=event_objects,
+                    preferred_parent_id=preferred_parent_id,
+                    transform=transform,
+                    exclude_object_ids=exclude_object_ids,
+                )
+
+    def update_object_alias_after_action(
+        self,
+        action: str,
+        agent_id: int,
+        obj: Dict[str, Any],
+        *,
+        event: Any = None,
+        goal_object_name: Any = None,
+        extra_object_resources: Sequence[str] = (),
+        known_object_ids: Sequence[str] = (),
+    ) -> None:
+        event_objects = self._event_objects(event) if event is not None else None
+        token = self.object_alias_token_for_pattern(goal_object_name)
+        if token is not None:
+            if action == "SliceObject":
+                self.repair_object_alias(
+                    token,
+                    agent_id=agent_id,
+                    objects=event_objects,
+                    transform="sliced",
+                    exclude_object_ids=known_object_ids,
+                )
+            elif action == "BreakObject" and is_egg_query(goal_object_name or obj.get("objectId")):
+                self.repair_object_alias(
+                    token,
+                    agent_id=agent_id,
+                    objects=event_objects,
+                    transform="broken",
+                    exclude_object_ids=known_object_ids,
+                )
+            else:
+                current = self._current_object_by_id_optional(
+                    agent_id,
+                    obj.get("objectId"),
+                    event_objects,
+                )
+                self._set_object_alias_current_object(token, current or obj)
+
+        if action == "PutObject":
+            self.update_object_aliases_for_object_ids(
+                extra_object_resources,
+                agent_id=agent_id,
+                event=event,
+                preferred_parent_id=str(obj.get("objectId") or ""),
+            )
+
     def _operated_object_name_state(self) -> Tuple[Set[str], threading.Lock]:
         names = getattr(self, "operated_object_names", None)
         if names is None:
@@ -779,9 +1162,10 @@ class ThorRuntime:
         source_obj: Dict[str, Any],
         event: Any,
         known_object_ids: Set[str],
-    ) -> None:
+    ) -> List[Dict[str, Any]]:
         metadata = getattr(event, "metadata", {}) or {}
         objects = metadata.get("objects") or []
+        created_objects: List[Dict[str, Any]] = []
         resource = (
             source_obj.get("objectId")
             or source_obj.get("objectType")
@@ -796,22 +1180,25 @@ class ThorRuntime:
                 continue
             if is_sliced_food_object_for_base(resource, obj):
                 self.record_operated_object_name(obj)
+                created_objects.append(dict(obj))
+        return created_objects
 
     def record_created_broken_egg_object_names(
         self,
         source_obj: Dict[str, Any],
         event: Any,
         known_object_ids: Set[str],
-    ) -> None:
+    ) -> List[Dict[str, Any]]:
         metadata = getattr(event, "metadata", {}) or {}
         objects = metadata.get("objects") or []
+        created_objects: List[Dict[str, Any]] = []
         resource = (
             source_obj.get("objectId")
             or source_obj.get("objectType")
             or source_obj.get("name")
         )
         if not is_egg_query(resource):
-            return
+            return created_objects
         source_id = str(source_obj.get("objectId") or "")
         for obj in objects:
             object_id = str(obj.get("objectId") or "")
@@ -821,6 +1208,8 @@ class ThorRuntime:
                 continue
             if is_broken_egg_object(obj):
                 self.record_operated_object_name(obj)
+                created_objects.append(dict(obj))
+        return created_objects
 
     def object_name_was_operated(
         self,
@@ -855,11 +1244,14 @@ class ThorRuntime:
 
     def find_objects(self, pattern: Any, agent_id: Optional[int] = None) -> List[Dict[str, Any]]:
         objects = list(self.current_objects(agent_id))
-        matches = [obj for obj in objects if matches_object(pattern, obj)]
+        resolved_pattern = self.resolve_object_alias(pattern, agent_id=agent_id)
+        matches = [obj for obj in objects if matches_object(resolved_pattern, obj)]
+        if not matches and resolved_pattern != pattern:
+            matches = [obj for obj in objects if matches_object(pattern, obj)]
         operated_object_names = self.operated_object_names_snapshot()
-        sliceable_key = sliceable_food_query_key(pattern)
-        egg_query = is_egg_query(pattern)
-        prefer_empty_stove_burner = object_key(pattern) == "stoveburner"
+        sliceable_key = sliceable_food_query_key(resolved_pattern)
+        egg_query = is_egg_query(resolved_pattern)
+        prefer_empty_stove_burner = object_key(resolved_pattern) == "stoveburner"
 
         def stove_burner_occupancy_rank(obj: Dict[str, Any]) -> int:
             if not prefer_empty_stove_burner:
@@ -871,7 +1263,7 @@ class ThorRuntime:
                 matches.sort(
                     key=lambda obj: (
                         operated_sliced_food_query_rank(
-                            pattern,
+                            resolved_pattern,
                             obj,
                             operated_object_names,
                         ),
@@ -904,7 +1296,7 @@ class ThorRuntime:
         elif sliceable_key is not None:
             def global_sliceable_sort_key(obj: Dict[str, Any]) -> Tuple[int, float, str]:
                 rank = operated_sliced_food_query_rank(
-                    pattern,
+                    resolved_pattern,
                     obj,
                     operated_object_names,
                 )
@@ -1771,6 +2163,11 @@ class ThorRuntime:
             metadata = getattr(drop_event, "metadata", {}) or {}
             error = metadata.get("errorMessage") or "no error message returned"
             raise RuntimeError(f"DropHandObject failed for agent {from_agent_id}: {error}")
+        self.update_object_aliases_for_object_ids(
+            [object_resource],
+            agent_id=to_agent_id,
+            event=drop_event,
+        )
 
         dropped = self.find_object(object_resource, agent_id=to_agent_id, require_center=True)
         center = object_center(dropped)
@@ -1810,12 +2207,15 @@ class ThorRuntime:
         return object_resource in self.agent_held_objects_for(agent_id)
 
     def agent_held_object_matching(self, agent_id: int, pattern: Any) -> Optional[str]:
+        resolved_pattern = self.object_alias_current_id(pattern) or pattern
         for object_resource in self.agent_held_objects_for(agent_id):
             stub = {
                 "objectId": object_resource,
                 "objectType": object_resource.split("|", 1)[0],
             }
-            if matches_object(pattern, stub):
+            if matches_object(resolved_pattern, stub) or (
+                resolved_pattern != pattern and matches_object(pattern, stub)
+            ):
                 return object_resource
         return None
 
@@ -2402,6 +2802,7 @@ class ThorRuntime:
                 with self.stats_lock:
                     self.total_exec += 1
                     self.success_exec += 1
+                self.update_object_alias_for_pattern(obj_name, held_object, agent_id=agent_id)
                 return self.agent_event(agent_id)
             obj = self.find_object(obj_name, agent_id=agent_id)
             if self.agent_held_objects_for(agent_id):
@@ -2436,6 +2837,7 @@ class ThorRuntime:
             with self.stats_lock:
                 self.total_exec += 1
                 self.success_exec += 1
+            self.update_object_alias_for_pattern(obj_name, held_object, agent_id=agent_id)
             return self.agent_event(agent_id)
 
         held_objects = sorted(self.agent_held_objects_for(agent_id))
@@ -2457,6 +2859,7 @@ class ThorRuntime:
             agent_id,
             obj,
             force_action=True,
+            goal_object_name=obj_name,
         )
 
     def pickup_clip_backoff_position(
@@ -2710,6 +3113,12 @@ class ThorRuntime:
             with self.stats_lock:
                 self.total_exec += 1
                 self.success_exec += 1
+            self.update_object_alias_after_action(
+                action,
+                agent_id,
+                obj,
+                goal_object_name=goal_object_name,
+            )
             self.record_operated_object_name(obj)
             return self.agent_event(agent_id)
         if action in {"ToggleObjectOn", "ToggleObjectOff"} and self.toggle_state_matches(action, obj):
@@ -2721,6 +3130,12 @@ class ThorRuntime:
             with self.stats_lock:
                 self.total_exec += 1
                 self.success_exec += 1
+            self.update_object_alias_after_action(
+                action,
+                agent_id,
+                obj,
+                goal_object_name=goal_object_name,
+            )
             self.record_operated_object_name(obj)
             return self.agent_event(agent_id)
 
@@ -2803,6 +3218,13 @@ class ThorRuntime:
                     ):
                         with self.stats_lock:
                             self.success_exec += 1
+                        self.update_object_alias_after_action(
+                            action,
+                            agent_id,
+                            observed_obj,
+                            event=event,
+                            goal_object_name=goal_object_name,
+                        )
                         self.record_operated_object_name(observed_obj)
                         return event
                 raise RuntimeError(
@@ -2811,6 +3233,15 @@ class ThorRuntime:
                 )
         with self.stats_lock:
             self.success_exec += 1
+        self.update_object_alias_after_action(
+            action,
+            agent_id,
+            obj,
+            event=event,
+            goal_object_name=goal_object_name,
+            extra_object_resources=extra_object_resources,
+            known_object_ids=known_object_ids,
+        )
         if action == "OpenObject":
             object_id = str(obj["objectId"])
             opened_obj = self.current_object_by_id(agent_id, object_id)
@@ -2872,6 +3303,11 @@ class ThorRuntime:
             )
         with self.stats_lock:
             self.success_exec += 1
+        self.update_object_aliases_for_object_ids(
+            held_objects,
+            agent_id=agent_id,
+            event=event,
+        )
         self.release_agent_held_objects(agent_id)
         return event
 
@@ -2887,6 +3323,7 @@ class ThorRuntime:
             agent_id,
             obj,
             force_action=force_action,
+            goal_object_name=obj_name,
         )
 
     def goal_satisfied(self, goal: Dict[str, Any]) -> bool:

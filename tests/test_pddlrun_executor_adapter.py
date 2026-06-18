@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -167,6 +168,67 @@ class PddlRunExecutorAdapterTest(unittest.TestCase):
             self.assertEqual(actions[6].args(), ("StoveBurner", "Pan"))
             self.assertEqual(actions[7].args(), ("Sink", "Mug"))
             self.assertEqual(actions[8].args(), ("Fridge", "Potato"))
+
+    def test_numbered_object_id_bindings_are_preserved_as_runtime_aliases(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            allocate_file = self.write_file(
+                root / "02_allocate" / "02_allocate_output.txt",
+                "# Sequence of Operations:\nSubtask 1: Robot 1;\n",
+            )
+            plan_folder = root / "08_planner" / "outputs"
+            self.write_file(
+                plan_folder / "subtask_01_problem_validated_plan.txt",
+                "(gotoobject robot1 Drawer_2)\n(openobject robot1 Drawer_2)\n",
+            )
+            bindings_path = root / "05_problem_generation" / "key_object_id_bindings.json"
+            bindings_path.parent.mkdir(parents=True, exist_ok=True)
+            bindings_path.write_text(
+                json.dumps(
+                    [
+                        {
+                            "object": "Drawer_1",
+                            "object_type": "Drawer",
+                            "object_id": "Drawer|+01.00|+00.20|-00.30",
+                            "number": 1,
+                            "count": 2,
+                            "multiple": True,
+                            "roles": ["key_object"],
+                        },
+                        {
+                            "object": "Drawer_2",
+                            "object_type": "Drawer",
+                            "object_id": "Drawer|+01.00|+00.60|-00.30",
+                            "number": 2,
+                            "count": 2,
+                            "multiple": True,
+                            "roles": ["key_object"],
+                        },
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            bundle = build_task_plan_from_pddlrun_paths(
+                task="open the second drawer",
+                robots=[{"name": "robot1"}],
+                allocate_file=allocate_file,
+                plan_folder=plan_folder,
+                plan_files=[],
+                object_names=["Drawer"],
+            )
+
+            actions = bundle.task_plan.stages[0].robot_action_queues["robot1"]
+            self.assertEqual(actions[0].args(), ("Drawer_2",))
+            self.assertEqual(actions[1].args(), ("Drawer_2",))
+            self.assertEqual(
+                bundle.object_mappings["Drawer_2"],
+                "Drawer|+01.00|+00.60|-00.30",
+            )
+            self.assertEqual(
+                [binding["object"] for binding in bundle.object_id_bindings],
+                ["Drawer_1", "Drawer_2"],
+            )
 
     def test_missing_allocate_file_and_plan_folder_report_clear_errors(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

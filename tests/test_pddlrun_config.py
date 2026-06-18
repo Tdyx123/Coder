@@ -1742,103 +1742,19 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertIn("(object-open Drawer_1)", "\n".join(open_drawer["facts"]))
             self.assertNotIn("(object-open", "\n".join(closed_drawer["facts"]))
 
-    def test_trim_robot_domain_for_allocation_keeps_relevant_actions(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            manager = TaskManager(tmp_dir, "test-model")
-            domain = (
-                "(define (domain robot1)\n"
-                "  (:requirements :strips)\n"
-                "  (:types robot object microwave toaster - object)\n"
-                "  (:predicates (at ?r - robot ?o - object) (hot ?o - object))\n"
-                "  (:action GoToObject\n"
-                "    :parameters (?r - robot ?o - object)\n"
-                "    :effect (and (at ?r ?o))\n"
-                "  )\n"
-                "  (:action RunMicrowave\n"
-                "    :parameters (?r - robot ?m - microwave ?item - object)\n"
-                "    :precondition (and (at ?r ?m))\n"
-                "    :effect (and (hot ?item))\n"
-                "  )\n"
-                "  (:action RunToaster\n"
-                "    :parameters (?r - robot ?t - toaster ?item - object)\n"
-                "    :precondition (and (at ?r ?t))\n"
-                "    :effect (and (hot ?item))\n"
-                "  )\n"
-                ")"
-            )
-            decomposed_plan = (
-                "#SubTask 1: Heat the apple in the microwave\n"
-                "Skills Required: GoToObject, RunMicrowave\n"
-            )
-
-            trimmed = manager._trim_robot_domain_for_allocation(
-                domain,
-                decomposed_plan,
-                [{"name": "Microwave", "mass": 7.0}],
-            )
-
-            self.assertIn("(:requirements :strips)", trimmed)
-            self.assertIn("(:predicates", trimmed)
-            self.assertIn("(:action GoToObject", trimmed)
-            self.assertIn("(:action RunMicrowave", trimmed)
-            self.assertNotIn("(:action RunToaster", trimmed)
-            self.assertTrue(trimmed.rstrip().endswith(")"))
-
-    def test_trim_robot_domain_for_allocation_falls_back_when_unsafe(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            manager = TaskManager(tmp_dir, "test-model")
-            domain = "(define (domain robot1) (:action Bad"
-
-            self.assertEqual(
-                manager._trim_robot_domain_for_allocation(
-                    domain,
-                    "#SubTask 1: Use the microwave",
-                    [],
-                ),
-                domain,
-            )
-            self.assertEqual(
-                manager._trim_robot_domain_for_allocation(
-                    domain,
-                    "#SubTask 1: Use the microwave",
-                    [{"name": "Microwave"}],
-                ),
-                domain,
-            )
-
-    def test_allocation_prompt_includes_key_objects_and_cropped_domain(self):
+    def test_allocation_prompt_includes_key_objects_without_pddl_domain(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
-            resources_dir = root / "resources"
             prompt_dir = root / "prompts" / "v1"
-            resources_dir.mkdir(parents=True)
             prompt_dir.mkdir(parents=True)
             (prompt_dir / "pddl_train_task_allocationsep_solution.txt").write_text(
                 "# allocation example\n",
                 encoding="utf-8",
             )
-            (resources_dir / "robot1.pddl").write_text(
-                "(define (domain robot1)\n"
-                "  (:requirements :strips)\n"
-                "  (:types robot object microwave toaster - object)\n"
-                "  (:predicates (at ?r - robot ?o - object) (hot ?o - object))\n"
-                "  (:action GoToObject\n"
-                "    :parameters (?r - robot ?o - object)\n"
-                "    :effect (and (at ?r ?o))\n"
-                "  )\n"
-                "  (:action RunMicrowave\n"
-                "    :parameters (?r - robot ?m - microwave ?item - object)\n"
-                "    :effect (and (hot ?item))\n"
-                "  )\n"
-                "  (:action RunToaster\n"
-                "    :parameters (?r - robot ?t - toaster ?item - object)\n"
-                "    :effect (and (hot ?item))\n"
-                "  )\n"
-                ")",
-                encoding="utf-8",
-            )
 
             manager = TaskManager(str(root), "test-model", config=RunConfig(root))
+            manager.current_task_run_dir = str(root / "run")
+            manager.current_task_manifest = {"artifacts": {}}
             captured = {}
 
             def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
@@ -1865,10 +1781,21 @@ class PDDLRunConfigTests(unittest.TestCase):
             prompt = captured["prompt"]
             self.assertIn("key_objects = [{'name': 'Microwave', 'mass': 7.0}]", prompt)
             self.assertIn("key_objects_by_subtask = {1: [{'name': 'Microwave', 'mass': 7.0}]}", prompt)
-            self.assertIn("# CROPPED ROBOT PDDL DOMAINS FOR ALLOCATION", prompt)
-            self.assertIn("# Robot allocation name: robot1", prompt)
-            self.assertIn("(:action RunMicrowave", prompt)
+            self.assertNotIn("key_object_pddl_states =", prompt)
+            self.assertIn("# - Use robots, objects, key_objects, and key_objects_by_subtask as allocation context.", prompt)
+            self.assertNotIn("# CROPPED ROBOT PDDL DOMAINS FOR ALLOCATION", prompt)
+            self.assertNotIn("# Robot allocation name: robot1", prompt)
+            self.assertNotIn("Real PDDL domain file", prompt)
+            self.assertNotIn("Domain unavailable for allocation prompt", prompt)
+            self.assertNotIn("cropped robot PDDL domains", prompt)
+            self.assertNotIn("cropped domain", prompt)
+            self.assertNotIn("(:action RunMicrowave", prompt)
             self.assertNotIn("(:action RunToaster", prompt)
+            self.assertNotIn(
+                "cropped_robot_domains",
+                manager.current_task_manifest["artifacts"].get("allocate", {}),
+            )
+            self.assertFalse((root / "run" / "02_allocate" / "00_cropped_robot_domains.txt").exists())
 
     def test_problem_generation_fewshot_includes_key_object_pddl_states(self):
         prompt = (ROOT / "prompts" / "v1" / "pddl_train_task_allocationsep_problem.txt").read_text(

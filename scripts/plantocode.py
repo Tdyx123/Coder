@@ -388,6 +388,7 @@ def serialize_bundle(bundle: PddlRunPlanBundle) -> Dict[str, Any]:
         },
         "object_mappings": dict(bundle.object_mappings),
         "object_mapping_warnings": list(bundle.object_mapping_warnings),
+        "object_id_bindings": list(bundle.object_id_bindings),
         "gpu_device": bundle.gpu_device,
     }
 
@@ -519,6 +520,7 @@ def build_hardcoded_bundle() -> types.SimpleNamespace:
         plan_files=BUNDLE_DATA["plan_files"],
         object_mappings=BUNDLE_DATA["object_mappings"],
         object_mapping_warnings=BUNDLE_DATA["object_mapping_warnings"],
+        object_id_bindings=BUNDLE_DATA.get("object_id_bindings", []),
         gpu_device=BUNDLE_DATA.get("gpu_device"),
     )
 
@@ -591,6 +593,7 @@ def run_standalone() -> int:
         RENDER_IMAGE,
         gpu_device=bundle.gpu_device,
     )
+    runtime.register_object_id_bindings(bundle.object_id_bindings)
     _context.runtime = runtime
     try:
         run_action_plan(bundle.task_plan)
@@ -646,6 +649,7 @@ def run_runner_mode(args: argparse.Namespace) -> int:
             False,
             gpu_device=bundle.gpu_device,
         )
+        runtime.register_object_id_bindings(bundle.object_id_bindings)
         _context.runtime = runtime
 
         execution_report = run_action_plan_tolerant(

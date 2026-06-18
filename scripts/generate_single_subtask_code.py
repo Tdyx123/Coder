@@ -87,6 +87,7 @@ class GeneratedSubtask:
     object_states: List[Dict[str, Any]]
     actions: List[Dict[str, Any]]
     pre_task_actions: List[Dict[str, Any]]
+    object_id_bindings: List[Dict[str, Any]]
 
 
 def normalize_floor_plan(value: Any) -> int:
@@ -480,6 +481,312 @@ def load_floor_object_metadata(
     return floor_objects
 
 
+def build_floor_object_numbering(
+    floor_objects: Sequence[Dict[str, Any]],
+) -> Dict[str, Any]:
+    object_type_counts: Dict[str, int] = {}
+    for item in floor_objects:
+        object_type = item.get("objectType")
+        if isinstance(object_type, str) and object_type:
+            object_type_counts[object_type] = object_type_counts.get(object_type, 0) + 1
+
+    by_type: Dict[str, List[Dict[str, Any]]] = {}
+    by_object_id: Dict[str, Dict[str, Any]] = {}
+    by_object_token: Dict[str, Dict[str, Any]] = {}
+    metadata_by_object_id: Dict[str, Dict[str, Any]] = {}
+    type_indices: Dict[str, int] = {}
+
+    for item in floor_objects:
+        object_type = item.get("objectType")
+        if not isinstance(object_type, str) or not object_type:
+            continue
+
+        type_indices[object_type] = type_indices.get(object_type, 0) + 1
+        number = type_indices[object_type]
+        count = object_type_counts.get(object_type, 1)
+        token = object_type if count == 1 else f"{object_type}_{number}"
+        object_id = item.get("objectId")
+        object_id_text = object_id if isinstance(object_id, str) else ""
+        entry = {
+            "object": token,
+            "object_type": object_type,
+            "object_id": object_id_text,
+            "number": number,
+            "count": count,
+            "multiple": count > 1,
+        }
+
+        by_type.setdefault(object_type, []).append(entry)
+        by_object_token[token] = entry
+        if object_id_text:
+            by_object_id[object_id_text] = entry
+            metadata_by_object_id[object_id_text] = item
+
+    return {
+        "by_type": by_type,
+        "by_object_id": by_object_id,
+        "by_object_token": by_object_token,
+        "metadata_by_object_id": metadata_by_object_id,
+        "type_counts": object_type_counts,
+    }
+
+
+def _numbering_entry_for_target(
+    target: Any,
+    floor_object_numbering: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    target_text = str(target).strip()
+    if not target_text:
+        return None
+
+    by_object_token = floor_object_numbering.get("by_object_token", {})
+    if isinstance(by_object_token, dict) and target_text in by_object_token:
+        entry = by_object_token[target_text]
+        return entry if isinstance(entry, dict) else None
+
+    by_object_id = floor_object_numbering.get("by_object_id", {})
+    if isinstance(by_object_id, dict) and target_text in by_object_id:
+        entry = by_object_id[target_text]
+        return entry if isinstance(entry, dict) else None
+
+    object_type = target_text.split("|", 1)[0]
+    by_type = floor_object_numbering.get("by_type", {})
+    entries = by_type.get(object_type, []) if isinstance(by_type, dict) else []
+    if entries:
+        entry = entries[0]
+        return entry if isinstance(entry, dict) else None
+    return None
+
+
+def _object_token_for_target(
+    target: Any,
+    floor_object_numbering: Dict[str, Any],
+) -> Any:
+    entry = _numbering_entry_for_target(target, floor_object_numbering)
+    if entry is None:
+        return target
+    return entry["object"]
+
+
+def _first_openable_parent_receptacle(
+    item: Dict[str, Any],
+    openable_container_ids: Set[str],
+) -> Optional[str]:
+    parents = item.get("parentReceptacles") or []
+    if isinstance(parents, str):
+        parents = [parents]
+    for parent in parents:
+        parent_id = str(parent)
+        if parent_id in openable_container_ids:
+            return parent_id
+    return None
+
+
+def build_selected_openable_parent_container_map(
+    floor_objects: Sequence[Dict[str, Any]],
+    floor_object_numbering: Dict[str, Any],
+) -> Dict[str, str]:
+    openable_container_ids = {
+        str(item["objectId"])
+        for item in floor_objects
+        if item.get("objectId")
+        and bool(item.get("openable", False))
+        and bool(item.get("receptacle", False))
+    }
+    metadata_by_object_id = floor_object_numbering.get("metadata_by_object_id", {})
+    by_type = floor_object_numbering.get("by_type", {})
+    if not isinstance(metadata_by_object_id, dict) or not isinstance(by_type, dict):
+        return {}
+
+    selected_parent_by_object: Dict[str, str] = {}
+    for object_type, entries in sorted(by_type.items()):
+        if not entries:
+            continue
+
+        selected_entry = entries[0]
+        object_id = selected_entry.get("object_id")
+        if not isinstance(object_id, str) or not object_id:
+            continue
+
+        item = metadata_by_object_id.get(object_id)
+        if not isinstance(item, dict):
+            continue
+
+        parent_id = _first_openable_parent_receptacle(item, openable_container_ids)
+        if not parent_id:
+            continue
+
+        parent_entry = _numbering_entry_for_target(parent_id, floor_object_numbering)
+        parent_token = parent_entry["object"] if parent_entry else parent_id
+        selected_parent_by_object[str(selected_entry["object"])] = str(parent_token)
+        selected_parent_by_object[str(object_type)] = str(parent_token)
+
+    return selected_parent_by_object
+
+
+def rewrite_action_object_tokens(
+    actions: Sequence[Dict[str, Any]],
+    floor_object_numbering: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    updated: List[Dict[str, Any]] = []
+    for item in actions:
+        action_item = dict(item)
+        parameters = dict(action_item.get("parameters") or {})
+        args = parameters.get("args", [])
+        if isinstance(args, list):
+            parameters["args"] = [
+                _object_token_for_target(arg, floor_object_numbering)
+                for arg in args
+            ]
+        action_item["parameters"] = parameters
+        updated.append(action_item)
+    return updated
+
+
+def rewrite_subtask_object_tokens(
+    subtask: Dict[str, Any],
+    floor_object_numbering: Dict[str, Any],
+) -> Dict[str, Any]:
+    updated = dict(subtask)
+    objects = subtask.get("objects", [])
+    if isinstance(objects, list):
+        updated["objects"] = [
+            _object_token_for_target(obj, floor_object_numbering)
+            for obj in objects
+        ]
+    return updated
+
+
+def rewrite_object_state_tokens(
+    object_states: Sequence[Dict[str, Any]],
+    floor_object_numbering: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    updated: List[Dict[str, Any]] = []
+    for item in object_states:
+        state_item = dict(item)
+        if "name" in state_item:
+            state_item["name"] = _object_token_for_target(
+                state_item["name"],
+                floor_object_numbering,
+            )
+        contains = state_item.get("contains")
+        if isinstance(contains, list):
+            state_item["contains"] = [
+                _object_token_for_target(contained, floor_object_numbering)
+                for contained in contains
+            ]
+        updated.append(state_item)
+    return updated
+
+
+def _record_object_id_binding(
+    bindings_by_object: Dict[str, Dict[str, Any]],
+    entry: Optional[Dict[str, Any]],
+    role: str,
+) -> None:
+    if not entry or not bool(entry.get("multiple", False)):
+        return
+    object_token = entry.get("object")
+    object_id = entry.get("object_id")
+    object_type = entry.get("object_type")
+    if not isinstance(object_token, str) or not object_token:
+        return
+    if not isinstance(object_id, str) or not object_id:
+        return
+
+    binding = bindings_by_object.get(object_token)
+    if binding is None:
+        binding = {
+            "object": object_token,
+            "object_type": object_type if isinstance(object_type, str) and object_type else "object",
+            "object_id": object_id,
+            "number": entry.get("number", 1),
+            "count": entry.get("count", 1),
+            "multiple": True,
+            "roles": [],
+        }
+        bindings_by_object[object_token] = binding
+
+    roles = binding.setdefault("roles", [])
+    if isinstance(roles, list) and role not in roles:
+        roles.append(role)
+
+
+def _record_bindings_for_values(
+    bindings_by_object: Dict[str, Dict[str, Any]],
+    values: Sequence[Any],
+    floor_object_numbering: Dict[str, Any],
+    role: str,
+) -> None:
+    for value in values:
+        entry = _numbering_entry_for_target(value, floor_object_numbering)
+        _record_object_id_binding(bindings_by_object, entry, role)
+
+
+def _iter_action_args(actions: Sequence[Dict[str, Any]]) -> List[Any]:
+    values: List[Any] = []
+    for item in actions:
+        values.extend(_action_args(item))
+    return values
+
+
+def build_object_id_bindings_for_generated_subtask(
+    *,
+    subtask: Dict[str, Any],
+    object_states: Sequence[Dict[str, Any]],
+    actions: Sequence[Dict[str, Any]],
+    pre_task_actions: Sequence[Dict[str, Any]],
+    parent_by_object: Dict[str, str],
+    floor_object_numbering: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    bindings_by_object: Dict[str, Dict[str, Any]] = {}
+    action_values = _iter_action_args(actions)
+    action_value_set = {str(value) for value in action_values}
+
+    for parent_token in sorted(set(parent_by_object.values())):
+        if parent_token in action_value_set:
+            _record_object_id_binding(
+                bindings_by_object,
+                _numbering_entry_for_target(parent_token, floor_object_numbering),
+                "parentReceptacle",
+            )
+
+    _record_bindings_for_values(
+        bindings_by_object,
+        list(subtask.get("objects", [])),
+        floor_object_numbering,
+        "subtask_object",
+    )
+    _record_bindings_for_values(
+        bindings_by_object,
+        action_values,
+        floor_object_numbering,
+        "action_object",
+    )
+    _record_bindings_for_values(
+        bindings_by_object,
+        _iter_action_args(pre_task_actions),
+        floor_object_numbering,
+        "pre_task_action_object",
+    )
+
+    goal_values: List[Any] = []
+    for item in object_states:
+        if "name" in item:
+            goal_values.append(item["name"])
+        contains = item.get("contains")
+        if isinstance(contains, list):
+            goal_values.extend(contains)
+    _record_bindings_for_values(
+        bindings_by_object,
+        goal_values,
+        floor_object_numbering,
+        "goal_object",
+    )
+
+    return list(bindings_by_object.values())
+
+
 def build_openable_parent_container_map(
     floor_objects: Sequence[Dict[str, Any]],
 ) -> Dict[str, str]:
@@ -857,6 +1164,7 @@ def build_bundle_data(
     task_text: str,
     actions: List[Dict[str, Any]],
     pre_task_actions: Optional[List[Dict[str, Any]]] = None,
+    object_id_bindings: Optional[List[Dict[str, Any]]] = None,
     plan_file: Optional[Path] = None,
 ) -> Dict[str, Any]:
     task_plan: Dict[str, Any] = {
@@ -883,6 +1191,7 @@ def build_bundle_data(
         "plan_files": {"1": str(plan_file) if plan_file is not None else ""},
         "object_mappings": {},
         "object_mapping_warnings": [],
+        "object_id_bindings": list(object_id_bindings or []),
     }
 
 
@@ -1039,7 +1348,34 @@ def build_hardcoded_bundle() -> types.SimpleNamespace:
         plan_files=BUNDLE_DATA["plan_files"],
         object_mappings=BUNDLE_DATA["object_mappings"],
         object_mapping_warnings=BUNDLE_DATA["object_mapping_warnings"],
+        object_id_bindings=BUNDLE_DATA.get("object_id_bindings", []),
     )
+
+
+def resolve_object_goal_alias(value: Any) -> Any:
+    if runtime is None or value is None:
+        return value
+    try:
+        object_id = runtime.object_alias_current_id(value)
+    except Exception:
+        object_id = None
+    return object_id or value
+
+
+def resolve_ground_truth_object_aliases(goals: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    resolved_goals: List[Dict[str, Any]] = []
+    for goal in goals:
+        resolved_goal = dict(goal)
+        if "name" in resolved_goal:
+            resolved_goal["name"] = resolve_object_goal_alias(resolved_goal["name"])
+        contains = resolved_goal.get("contains")
+        if isinstance(contains, list):
+            resolved_goal["contains"] = [
+                resolve_object_goal_alias(item)
+                for item in contains
+            ]
+        resolved_goals.append(resolved_goal)
+    return resolved_goals
 
 
 def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
@@ -1104,12 +1440,14 @@ def run_standalone() -> int:
             print(f"WARNING: {{warning}}")
 
     runtime = ThorRuntime(robots, floor_no, CLOUD_RENDERING, RENDER_IMAGE)
+    runtime.register_object_id_bindings(bundle.object_id_bindings)
     _context.runtime = runtime
     try:
         run_action_plan(bundle.task_plan)
         runtime.step({{"action": "Done"}}, check_success=False)
 
-        metrics = runtime.evaluate(ground_truth)
+        resolved_ground_truth = resolve_ground_truth_object_aliases(ground_truth)
+        metrics = runtime.evaluate(resolved_ground_truth)
         no_trans_gt = int(task_record.get("trans", 0) or 0)
         max_trans = int(task_record.get("min_trans", task_record.get("max_trans", 0)) or 0)
         ru = transition_metric(bundle.no_trans, no_trans_gt, max_trans)
@@ -1123,7 +1461,7 @@ def run_standalone() -> int:
                 ru=ru,
             )
         )
-        runtime.log_unmet_goals(ground_truth)
+        runtime.log_unmet_goals(resolved_ground_truth)
         runtime.generate_video()
         runtime.write_final_metadata()
         return 0
@@ -1153,6 +1491,7 @@ def run_runner_mode(args: argparse.Namespace) -> int:
             result["object_mapping_warnings"] = list(bundle.object_mapping_warnings)
 
         runtime = ThorRuntime(robots, floor_no, CLOUD_RENDERING, False)
+        runtime.register_object_id_bindings(bundle.object_id_bindings)
         _context.runtime = runtime
 
         execution_report = run_action_plan_tolerant(
@@ -1166,7 +1505,8 @@ def run_runner_mode(args: argparse.Namespace) -> int:
         except RuntimeError as exc:
             result["done_error"] = str(exc)
 
-        metrics = runtime.evaluate(ground_truth)
+        resolved_ground_truth = resolve_ground_truth_object_aliases(ground_truth)
+        metrics = runtime.evaluate(resolved_ground_truth)
         no_trans_gt = int(task_record.get("trans", 0) or 0)
         max_trans = int(task_record.get("min_trans", task_record.get("max_trans", 0)) or 0)
         ru = transition_metric(bundle.no_trans, no_trans_gt, max_trans)
@@ -1243,6 +1583,7 @@ def task_record_for(
         "subtasks": [generated.subtask],
         "trans": len(generated.actions),
         "max_trans": len(generated.actions),
+        "object_id_bindings": generated.object_id_bindings,
     }
     if code_path is not None:
         record["code_path"] = str(code_path)
@@ -1266,6 +1607,7 @@ def prepare_generated_subtasks(
     floor_counts: Dict[int, int] = {}
     skill_sets_by_floor: Dict[int, Dict[str, Any]] = {}
     floor_objects_by_floor: Dict[int, List[Dict[str, Any]]] = {}
+    floor_object_numbering_by_floor: Dict[int, Dict[str, Any]] = {}
     open_parent_by_floor: Dict[int, Dict[str, str]] = {}
     generated: List[GeneratedSubtask] = []
 
@@ -1281,29 +1623,56 @@ def prepare_generated_subtasks(
                 item.floor_plan,
                 object_properties_path,
             )
-            open_parent_by_floor[item.floor_plan] = build_openable_parent_container_map(
-                floor_objects_by_floor[item.floor_plan]
+            floor_object_numbering_by_floor[item.floor_plan] = build_floor_object_numbering(
+                floor_objects_by_floor[item.floor_plan],
+            )
+            open_parent_by_floor[item.floor_plan] = build_selected_openable_parent_container_map(
+                floor_objects_by_floor[item.floor_plan],
+                floor_object_numbering_by_floor[item.floor_plan],
             )
         skill_sets = skill_sets_by_floor[item.floor_plan]
-        actions = build_actions_for_subtask(
+        floor_object_numbering = floor_object_numbering_by_floor[item.floor_plan]
+        raw_actions = build_actions_for_subtask(
             item.subtask,
             skill_sets,
+            None,
+        )
+        actions = _insert_parent_open_actions(
+            rewrite_action_object_tokens(raw_actions, floor_object_numbering),
             open_parent_by_floor[item.floor_plan],
         )
-        pre_task_actions = build_pre_task_actions_for_subtask(
+        raw_pre_task_actions = build_pre_task_actions_for_subtask(
             item.subtask,
             floor_objects_by_floor[item.floor_plan],
+        )
+        pre_task_actions = rewrite_action_object_tokens(
+            raw_pre_task_actions,
+            floor_object_numbering,
+        )
+        subtask = rewrite_subtask_object_tokens(item.subtask, floor_object_numbering)
+        object_states = rewrite_object_state_tokens(
+            engine.get_task_final_state([item.subtask]),
+            floor_object_numbering,
+        )
+        object_id_bindings = build_object_id_bindings_for_generated_subtask(
+            subtask=subtask,
+            object_states=object_states,
+            actions=actions,
+            pre_task_actions=pre_task_actions,
+            parent_by_object=open_parent_by_floor[item.floor_plan],
+            floor_object_numbering=floor_object_numbering,
         )
         generated.append(
             GeneratedSubtask(
                 floor_plan=item.floor_plan,
                 floor_index=floor_index,
                 global_index=global_index,
-                subtask=item.subtask,
+                subtask=subtask,
                 task_text=construct_subtask_name(item.subtask),
-                object_states=engine.get_task_final_state([item.subtask]),
+                object_states=object_states,
                 actions=actions,
                 pre_task_actions=pre_task_actions,
+                object_id_bindings=object_id_bindings,
             )
         )
 
@@ -1331,6 +1700,7 @@ def write_flat_outputs(
             task_text=item.task_text,
             actions=item.actions,
             pre_task_actions=item.pre_task_actions,
+            object_id_bindings=item.object_id_bindings,
         )
 
         try:
@@ -1406,6 +1776,7 @@ def write_outputs(
             task_text=item.task_text,
             actions=item.actions,
             pre_task_actions=item.pre_task_actions,
+            object_id_bindings=item.object_id_bindings,
             plan_file=None if manifest_only else task_dir / "subtask_plan.txt",
         )
 
@@ -1417,6 +1788,7 @@ def write_outputs(
             "object_states": item.object_states,
             "no_trans": len(item.actions),
             "code_path": str(code_path) if code_path is not None else None,
+            "object_id_bindings": item.object_id_bindings,
         }
         manifest_records.append(manifest_record)
 

@@ -160,6 +160,7 @@ def main() -> int:
         RENDER_IMAGE,
         gpu_device=bundle.gpu_device,
     )
+    runtime.register_object_id_bindings(bundle.object_id_bindings)
     _context.runtime = runtime
     try:
         run_action_plan(bundle.task_plan)

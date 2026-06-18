@@ -1347,33 +1347,42 @@ class TaskManager:
                     return parent
         return None
 
+    @staticmethod
+    def _pddl_predicate_names_from_block(predicates_block: str) -> Set[str]:
+        return set(re.findall(r'\(\s*([A-Za-z][A-Za-z0-9_-]*)\b', predicates_block))
+
+    def _extract_pddl_predicate_blocks(self, domain_content: str) -> List[str]:
+        """Extract balanced (:predicates ...) blocks from PDDL content."""
+        if not domain_content:
+            return []
+
+        blocks: List[str] = []
+        for start_match in re.finditer(r'\(\s*:predicates\b', domain_content, re.IGNORECASE):
+            start = start_match.start()
+            depth = 0
+            end: Optional[int] = None
+            for idx in range(start, len(domain_content)):
+                char = domain_content[idx]
+                if char == "(":
+                    depth += 1
+                elif char == ")":
+                    depth -= 1
+                    if depth == 0:
+                        end = idx + 1
+                        break
+
+            if end is not None:
+                blocks.append(domain_content[start:end])
+
+        return blocks
+
     def _extract_pddl_predicate_names(self, domain_content: str) -> Set[str]:
         """Extract declared predicate names from a PDDL domain."""
-        if not domain_content:
+        predicate_blocks = self._extract_pddl_predicate_blocks(domain_content)
+        if not predicate_blocks:
             return set()
 
-        start_match = re.search(r'\(\s*:predicates\b', domain_content, re.IGNORECASE)
-        if not start_match:
-            return set()
-
-        start = start_match.start()
-        depth = 0
-        end: Optional[int] = None
-        for idx in range(start, len(domain_content)):
-            char = domain_content[idx]
-            if char == "(":
-                depth += 1
-            elif char == ")":
-                depth -= 1
-                if depth == 0:
-                    end = idx + 1
-                    break
-
-        if end is None:
-            return set()
-
-        predicates_block = domain_content[start:end]
-        return set(re.findall(r'\(\s*([A-Za-z][A-Za-z0-9_-]*)\b', predicates_block))
+        return self._pddl_predicate_names_from_block(predicate_blocks[0])
 
     def _extract_pddl_type_names(self, domain_content: str) -> Set[str]:
         """Extract declared type names from a PDDL domain."""
@@ -1587,10 +1596,20 @@ class TaskManager:
         key_object_pddl_states: Optional[List[Dict[str, Any]]],
         domain_content: str,
     ) -> List[Dict[str, Any]]:
+        supported_predicates = self._extract_pddl_predicate_names(domain_content)
+        return self._filter_key_object_pddl_states_by_predicates(
+            key_object_pddl_states,
+            supported_predicates,
+        )
+
+    def _filter_key_object_pddl_states_by_predicates(
+        self,
+        key_object_pddl_states: Optional[List[Dict[str, Any]]],
+        supported_predicates: Set[str],
+    ) -> List[Dict[str, Any]]:
         if not key_object_pddl_states:
             return []
 
-        supported_predicates = self._extract_pddl_predicate_names(domain_content)
         filtered_states: List[Dict[str, Any]] = []
         for entry in key_object_pddl_states:
             if not isinstance(entry, dict):
@@ -1621,167 +1640,6 @@ class TaskManager:
             filtered_states.append(filtered_entry)
 
         return filtered_states
-
-    def _extract_pddl_action_blocks(self, domain_content: str) -> List[Dict[str, Any]]:
-        """Extract top-level PDDL action blocks using balanced parentheses."""
-        if not domain_content:
-            return []
-
-        action_re = re.compile(r'\(\s*:action\s+([^\s()]+)', re.IGNORECASE)
-        blocks: List[Dict[str, Any]] = []
-
-        for match in action_re.finditer(domain_content):
-            start = match.start()
-            depth = 0
-            end: Optional[int] = None
-            for idx in range(start, len(domain_content)):
-                char = domain_content[idx]
-                if char == "(":
-                    depth += 1
-                elif char == ")":
-                    depth -= 1
-                    if depth == 0:
-                        end = idx + 1
-                        break
-
-            if end is None:
-                return []
-
-            blocks.append({
-                "name": match.group(1),
-                "start": start,
-                "end": end,
-                "text": domain_content[start:end],
-            })
-
-        return blocks
-
-    def _allocation_object_action_hints(self, key_objects: List[Dict[str, Any]]) -> Set[str]:
-        object_action_hints = {
-            "lightswitch": {"SwitchOn", "SwitchOff"},
-            "faucet": {"SwitchOn", "SwitchOff", "FillWater"},
-            "sink": {"CleanObject", "FillWater"},
-            "sinkbasin": {"CleanObject", "FillWater"},
-            "microwave": {"OpenObject", "CloseObject", "PutObject", "RunMicrowave"},
-            "fridge": {"OpenObject", "CloseObject", "PutObject", "ColdObject"},
-            "toaster": {"RunToaster"},
-            "coffeemachine": {"RunCoffeeMachine"},
-            "stoveburner": {"CookByStoveBurner", "HeatByStoveBurner", "PrepareEgg", "FireByStoveBurner"},
-            "stoveknob": {"SwitchOn", "SwitchOff"},
-            "cabinet": {"OpenObject", "CloseObject", "PutObject"},
-            "drawer": {"OpenObject", "CloseObject", "PutObject"},
-            "egg": {"PrepareEgg"},
-            "bread": {"RunToaster", "SliceObject"},
-            "mug": {"FillWater", "RunCoffeeMachine"},
-            "knife": {"PickupObject", "SliceObject"},
-            "butterknife": {"PickupObject", "SliceObject"},
-        }
-
-        hints: Set[str] = set()
-        for obj in key_objects:
-            name = obj.get("name")
-            if isinstance(name, str):
-                hints.update(object_action_hints.get(self._object_match_key(name), set()))
-        return hints
-
-    def _required_action_names_for_allocation(
-        self,
-        decomposed_plan: str,
-        action_names: List[str],
-    ) -> Set[str]:
-        required: Set[str] = set()
-        for action_name in action_names:
-            if self._text_contains_name(decomposed_plan, action_name):
-                required.add(action_name)
-        return required
-
-    def _trim_robot_domain_for_allocation(
-        self,
-        domain_content: str,
-        decomposed_plan: str,
-        key_objects: List[Dict[str, Any]],
-    ) -> str:
-        """Return a prompt-only robot domain cropped to relevant actions."""
-        if not domain_content or not key_objects:
-            return domain_content
-
-        action_blocks = self._extract_pddl_action_blocks(domain_content)
-        if not action_blocks:
-            return domain_content
-
-        action_names = [str(block["name"]) for block in action_blocks]
-        required_actions = self._required_action_names_for_allocation(decomposed_plan, action_names)
-        hinted_actions = self._allocation_object_action_hints(key_objects)
-        key_object_names = [
-            str(obj["name"])
-            for obj in key_objects
-            if isinstance(obj, dict) and isinstance(obj.get("name"), str)
-        ]
-
-        kept_names: Set[str] = set()
-        kept_blocks: List[Dict[str, Any]] = []
-        for block in action_blocks:
-            action_name = str(block["name"])
-            block_text = str(block["text"])
-            matches_key_object_type = any(
-                self._text_contains_name(block_text, object_name)
-                for object_name in key_object_names
-            )
-            if action_name in required_actions or action_name in hinted_actions or matches_key_object_type:
-                kept_names.add(action_name)
-                kept_blocks.append(block)
-
-        if kept_blocks and "GoToObject" not in kept_names:
-            go_to_block = next((block for block in action_blocks if block["name"] == "GoToObject"), None)
-            if go_to_block:
-                kept_blocks.insert(0, go_to_block)
-                kept_names.add("GoToObject")
-
-        if not kept_blocks:
-            return domain_content
-
-        first_action_start = int(action_blocks[0]["start"])
-        last_action_end = int(action_blocks[-1]["end"])
-        prefix = domain_content[:first_action_start].rstrip()
-        suffix = domain_content[last_action_end:].strip()
-        trimmed = prefix + "\n\n" + "\n\n".join(str(block["text"]).rstrip() for block in kept_blocks)
-        if suffix:
-            trimmed += "\n" + suffix
-        return trimmed.strip() + "\n"
-
-    def _build_cropped_robot_domains_for_allocation(
-        self,
-        robots: List[dict],
-        decomposed_plan: str,
-        key_objects: List[Dict[str, Any]],
-    ) -> str:
-        sections: List[str] = []
-        for idx, robot in enumerate(robots, start=1):
-            local_robot_name = str(robot.get("name") or f"robot{idx}")
-            real_robot_name = self.current_robot_domain_names.get(local_robot_name, local_robot_name)
-            domain_path = self.config.robot_domain_path(f"{real_robot_name}.pddl")
-            try:
-                domain_content = self.file_processor.read_file(str(domain_path))
-            except PDDLError as exc:
-                sections.append(
-                    f"# Robot allocation name: {local_robot_name}\n"
-                    f"# Real PDDL domain file: {real_robot_name}.pddl\n"
-                    f"# Domain unavailable for allocation prompt: {exc}"
-                )
-                continue
-
-            cropped_domain = self._trim_robot_domain_for_allocation(
-                domain_content,
-                decomposed_plan,
-                key_objects,
-            )
-            sections.append(
-                f"# Robot allocation name: {local_robot_name}\n"
-                f"# Real PDDL domain file: {real_robot_name}.pddl\n"
-                f"{cropped_domain.rstrip()}"
-            )
-
-        return "\n\n".join(sections)
 
     def _generate_decomposed_plan(self, task: str, domain_content: str, robots: List[dict], objects_ai: str) -> str:
         """Generate decomposed plan for a task."""
@@ -1848,11 +1706,6 @@ class TaskManager:
                 )
             if not key_objects_by_subtask and key_objects:
                 key_objects_by_subtask = {1: key_objects}
-            cropped_robot_domains = self._build_cropped_robot_domains_for_allocation(
-                robots,
-                decomposed_plan,
-                key_objects,
-            )
 
             # Read allocation prompt file
             prompt_file = self.config.prompt_file(f"{self.prompt_allocation_set}_solution.txt")
@@ -1869,15 +1722,12 @@ class TaskManager:
             prompt += f"\n{objects_ai}"
             prompt += f"\nkey_objects = {key_objects}"
             prompt += f"\nkey_objects_by_subtask = {key_objects_by_subtask}"
-            if cropped_robot_domains:
-                prompt += "\n\n# CROPPED ROBOT PDDL DOMAINS FOR ALLOCATION\n"
-                prompt += cropped_robot_domains
             prompt += f"\n\n# IMPORTANT: The AI should ensure that the robots assigned to the tasks have all the necessary skills to perform the tasks. IMPORTANT: Determine whether the subtasks must be performed sequentially or in parallel, or a combination of both and allocate robots based on availability. "
             prompt += f"\n# SOLUTION\n"
             prompt += f"\n# Additional Output Rules:"
-            prompt += f"\n# - Use key_objects, key_objects_by_subtask, and the cropped robot PDDL domains as allocation context only; the original robot domain files are not modified."
-            prompt += f"\n# - Assign robots using the task-local robot ids from robots = ..., even when a cropped domain section names the real PDDL file."
-            prompt += f"\n# - Judge robot capability using robot skills, mass capacity, each subtask's key_objects_by_subtask entry, and the cropped domain actions."
+            prompt += f"\n# - Use robots, objects, key_objects, and key_objects_by_subtask as allocation context."
+            prompt += f"\n# - Assign robots using the task-local robot ids from robots = ..."
+            prompt += f"\n# - Judge robot capability using robot skills, mass capacity, and each subtask's key_objects_by_subtask entry."
             prompt += f"\n# - Only assign a robot if it has every required skill."
             prompt += f"\n{SPECIAL_TASK_SKILL_PROMPT_RULE}"
             prompt += f"\n# - If multiple robots satisfy all constraints equally, choose the robot with the smallest robot number/name order."
@@ -1892,9 +1742,6 @@ class TaskManager:
             prompt += f"\n# - Do not output self-corrections or extra explanation after the final '# Sequence of Operations:' block.\n"
             allocate_prompt_artifact = self.config.artifact("allocate_prompt", "02_allocate/01_allocate_prompt.txt")
             allocate_output_artifact = self.config.artifact("allocate_output", "02_allocate/02_allocate_output.txt")
-            cropped_domains_artifact = "02_allocate/00_cropped_robot_domains.txt"
-            self._write_text_artifact(cropped_domains_artifact, cropped_robot_domains)
-            self._record_artifact("allocate", "cropped_robot_domains", cropped_domains_artifact)
             self._write_text_artifact(allocate_prompt_artifact, prompt)
             self._record_artifact("allocate", "prompt", allocate_prompt_artifact)
             
