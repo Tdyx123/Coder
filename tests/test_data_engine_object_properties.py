@@ -1,8 +1,10 @@
 import json
+import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,6 +21,13 @@ class DataEngineObjectPropertiesTests(unittest.TestCase):
         tmp_dir = tempfile.TemporaryDirectory()
         path = Path(tmp_dir.name) / "objects.json"
         path.write_text(json.dumps(objects), encoding="utf-8")
+        self.addCleanup(tmp_dir.cleanup)
+        return path
+
+    def _write_json(self, data, filename="config.json"):
+        tmp_dir = tempfile.TemporaryDirectory()
+        path = Path(tmp_dir.name) / filename
+        path.write_text(json.dumps(data), encoding="utf-8")
         self.addCleanup(tmp_dir.cleanup)
         return path
 
@@ -144,6 +153,149 @@ class DataEngineObjectPropertiesTests(unittest.TestCase):
         self.assertEqual(
             engine.generate_task(["Apple"], 1, skill_sets, seed=1),
             [{"skill": skill_name, "objects": ["Apple"]}],
+        )
+
+    def test_bad_subtask_rules_filter_random_subtask_lists(self):
+        config_path = self._write_json(
+            {
+                "version": 1,
+                "bad_subtasks": [
+                    {
+                        "floor_plan": "FloorPlan1",
+                        "subtask": {"skill": "Open", "objects": ["Cabinet"]},
+                    },
+                    {
+                        "floor_plan": None,
+                        "subtask": {"skill": "Break", "objects": ["Vase"]},
+                    },
+                ],
+            },
+            "bad_subtasks.json",
+        )
+        rules = data_engine.load_bad_subtask_rules(config_path, missing_ok=False)
+
+        filtered, excluded = data_engine.filter_bad_subtasks(
+            [
+                {"skill": "Open", "objects": ["Cabinet"]},
+                {"skill": "Open", "objects": ["Drawer"]},
+                {"skill": "Break", "objects": ["Vase"]},
+            ],
+            rules,
+            floor_plan=1,
+        )
+
+        self.assertEqual(excluded, 2)
+        self.assertEqual(filtered, [{"skill": "Open", "objects": ["Drawer"]}])
+
+    def test_no_valid_position_rules_filter_putobject_pairs_without_action_api(self):
+        objects_path = self._write_objects(
+            [
+                {"scene": "FloorPlan1", "objectType": "Apple", "pickupable": True},
+                {"scene": "FloorPlan1", "objectType": "Bowl", "receptacle": True},
+                {"scene": "FloorPlan1", "objectType": "Microwave", "openable": True, "receptacle": True},
+                {"scene": "FloorPlan1", "objectType": "Cabinet", "openable": True, "receptacle": True},
+            ]
+        )
+        rules_path = self._write_json(
+            [{"floorplan": "FloorPlan1", "object": "Apple", "receptacle": "Microwave"}],
+            "no_valid_positions.json",
+        )
+        rules = data_engine.load_no_valid_position_rules(rules_path, missing_ok=False)
+
+        filtered, excluded = data_engine.filter_no_valid_position_subtasks(
+            [
+                {"skill": "RunMicrowave", "objects": ["Apple", "Microwave"]},
+                {"skill": "PutOn", "objects": ["Apple", "Bowl"]},
+                {"skill": "Open", "objects": ["Cabinet"]},
+            ],
+            rules,
+            objects_path,
+            floor_plan=1,
+        )
+
+        self.assertEqual(excluded, 1)
+        self.assertEqual(
+            filtered,
+            [
+                {"skill": "PutOn", "objects": ["Apple", "Bowl"]},
+                {"skill": "Open", "objects": ["Cabinet"]},
+            ],
+        )
+
+    def test_create_single_task_retries_filtered_random_candidates(self):
+        engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
+        candidates = [
+            [{"skill": "PutOn", "objects": ["Apple", "Bowl"]}],
+            [{"skill": "Open", "objects": ["Cabinet"]}],
+        ]
+        skill_sets = {
+            "pickupable_objects": ["Apple"],
+            "stove_burner_placeable_objects": [],
+        }
+        robot = {
+            "name": "robot1",
+            "skills": ["GoToObject", "OpenObject"],
+            "mass_capacity": 100,
+        }
+        engine.get_objects_with_mass = lambda _floor_plan: [
+            {"name": "Apple", "mass": 1.0},
+            {"name": "Bowl", "mass": 1.0},
+            {"name": "Cabinet", "mass": 1.0},
+        ]
+        engine.generate_task = lambda *_args, **_kwargs: candidates.pop(0)
+        engine.get_robot = lambda _idx: robot
+
+        with patch("data_engine._build_object_skill_sets", return_value=skill_sets):
+            subtasks, assigned_robots, selected_robots = engine.create_singe_task(
+                1,
+                {json.dumps([], sort_keys=True)},
+                0,
+                bad_subtask_rules=[],
+                no_valid_position_rules={(1, "Apple", "Bowl")},
+            )
+
+        self.assertEqual(subtasks, [{"skill": "Open", "objects": ["Cabinet"]}])
+        self.assertEqual(assigned_robots, ["robot1"])
+        self.assertTrue(selected_robots)
+
+    def test_create_tasks_writes_pre_task_actions_field(self):
+        engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
+        subtasks = [
+            {"skill": "Wash", "objects": ["Plate"]},
+            {"skill": "FillWater", "objects": ["Mug", "Sink"]},
+        ]
+        engine.create_singe_task = lambda *_args, **_kwargs: (
+            subtasks,
+            ["robot1", "robot1"],
+            [{"name": "robot1"}],
+        )
+        engine.check_and_tran2nl = lambda _subtasks: "wash the plate and fill the mug"
+
+        tmp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp_dir.cleanup)
+        old_cwd = os.getcwd()
+        os.chdir(tmp_dir.name)
+        self.addCleanup(lambda: os.chdir(old_cwd))
+
+        floor_objects = [
+            {"objectType": "Plate"},
+            {"objectType": "Mug", "isFilledWithLiquid": True},
+        ]
+        with patch("data_engine._load_floor_objects_for_pre_task_actions", return_value=floor_objects):
+            engine.create_tasks(1, 1, 0)
+
+        output_path = Path(tmp_dir.name) / "data" / "final_test_new_0610_0" / "FloorPlan1.jsonl"
+        record = json.loads(output_path.read_text(encoding="utf-8").strip())
+
+        self.assertEqual(
+            [
+                (item["action_type"], item["parameters"]["args"], item["robot_id"])
+                for item in record["pre_task_actions"]
+            ],
+            [
+                ("DirtyObject", ["Plate"], "robot1"),
+                ("EmptyLiquid", ["Mug"], "robot1"),
+            ],
         )
 
     def test_normalize_scene_name_accepts_common_floor_plan_forms(self):

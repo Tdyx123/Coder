@@ -27,9 +27,9 @@ import data_engine
 
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "data" / "single_subtask_code"
 DEFAULT_CACHE_DIR = REPO_ROOT / "data" / "ai2thor_objects_cache"
-DEFAULT_OBJECT_PROPERTIES_PATH = REPO_ROOT / "data" / "all_ai2thor_objects.json"
-DEFAULT_BAD_SUBTASKS_CONFIG = REPO_ROOT / "data" / "bad_single_subtasks.json"
-DEFAULT_NO_VALID_POSITIONS_PATH = REPO_ROOT / "data" / "no_valid_positions.json"
+DEFAULT_OBJECT_PROPERTIES_PATH = data_engine.AI2THOR_OBJECT_PROPERTIES_PATH
+DEFAULT_BAD_SUBTASKS_CONFIG = data_engine.DEFAULT_BAD_SUBTASKS_CONFIG
+DEFAULT_NO_VALID_POSITIONS_PATH = data_engine.DEFAULT_NO_VALID_POSITIONS_PATH
 ROBOT_ID = "robot1"
 BREAK_OBJECT_BLACKLIST: Set[str] = {"CoffeeMachine"}
 
@@ -71,10 +71,7 @@ class EnumeratedSubtask:
     subtask: Dict[str, Any]
 
 
-@dataclass(frozen=True)
-class BadSubtaskRule:
-    floor_plan: Optional[int]
-    subtask_key: str
+BadSubtaskRule = data_engine.BadSubtaskRule
 
 
 @dataclass(frozen=True)
@@ -91,12 +88,7 @@ class GeneratedSubtask:
 
 
 def normalize_floor_plan(value: Any) -> int:
-    text = str(value).strip()
-    if text.startswith("FloorPlan"):
-        text = text[len("FloorPlan"):]
-    if not text.isdigit() or int(text) < 1:
-        raise ValueError(f"Invalid floor plan: {value!r}")
-    return int(text)
+    return data_engine.normalize_floor_plan(value)
 
 
 def discover_floor_plans(cache_dir: Path = DEFAULT_CACHE_DIR) -> List[int]:
@@ -132,121 +124,19 @@ def _subtask_key(subtask: Dict[str, Any]) -> str:
     return json.dumps(subtask, ensure_ascii=False, sort_keys=True)
 
 
-def _bad_subtask_config_error(path: Path, message: str) -> ValueError:
-    return ValueError(f"Invalid bad subtask config {path}: {message}")
-
-
-def _normalize_bad_subtask(value: Any, path: Path, entry_index: int) -> Dict[str, Any]:
-    if not isinstance(value, dict):
-        raise _bad_subtask_config_error(
-            path,
-            f"bad_subtasks[{entry_index}].subtask must be an object",
-        )
-
-    allowed_keys = {"skill", "objects"}
-    extra_keys = sorted(set(value) - allowed_keys)
-    if extra_keys:
-        raise _bad_subtask_config_error(
-            path,
-            f"bad_subtasks[{entry_index}].subtask has unsupported keys: {extra_keys}",
-        )
-
-    skill = value.get("skill")
-    if not isinstance(skill, str) or not skill:
-        raise _bad_subtask_config_error(
-            path,
-            f"bad_subtasks[{entry_index}].subtask.skill must be a non-empty string",
-        )
-
-    objects = value.get("objects")
-    if not isinstance(objects, list) or not all(isinstance(item, str) for item in objects):
-        raise _bad_subtask_config_error(
-            path,
-            f"bad_subtasks[{entry_index}].subtask.objects must be a list of strings",
-        )
-
-    return {"skill": skill, "objects": list(objects)}
-
-
 def load_bad_subtask_rules(
     path: Path = DEFAULT_BAD_SUBTASKS_CONFIG,
     *,
     missing_ok: bool = True,
 ) -> List[BadSubtaskRule]:
-    config_path = Path(path).expanduser()
-    if not config_path.is_file():
-        if missing_ok:
-            return []
-        raise FileNotFoundError(f"Bad subtask config not found: {config_path}")
-
-    try:
-        raw_config = json.loads(config_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise _bad_subtask_config_error(config_path, str(exc)) from exc
-
-    if not isinstance(raw_config, dict):
-        raise _bad_subtask_config_error(config_path, "top-level value must be an object")
-
-    version = raw_config.get("version", 1)
-    if version != 1:
-        raise _bad_subtask_config_error(config_path, "version must be 1")
-
-    raw_rules = raw_config.get("bad_subtasks")
-    if not isinstance(raw_rules, list):
-        raise _bad_subtask_config_error(config_path, "bad_subtasks must be a list")
-
-    rules: List[BadSubtaskRule] = []
-    for index, raw_rule in enumerate(raw_rules):
-        if not isinstance(raw_rule, dict):
-            raise _bad_subtask_config_error(
-                config_path,
-                f"bad_subtasks[{index}] must be an object",
-            )
-
-        raw_floor_plan = raw_rule.get("floor_plan")
-        try:
-            floor_plan = (
-                None
-                if raw_floor_plan is None
-                else normalize_floor_plan(raw_floor_plan)
-            )
-        except ValueError as exc:
-            raise _bad_subtask_config_error(
-                config_path,
-                f"bad_subtasks[{index}].floor_plan is invalid: {raw_floor_plan!r}",
-            ) from exc
-        subtask = _normalize_bad_subtask(raw_rule.get("subtask"), config_path, index)
-        rules.append(BadSubtaskRule(floor_plan=floor_plan, subtask_key=_subtask_key(subtask)))
-
-    return rules
+    return data_engine.load_bad_subtask_rules(path, missing_ok=missing_ok)
 
 
 def filter_bad_subtasks(
     enumerated: Sequence[EnumeratedSubtask],
     bad_subtask_rules: Sequence[BadSubtaskRule],
 ) -> Tuple[List[EnumeratedSubtask], int]:
-    floor_scoped: Set[Tuple[int, str]] = set()
-    global_rules: Set[str] = set()
-    for rule in bad_subtask_rules:
-        if rule.floor_plan is None:
-            global_rules.add(rule.subtask_key)
-        else:
-            floor_scoped.add((rule.floor_plan, rule.subtask_key))
-
-    filtered: List[EnumeratedSubtask] = []
-    excluded_count = 0
-    for item in enumerated:
-        subtask_key = _subtask_key(item.subtask)
-        if subtask_key in global_rules or (item.floor_plan, subtask_key) in floor_scoped:
-            excluded_count += 1
-            continue
-        filtered.append(item)
-
-    return filtered, excluded_count
-
-
-def _no_valid_positions_config_error(path: Path, message: str) -> ValueError:
-    return ValueError(f"Invalid no valid positions config {path}: {message}")
+    return data_engine.filter_bad_subtasks(enumerated, bad_subtask_rules)
 
 
 def load_no_valid_position_rules(
@@ -254,56 +144,7 @@ def load_no_valid_position_rules(
     *,
     missing_ok: bool = True,
 ) -> Set[Tuple[int, str, str]]:
-    config_path = Path(path).expanduser()
-    if not config_path.is_file():
-        if missing_ok:
-            return set()
-        raise FileNotFoundError(f"No valid positions config not found: {config_path}")
-
-    try:
-        raw_records = json.loads(config_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise _no_valid_positions_config_error(config_path, str(exc)) from exc
-
-    if not isinstance(raw_records, list):
-        raise _no_valid_positions_config_error(
-            config_path,
-            "top-level value must be a list",
-        )
-
-    rules: Set[Tuple[int, str, str]] = set()
-    for index, raw_record in enumerate(raw_records):
-        if not isinstance(raw_record, dict):
-            raise _no_valid_positions_config_error(
-                config_path,
-                f"records[{index}] must be an object",
-            )
-
-        try:
-            floor_plan = normalize_floor_plan(raw_record.get("floorplan"))
-        except ValueError as exc:
-            raise _no_valid_positions_config_error(
-                config_path,
-                f"records[{index}].floorplan is invalid: {raw_record.get('floorplan')!r}",
-            ) from exc
-
-        object_name = raw_record.get("object")
-        if not isinstance(object_name, str) or not object_name.strip():
-            raise _no_valid_positions_config_error(
-                config_path,
-                f"records[{index}].object must be a non-empty string",
-            )
-
-        receptacle = raw_record.get("receptacle")
-        if not isinstance(receptacle, str) or not receptacle.strip():
-            raise _no_valid_positions_config_error(
-                config_path,
-                f"records[{index}].receptacle must be a non-empty string",
-            )
-
-        rules.add((floor_plan, object_name.strip(), receptacle.strip()))
-
-    return rules
+    return data_engine.load_no_valid_position_rules(path, missing_ok=missing_ok)
 
 
 def _object_type_from_action_arg(value: Any) -> str:
@@ -314,58 +155,16 @@ def _is_break_object_blacklisted(value: Any) -> bool:
     return _object_type_from_action_arg(value) in BREAK_OBJECT_BLACKLIST
 
 
-def _put_object_no_valid_position_key(
-    floor_plan: int,
-    action_item: Dict[str, Any],
-) -> Optional[Tuple[int, str, str]]:
-    if action_item.get("action_type") != "PutObject":
-        return None
-
-    args = action_item.get("parameters", {}).get("args", [])
-    if len(args) < 2:
-        return None
-
-    return (
-        floor_plan,
-        _object_type_from_action_arg(args[0]),
-        _object_type_from_action_arg(args[1]),
-    )
-
-
 def filter_no_valid_position_subtasks(
     enumerated: Sequence[EnumeratedSubtask],
     no_valid_position_rules: Set[Tuple[int, str, str]],
     object_properties_path: Path = DEFAULT_OBJECT_PROPERTIES_PATH,
 ) -> Tuple[List[EnumeratedSubtask], int]:
-    if not no_valid_position_rules:
-        return list(enumerated), 0
-
-    skill_sets_by_floor: Dict[int, Dict[str, Any]] = {}
-    filtered: List[EnumeratedSubtask] = []
-    excluded_count = 0
-
-    for item in enumerated:
-        if item.floor_plan not in skill_sets_by_floor:
-            skill_sets_by_floor[item.floor_plan] = data_engine._build_object_skill_sets(
-                item.floor_plan,
-                object_properties_path,
-            )
-
-        actions = build_actions_for_subtask(
-            item.subtask,
-            skill_sets_by_floor[item.floor_plan],
-        )
-        if any(
-            _put_object_no_valid_position_key(item.floor_plan, action_item)
-            in no_valid_position_rules
-            for action_item in actions
-        ):
-            excluded_count += 1
-            continue
-
-        filtered.append(item)
-
-    return filtered, excluded_count
+    return data_engine.filter_no_valid_position_subtasks(
+        enumerated,
+        no_valid_position_rules,
+        object_properties_path,
+    )
 
 
 def enumerate_single_subtasks_for_floor(

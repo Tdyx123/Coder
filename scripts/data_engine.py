@@ -5,7 +5,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple, Union
 
 _SCRIPT_DIR = Path(__file__).resolve().parent
 _REPO_ROOT = _SCRIPT_DIR.parent
@@ -27,6 +27,9 @@ def _repo_root() -> Path:
 
 
 AI2THOR_OBJECT_PROPERTIES_PATH = _REPO_ROOT / "data" / "all_ai2thor_objects.json"
+DEFAULT_BAD_SUBTASKS_CONFIG = _REPO_ROOT / "data" / "bad_single_subtasks.json"
+DEFAULT_NO_VALID_POSITIONS_PATH = _REPO_ROOT / "data" / "no_valid_positions.json"
+PRE_TASK_ROBOT_ID = "robot1"
 AI2THOR_OBJECT_PROPERTY_FIELDS = (
     "breakable",
     "pickupable",
@@ -163,6 +166,12 @@ class SkillConfig:
     robot_skills_resolver: Optional[RobotSkillResolver] = None
     generation_gate: Optional[GenerationGate] = None
     pair_validator: Optional[PairValidator] = None
+
+
+@dataclass(frozen=True)
+class BadSubtaskRule:
+    floor_plan: Optional[int]
+    subtask_key: str
 
 
 def _putin_requires_open_close(receptacle: str) -> bool:
@@ -528,7 +537,7 @@ SKILL_CONFIGS: Dict[str, SkillConfig] = {
         robot_skills=("GoToObject", "PickupObject", "PutObject", "PrepareEgg"),
         required_pickup=(0,),
         text_builder=lambda objs: f"cook the {_lower_objects(objs)[0]} in the {_lower_objects(objs)[1]}",
-        final_state_builder=lambda objs: [{"name": objs[0], "contains": [], "states": ["COOKED"]}],
+        final_state_builder=lambda objs: [{"name": objs[0], "contains": [], "states": ["BROKEN", "COOKED"]}],
         generation_gate=_cook_egg_generation_gate,
         pair_validator=_cook_egg_pair_validator,
     ),
@@ -585,6 +594,244 @@ SKILL_CONFIGS: Dict[str, SkillConfig] = {
 
 class ObjectPropertiesError(ValueError):
     """Raised when floor-plan-specific AI2-THOR object properties are invalid."""
+
+
+def normalize_floor_plan(value: Any) -> int:
+    text = str(value).strip()
+    if text.startswith("FloorPlan"):
+        text = text[len("FloorPlan"):]
+    if not text.isdigit() or int(text) < 1:
+        raise ValueError(f"Invalid floor plan: {value!r}")
+    return int(text)
+
+
+def _subtask_key(subtask: Dict[str, Any]) -> str:
+    return json.dumps(subtask, ensure_ascii=False, sort_keys=True)
+
+
+def _bad_subtask_config_error(path: Path, message: str) -> ValueError:
+    return ValueError(f"Invalid bad subtask config {path}: {message}")
+
+
+def _normalize_bad_subtask(value: Any, path: Path, entry_index: int) -> Dict[str, Any]:
+    if not isinstance(value, dict):
+        raise _bad_subtask_config_error(
+            path,
+            f"bad_subtasks[{entry_index}].subtask must be an object",
+        )
+
+    allowed_keys = {"skill", "objects"}
+    extra_keys = sorted(set(value) - allowed_keys)
+    if extra_keys:
+        raise _bad_subtask_config_error(
+            path,
+            f"bad_subtasks[{entry_index}].subtask has unsupported keys: {extra_keys}",
+        )
+
+    skill = value.get("skill")
+    if not isinstance(skill, str) or not skill:
+        raise _bad_subtask_config_error(
+            path,
+            f"bad_subtasks[{entry_index}].subtask.skill must be a non-empty string",
+        )
+
+    objects = value.get("objects")
+    if not isinstance(objects, list) or not all(isinstance(item, str) for item in objects):
+        raise _bad_subtask_config_error(
+            path,
+            f"bad_subtasks[{entry_index}].subtask.objects must be a list of strings",
+        )
+
+    return {"skill": skill, "objects": list(objects)}
+
+
+def load_bad_subtask_rules(
+    path: Path = DEFAULT_BAD_SUBTASKS_CONFIG,
+    *,
+    missing_ok: bool = True,
+) -> List[BadSubtaskRule]:
+    config_path = Path(path).expanduser()
+    if not config_path.is_file():
+        if missing_ok:
+            return []
+        raise FileNotFoundError(f"Bad subtask config not found: {config_path}")
+
+    try:
+        raw_config = json.loads(config_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise _bad_subtask_config_error(config_path, str(exc)) from exc
+
+    if not isinstance(raw_config, dict):
+        raise _bad_subtask_config_error(config_path, "top-level value must be an object")
+
+    version = raw_config.get("version", 1)
+    if version != 1:
+        raise _bad_subtask_config_error(config_path, "version must be 1")
+
+    raw_rules = raw_config.get("bad_subtasks")
+    if not isinstance(raw_rules, list):
+        raise _bad_subtask_config_error(config_path, "bad_subtasks must be a list")
+
+    rules: List[BadSubtaskRule] = []
+    for index, raw_rule in enumerate(raw_rules):
+        if not isinstance(raw_rule, dict):
+            raise _bad_subtask_config_error(
+                config_path,
+                f"bad_subtasks[{index}] must be an object",
+            )
+
+        raw_floor_plan = raw_rule.get("floor_plan")
+        try:
+            floor_plan = (
+                None
+                if raw_floor_plan is None
+                else normalize_floor_plan(raw_floor_plan)
+            )
+        except ValueError as exc:
+            raise _bad_subtask_config_error(
+                config_path,
+                f"bad_subtasks[{index}].floor_plan is invalid: {raw_floor_plan!r}",
+            ) from exc
+        subtask = _normalize_bad_subtask(raw_rule.get("subtask"), config_path, index)
+        rules.append(BadSubtaskRule(floor_plan=floor_plan, subtask_key=_subtask_key(subtask)))
+
+    return rules
+
+
+def _bad_subtask_rule_sets(
+    bad_subtask_rules: Sequence[BadSubtaskRule],
+) -> Tuple[Set[str], Set[Tuple[int, str]]]:
+    global_rules: Set[str] = set()
+    floor_scoped: Set[Tuple[int, str]] = set()
+    for rule in bad_subtask_rules:
+        if rule.floor_plan is None:
+            global_rules.add(rule.subtask_key)
+        else:
+            floor_scoped.add((rule.floor_plan, rule.subtask_key))
+    return global_rules, floor_scoped
+
+
+def subtask_matches_bad_subtask_rule(
+    floor_plan: Optional[int],
+    subtask: Dict[str, Any],
+    bad_subtask_rules: Sequence[BadSubtaskRule],
+) -> bool:
+    subtask_key = _subtask_key(subtask)
+    global_rules, floor_scoped = _bad_subtask_rule_sets(bad_subtask_rules)
+    return (
+        subtask_key in global_rules
+        or (
+            floor_plan is not None
+            and (normalize_floor_plan(floor_plan), subtask_key) in floor_scoped
+        )
+    )
+
+
+def _filter_item_floor_and_subtask(
+    item: Any,
+    default_floor_plan: Optional[int],
+) -> Tuple[Optional[int], Dict[str, Any]]:
+    if isinstance(item, dict) and "skill" in item:
+        return default_floor_plan, item
+
+    subtask = getattr(item, "subtask", None)
+    if isinstance(subtask, dict):
+        floor_plan = getattr(item, "floor_plan", default_floor_plan)
+        return floor_plan, subtask
+
+    if isinstance(item, dict) and isinstance(item.get("subtask"), dict):
+        floor_plan = item.get("floor_plan", default_floor_plan)
+        return floor_plan, item["subtask"]
+
+    raise ValueError(f"Invalid subtask filter item: {item!r}")
+
+
+def filter_bad_subtasks(
+    subtasks: Sequence[Any],
+    bad_subtask_rules: Sequence[BadSubtaskRule],
+    floor_plan: Optional[int] = None,
+) -> Tuple[List[Any], int]:
+    global_rules, floor_scoped = _bad_subtask_rule_sets(bad_subtask_rules)
+    filtered: List[Any] = []
+    excluded_count = 0
+    for item in subtasks:
+        item_floor_plan, subtask = _filter_item_floor_and_subtask(item, floor_plan)
+        subtask_key = _subtask_key(subtask)
+        normalized_floor_plan = (
+            None if item_floor_plan is None else normalize_floor_plan(item_floor_plan)
+        )
+        if (
+            subtask_key in global_rules
+            or (
+                normalized_floor_plan is not None
+                and (normalized_floor_plan, subtask_key) in floor_scoped
+            )
+        ):
+            excluded_count += 1
+            continue
+        filtered.append(item)
+    return filtered, excluded_count
+
+
+def _no_valid_positions_config_error(path: Path, message: str) -> ValueError:
+    return ValueError(f"Invalid no valid positions config {path}: {message}")
+
+
+def load_no_valid_position_rules(
+    path: Path = DEFAULT_NO_VALID_POSITIONS_PATH,
+    *,
+    missing_ok: bool = True,
+) -> Set[Tuple[int, str, str]]:
+    config_path = Path(path).expanduser()
+    if not config_path.is_file():
+        if missing_ok:
+            return set()
+        raise FileNotFoundError(f"No valid positions config not found: {config_path}")
+
+    try:
+        raw_records = json.loads(config_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise _no_valid_positions_config_error(config_path, str(exc)) from exc
+
+    if not isinstance(raw_records, list):
+        raise _no_valid_positions_config_error(
+            config_path,
+            "top-level value must be a list",
+        )
+
+    rules: Set[Tuple[int, str, str]] = set()
+    for index, raw_record in enumerate(raw_records):
+        if not isinstance(raw_record, dict):
+            raise _no_valid_positions_config_error(
+                config_path,
+                f"records[{index}] must be an object",
+            )
+
+        try:
+            floor_plan = normalize_floor_plan(raw_record.get("floorplan"))
+        except ValueError as exc:
+            raise _no_valid_positions_config_error(
+                config_path,
+                f"records[{index}].floorplan is invalid: {raw_record.get('floorplan')!r}",
+            ) from exc
+
+        object_name = raw_record.get("object")
+        if not isinstance(object_name, str) or not object_name.strip():
+            raise _no_valid_positions_config_error(
+                config_path,
+                f"records[{index}].object must be a non-empty string",
+            )
+
+        receptacle = raw_record.get("receptacle")
+        if not isinstance(receptacle, str) or not receptacle.strip():
+            raise _no_valid_positions_config_error(
+                config_path,
+                f"records[{index}].receptacle must be a non-empty string",
+            )
+
+        rules.add((floor_plan, object_name.strip(), receptacle.strip()))
+
+    return rules
 
 
 def _normalize_scene_name(floor_plan: Union[int, str]) -> str:
@@ -651,6 +898,41 @@ def _load_ai2thor_object_type_properties(
         )
 
     return object_type_properties
+
+
+def _load_ai2thor_objects_for_floor(
+    floor_plan: Union[int, str],
+    path: Path = AI2THOR_OBJECT_PROPERTIES_PATH,
+) -> List[Dict[str, Any]]:
+    scene_name = _normalize_scene_name(floor_plan)
+    if not path.exists():
+        raise FileNotFoundError(f"AI2-THOR object properties file not found: {path}")
+
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            objects = json.load(f)
+    except json.JSONDecodeError as exc:
+        raise ObjectPropertiesError(f"Invalid AI2-THOR object properties JSON: {path}") from exc
+
+    if not isinstance(objects, list):
+        raise ObjectPropertiesError(f"AI2-THOR object properties must be a list: {path}")
+
+    floor_objects: List[Dict[str, Any]] = []
+    for index, item in enumerate(objects):
+        if not isinstance(item, dict):
+            raise ObjectPropertiesError(f"AI2-THOR object entry #{index} must be an object")
+
+        scene = item.get("scene")
+        if not isinstance(scene, str) or not scene:
+            raise ObjectPropertiesError(f"AI2-THOR object entry #{index} is missing scene")
+        if scene == scene_name:
+            floor_objects.append(item)
+
+    if not floor_objects:
+        raise ObjectPropertiesError(
+            f"No AI2-THOR objects found for scene {scene_name} in {path}"
+        )
+    return floor_objects
 
 
 def _objects_with_property(
@@ -1006,6 +1288,210 @@ def _can_generate_action_skill(
     return _skill_can_generate(config, all_objects, skill_sets)
 
 
+def _object_type_from_reference(value: Any) -> str:
+    return str(value).strip().split("|", 1)[0]
+
+
+def _select_stove_container(food: str, skill_sets: Dict[str, Any]) -> Optional[str]:
+    for container in sorted(skill_sets.get("stove_burner_placeable_objects", [])):
+        if _can_place_with_skill(food, container, "PutIn", skill_sets):
+            return container
+    return None
+
+
+def _put_object_pairs_for_subtask(
+    subtask: Dict[str, Any],
+    skill_sets: Dict[str, Any],
+) -> List[Tuple[str, str]]:
+    objects = list(subtask.get("objects", []))
+    skill = subtask.get("skill")
+
+    if skill in {"PutOn", "PutIn"} and len(objects) >= 2:
+        return [(objects[0], objects[1])]
+    if skill == "RunMicrowave" and len(objects) >= 2:
+        return [(objects[0], objects[1])]
+    if skill == "RunCoffeeMachine" and len(objects) >= 2:
+        return [(objects[0], objects[1])]
+    if skill == "CookByStoveBurner" and len(objects) >= 1:
+        container = _select_stove_container(objects[0], skill_sets)
+        return [] if container is None else [(objects[0], container)]
+    if skill in {"PrepareEgg", "CookEgg"} and len(objects) >= 2:
+        return [(objects[0], objects[1])]
+    if skill == "ColdObject" and len(objects) >= 2:
+        return [(objects[0], objects[1])]
+
+    return []
+
+
+def subtask_matches_no_valid_position_rule(
+    floor_plan: int,
+    subtask: Dict[str, Any],
+    no_valid_position_rules: Set[Tuple[int, str, str]],
+    skill_sets: Dict[str, Any],
+) -> bool:
+    if not no_valid_position_rules:
+        return False
+
+    normalized_floor_plan = normalize_floor_plan(floor_plan)
+    return any(
+        (
+            normalized_floor_plan,
+            _object_type_from_reference(obj),
+            _object_type_from_reference(receptacle),
+        )
+        in no_valid_position_rules
+        for obj, receptacle in _put_object_pairs_for_subtask(subtask, skill_sets)
+    )
+
+
+def filter_no_valid_position_subtasks(
+    subtasks: Sequence[Any],
+    no_valid_position_rules: Set[Tuple[int, str, str]],
+    object_properties_path: Path = AI2THOR_OBJECT_PROPERTIES_PATH,
+    *,
+    floor_plan: Optional[int] = None,
+    skill_sets: Optional[Dict[str, Any]] = None,
+) -> Tuple[List[Any], int]:
+    if not no_valid_position_rules:
+        return list(subtasks), 0
+
+    skill_sets_by_floor: Dict[int, Dict[str, Any]] = {}
+    filtered: List[Any] = []
+    excluded_count = 0
+
+    for item in subtasks:
+        item_floor_plan, subtask = _filter_item_floor_and_subtask(item, floor_plan)
+        if item_floor_plan is None:
+            filtered.append(item)
+            continue
+
+        normalized_floor_plan = normalize_floor_plan(item_floor_plan)
+        if skill_sets is not None and floor_plan is not None:
+            item_skill_sets = skill_sets
+        else:
+            if normalized_floor_plan not in skill_sets_by_floor:
+                skill_sets_by_floor[normalized_floor_plan] = _build_object_skill_sets(
+                    normalized_floor_plan,
+                    object_properties_path,
+                )
+            item_skill_sets = skill_sets_by_floor[normalized_floor_plan]
+
+        if subtask_matches_no_valid_position_rule(
+            normalized_floor_plan,
+            subtask,
+            no_valid_position_rules,
+            item_skill_sets,
+        ):
+            excluded_count += 1
+            continue
+        filtered.append(item)
+
+    return filtered, excluded_count
+
+
+def _task_action(action_type: str, *args: Any) -> Dict[str, Any]:
+    return {
+        "action_type": action_type,
+        "parameters": {"args": list(args)},
+        "robot_id": PRE_TASK_ROBOT_ID,
+    }
+
+
+LIQUID_BOOL_FIELDS = (
+    "isFilledWithLiquid",
+    "isFilledWithWater",
+    "isFilledWithCoffee",
+)
+
+LIQUID_VALUE_FIELDS = (
+    "fillLiquid",
+    "filledLiquid",
+    "liquid",
+    "liquidType",
+    "filledWith",
+    "filled_with",
+)
+
+
+def _object_has_initial_liquid(item: Dict[str, Any]) -> bool:
+    if any(bool(item.get(field)) for field in LIQUID_BOOL_FIELDS):
+        return True
+    return any(bool(item.get(field)) for field in LIQUID_VALUE_FIELDS)
+
+
+def _object_metadata_aliases(item: Dict[str, Any]) -> Set[str]:
+    aliases: Set[str] = set()
+    for field in ("objectType", "name", "objectId"):
+        value = item.get(field)
+        if not isinstance(value, str):
+            continue
+        text = value.strip()
+        if not text:
+            continue
+        aliases.add(text)
+        if field == "objectId":
+            object_type = text.split("|", 1)[0].strip()
+            if object_type:
+                aliases.add(object_type)
+    return aliases
+
+
+def _object_metadata_matches_target(item: Dict[str, Any], target: Any) -> bool:
+    target_text = str(target).strip()
+    return bool(target_text) and target_text in _object_metadata_aliases(item)
+
+
+def _target_has_initial_liquid(
+    target: Any,
+    floor_objects: Optional[Sequence[Dict[str, Any]]] = None,
+) -> bool:
+    if not floor_objects:
+        return False
+    return any(
+        _object_metadata_matches_target(item, target) and _object_has_initial_liquid(item)
+        for item in floor_objects
+    )
+
+
+def _build_pre_task_actions_for_subtask(
+    subtask: Dict[str, Any],
+    floor_objects: Optional[Sequence[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
+    objects = list(subtask.get("objects", []))
+    if not objects:
+        return []
+
+    if subtask.get("skill") == "Wash":
+        return [_task_action("DirtyObject", objects[0])]
+
+    if subtask.get("skill") == "FillWater" and _target_has_initial_liquid(
+        objects[0],
+        floor_objects,
+    ):
+        return [_task_action("EmptyLiquid", objects[0])]
+
+    return []
+
+
+def _build_pre_task_actions_for_subtasks(
+    subtasks: Sequence[Dict[str, Any]],
+    floor_objects: Optional[Sequence[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
+    pre_task_actions: List[Dict[str, Any]] = []
+    for subtask in subtasks:
+        pre_task_actions.extend(
+            _build_pre_task_actions_for_subtask(subtask, floor_objects)
+        )
+    return pre_task_actions
+
+
+def _load_floor_objects_for_pre_task_actions(floor_plan: int) -> List[Dict[str, Any]]:
+    try:
+        return _load_ai2thor_objects_for_floor(floor_plan)
+    except (FileNotFoundError, ObjectPropertiesError):
+        return []
+
+
 MUTUALLY_EXCLUSIVE_STATES = {
     "OPENED": "CLOSED",
     "CLOSED": "OPENED",
@@ -1187,10 +1673,21 @@ class DataEngine:
 
         return task, parsed_final_state
 
-    def create_singe_task(self, floor_plan: int, created_set: set, complexity: int = 0) -> Tuple[List[Dict], List[str]]:
+    def create_singe_task(
+        self,
+        floor_plan: int,
+        created_set: set,
+        complexity: int = 0,
+        bad_subtask_rules: Optional[Sequence[BadSubtaskRule]] = None,
+        no_valid_position_rules: Optional[Set[Tuple[int, str, str]]] = None,
+    ) -> Tuple[List[Dict], List[str]]:
         MAX_TASK_ATTEMPTS = 3
         MAX_ROBOTS_ATTEMPTS = 3
         skill_sets = _build_object_skill_sets(floor_plan)
+        if bad_subtask_rules is None:
+            bad_subtask_rules = load_bad_subtask_rules()
+        if no_valid_position_rules is None:
+            no_valid_position_rules = load_no_valid_position_rules()
 
         for _ in range(MAX_TASK_ATTEMPTS):
             objects = self.get_objects_with_mass(floor_plan)
@@ -1205,6 +1702,23 @@ class DataEngine:
             subtasks = []
             while json.dumps(subtasks, sort_keys=True) in created_set:
                 subtasks = self.generate_task([o['name'] for o in objects], num, skill_sets)
+
+            filtered_subtasks, excluded_bad_subtasks = filter_bad_subtasks(
+                subtasks,
+                bad_subtask_rules,
+                floor_plan,
+            )
+            if excluded_bad_subtasks or len(filtered_subtasks) != len(subtasks):
+                continue
+
+            filtered_subtasks, excluded_no_valid_positions = filter_no_valid_position_subtasks(
+                subtasks,
+                no_valid_position_rules,
+                floor_plan=floor_plan,
+                skill_sets=skill_sets,
+            )
+            if excluded_no_valid_positions or len(filtered_subtasks) != len(subtasks):
+                continue
 
             if not self.check_subtasks(subtasks, skill_sets):
                 continue
@@ -1422,13 +1936,22 @@ put sink on saltshaker, then put ladle on sinkbasin
         TASK_FILE = task_folder_path.joinpath(f"FloorPlan{foor_plan}.jsonl")
 
         MAX_RETRIES = 30
+        bad_subtask_rules = load_bad_subtask_rules()
+        no_valid_position_rules = load_no_valid_position_rules()
+        floor_objects = _load_floor_objects_for_pre_task_actions(foor_plan)
 
         for _ in range(count):
             task_found = False
 
             for _ in range(MAX_RETRIES):
                 try:
-                    subtasks, assigned_robots, selected_robots = self.create_singe_task(foor_plan, created_set, complexity)
+                    subtasks, assigned_robots, selected_robots = self.create_singe_task(
+                        foor_plan,
+                        created_set,
+                        complexity,
+                        bad_subtask_rules,
+                        no_valid_position_rules,
+                    )
                     subtasks_key = json.dumps(subtasks, sort_keys=True)
                     if subtasks_key in created_set:
                         continue
@@ -1446,10 +1969,15 @@ put sink on saltshaker, then put ladle on sinkbasin
                         continue
                     
                     object_states = self.get_task_final_state(subtasks)
+                    pre_task_actions = _build_pre_task_actions_for_subtasks(
+                        subtasks,
+                        floor_objects,
+                    )
                     result= {
                         "task":task_nl,
                         "robot list":[int(r["name"].replace("robot", "")) for r in selected_robots],
                         "object_states":object_states,
+                        "pre_task_actions": pre_task_actions,
                         "trans":0,
                         "max_trans":0,
                         "subtasks": subtasks,

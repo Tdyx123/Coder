@@ -1779,10 +1779,17 @@ class PDDLRunConfigTests(unittest.TestCase):
                 )
 
             prompt = captured["prompt"]
-            self.assertIn("key_objects = [{'name': 'Microwave', 'mass': 7.0}]", prompt)
-            self.assertIn("key_objects_by_subtask = {1: [{'name': 'Microwave', 'mass': 7.0}]}", prompt)
+            self.assertIn("objects = [{'name': 'Microwave', 'mass': 7.0}]", prompt)
+            self.assertNotIn("'Toaster'", prompt)
+            self.assertNotIn("key_objects =", prompt)
+            self.assertNotIn("key_objects_by_subtask =", prompt)
             self.assertNotIn("key_object_pddl_states =", prompt)
-            self.assertIn("# - Use robots, objects, key_objects, and key_objects_by_subtask as allocation context.", prompt)
+            self.assertIn("# - Use robots and objects as allocation context.", prompt)
+            self.assertIn(
+                "# - Judge robot capability using robot skills, and only consider mass capacity for objects that the subtask requires a robot to pick up.",
+                prompt,
+            )
+            self.assertIn("# - Mass capacity only matters for objects that must be picked up.", prompt)
             self.assertNotIn("# CROPPED ROBOT PDDL DOMAINS FOR ALLOCATION", prompt)
             self.assertNotIn("# Robot allocation name: robot1", prompt)
             self.assertNotIn("Real PDDL domain file", prompt)
