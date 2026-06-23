@@ -89,23 +89,20 @@ python scripts/plantocode.py --logs-dir ./logs/task_manager_runs --validate-code
 
 Arguments:
 
-- `--model`
-- `--input-source`
-- `--input-file`
 - `--logs-dir`
+- `--parallel-run`
+- `--floor-plan`
 - `--output-dir`
-- `--batch-size`
-- `--max-tokens`
-- `--temperature`
-- `--frequency-penalty`
+- `--gpu-device`
 - `--validate-code`
 - `--no-validate-code`
 
 Behavior worth knowing:
 
-- `--input-source` defaults to `pddl_logs`
 - `--validate-code` is enabled by default
-- the script scans folders matching `*_plans_*`
+- the script recursively scans complete pddlrun task folders
+- `--parallel-run` accepts a `parallel_runs/...` directory or its `summary.json`
+- `--floor-plan` restricts conversion to one floor, e.g. `6` or `FloorPlan6`
 - it writes summary files to `--output-dir`
 - it writes `plan_to_code/executable_plan.py` into each original log folder
 - generated `plan_to_code/executable_plan.py` can also be called with

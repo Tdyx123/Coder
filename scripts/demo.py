@@ -34,13 +34,13 @@ import resources.robots as robot_catalog
 
 # Hardcoded pddlrun_llmseparate outputs.
 ALLOCATE_FILE = (
-    "/home/dwb/thor/LaMMA-P/logs/intermediate_runs/"
+    "/home/dwb/thor/Coder/logs/intermediate_runs/"
     "final_test_new_0528_1___308/"
     "open_the_book,_then_open_the_drawer,_then_open_the_blinds/"
     "20260601_001/02_allocate/02_allocate_output.txt"
 )
 PLAN_FOLDER = (
-    "/home/dwb/thor/LaMMA-P/logs/intermediate_runs/"
+    "/home/dwb/thor/Coder/logs/intermediate_runs/"
     "final_test_new_0528_1___308/"
     "open_the_book,_then_open_the_drawer,_then_open_the_blinds/"
     "20260601_001/08_planner/outputs"

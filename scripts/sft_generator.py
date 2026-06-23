@@ -9,37 +9,37 @@ from typing import Dict, List, Optional, Sequence, Tuple, Union
 from parsing_utils import ParsingUtils
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
-OUTPUT_PATH_BASE = "/data/dwb/datasets/new"
+OUTPUT_PATH_BASE = "/data/dwb/datasets/new0622"
 MAIN_MODEL_FILTER = "deepseek-ai/DeepSeek-V3.2"
 PDDLRUNS = [
-    # "pddlrun_llmseparate_20260506_160313",
-    # "pddlrun_llmseparate_20260517_140101",
-    # "pddlrun_llmseparate_20260520_225427",
-    # "pddlrun_llmseparate_20260526_143831",
-    # "pddlrun_llmseparate_20260529_190454",
-    # "pddlrun_llmseparate_20260506_162101",
-    # "pddlrun_llmseparate_20260518_145253",
-    # "pddlrun_llmseparate_20260521_151830",
-    # "pddlrun_llmseparate_20260526_194352",
-    # "pddlrun_llmseparate_20260531_213941",
-    # "pddlrun_llmseparate_20260506_180812",
-    # "pddlrun_llmseparate_20260518_214413",
-    # "pddlrun_llmseparate_20260522_102424",
-    # "pddlrun_llmseparate_20260527_135853",
-    # "pddlrun_llmseparate_20260507_145350",
-    # "pddlrun_llmseparate_20260519_151717",
-    # "pddlrun_llmseparate_20260523_152557",
-    # "pddlrun_llmseparate_20260527_220002",
-    # "pddlrun_llmseparate_20260516_145201",
-    # "pddlrun_llmseparate_20260520_162612",
-    # "pddlrun_llmseparate_20260524_195257",
-    # "pddlrun_llmseparate_20260528_153620",
-    # "pddlrun_llmseparate_20260516_164415",
-    # "pddlrun_llmseparate_20260520_204726",
-    # "pddlrun_llmseparate_20260525_141235",
-    # "pddlrun_llmseparate_20260528_222518",
-    "pddlrun_llmseparate_20260610_171423",
-    "pddlrun_llmseparate_20260611_140720"
+    "pddlrun_llmseparate_20260506_160313",
+    "pddlrun_llmseparate_20260517_140101",
+    "pddlrun_llmseparate_20260520_225427",
+    "pddlrun_llmseparate_20260526_143831",
+    "pddlrun_llmseparate_20260529_190454",
+    "pddlrun_llmseparate_20260506_162101",
+    "pddlrun_llmseparate_20260518_145253",
+    "pddlrun_llmseparate_20260521_151830",
+    "pddlrun_llmseparate_20260526_194352",
+    "pddlrun_llmseparate_20260531_213941",
+    "pddlrun_llmseparate_20260506_180812",
+    "pddlrun_llmseparate_20260518_214413",
+    "pddlrun_llmseparate_20260522_102424",
+    "pddlrun_llmseparate_20260527_135853",
+    "pddlrun_llmseparate_20260507_145350",
+    "pddlrun_llmseparate_20260519_151717",
+    "pddlrun_llmseparate_20260523_152557",
+    "pddlrun_llmseparate_20260527_220002",
+    "pddlrun_llmseparate_20260516_145201",
+    "pddlrun_llmseparate_20260520_162612",
+    "pddlrun_llmseparate_20260524_195257",
+    "pddlrun_llmseparate_20260528_153620",
+    "pddlrun_llmseparate_20260516_164415",
+    "pddlrun_llmseparate_20260520_204726",
+    "pddlrun_llmseparate_20260525_141235",
+    "pddlrun_llmseparate_20260528_222518",
+    # "pddlrun_llmseparate_20260610_171423",
+    # "pddlrun_llmseparate_20260611_140720"
 ]
 
 TaskKey = Tuple[str, str, int]
@@ -458,6 +458,19 @@ def _task_key_for_result(summary_data: Dict, result: Dict) -> Optional[TaskKey]:
     return (test_set, floor_plan, task_index)
 
 
+def _load_task_record_for_key(summary_data: Dict, task_key: TaskKey, data_root: str) -> Dict:
+    test_set, floor_plan, task_index = task_key
+    jsonl_path = os.path.join(_resolve_data_root(summary_data, data_root), test_set, f"FloorPlan{floor_plan}.jsonl")
+    record = _load_jsonl_record(jsonl_path, task_index)
+    if not isinstance(record, dict):
+        raise ValueError(f"Task record must be an object: {jsonl_path}:{task_index}")
+    return record
+
+
+def _is_invalid_task_record(record: Dict) -> bool:
+    return bool(record.get("invalid") or record.get("Invalid"))
+
+
 def _passes_sft_checks(summary_path: str, index: int, data_root: str = "data") -> bool:
     checks = [
         check_decompose_subtask_count,
@@ -492,6 +505,14 @@ def _collect_valid_sft_candidates(summary_path: str, data_root: str = "data") ->
 
         task_key = _task_key_for_result(summary_data, result)
         if task_key is None:
+            continue
+
+        try:
+            task_record = _load_task_record_for_key(summary_data, task_key, data_root)
+        except (FileNotFoundError, IndexError, TypeError, ValueError):
+            continue
+
+        if _is_invalid_task_record(task_record):
             continue
 
         task_run_dir = result.get("task_run_dir")

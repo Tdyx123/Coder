@@ -20,6 +20,106 @@ def write_json(path: Path, content):
     path.write_text(json.dumps(content, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def write_parallel_run_fixture_task(root: Path, floor_plan: str, task_index: int) -> Path:
+    task_run_dir = (
+        root
+        / "logs"
+        / "intermediate_runs"
+        / f"sample___{floor_plan}"
+        / "task"
+        / f"20260526_{task_index:03d}"
+    )
+    write_json(
+        task_run_dir / "inputs" / "task_context.json",
+        {
+            "task": f"open the cabinet on floor {floor_plan}.",
+            "robots": [{"name": "robot1", "skills": ["GoToObject", "OpenObject"]}],
+            "objects_ai": "objects = [{'name': 'Cabinet'}]",
+        },
+    )
+    (task_run_dir / "02_allocate").mkdir(parents=True)
+    (task_run_dir / "02_allocate" / "02_allocate_output.txt").write_text(
+        "# Sequence of Operations:\nSubtask 1: Robot 1;\n",
+        encoding="utf-8",
+    )
+
+    outputs_dir = task_run_dir / "08_planner" / "outputs"
+    outputs_dir.mkdir(parents=True)
+    plan_path = outputs_dir / "subtask_01_problem_validated_plan.txt"
+    plan_path.write_text(
+        "(gotoobject robot1 cabinet)\n(openobject robot1 cabinet)\n",
+        encoding="utf-8",
+    )
+    write_json(
+        task_run_dir / "08_planner" / "planner_manifest.json",
+        [
+            {
+                "problem_file": "subtask_01_problem_validated.pddl",
+                "return_code": 0,
+                "compatibility_output": str(plan_path),
+            }
+        ],
+    )
+    write_json(
+        task_run_dir / "run_manifest.json",
+        {
+            "repo_root": str(root),
+            "task": f"open the cabinet on floor {floor_plan}.",
+            "test_set": "sample",
+            "floor_plan": floor_plan,
+            "task_index": task_index,
+            "task_run_dir": str(task_run_dir),
+        },
+    )
+
+    dataset_dir = root / "data" / "sample"
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+    lines = ["" for _ in range(task_index + 1)]
+    lines[task_index] = json.dumps(
+        {
+            "task": f"open the cabinet on floor {floor_plan}.",
+            "robot list": [1],
+            "object_states": [{"name": "Cabinet", "contains": [], "states": ["OPENED"]}],
+            "trans": 1,
+            "min_trans": 2,
+        },
+        ensure_ascii=False,
+    )
+    (dataset_dir / f"FloorPlan{floor_plan}.jsonl").write_text(
+        "\n".join(lines) + "\n",
+        encoding="utf-8",
+    )
+    return task_run_dir
+
+
+def write_parallel_run_summary(root: Path, parallel_run: Path, task_run_dirs):
+    summaries = []
+    for task_run_dir in task_run_dirs:
+        manifest = json.loads((task_run_dir / "run_manifest.json").read_text(encoding="utf-8"))
+        summaries.append(
+            {
+                "floor_plan": manifest["floor_plan"],
+                "results": [
+                    {
+                        "floor_plan": manifest["floor_plan"],
+                        "task_index": manifest["task_index"],
+                        "task": manifest["task"],
+                        "status": "success",
+                        "task_run_dir": str(task_run_dir),
+                    }
+                ],
+            }
+        )
+    write_json(
+        parallel_run / "summary.json",
+        {
+            "repo_root": str(root),
+            "test_set": "sample",
+            "summaries": summaries,
+        },
+    )
+
+
 class PlanToCodeDemoBundleTest(unittest.TestCase):
     def test_pddlrun_fixture_generates_demo_style_script_with_hardcoded_bundle(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -138,13 +238,14 @@ class PlanToCodeDemoBundleTest(unittest.TestCase):
 
             executable_text = executable_plan.read_text(encoding="utf-8")
             self.assertIn("BUNDLE_DATA =", executable_text)
-            self.assertIn("TaskPlan.from_dict(BUNDLE_DATA[\"task_plan\"])", executable_text)
+            self.assertNotIn("TaskPlan.from_dict(BUNDLE_DATA[\"task_plan\"])", executable_text)
             self.assertNotIn("build_task_plan_from_pddlrun_paths(", executable_text)
             self.assertIn("--runner-mode", executable_text)
             self.assertIn("os.environ[\"renderImage\"] = \"0\"", executable_text)
-            self.assertIn("DEFAULT_RUNNER_TIMEOUT_SECONDS = 100.0", executable_text)
-            self.assertIn("run_action_plan_tolerant(", executable_text)
-            self.assertIn("gpu_device=bundle.gpu_device", executable_text)
+            self.assertIn("run_generated_plan(BUNDLE_DATA, TASK_FILE, TASK_INDEX, __file__)", executable_text)
+            self.assertNotIn("DEFAULT_RUNNER_TIMEOUT_SECONDS = 100.0", executable_text)
+            self.assertNotIn("run_action_plan_tolerant(", executable_text)
+            self.assertNotIn("_Demo2Facade", executable_text)
 
             parsed = ast.parse(executable_text)
             bundle_data = None
@@ -173,6 +274,58 @@ class PlanToCodeDemoBundleTest(unittest.TestCase):
                 ["GoToObject", "OpenObject", "GoToObject", "OpenObject"],
             )
             self.assertEqual(bundle_data["object_mapping_warnings"], [])
+
+    def test_parallel_run_converts_all_summary_tasks(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            floor6_task = write_parallel_run_fixture_task(root, "6", 0)
+            floor7_task = write_parallel_run_fixture_task(root, "7", 0)
+            parallel_run = root / "parallel_runs" / "pddlrun_fixture"
+            write_parallel_run_summary(root, parallel_run, [floor6_task, floor7_task])
+
+            result_code = plantocode_main(
+                [
+                    "--parallel-run",
+                    str(parallel_run),
+                    "--output-dir",
+                    str(root / "summary"),
+                ]
+            )
+
+            self.assertEqual(result_code, 0)
+            self.assertTrue((floor6_task / "plan_to_code" / "executable_plan.py").exists())
+            self.assertTrue((floor7_task / "plan_to_code" / "executable_plan.py").exists())
+            summary = json.loads((root / "summary" / "plan_to_code_summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary["total_results"], 2)
+            self.assertEqual(summary["successful_generations"], 2)
+
+    def test_parallel_run_floor_plan_filter_converts_only_matching_tasks(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            floor6_task = write_parallel_run_fixture_task(root, "6", 0)
+            floor7_task = write_parallel_run_fixture_task(root, "7", 0)
+            parallel_run = root / "parallel_runs" / "pddlrun_fixture"
+            write_parallel_run_summary(root, parallel_run, [floor6_task, floor7_task])
+
+            result_code = plantocode_main(
+                [
+                    "--parallel-run",
+                    str(parallel_run),
+                    "--floor-plan",
+                    "FloorPlan6",
+                    "--output-dir",
+                    str(root / "summary"),
+                ]
+            )
+
+            self.assertEqual(result_code, 0)
+            self.assertTrue((floor6_task / "plan_to_code" / "executable_plan.py").exists())
+            self.assertFalse((floor7_task / "plan_to_code" / "executable_plan.py").exists())
+            summary = json.loads((root / "summary" / "plan_to_code_summary.json").read_text(encoding="utf-8"))
+            details = json.loads((root / "summary" / "plan_to_code_results.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary["total_results"], 1)
+            self.assertEqual(summary["successful_generations"], 1)
+            self.assertEqual(details[0]["floor_plan"], "6")
 
 
 if __name__ == "__main__":

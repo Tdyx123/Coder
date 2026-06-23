@@ -371,6 +371,73 @@ class TestSftGeneratorModelCheck(unittest.TestCase):
                 [str(first_task_run_dir), str(second_task_run_dir)],
             )
 
+    def test_select_latest_unique_task_runs_skips_invalid_source_task_records(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self.write_dataset(
+                root,
+                "unit_set",
+                "1",
+                [
+                    {"subtasks": ["do task"], "assigned_robots": [1]},
+                    {"subtasks": ["do task"], "assigned_robots": [1], "invalid": True},
+                    {"subtasks": ["do task"], "assigned_robots": [1], "invalid": False},
+                    {"subtasks": ["do task"], "assigned_robots": [1], "Invalid": True},
+                ],
+            )
+            task_run_dirs = [
+                self.make_valid_task_run(root, f"task_{idx}")
+                for idx in range(4)
+            ]
+
+            summary_path = self.write_pddlrun_summary(
+                root,
+                "pddlrun_llmseparate_20260502_000000",
+                [
+                    {
+                        "floor_plan": "1",
+                        "model": "test-model",
+                        "task_index": 0,
+                        "task": "summary marked invalid but source valid",
+                        "task_run_dir": str(task_run_dirs[0]),
+                        "invalid": True,
+                    },
+                    {
+                        "floor_plan": "1",
+                        "model": "test-model",
+                        "task_index": 1,
+                        "task": "source lowercase invalid",
+                        "task_run_dir": str(task_run_dirs[1]),
+                    },
+                    {
+                        "floor_plan": "1",
+                        "model": "test-model",
+                        "task_index": 2,
+                        "task": "source explicitly valid",
+                        "task_run_dir": str(task_run_dirs[2]),
+                    },
+                    {
+                        "floor_plan": "1",
+                        "model": "test-model",
+                        "task_index": 3,
+                        "task": "source uppercase invalid",
+                        "task_run_dir": str(task_run_dirs[3]),
+                        "Invalid": False,
+                    },
+                ],
+            )
+
+            selected = select_latest_unique_task_runs([str(summary_path)])
+
+            self.assertEqual(
+                [candidate["task_key"] for candidate in selected],
+                [("unit_set", "1", 0), ("unit_set", "1", 2)],
+            )
+            self.assertEqual(
+                [candidate["task_run_dir"] for candidate in selected],
+                [str(task_run_dirs[0]), str(task_run_dirs[2])],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

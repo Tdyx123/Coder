@@ -175,13 +175,22 @@ After planning, convert generated plans into executable Python code:
 python scripts/plantocode.py --logs-dir ./logs/task_manager_runs --validate-code
 ```
 
+For a `parallel_runs/pddlrun_llmseparate_<timestamp>/` directory, convert all successful task plans in the run, optionally filtering to one floor:
+
+```bash
+python scripts/plantocode.py \
+  --parallel-run parallel_runs/pddlrun_llmseparate_<timestamp> \
+  --floor-plan 6
+```
+
 Important notes:
 
-- `--input-source` defaults to `pddl_logs`
 - `--logs-dir` defaults to `./logs`
+- `--parallel-run` accepts a parallel run directory or its `summary.json`
+- `--floor-plan` restricts conversion to one floor, e.g. `6` or `FloorPlan6`
 - `--output-dir` defaults to `./plan_to_code_results`
 - `--validate-code` is enabled by default
-- `plantocode.py` also writes a `code_plan.py` file back into each original log folder for `execute_plan.py`
+- `plantocode.py` also writes `plan_to_code/executable_plan.py` back into each original log folder
 
 To skip validation:
 

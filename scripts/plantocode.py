@@ -55,6 +55,23 @@ def load_json(path: Path, default: Any = None) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def missing_task_run_artifacts(task_run_dir: Path) -> List[str]:
+    task_context = task_run_dir / "inputs" / "task_context.json"
+    allocate_output = task_run_dir / "02_allocate" / "02_allocate_output.txt"
+    planner_manifest = task_run_dir / "08_planner" / "planner_manifest.json"
+    planner_outputs = task_run_dir / "08_planner" / "outputs"
+    has_plans = planner_manifest.exists() or any(planner_outputs.glob("*_plan.txt"))
+
+    missing = []
+    if not task_context.exists():
+        missing.append("inputs/task_context.json")
+    if not allocate_output.exists():
+        missing.append("02_allocate/02_allocate_output.txt")
+    if not has_plans:
+        missing.append("08_planner/outputs/*_plan.txt or 08_planner/planner_manifest.json")
+    return missing
+
+
 def discover_task_runs(logs_dir: str) -> List[Path]:
     """Find pddlrun task directories under logs_dir."""
     root = Path(logs_dir).expanduser()
@@ -64,23 +81,138 @@ def discover_task_runs(logs_dir: str) -> List[Path]:
     task_run_dirs: List[Path] = []
     for manifest_path in sorted(root.rglob("run_manifest.json")):
         task_run_dir = manifest_path.parent
-        task_context = task_run_dir / "inputs" / "task_context.json"
-        allocate_output = task_run_dir / "02_allocate" / "02_allocate_output.txt"
-        planner_manifest = task_run_dir / "08_planner" / "planner_manifest.json"
-        planner_outputs = task_run_dir / "08_planner" / "outputs"
-        has_plans = planner_manifest.exists() or any(planner_outputs.glob("*_plan.txt"))
+        missing = missing_task_run_artifacts(task_run_dir)
 
-        if task_context.exists() and allocate_output.exists() and has_plans:
+        if not missing:
             task_run_dirs.append(task_run_dir)
         else:
-            missing = []
-            if not task_context.exists():
-                missing.append("inputs/task_context.json")
-            if not allocate_output.exists():
-                missing.append("02_allocate/02_allocate_output.txt")
-            if not has_plans:
-                missing.append("08_planner/outputs/*_plan.txt or 08_planner/planner_manifest.json")
             print(f"Skipping incomplete run {task_run_dir}: missing {', '.join(missing)}")
+
+    return task_run_dirs
+
+
+def task_run_matches_floor_plan(task_run_dir: Path, normalized_floor_plan: Optional[str]) -> bool:
+    if normalized_floor_plan is None:
+        return True
+
+    manifest = load_json(task_run_dir / "run_manifest.json", default={})
+    if not isinstance(manifest, dict):
+        return False
+    floor_plan = manifest.get("floor_plan")
+    if floor_plan is None:
+        return False
+    return normalize_floor_plan(str(floor_plan)) == normalized_floor_plan
+
+
+def filter_task_runs_by_floor_plan(
+    task_run_dirs: Sequence[Path],
+    floor_plan: Optional[str],
+) -> List[Path]:
+    if not floor_plan:
+        return list(task_run_dirs)
+    normalized_floor_plan = normalize_floor_plan(str(floor_plan))
+    return [
+        task_run_dir
+        for task_run_dir in task_run_dirs
+        if task_run_matches_floor_plan(task_run_dir, normalized_floor_plan)
+    ]
+
+
+def summary_path_from_parallel_run(parallel_run: Path) -> Path:
+    if parallel_run.is_file():
+        return parallel_run
+    return parallel_run / "summary.json"
+
+
+def collect_parallel_summary_results(summary_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    if isinstance(summary_data.get("summaries"), list):
+        results: List[Dict[str, Any]] = []
+        for floor_summary in summary_data["summaries"]:
+            if not isinstance(floor_summary, dict) or not isinstance(floor_summary.get("results"), list):
+                continue
+            floor_plan = floor_summary.get("floor_plan")
+            for result in floor_summary["results"]:
+                if not isinstance(result, dict):
+                    continue
+                item = dict(result)
+                if floor_plan is not None and item.get("floor_plan") is None:
+                    item["floor_plan"] = floor_plan
+                results.append(item)
+        return results
+
+    if isinstance(summary_data.get("results"), list):
+        return [result for result in summary_data["results"] if isinstance(result, dict)]
+
+    return []
+
+
+def resolve_summary_task_run_dir(
+    raw_task_run_dir: Any,
+    repo_root: Path,
+    summary_dir: Path,
+) -> Path:
+    path = Path(str(raw_task_run_dir)).expanduser()
+    if path.is_absolute():
+        return path
+
+    repo_candidate = repo_root / path
+    if repo_candidate.exists():
+        return repo_candidate
+    summary_candidate = summary_dir / path
+    if summary_candidate.exists():
+        return summary_candidate
+    return repo_candidate
+
+
+def discover_parallel_run_task_runs(
+    parallel_run: str,
+    floor_plan: Optional[str] = None,
+) -> List[Path]:
+    root = Path(parallel_run).expanduser()
+    if not root.exists():
+        raise PlanToCodeError(f"Parallel run path not found: {root}")
+
+    normalized_floor_plan = normalize_floor_plan(str(floor_plan)) if floor_plan else None
+    summary_path = summary_path_from_parallel_run(root)
+    if not summary_path.exists():
+        return filter_task_runs_by_floor_plan(discover_task_runs(str(root)), floor_plan)
+
+    summary_data = load_json(summary_path, default={})
+    if not isinstance(summary_data, dict):
+        raise PlanToCodeError(f"Invalid parallel run summary JSON: {summary_path}")
+
+    repo_root = Path(str(summary_data.get("repo_root") or REPO_ROOT)).expanduser()
+    task_run_dirs: List[Path] = []
+    seen = set()
+    for result in collect_parallel_summary_results(summary_data):
+        if result.get("status") not in (None, "success"):
+            continue
+        raw_floor_plan = result.get("floor_plan")
+        if (
+            normalized_floor_plan is not None
+            and raw_floor_plan is not None
+            and normalize_floor_plan(str(raw_floor_plan)) != normalized_floor_plan
+        ):
+            continue
+
+        raw_task_run_dir = result.get("task_run_dir")
+        if not raw_task_run_dir:
+            continue
+        task_run_dir = resolve_summary_task_run_dir(raw_task_run_dir, repo_root, summary_path.parent)
+        if normalized_floor_plan is not None and raw_floor_plan is None:
+            if not task_run_matches_floor_plan(task_run_dir, normalized_floor_plan):
+                continue
+
+        missing = missing_task_run_artifacts(task_run_dir)
+        if missing:
+            print(f"Skipping incomplete run {task_run_dir}: missing {', '.join(missing)}")
+            continue
+
+        key = str(task_run_dir)
+        if key in seen:
+            continue
+        seen.add(key)
+        task_run_dirs.append(task_run_dir)
 
     return task_run_dirs
 
@@ -408,16 +540,9 @@ def render_demo_executable(run_inputs: RunInputs, bundle: PddlRunPlanBundle) -> 
 
 from __future__ import annotations
 
-import argparse
-import copy
-import json
 import os
-import re
 import sys
-import time
-import types
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
 
 
 REPO_ROOT = Path({code_repo_root!r})
@@ -427,321 +552,22 @@ for path in (_SCRIPT_DIR, REPO_ROOT):
     if path_str not in sys.path:
         sys.path.append(path_str)
 
-if "--runner-mode" in sys.argv[1:]:
+RUNNER_MODE_ARG = "--runner-mode"
+if RUNNER_MODE_ARG in sys.argv[1:]:
     os.environ["renderImage"] = "0"
 
-from executor_system import actions as _actions
-from executor_system import config as _config
-from executor_system import context as _context
-from executor_system import demo_state as _demo_state
-from executor_system import dependencies as _dependencies
-from executor_system import runtime as _runtime_module
-from executor_system.action_plan import TaskPlan
-from executor_system.config import CLOUD_RENDERING, RENDER_IMAGE
-from executor_system.parallel_runner import run_action_plan_tolerant, write_result_json
-from executor_system.runtime import ThorRuntime
-from executor_system.task_plan import run_action_plan
-
-import resources.robots as robot_catalog
+from executor_system.generated_plan_runtime import main as run_generated_plan
 
 
 BUNDLE_DATA = {bundle_literal}
 
 TASK_FILE = {task_file!r}
 TASK_INDEX = {task_index!r}
-DEFAULT_RUNNER_TIMEOUT_SECONDS = 100.0
-
-
-runtime = None
-robots: List[Dict[str, Any]] = []
-floor_no = ""
-ground_truth: List[Dict[str, Any]] = []
-cv2 = _dependencies.cv2
-Controller = _dependencies.Controller
-CloudRendering = _dependencies.CloudRendering
-
-
-def load_task_record(task_file: str, task_index: int) -> Dict[str, Any]:
-    path = Path(task_file).expanduser()
-    if not path.is_file():
-        raise RuntimeError(f"TASK_FILE not found: {{path}}")
-    if task_index < 0:
-        raise RuntimeError("TASK_INDEX must be 0-based and non-negative.")
-
-    with path.open("r", encoding="utf-8") as handle:
-        for index, raw_line in enumerate(handle):
-            if index != task_index:
-                continue
-            line = raw_line.strip()
-            if not line:
-                raise RuntimeError(f"TASK_FILE line {{task_index}} is empty: {{path}}")
-            return json.loads(line)
-
-    raise RuntimeError(f"TASK_INDEX {{task_index}} is out of range for {{path}}")
-
-
-def floor_plan_from_task_file(task_file: str) -> str:
-    match = re.search(r"FloorPlan(\\d+)\\.jsonl$", str(task_file))
-    if not match:
-        raise RuntimeError(f"Cannot infer floor plan from TASK_FILE: {{task_file}}")
-    return match.group(1)
-
-
-def build_robot_team(robot_ids: Sequence[Any]) -> List[Dict[str, Any]]:
-    team: List[Dict[str, Any]] = []
-    for index, raw_robot_id in enumerate(robot_ids):
-        robot_id = int(raw_robot_id)
-        if robot_id < 1 or robot_id > len(robot_catalog.robots):
-            raise RuntimeError(f"Invalid robot id in task record: {{raw_robot_id!r}}")
-        robot = copy.deepcopy(robot_catalog.robots[robot_id - 1])
-        robot["name"] = f"robot{{index + 1}}"
-        team.append(robot)
-    if not team:
-        raise RuntimeError("Task record has no robots in 'robot list'.")
-    return team
-
-
-def transition_metric(no_trans: int, no_trans_gt: int, max_trans: int) -> float:
-    max_trans_value = max_trans + 1
-    no_trans_gt_value = no_trans_gt + 1
-    if max_trans_value == no_trans_gt_value and no_trans_gt_value == no_trans:
-        return 1.0
-    if max_trans_value == no_trans_gt_value:
-        return 0.0
-    return (max_trans_value - no_trans) / (max_trans_value - no_trans_gt_value)
-
-
-def build_hardcoded_bundle() -> types.SimpleNamespace:
-    return types.SimpleNamespace(
-        task=BUNDLE_DATA["task"],
-        task_plan=TaskPlan.from_dict(BUNDLE_DATA["task_plan"]),
-        no_trans=int(BUNDLE_DATA["no_trans"]),
-        phases=BUNDLE_DATA["phases"],
-        plan_files=BUNDLE_DATA["plan_files"],
-        object_mappings=BUNDLE_DATA["object_mappings"],
-        object_mapping_warnings=BUNDLE_DATA["object_mapping_warnings"],
-        object_id_bindings=BUNDLE_DATA.get("object_id_bindings", []),
-        gpu_device=BUNDLE_DATA.get("gpu_device"),
-    )
-
-
-def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Run a hardcoded pddlrun bundle through executor_system."
-    )
-    parser.add_argument(
-        "--runner-mode",
-        action="store_true",
-        help="Run without rendering and emit machine-readable runner metrics.",
-    )
-    parser.add_argument(
-        "--metrics-output",
-        default="",
-        help="Path to write runner-mode metrics JSON.",
-    )
-    parser.add_argument(
-        "--timeout-seconds",
-        type=float,
-        default=DEFAULT_RUNNER_TIMEOUT_SECONDS,
-        help="Runner-mode total timeout in seconds.",
-    )
-    return parser.parse_args(argv)
-
-
-def runner_metrics_path(raw_path: str) -> Path:
-    if raw_path:
-        return Path(raw_path).expanduser()
-    return Path(__file__).resolve().parent / "parallel_run_result.json"
-
-
-def build_runner_result(status: str, start_time: float) -> Dict[str, Any]:
-    return {{
-        "status": status,
-        "timed_out": False,
-        "timeout_message": "",
-        "run_time_seconds": time.monotonic() - start_time,
-        "gcr": None,
-        "tc": None,
-        "sr": None,
-        "ru": None,
-        "executed_actions": 0,
-        "failed_actions": 0,
-        "failure_action_ratio": 0.0,
-        "robot_failures": [],
-    }}
-
-
-def run_standalone() -> int:
-    global floor_no, ground_truth, robots, runtime
-
-    task_record = load_task_record(TASK_FILE, TASK_INDEX)
-    floor_no = floor_plan_from_task_file(TASK_FILE)
-    robots = build_robot_team(task_record.get("robot list") or [])
-    ground_truth = list(task_record.get("object_states") or [])
-    _demo_state.set_ground_truth(ground_truth)
-
-    bundle = build_hardcoded_bundle()
-
-    if bundle.object_mapping_warnings:
-        for warning in bundle.object_mapping_warnings:
-            print(f"WARNING: {{warning}}")
-
-    runtime = ThorRuntime(
-        robots,
-        floor_no,
-        CLOUD_RENDERING,
-        RENDER_IMAGE,
-        gpu_device=bundle.gpu_device,
-    )
-    runtime.register_object_id_bindings(bundle.object_id_bindings)
-    _context.runtime = runtime
-    try:
-        run_action_plan(bundle.task_plan)
-        runtime.step({{"action": "Done"}}, check_success=False)
-
-        metrics = runtime.evaluate(ground_truth)
-        no_trans_gt = int(task_record.get("trans", 0) or 0)
-        max_trans = int(task_record.get("min_trans", task_record.get("max_trans", 0)) or 0)
-        ru = transition_metric(bundle.no_trans, no_trans_gt, max_trans)
-        sr = 1 if metrics["tc"] == 1.0 and ru == 1.0 else 0
-        print(
-            "SR:{{sr}}, TC:{{tc}}, GCR:{{gcr}}, Exec:{{exec_rate}}, RU:{{ru}}".format(
-                sr=sr,
-                tc=int(metrics["tc"]),
-                gcr=metrics["gcr"],
-                exec_rate=metrics["exec_rate"],
-                ru=ru,
-            )
-        )
-        runtime.log_unmet_goals(ground_truth)
-        runtime.generate_video()
-        runtime.write_final_metadata()
-        return 0
-    finally:
-        runtime.stop()
-        runtime = None
-        _context.runtime = None
-
-
-def run_runner_mode(args: argparse.Namespace) -> int:
-    global floor_no, ground_truth, robots, runtime
-
-    start_time = time.monotonic()
-    metrics_path = runner_metrics_path(args.metrics_output)
-    result = build_runner_result("failed", start_time)
-    return_code = 1
-
-    try:
-        task_record = load_task_record(TASK_FILE, TASK_INDEX)
-        floor_no = floor_plan_from_task_file(TASK_FILE)
-        robots = build_robot_team(task_record.get("robot list") or [])
-        ground_truth = list(task_record.get("object_states") or [])
-        _demo_state.set_ground_truth(ground_truth)
-
-        bundle = build_hardcoded_bundle()
-        if bundle.object_mapping_warnings:
-            result["object_mapping_warnings"] = list(bundle.object_mapping_warnings)
-
-        runtime = ThorRuntime(
-            robots,
-            floor_no,
-            CLOUD_RENDERING,
-            False,
-            gpu_device=bundle.gpu_device,
-        )
-        runtime.register_object_id_bindings(bundle.object_id_bindings)
-        _context.runtime = runtime
-
-        execution_report = run_action_plan_tolerant(
-            runtime,
-            bundle.task_plan,
-            timeout_seconds=args.timeout_seconds,
-        )
-        result.update(execution_report)
-        try:
-            runtime.step({{"action": "Done"}}, check_success=False, save_frame=False)
-        except RuntimeError as exc:
-            result["done_error"] = str(exc)
-
-        metrics = runtime.evaluate(ground_truth)
-        no_trans_gt = int(task_record.get("trans", 0) or 0)
-        max_trans = int(task_record.get("min_trans", task_record.get("max_trans", 0)) or 0)
-        ru = transition_metric(bundle.no_trans, no_trans_gt, max_trans)
-        result.update(
-            {{
-                "status": "timeout" if execution_report.get("timed_out") else "success",
-                "gcr": metrics["gcr"],
-                "tc": metrics["tc"],
-                "sr": 1 if metrics["tc"] == 1.0 and ru == 1.0 else 0,
-                "ru": ru,
-                "exec_rate": metrics["exec_rate"],
-            }}
-        )
-        return_code = 124 if result.get("timed_out") else 0
-    except Exception as exc:
-        result.update(
-            {{
-                "status": "failed",
-                "error": str(exc),
-            }}
-        )
-        return_code = 1
-    finally:
-        if runtime is not None:
-            runtime.stop()
-            runtime = None
-        _context.runtime = None
-        result["run_time_seconds"] = time.monotonic() - start_time
-        write_result_json(metrics_path, result)
-        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
-
-    return return_code
-
-
-def main(argv: Optional[Sequence[str]] = None) -> int:
-    args = parse_arguments(argv)
-    if args.runner_mode:
-        return run_runner_mode(args)
-    return run_standalone()
-
-
-class _Demo2Facade(types.ModuleType):
-    def __getattribute__(self, name):
-        if name == "runtime":
-            return _context.runtime
-        if name == "cv2":
-            return _dependencies.cv2
-        return super().__getattribute__(name)
-
-    def __setattr__(self, name, value):
-        if name == "runtime":
-            _context.runtime = value
-        elif name == "cv2":
-            _dependencies.cv2 = value
-            _runtime_module.cv2 = value
-        elif name == "ground_truth":
-            _demo_state.set_ground_truth(value)
-        elif hasattr(_demo_state, name):
-            setattr(_demo_state, name, value)
-        elif hasattr(_config, name):
-            setattr(_config, name, value)
-            if hasattr(_actions, name):
-                setattr(_actions, name, value)
-            if hasattr(_runtime_module, name):
-                setattr(_runtime_module, name, value)
-        elif hasattr(_dependencies, name):
-            setattr(_dependencies, name, value)
-            if hasattr(_runtime_module, name):
-                setattr(_runtime_module, name, value)
-        super().__setattr__(name, value)
-
-
-sys.modules[__name__].__class__ = _Demo2Facade
 
 
 if __name__ == "__main__":
     try:
-        raise SystemExit(main())
+        raise SystemExit(run_generated_plan(BUNDLE_DATA, TASK_FILE, TASK_INDEX, __file__))
     except RuntimeError as exc:
         print(f"ERROR: {{exc}}")
         raise SystemExit(1)
@@ -842,29 +668,25 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         )
     )
     parser.add_argument(
-        "--model",
-        type=str,
-        default="gpt-4o",
-        help="Compatibility no-op; no model is called by this deterministic generator.",
-    )
-    parser.add_argument(
-        "--input-source",
-        type=str,
-        choices=["json", "pddl_logs"],
-        default="pddl_logs",
-        help="Only pddl_logs is supported for hardcoded bundle generation.",
-    )
-    parser.add_argument(
-        "--input-file",
-        type=str,
-        default="../model_testing/70b_extracted_actions/70b_extracted_action_sequences.json",
-        help="Compatibility no-op; JSON input cannot build hardcoded pddlrun bundles.",
-    )
-    parser.add_argument(
         "--logs-dir",
         type=str,
         default="./logs",
         help="Path to pddlrun logs containing run_manifest.json files.",
+    )
+    parser.add_argument(
+        "--parallel-run",
+        type=str,
+        default="",
+        help=(
+            "Path to a parallel_runs output directory or summary.json. "
+            "When set, this is used instead of --logs-dir."
+        ),
+    )
+    parser.add_argument(
+        "--floor-plan",
+        type=str,
+        default="",
+        help="Optional FloorPlan filter, e.g. 6 or FloorPlan6.",
     )
     parser.add_argument(
         "--output-dir",
@@ -882,30 +704,6 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=3,
-        help="Compatibility no-op retained for old invocations.",
-    )
-    parser.add_argument(
-        "--max-tokens",
-        type=int,
-        default=2048,
-        help="Compatibility no-op; no text generation is performed.",
-    )
-    parser.add_argument(
-        "--temperature",
-        type=float,
-        default=0.1,
-        help="Compatibility no-op; no text generation is performed.",
-    )
-    parser.add_argument(
-        "--frequency-penalty",
-        type=float,
-        default=0.0,
-        help="Compatibility no-op; no text generation is performed.",
-    )
-    parser.add_argument(
         "--validate-code",
         action="store_true",
         default=True,
@@ -918,26 +716,30 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Skip py_compile validation of generated executable_plan.py files.",
     )
 
-    args = parser.parse_args(argv)
-    if args.input_source == "json":
-        parser.error(
-            "--input-source json is not supported: hardcoded bundle generation "
-            "requires pddlrun artifacts under --logs-dir."
-        )
-    return args
+    return parser.parse_args(argv)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_arguments(argv)
+    source_label = args.parallel_run or args.logs_dir
 
     try:
-        task_run_dirs = discover_task_runs(args.logs_dir)
+        if args.parallel_run:
+            task_run_dirs = discover_parallel_run_task_runs(
+                args.parallel_run,
+                floor_plan=args.floor_plan or None,
+            )
+        else:
+            task_run_dirs = filter_task_runs_by_floor_plan(
+                discover_task_runs(args.logs_dir),
+                args.floor_plan or None,
+            )
     except PlanToCodeError as exc:
         print(f"ERROR: {exc}")
         return 1
 
     if not task_run_dirs:
-        print(f"No complete pddlrun task runs found under {args.logs_dir}")
+        print(f"No complete pddlrun task runs found under {source_label}")
         write_summary([], Path(args.output_dir))
         return 0
 
