@@ -1930,7 +1930,7 @@ put sink on saltshaker, then put ladle on sinkbasin
                     if line:
                         created_set.add(line)
 
-        task_folder = f"data/final_test_new_0610_{complexity}"
+        task_folder = f"data/final_test_new_0623_{complexity}"
         task_folder_path = Path(task_folder)
         task_folder_path.mkdir(parents=True, exist_ok=True)
         TASK_FILE = task_folder_path.joinpath(f"FloorPlan{foor_plan}.jsonl")

@@ -9,21 +9,21 @@ import py_compile
 import re
 import sys
 import time
-from collections import Counter, OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 from pprint import pformat
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-SCRIPTS_DIR = REPO_ROOT / "scripts"
+SCRIPTS_DIR = Path(__file__).resolve().parents[1]
+REPO_ROOT = SCRIPTS_DIR.parent
 for _path in (SCRIPTS_DIR, REPO_ROOT):
     _path_str = str(_path)
     if _path_str not in sys.path:
         sys.path.insert(0, _path_str)
 
-from parallel_plan_to_code import ObjectNameResolver, load_object_names
+from executor_system.pddlrun_adapter import ObjectNameResolver
+from plantocode import load_object_names
 from run_config import normalize_floor_plan
 
 
@@ -35,7 +35,7 @@ DEFAULT_LOGS_DIR = (
     / "intermediate_runs"
     / "final_test_new_0609_1"
 )
-DEFAULT_OUTPUT_DIR = REPO_ROOT / "baselines" / "LaMMA-P" / "final_plan_to_code"
+DEFAULT_OUTPUT_DIR = REPO_ROOT / "baselines" / "LaMMA-P" / "plan_to_code_results"
 
 CONVERTIBLE_CATEGORIES = {
     "timed_direct_actions",
@@ -626,140 +626,53 @@ def build_task_plan_data(
     return {"task_id": task_id, "stages": stages}
 
 
-def render_code_plan(
-    task: str,
-    category: str,
-    task_plan_data: Dict[str, Any],
-    encoded_actions: Sequence[EncodedAction],
-) -> str:
-    raw_actions = [
-        {
-            "time": action.time_label,
-            "robot_id": action.robot_id,
-            "action_type": action.action_type,
-            "args": list(action.args),
-            "raw": action.raw,
-        }
-        for action in encoded_actions
-    ]
-    return f'''#!/usr/bin/env python3
-"""TaskPlan data generated from a LaMMA-P final matched plan."""
-
-from __future__ import annotations
-
-import sys
-from pathlib import Path
-from pprint import pprint
-
-
-REPO_ROOT = Path({str(REPO_ROOT)!r})
-SCRIPTS_DIR = REPO_ROOT / "scripts"
-for path in (SCRIPTS_DIR, REPO_ROOT):
-    path_str = str(path)
-    if path_str not in sys.path:
-        sys.path.insert(0, path_str)
-
-from executor_system.action_plan import TaskPlan
-
-
-TASK = {task!r}
-CATEGORY = {category!r}
-RAW_ACTIONS = {pformat(raw_actions, width=100, sort_dicts=False)}
-TASK_PLAN_DATA = {pformat(task_plan_data, width=100, sort_dicts=False)}
-
-
-task_plan = TaskPlan.from_dict(TASK_PLAN_DATA)
-
-
-if __name__ == "__main__":
-    pprint(TASK_PLAN_DATA)
-'''
+def render_bundle_literal(bundle_data: Dict[str, Any]) -> str:
+    return pformat(bundle_data, width=100, sort_dicts=False)
 
 
 def render_executable_plan(
     *,
-    task: str,
-    task_plan_data: Dict[str, Any],
-    robots: Sequence[Dict[str, Any]],
-    floor_plan: str,
-    ground_truth: Sequence[Dict[str, Any]],
-    gpu_device: Optional[int] = None,
+    bundle_data: Dict[str, Any],
+    task_file: Path,
+    task_index: int,
 ) -> str:
+    bundle_literal = render_bundle_literal(bundle_data)
     return f'''#!/usr/bin/env python3
-"""Run a LaMMA-P final-plan TaskPlan through executor_system."""
+"""Run a LaMMA-P final-plan bundle through executor_system."""
 
 from __future__ import annotations
 
-import argparse
+import os
 import sys
-import time
 from pathlib import Path
-from typing import Optional, Sequence
 
 
 REPO_ROOT = Path({str(REPO_ROOT)!r})
-SCRIPTS_DIR = REPO_ROOT / "scripts"
-for path in (SCRIPTS_DIR, REPO_ROOT):
+_SCRIPT_DIR = REPO_ROOT / "scripts"
+for path in (_SCRIPT_DIR, REPO_ROOT):
     path_str = str(path)
     if path_str not in sys.path:
-        sys.path.insert(0, path_str)
+        sys.path.append(path_str)
 
-from executor_system import context as _context
-from executor_system import demo_state as _demo_state
-from executor_system.action_plan import TaskPlan
-from executor_system.config import CLOUD_RENDERING, RENDER_IMAGE
-from executor_system.runtime import ThorRuntime
-from executor_system.task_plan import run_action_plan
+RUNNER_MODE_ARG = "--runner-mode"
+if RUNNER_MODE_ARG in sys.argv[1:]:
+    os.environ["renderImage"] = "0"
 
-
-TASK = {task!r}
-TASK_PLAN_DATA = {pformat(task_plan_data, width=100, sort_dicts=False)}
-ROBOTS = {pformat(list(robots), width=100, sort_dicts=False)}
-FLOOR_NO = {normalize_floor_plan(floor_plan)!r}
-GROUND_TRUTH = {pformat(list(ground_truth), width=100, sort_dicts=False)}
-GPU_DEVICE = {gpu_device!r}
+from executor_system.generated_plan_runtime import main as run_generated_plan
 
 
-def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run generated LaMMA-P final-plan code.")
-    parser.add_argument("--gpu-device", type=int, default=GPU_DEVICE)
-    return parser.parse_args(argv)
+BUNDLE_DATA = {bundle_literal}
 
-
-def main(argv: Optional[Sequence[str]] = None) -> int:
-    args = parse_arguments(argv)
-    _demo_state.set_ground_truth(GROUND_TRUTH)
-    runtime = ThorRuntime(
-        ROBOTS,
-        FLOOR_NO,
-        CLOUD_RENDERING,
-        RENDER_IMAGE,
-        gpu_device=args.gpu_device,
-    )
-    _context.runtime = runtime
-    start_time = time.monotonic()
-    try:
-        run_action_plan(TaskPlan.from_dict(TASK_PLAN_DATA))
-        runtime.step({{"action": "Done"}}, check_success=False)
-        metrics = runtime.evaluate(GROUND_TRUTH)
-        print(
-            "TC:{{tc}}, GCR:{{gcr}}, Exec:{{exec_rate}}, Runtime:{{runtime:.2f}}s".format(
-                tc=int(metrics["tc"]),
-                gcr=metrics["gcr"],
-                exec_rate=metrics["exec_rate"],
-                runtime=time.monotonic() - start_time,
-            )
-        )
-        runtime.generate_video()
-        runtime.write_final_metadata()
-        return 0
-    finally:
-        runtime.stop()
-        _context.runtime = None
+TASK_FILE = {str(task_file)!r}
+TASK_INDEX = {task_index!r}
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(run_generated_plan(BUNDLE_DATA, TASK_FILE, TASK_INDEX, __file__))
+    except RuntimeError as exc:
+        print(f"ERROR: {{exc}}")
+        raise SystemExit(1)
 '''
 
 
@@ -774,21 +687,40 @@ def task_run_key(path: Path) -> str:
 
 def load_parallel_metadata(baseline_root: Path) -> Dict[str, Dict[str, Any]]:
     metadata: Dict[str, Dict[str, Any]] = {}
-    for summary_path in sorted((baseline_root / "parallel_runs").rglob("summary.json")):
-        data = read_json(summary_path, default={})
-        if not isinstance(data, dict):
-            continue
-        floor_plan = data.get("floor_plan")
-        for result in data.get("results") or []:
+
+    def add_records(
+        records: Iterable[Any],
+        *,
+        summary_defaults: Dict[str, Any],
+    ) -> None:
+        for result in records:
             if not isinstance(result, dict):
                 continue
             raw_run_dir = result.get("task_run_dir")
             if not raw_run_dir:
                 continue
-            record = dict(result)
-            if floor_plan and not record.get("floor_plan"):
-                record["floor_plan"] = floor_plan
+            record = {**summary_defaults, **result}
             metadata[task_run_key(Path(str(raw_run_dir)))] = record
+
+    for summary_path in sorted((baseline_root / "parallel_runs").rglob("summary.json")):
+        data = read_json(summary_path, default={})
+        if not isinstance(data, dict):
+            continue
+        root_defaults = {
+            key: data[key]
+            for key in ("floor_plan", "repo_root", "test_set")
+            if data.get(key) not in (None, "")
+        }
+        add_records(data.get("results") or (), summary_defaults=root_defaults)
+        for summary in data.get("summaries") or ():
+            if not isinstance(summary, dict):
+                continue
+            summary_defaults = {
+                key: summary.get(key, root_defaults.get(key))
+                for key in ("floor_plan", "repo_root", "test_set")
+                if summary.get(key, root_defaults.get(key)) not in (None, "")
+            }
+            add_records(summary.get("results") or (), summary_defaults=summary_defaults)
     return metadata
 
 
@@ -820,26 +752,83 @@ def load_dataset_record(
     return {}
 
 
+def dataset_path_for_run(
+    repo_root: Path,
+    test_set: Optional[str],
+    floor_plan: Optional[str],
+    task_index: Optional[int],
+) -> Path:
+    if not test_set:
+        raise FinalPlanEncodingError("Could not determine test_set for generated TASK_FILE.")
+    if not floor_plan:
+        raise FinalPlanEncodingError("Could not determine floor_plan for generated TASK_FILE.")
+    if task_index is None:
+        raise FinalPlanEncodingError("Could not determine task_index for generated TASK_FILE.")
+    task_file = repo_root / "data" / test_set / f"FloorPlan{normalize_floor_plan(floor_plan)}.jsonl"
+    if not task_file.is_file():
+        raise FinalPlanEncodingError(f"Dataset task file not found: {task_file}")
+    return task_file
+
+
+def manifest_gpu_device(manifest: Dict[str, Any]) -> Optional[int]:
+    raw_value: Any = manifest.get("gpu_device")
+    runtime = manifest.get("runtime")
+    if raw_value is None and isinstance(runtime, dict):
+        raw_value = runtime.get("gpu_device")
+    if raw_value in (None, ""):
+        return None
+    try:
+        gpu_device = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise FinalPlanEncodingError(f"Invalid gpu_device value in run_manifest.json: {raw_value!r}") from exc
+    if gpu_device < 0:
+        raise FinalPlanEncodingError(f"Invalid gpu_device value in run_manifest.json: {raw_value!r}")
+    return gpu_device
+
+
+def build_bundle_data(
+    *,
+    task: str,
+    task_plan_data: Dict[str, Any],
+    no_trans: int,
+    object_mappings: Dict[str, str],
+    object_mapping_warnings: Sequence[str],
+    gpu_device: Optional[int] = None,
+) -> Dict[str, Any]:
+    return {
+        "task": task,
+        "task_plan": task_plan_data,
+        "no_trans": no_trans,
+        "phases": [],
+        "plan_files": {},
+        "object_mappings": dict(object_mappings),
+        "object_mapping_warnings": list(object_mapping_warnings),
+        "object_id_bindings": [],
+        "gpu_device": gpu_device,
+    }
+
+
 def discover_task_runs(logs_dir: Path) -> List[Path]:
     return sorted(path.parent.parent for path in logs_dir.rglob("08_final_match/02_final_plan.txt"))
 
 
-def output_dir_for_run(output_root: Path, task_run_dir: Path) -> Path:
-    task_slug = sanitize_slug(task_run_dir.parent.name)
-    run_id = sanitize_slug(task_run_dir.name)
-    return output_root / task_slug / run_id
+def infer_baseline_root(logs_dir: Path) -> Path:
+    resolved = logs_dir.expanduser().resolve()
+    for parent in (resolved, *resolved.parents):
+        if parent.name == "LaMMA-P" and parent.parent.name == "baselines":
+            return parent
+    return REPO_ROOT / "baselines" / "LaMMA-P"
 
 
 def process_task_run(
     task_run_dir: Path,
-    output_root: Path,
     parallel_metadata: Dict[str, Dict[str, Any]],
     *,
     dry_run: bool = False,
     validate_code: bool = True,
 ) -> Dict[str, Any]:
     started_at = time.time()
-    output_dir = output_dir_for_run(output_root, task_run_dir)
+    output_dir = task_run_dir / "plan_to_code"
     final_plan_path = task_run_dir / "08_final_match" / "02_final_plan.txt"
     manifest = read_json(task_run_dir / "run_manifest.json", default={}) or {}
     if not isinstance(manifest, dict):
@@ -866,16 +855,20 @@ def process_task_run(
         task_index = int(raw_task_index) if raw_task_index is not None else None
     except (TypeError, ValueError):
         task_index = None
-    test_set = infer_test_set(task_run_dir, manifest)
+    test_set = str(metadata.get("test_set") or infer_test_set(task_run_dir, manifest) or "")
+    data_repo_root = Path(
+        str(metadata.get("repo_root") or manifest.get("repo_root") or REPO_ROOT)
+    ).expanduser()
 
     result: Dict[str, Any] = {
         "task": task,
         "task_run_dir": str(task_run_dir),
-        "output_dir": str(output_dir),
         "floor_plan": floor_plan or None,
         "task_index": task_index,
-        "test_set": test_set,
-        "status": "skipped",
+        "test_set": test_set or None,
+        "repo_root": str(data_repo_root),
+        "status": "failed",
+        "success": False,
         "category": None,
         "skip_reason": "",
         "action_count": 0,
@@ -888,18 +881,22 @@ def process_task_run(
         parse_result = classify_final_plan(final_plan_path.read_text(encoding="utf-8"))
         result["category"] = parse_result.category
         if parse_result.category not in CONVERTIBLE_CATEGORIES:
-            result["skip_reason"] = parse_result.skip_reason or (
-                f"{parse_result.category} is not convertible"
+            result.update(
+                {
+                    "status": "skipped",
+                    "skip_reason": parse_result.skip_reason or (
+                        f"{parse_result.category} is not convertible"
+                    ),
+                    "generation_time": time.time() - started_at,
+                }
             )
-            if not dry_run:
-                write_json(output_dir / "encoding_summary.json", result)
             return result
 
         robots = task_context.get("robots")
         if not isinstance(robots, list) or not robots:
             raise FinalPlanEncodingError("inputs/task_context.json is missing a robot list.")
 
-        object_names = load_object_names(REPO_ROOT, floor_plan or "", task_context)
+        object_names = load_object_names(data_repo_root, floor_plan or "", task_context)
         resolver = ObjectNameResolver(object_names)
         encoded_actions = encode_actions(parse_result.actions, resolver, robots)
         if not encoded_actions:
@@ -907,33 +904,37 @@ def process_task_run(
 
         task_id = f"lammap_{normalize_floor_plan(floor_plan) if floor_plan else 'unknown'}_{task_index if task_index is not None else 'task'}"
         task_plan_data = build_task_plan_data(task_id, encoded_actions)
-        ground_truth: List[Dict[str, Any]] = []
-        dataset_record = load_dataset_record(REPO_ROOT, test_set, floor_plan or None, task_index)
-        if isinstance(dataset_record.get("object_states"), list):
-            ground_truth = list(dataset_record["object_states"])
-
-        code_plan = render_code_plan(task, parse_result.category, task_plan_data, encoded_actions)
-        executable_plan = render_executable_plan(
+        task_file = dataset_path_for_run(data_repo_root, test_set, floor_plan or None, task_index)
+        gpu_device = manifest_gpu_device(manifest)
+        bundle_data = build_bundle_data(
             task=task,
             task_plan_data=task_plan_data,
-            robots=robots,
-            floor_plan=floor_plan,
-            ground_truth=ground_truth,
+            no_trans=len(encoded_actions),
+            object_mappings=dict(resolver.mappings),
+            object_mapping_warnings=list(resolver.warnings),
+            gpu_device=gpu_device,
+        )
+        executable_plan = render_executable_plan(
+            bundle_data=bundle_data,
+            task_file=task_file,
+            task_index=int(task_index),
         )
 
-        compile(code_plan, "code_plan.py", "exec")
         compile(executable_plan, "executable_plan.py", "exec")
 
         generated = {
-            "code_plan": str(output_dir / "code_plan.py"),
             "executable_plan": str(output_dir / "executable_plan.py"),
         }
         result.update(
             {
                 "status": "success",
+                "success": True,
                 "skip_reason": "",
                 "action_count": len(encoded_actions),
+                "phase_count": len(task_plan_data["stages"]),
                 "stage_count": len(task_plan_data["stages"]),
+                "no_trans": len(encoded_actions),
+                "gpu_device": gpu_device,
                 "object_mappings": dict(resolver.mappings),
                 "object_mapping_warnings": list(resolver.warnings),
                 "generated": generated,
@@ -944,35 +945,31 @@ def process_task_run(
 
         if not dry_run:
             output_dir.mkdir(parents=True, exist_ok=True)
-            (output_dir / "code_plan.py").write_text(code_plan, encoding="utf-8")
             (output_dir / "executable_plan.py").write_text(executable_plan, encoding="utf-8")
             if validate_code:
-                py_compile.compile(str(output_dir / "code_plan.py"), doraise=True)
                 py_compile.compile(str(output_dir / "executable_plan.py"), doraise=True)
-            write_json(output_dir / "encoding_summary.json", result)
         return result
     except Exception as exc:
-        result.update({"status": "skipped", "skip_reason": str(exc)})
-        if not dry_run:
-            write_json(output_dir / "encoding_summary.json", result)
+        result.update({"status": "failed", "success": False, "error": str(exc)})
         return result
     finally:
         result["generation_time"] = time.time() - started_at
 
 
 def write_global_summary(results: Sequence[Dict[str, Any]], output_root: Path, dry_run: bool) -> None:
-    counts = Counter(str(result.get("category") or "unknown") for result in results)
-    status_counts = Counter(str(result.get("status") or "unknown") for result in results)
+    total = len(results)
+    successful = sum(1 for result in results if result.get("success"))
     summary = {
-        "total_runs": len(results),
-        "successful_generations": status_counts.get("success", 0),
-        "skipped_generations": status_counts.get("skipped", 0),
-        "category_counts": dict(sorted(counts.items())),
-        "status_counts": dict(sorted(status_counts.items())),
-        "results": list(results),
+        "total_results": total,
+        "successful_generations": successful,
+        "failed_generations": total - successful,
+        "success_rate": successful / total * 100 if total else 0,
+        "total_generation_time": sum(float(result.get("generation_time", 0)) for result in results),
     }
     if not dry_run:
-        write_json(output_root / "final_plan_to_code_summary.json", summary)
+        output_root.mkdir(parents=True, exist_ok=True)
+        write_json(output_root / "plan_to_code_summary.json", summary)
+        write_json(output_root / "plan_to_code_results.json", list(results))
 
 
 def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
@@ -993,7 +990,7 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "--validate-code",
         action="store_true",
         default=True,
-        help="Compile generated code files after writing them (default: true).",
+        help="Compile generated executable_plan.py files after writing them (default: true).",
     )
     parser.add_argument(
         "--no-validate-code",
@@ -1011,7 +1008,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"ERROR: logs directory not found: {logs_dir}")
         return 1
 
-    baseline_root = output_root.parent if output_root.name == "final_plan_to_code" else REPO_ROOT / "baselines" / "LaMMA-P"
+    baseline_root = infer_baseline_root(logs_dir)
     metadata = load_parallel_metadata(baseline_root)
     task_run_dirs = discover_task_runs(logs_dir)
     results: List[Dict[str, Any]] = []
@@ -1033,7 +1030,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 continue
         result = process_task_run(
             task_run_dir,
-            output_root,
             metadata,
             dry_run=args.dry_run,
             validate_code=args.validate_code,

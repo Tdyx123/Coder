@@ -37,6 +37,7 @@ def write_run(
     final_plan: str,
     *,
     task: str = "open the drawer, then put the mug on the shelf.",
+    manifest_extra=None,
 ) -> Path:
     run_dir = (
         root
@@ -66,14 +67,37 @@ def write_run(
             ),
         },
     )
-    write_json(
-        run_dir / "run_manifest.json",
-        {
-            "task": task,
-            "test_set": "final_test_new_0609_1",
-            "floor_plan": "1",
-            "task_index": 0,
-        },
+    manifest = {
+        "task": task,
+        "test_set": "final_test_new_0609_1",
+        "floor_plan": "1",
+        "task_index": 0,
+        "repo_root": str(root),
+    }
+    if manifest_extra:
+        for key, value in manifest_extra.items():
+            if value is None:
+                manifest.pop(key, None)
+            else:
+                manifest[key] = value
+    write_json(run_dir / "run_manifest.json", manifest)
+    dataset_path = root / "data" / "final_test_new_0609_1" / "FloorPlan1.jsonl"
+    dataset_path.parent.mkdir(parents=True, exist_ok=True)
+    dataset_path.write_text(
+        json.dumps(
+            {
+                "task": task,
+                "robot list": [1, 2],
+                "object_states": [
+                    {"name": "Drawer", "contains": [], "states": ["OPENED"]},
+                    {"name": "Mug", "contains": [], "states": []},
+                ],
+                "trans": 3,
+                "min_trans": 6,
+            },
+            ensure_ascii=False,
+        ) + "\n",
+        encoding="utf-8",
     )
     final_path = run_dir / "08_final_match" / "02_final_plan.txt"
     final_path.parent.mkdir(parents=True, exist_ok=True)
@@ -164,8 +188,8 @@ class LaMMAPFinalPlanToCodeTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             logs_dir = root / "baselines" / "LaMMA-P" / "logs" / "intermediate_runs" / "final_test_new_0609_1"
-            output_dir = root / "baselines" / "LaMMA-P" / "final_plan_to_code"
-            write_run(
+            output_dir = root / "baselines" / "LaMMA-P" / "plan_to_code_results"
+            run_dir = write_run(
                 root,
                 "open_the_drawer_then_put_the_mug",
                 "20260621_001",
@@ -177,6 +201,27 @@ class LaMMAPFinalPlanToCodeTest(unittest.TestCase):
 4.000: (gotoobject robot shelf) [1.000]
 5.000: (putobject robot mug shelf) [1.000]
 ```""",
+                manifest_extra={"floor_plan": None, "task_index": None},
+            )
+            write_json(
+                root
+                / "baselines"
+                / "LaMMA-P"
+                / "parallel_runs"
+                / "pddlrun_fixture"
+                / "FloorPlan1"
+                / "summary.json",
+                {
+                    "floor_plan": "1",
+                    "results": [
+                        {
+                            "task_run_dir": str(run_dir),
+                            "task_index": 0,
+                            "task": "open the drawer, then put the mug on the shelf.",
+                            "status": "success",
+                        }
+                    ],
+                },
             )
 
             result_code = lammap.main([
@@ -187,25 +232,32 @@ class LaMMAPFinalPlanToCodeTest(unittest.TestCase):
             ])
 
             self.assertEqual(result_code, 0)
-            run_output = output_dir / "open_the_drawer_then_put_the_mug" / "20260621_001"
-            summary = json.loads((run_output / "encoding_summary.json").read_text(encoding="utf-8"))
-            self.assertEqual(summary["status"], "success")
-            self.assertEqual(summary["category"], "timed_direct_actions")
-            self.assertEqual(summary["action_count"], 6)
-            self.assertEqual(summary["stage_count"], 1)
-            self.assertTrue((run_output / "code_plan.py").is_file())
+            run_output = run_dir / "plan_to_code"
             self.assertTrue((run_output / "executable_plan.py").is_file())
-            py_compile.compile(str(run_output / "code_plan.py"), doraise=True)
+            self.assertFalse((run_output / "code_plan.py").exists())
+            self.assertFalse((run_output / "encoding_summary.json").exists())
             py_compile.compile(str(run_output / "executable_plan.py"), doraise=True)
-            global_summary = json.loads((output_dir / "final_plan_to_code_summary.json").read_text(encoding="utf-8"))
+            executable_text = (run_output / "executable_plan.py").read_text(encoding="utf-8")
+            self.assertIn("generated_plan_runtime", executable_text)
+            self.assertIn("BUNDLE_DATA", executable_text)
+            self.assertIn("TASK_FILE", executable_text)
+            self.assertIn("TASK_INDEX", executable_text)
+            global_summary = json.loads((output_dir / "plan_to_code_summary.json").read_text(encoding="utf-8"))
             self.assertEqual(global_summary["successful_generations"], 1)
+            results = json.loads((output_dir / "plan_to_code_results.json").read_text(encoding="utf-8"))
+            self.assertEqual(results[0]["status"], "success")
+            self.assertTrue(results[0]["success"])
+            self.assertEqual(results[0]["category"], "timed_direct_actions")
+            self.assertEqual(results[0]["action_count"], 6)
+            self.assertEqual(results[0]["stage_count"], 1)
+            self.assertEqual(results[0]["generated"]["executable_plan"], str(run_output / "executable_plan.py"))
 
     def test_process_run_skips_domain_dump_without_code(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             logs_dir = root / "baselines" / "LaMMA-P" / "logs" / "intermediate_runs" / "final_test_new_0609_1"
-            output_dir = root / "baselines" / "LaMMA-P" / "final_plan_to_code"
-            write_run(
+            output_dir = root / "baselines" / "LaMMA-P" / "plan_to_code_results"
+            run_dir = write_run(
                 root,
                 "domain_dump_task",
                 "20260621_001",
@@ -226,12 +278,14 @@ class LaMMAPFinalPlanToCodeTest(unittest.TestCase):
             ])
 
             self.assertEqual(result_code, 0)
-            run_output = output_dir / "domain_dump_task" / "20260621_001"
-            summary = json.loads((run_output / "encoding_summary.json").read_text(encoding="utf-8"))
-            self.assertEqual(summary["status"], "skipped")
-            self.assertEqual(summary["category"], "domain_problem_dump")
+            run_output = run_dir / "plan_to_code"
+            results = json.loads((output_dir / "plan_to_code_results.json").read_text(encoding="utf-8"))
+            self.assertEqual(results[0]["status"], "skipped")
+            self.assertEqual(results[0]["category"], "domain_problem_dump")
+            self.assertFalse(results[0]["success"])
             self.assertFalse((run_output / "code_plan.py").exists())
             self.assertFalse((run_output / "executable_plan.py").exists())
+            self.assertFalse((run_output / "encoding_summary.json").exists())
 
 
 if __name__ == "__main__":
