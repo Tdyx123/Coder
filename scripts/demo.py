@@ -158,7 +158,6 @@ def main() -> int:
         floor_no,
         CLOUD_RENDERING,
         RENDER_IMAGE,
-        gpu_device=bundle.gpu_device,
     )
     runtime.register_object_id_bindings(bundle.object_id_bindings)
     _context.runtime = runtime

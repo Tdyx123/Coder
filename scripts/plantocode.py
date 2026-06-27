@@ -38,6 +38,9 @@ class PlanToCodeError(RuntimeError):
     """Raised when a pddlrun artifact set cannot be encoded."""
 
 
+BASE_LINE_CHOICES = ("LaMMA-P", "SMART-LLM")
+
+
 @dataclass(frozen=True)
 class RunInputs:
     task_run_dir: Path
@@ -49,10 +52,64 @@ class RunInputs:
     task_record: Dict[str, Any]
 
 
+@dataclass(frozen=True)
+class GenerationPaths:
+    logs_dir: Path
+    output_dir: Path
+
+
 def load_json(path: Path, default: Any = None) -> Any:
     if not path.exists():
         return default
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def default_baseline_root(base_line: str) -> Path:
+    return REPO_ROOT / "baselines" / base_line
+
+
+def baseline_logs_dir(base_line: str, root: Path) -> Path:
+    if base_line == "LaMMA-P":
+        return root / "logs" / "intermediate_runs"
+    if base_line == "SMART-LLM":
+        return root / "logs"
+    raise PlanToCodeError(f"Unsupported base-line: {base_line}")
+
+
+def baseline_output_dir(base_line: str, root: Path) -> Path:
+    if base_line == "LaMMA-P":
+        return root / "plan_to_code_results"
+    if base_line == "SMART-LLM":
+        return root
+    raise PlanToCodeError(f"Unsupported base-line: {base_line}")
+
+
+def resolve_generation_paths(args: argparse.Namespace) -> GenerationPaths:
+    if args.root and not args.base_line:
+        raise PlanToCodeError("--root requires --base-line.")
+
+    if args.base_line:
+        baseline_root = (
+            Path(args.root).expanduser()
+            if args.root
+            else default_baseline_root(args.base_line)
+        )
+        logs_dir = (
+            Path(args.logs_dir).expanduser()
+            if args.logs_dir
+            else baseline_logs_dir(args.base_line, baseline_root)
+        )
+        output_dir = (
+            Path(args.output_dir).expanduser()
+            if args.output_dir
+            else baseline_output_dir(args.base_line, baseline_root)
+        )
+        return GenerationPaths(logs_dir=logs_dir, output_dir=output_dir)
+
+    return GenerationPaths(
+        logs_dir=Path(args.logs_dir or "./logs").expanduser(),
+        output_dir=Path(args.output_dir or "./plan_to_code_results").expanduser(),
+    )
 
 
 def missing_task_run_artifacts(task_run_dir: Path) -> List[str]:
@@ -384,67 +441,14 @@ def resolve_manifest_plan_files(task_run_dir: Path) -> List[Path]:
     return plan_files
 
 
-def parse_gpu_device_value(value: Any, source: str) -> Optional[int]:
-    if value is None or value == "":
-        return None
-    if isinstance(value, bool):
-        raise PlanToCodeError(f"{source} must be a non-negative integer.")
-    if isinstance(value, int):
-        gpu_device = value
-    elif isinstance(value, str):
-        try:
-            gpu_device = int(value)
-        except ValueError as exc:
-            raise PlanToCodeError(f"{source} must be a non-negative integer.") from exc
-    else:
-        raise PlanToCodeError(f"{source} must be a non-negative integer.")
-    if gpu_device < 0:
-        raise PlanToCodeError(f"{source} must be a non-negative integer.")
-    return gpu_device
-
-
-def parse_gpu_device_argument(value: str) -> int:
-    try:
-        gpu_device = parse_gpu_device_value(value, "--gpu-device")
-    except PlanToCodeError as exc:
-        raise argparse.ArgumentTypeError(str(exc)) from exc
-    if gpu_device is None:
-        raise argparse.ArgumentTypeError("--gpu-device must be a non-negative integer.")
-    return gpu_device
-
-
-def manifest_gpu_device(manifest: Dict[str, Any]) -> Optional[int]:
-    if "gpu_device" in manifest:
-        gpu_device = parse_gpu_device_value(
-            manifest.get("gpu_device"),
-            "run_manifest.json gpu_device",
-        )
-        if gpu_device is not None:
-            return gpu_device
-
-    runtime_config = manifest.get("runtime")
-    if isinstance(runtime_config, dict) and "gpu_device" in runtime_config:
-        return parse_gpu_device_value(
-            runtime_config.get("gpu_device"),
-            "run_manifest.json runtime.gpu_device",
-        )
-    return None
-
-
 def build_bundle_for_run(
     run_inputs: RunInputs,
-    gpu_device: Optional[int] = None,
 ) -> PddlRunPlanBundle:
     floor_plan = str(run_inputs.manifest.get("floor_plan"))
     robots = robots_for_encoding(run_inputs)
     object_names = load_object_names(run_inputs.data_repo_root, floor_plan, run_inputs.task_context)
     plan_files = resolve_manifest_plan_files(run_inputs.task_run_dir)
     plan_folder = run_inputs.task_run_dir / "08_planner" / "outputs"
-    resolved_gpu_device = (
-        gpu_device
-        if gpu_device is not None
-        else manifest_gpu_device(run_inputs.manifest)
-    )
 
     return build_task_plan_from_pddlrun_paths(
         task=str(run_inputs.task_record.get("task") or run_inputs.task_context.get("task") or ""),
@@ -454,7 +458,6 @@ def build_bundle_for_run(
         plan_files=plan_files,
         object_names=object_names,
         task_id=f"FloorPlan{normalize_floor_plan(floor_plan)}_task_{run_inputs.task_index}",
-        gpu_device=resolved_gpu_device,
     )
 
 
@@ -521,7 +524,6 @@ def serialize_bundle(bundle: PddlRunPlanBundle) -> Dict[str, Any]:
         "object_mappings": dict(bundle.object_mappings),
         "object_mapping_warnings": list(bundle.object_mapping_warnings),
         "object_id_bindings": list(bundle.object_id_bindings),
-        "gpu_device": bundle.gpu_device,
     }
 
 
@@ -581,7 +583,6 @@ def compile_python(path: Path) -> None:
 def process_task_run(
     task_run_dir: Path,
     validate_code: bool,
-    gpu_device: Optional[int] = None,
 ) -> Dict[str, Any]:
     start_time = time.time()
     result: Dict[str, Any] = {
@@ -592,7 +593,7 @@ def process_task_run(
 
     try:
         run_inputs = load_run_inputs(task_run_dir)
-        bundle = build_bundle_for_run(run_inputs, gpu_device=gpu_device)
+        bundle = build_bundle_for_run(run_inputs)
         executable_plan = render_demo_executable(run_inputs, bundle)
 
         compile(executable_plan, "executable_plan.py", "exec")
@@ -613,7 +614,6 @@ def process_task_run(
                 "task_index": run_inputs.task_index,
                 "phase_count": len(bundle.task_plan.stages),
                 "no_trans": bundle.no_trans,
-                "gpu_device": bundle.gpu_device,
                 "object_mappings": dict(bundle.object_mappings),
                 "object_mapping_warnings": list(bundle.object_mapping_warnings),
                 "generated": {
@@ -668,10 +668,30 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         )
     )
     parser.add_argument(
+        "--base-line",
+        choices=BASE_LINE_CHOICES,
+        help=(
+            "Use baseline-compatible defaults for generated summaries. "
+            "Supported values: LaMMA-P, SMART-LLM."
+        ),
+    )
+    parser.add_argument(
+        "--root",
+        type=str,
+        default="",
+        help=(
+            "Baseline root used with --base-line. "
+            "Defaults to baselines/<base-line>."
+        ),
+    )
+    parser.add_argument(
         "--logs-dir",
         type=str,
-        default="./logs",
-        help="Path to pddlrun logs containing run_manifest.json files.",
+        default="",
+        help=(
+            "Path to pddlrun logs containing run_manifest.json files. "
+            "Defaults to ./logs, or the baseline logs directory with --base-line."
+        ),
     )
     parser.add_argument(
         "--parallel-run",
@@ -691,16 +711,11 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="./plan_to_code_results",
-        help="Directory to save generation summaries.",
-    )
-    parser.add_argument(
-        "--gpu-device",
-        type=parse_gpu_device_argument,
-        default=None,
+        default="",
         help=(
-            "Optional AI2-THOR gpu_device for generated bundles. "
-            "CLI value overrides run_manifest.json gpu_device/runtime.gpu_device."
+            "Directory to save generation summaries. Defaults to "
+            "./plan_to_code_results, or the baseline summary directory with "
+            "--base-line."
         ),
     )
     parser.add_argument(
@@ -721,9 +736,10 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_arguments(argv)
-    source_label = args.parallel_run or args.logs_dir
 
     try:
+        paths = resolve_generation_paths(args)
+        source_label = args.parallel_run or str(paths.logs_dir)
         if args.parallel_run:
             task_run_dirs = discover_parallel_run_task_runs(
                 args.parallel_run,
@@ -731,7 +747,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             )
         else:
             task_run_dirs = filter_task_runs_by_floor_plan(
-                discover_task_runs(args.logs_dir),
+                discover_task_runs(str(paths.logs_dir)),
                 args.floor_plan or None,
             )
     except PlanToCodeError as exc:
@@ -740,7 +756,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     if not task_run_dirs:
         print(f"No complete pddlrun task runs found under {source_label}")
-        write_summary([], Path(args.output_dir))
+        write_summary([], paths.output_dir)
         return 0
 
     print(f"Found {len(task_run_dirs)} complete pddlrun task run(s)")
@@ -750,7 +766,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         result = process_task_run(
             task_run_dir,
             args.validate_code,
-            gpu_device=args.gpu_device,
         )
         processed_results.append(result)
         if result.get("success"):
@@ -758,7 +773,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         else:
             print(f"  ✗ {result.get('error', 'unknown error')}")
 
-    write_summary(processed_results, Path(args.output_dir))
+    write_summary(processed_results, paths.output_dir)
     return 0 if all(result.get("success") for result in processed_results) else 1
 
 

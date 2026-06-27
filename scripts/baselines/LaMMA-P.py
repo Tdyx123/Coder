@@ -770,22 +770,6 @@ def dataset_path_for_run(
     return task_file
 
 
-def manifest_gpu_device(manifest: Dict[str, Any]) -> Optional[int]:
-    raw_value: Any = manifest.get("gpu_device")
-    runtime = manifest.get("runtime")
-    if raw_value is None and isinstance(runtime, dict):
-        raw_value = runtime.get("gpu_device")
-    if raw_value in (None, ""):
-        return None
-    try:
-        gpu_device = int(raw_value)
-    except (TypeError, ValueError) as exc:
-        raise FinalPlanEncodingError(f"Invalid gpu_device value in run_manifest.json: {raw_value!r}") from exc
-    if gpu_device < 0:
-        raise FinalPlanEncodingError(f"Invalid gpu_device value in run_manifest.json: {raw_value!r}")
-    return gpu_device
-
-
 def build_bundle_data(
     *,
     task: str,
@@ -793,7 +777,6 @@ def build_bundle_data(
     no_trans: int,
     object_mappings: Dict[str, str],
     object_mapping_warnings: Sequence[str],
-    gpu_device: Optional[int] = None,
 ) -> Dict[str, Any]:
     return {
         "task": task,
@@ -804,7 +787,6 @@ def build_bundle_data(
         "object_mappings": dict(object_mappings),
         "object_mapping_warnings": list(object_mapping_warnings),
         "object_id_bindings": [],
-        "gpu_device": gpu_device,
     }
 
 
@@ -905,14 +887,12 @@ def process_task_run(
         task_id = f"lammap_{normalize_floor_plan(floor_plan) if floor_plan else 'unknown'}_{task_index if task_index is not None else 'task'}"
         task_plan_data = build_task_plan_data(task_id, encoded_actions)
         task_file = dataset_path_for_run(data_repo_root, test_set, floor_plan or None, task_index)
-        gpu_device = manifest_gpu_device(manifest)
         bundle_data = build_bundle_data(
             task=task,
             task_plan_data=task_plan_data,
             no_trans=len(encoded_actions),
             object_mappings=dict(resolver.mappings),
             object_mapping_warnings=list(resolver.warnings),
-            gpu_device=gpu_device,
         )
         executable_plan = render_executable_plan(
             bundle_data=bundle_data,
@@ -934,7 +914,6 @@ def process_task_run(
                 "phase_count": len(task_plan_data["stages"]),
                 "stage_count": len(task_plan_data["stages"]),
                 "no_trans": len(encoded_actions),
-                "gpu_device": gpu_device,
                 "object_mappings": dict(resolver.mappings),
                 "object_mapping_warnings": list(resolver.warnings),
                 "generated": generated,

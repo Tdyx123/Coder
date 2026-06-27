@@ -142,7 +142,6 @@ class ThorRuntime:
         floor: str,
         cloud_rendering: bool,
         render_image: bool,
-        gpu_device: Optional[int] = None,
     ) -> None:
         require_dependencies()
         self.robots = list(robot_defs)
@@ -152,7 +151,6 @@ class ThorRuntime:
         self.floor = floor
         self.cloud_rendering = cloud_rendering
         self.render_image = render_image
-        self.gpu_device = gpu_device
         self.physical_agent_count = self.resolve_physical_agent_count()
         self.agent_mode = self.resolve_agent_mode()
         self.controller_headless = not self.render_image
@@ -281,8 +279,6 @@ class ThorRuntime:
         }
         if self.cloud_rendering:
             controller_args["platform"] = CloudRendering
-        if self.gpu_device is not None:
-            controller_args["gpu_device"] = self.gpu_device
         return Controller(**controller_args)
 
     def print_agent_metadata(self, event) -> None:

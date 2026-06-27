@@ -46,14 +46,8 @@ from executor_system.runtime import is_pickup_object_clip_error  # noqa: E402
 
 
 DEFAULT_TIMEOUT_SECONDS = 100.0
-GPU_IDS = list(range(8))
 IGNORED_FAILURE_ACTION_TYPES = {"Teleport", "TeleportObjectToHand"}
-
-
-def gpu_id_for_index(index: int) -> int:
-    if not GPU_IDS:
-        raise RuntimeError("GPU_IDS must contain at least one GPU id.")
-    return int(GPU_IDS[(index - 1) % len(GPU_IDS)])
+BASE_LINE_CHOICES = ("LaMMA-P", "SMART-LLM")
 
 
 def failure_ignored_for_ratio(action: Action, exc: BaseException) -> bool:
@@ -387,15 +381,156 @@ def run_action_plan_tolerant(
     return stats.to_dict()
 
 
+def default_baseline_root(base_line: str) -> Path:
+    return _REPO_ROOT / "baselines" / base_line
+
+
+def baseline_summary_paths(base_line: str, root: Path) -> List[Path]:
+    if base_line == "LaMMA-P":
+        return [root / "plan_to_code_results" / "plan_to_code_results.json"]
+    if base_line == "SMART-LLM":
+        return [root / "plan_to_code_results.json"]
+    raise RuntimeError(f"Unsupported base-line: {base_line}")
+
+
+def baseline_fallback_search_root(base_line: str, root: Path) -> Path:
+    if base_line == "LaMMA-P":
+        preferred = root / "logs" / "intermediate_runs"
+    elif base_line == "SMART-LLM":
+        preferred = root / "logs"
+    else:
+        raise RuntimeError(f"Unsupported base-line: {base_line}")
+    return preferred if preferred.is_dir() else root
+
+
+def is_successful_conversion_record(record: Any) -> bool:
+    return (
+        isinstance(record, dict)
+        and record.get("status") == "success"
+        and record.get("success") is True
+    )
+
+
+def generated_executable_from_record(
+    record: Dict[str, Any],
+    *,
+    root: Path,
+    summary_path: Path,
+) -> Optional[Path]:
+    generated = record.get("generated")
+    if not isinstance(generated, dict):
+        return None
+    raw_path = generated.get("executable_plan")
+    if not raw_path:
+        return None
+    path = Path(str(raw_path)).expanduser()
+    if path.is_absolute():
+        return path
+
+    root_relative = root / path
+    if root_relative.is_file():
+        return root_relative
+    return summary_path.parent / path
+
+
+def is_runner_compatible_executable(path: Path) -> bool:
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return (
+        "generated_plan_runtime" in text
+        and "BUNDLE_DATA" in text
+        and "--runner-mode" in text
+    )
+
+
+def unique_existing_compatible_paths(paths: Sequence[Path]) -> List[Path]:
+    seen = set()
+    resolved: List[Path] = []
+    for path in paths:
+        try:
+            resolved_path = path.expanduser().resolve()
+        except OSError:
+            continue
+        if resolved_path in seen or not resolved_path.is_file():
+            continue
+        if not is_runner_compatible_executable(resolved_path):
+            continue
+        seen.add(resolved_path)
+        resolved.append(resolved_path)
+    return resolved
+
+
+def discover_baseline_summary_executables(base_line: str, root: Path) -> List[Path]:
+    for summary_path in baseline_summary_paths(base_line, root):
+        if not summary_path.is_file():
+            continue
+        try:
+            records = json.loads(summary_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"Could not parse baseline summary {summary_path}: {exc}") from exc
+        if not isinstance(records, list):
+            raise RuntimeError(f"Baseline summary must contain a result list: {summary_path}")
+
+        candidates = [
+            generated_executable_from_record(
+                record,
+                root=root,
+                summary_path=summary_path,
+            )
+            for record in records
+            if is_successful_conversion_record(record)
+        ]
+        compatible = unique_existing_compatible_paths(
+            [path for path in candidates if path is not None]
+        )
+        if compatible:
+            return compatible
+    return []
+
+
+def discover_baseline_fallback_executables(base_line: str, root: Path) -> List[Path]:
+    search_root = baseline_fallback_search_root(base_line, root)
+    candidates = sorted(search_root.rglob("plan_to_code/executable_plan.py"))
+    return unique_existing_compatible_paths(candidates)
+
+
+def discover_baseline_executable_plans(
+    base_line: str,
+    root: Optional[str],
+) -> List[Path]:
+    discovery_root = (
+        Path(root).expanduser() if root else default_baseline_root(base_line)
+    ).resolve()
+    if not discovery_root.is_dir():
+        raise RuntimeError(
+            f"Baseline discovery root not found or not a directory: {discovery_root}"
+        )
+
+    summary_candidates = discover_baseline_summary_executables(
+        base_line,
+        discovery_root,
+    )
+    if summary_candidates:
+        return summary_candidates
+    return discover_baseline_fallback_executables(base_line, discovery_root)
+
+
 def discover_executable_plans(
     explicit_paths: Sequence[str],
     root: Optional[str],
     py_dirs: Sequence[str] = (),
+    base_line: Optional[str] = None,
 ) -> List[Path]:
     candidates: List[Path] = []
+    baseline_candidates: List[Path] = []
+    if base_line:
+        baseline_candidates = discover_baseline_executable_plans(base_line, root)
+        candidates.extend(baseline_candidates)
     for raw_path in explicit_paths:
         candidates.append(Path(raw_path).expanduser())
-    if root:
+    if root and not base_line:
         candidates.extend(
             sorted(Path(root).expanduser().rglob("plan_to_code/executable_plan.py"))
         )
@@ -418,6 +553,14 @@ def discover_executable_plans(
         if not path.is_file():
             raise RuntimeError(f"Generated executable not found: {path}")
         resolved.append(path)
+    if base_line and not baseline_candidates and not resolved:
+        baseline_root = (
+            Path(root).expanduser() if root else default_baseline_root(base_line)
+        ).resolve()
+        raise RuntimeError(
+            f"No runner-compatible {base_line} executable_plan.py files discovered "
+            f"under {baseline_root}"
+        )
     return resolved
 
 
@@ -442,14 +585,10 @@ def run_generated_executable(
     metrics_output: Path,
     result_output: Optional[Path],
     timeout_seconds: float,
-    gpu_id: int,
     save_all_stdout: bool = False,
 ) -> Dict[str, Any]:
     start_time = time.monotonic()
-    gpu_id_text = str(gpu_id)
     child_env = os.environ.copy()
-    child_env["CUDA_VISIBLE_DEVICES"] = gpu_id_text
-    child_env["LAMMAP_PARALLEL_GPU_ID"] = gpu_id_text
     command = [
         sys.executable,
         str(executable_path),
@@ -481,8 +620,6 @@ def run_generated_executable(
             "robot_failures": [],
             "returncode": 124,
             "executable_path": str(executable_path),
-            "gpu_id": gpu_id,
-            "cuda_visible_devices": gpu_id_text,
             "stdout": exc.stdout or "",
             "stderr": exc.stderr or "",
         }
@@ -514,8 +651,6 @@ def run_generated_executable(
     result.setdefault("robot_failures", [])
     result["returncode"] = completed.returncode
     result["executable_path"] = str(executable_path)
-    result["gpu_id"] = gpu_id
-    result["cuda_visible_devices"] = gpu_id_text
     result["stdout"] = completed.stdout
     result["stderr"] = completed.stderr
     prune_stdout_for_result(result, save_all_stdout=save_all_stdout)
@@ -524,9 +659,15 @@ def run_generated_executable(
     return result
 
 
-def build_summary(results: Sequence[Dict[str, Any]], start_time: float) -> Dict[str, Any]:
+def build_summary(
+    results: Sequence[Dict[str, Any]],
+    start_time: float,
+    *,
+    base_line: Optional[str] = None,
+    discovery_root: Optional[Path] = None,
+) -> Dict[str, Any]:
     result_list = [dict(result) for result in results]
-    return {
+    summary = {
         "total_results": len(result_list),
         "success_count": sum(
             1
@@ -542,6 +683,11 @@ def build_summary(results: Sequence[Dict[str, Any]], start_time: float) -> Dict[
         "total_run_time_seconds": time.monotonic() - start_time,
         "results": result_list,
     }
+    if base_line:
+        summary["base_line"] = base_line
+        if discovery_root is not None:
+            summary["discovery_root"] = str(discovery_root)
+    return summary
 
 
 def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
@@ -556,6 +702,14 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--root",
         help="Root directory to recursively search for plan_to_code/executable_plan.py.",
+    )
+    parser.add_argument(
+        "--base-line",
+        choices=BASE_LINE_CHOICES,
+        help=(
+            "Discover runner-compatible generated plans for a baseline. "
+            "Supported values: LaMMA-P, SMART-LLM."
+        ),
     )
     parser.add_argument(
         "--py-dir",
@@ -607,6 +761,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             args.executable_plans,
             args.root,
             args.py_dir,
+            args.base_line,
         )
     except RuntimeError as exc:
         print(f"ERROR: {exc}")
@@ -614,11 +769,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     if not executable_paths:
         print("ERROR: no generated executable_plan.py files were provided or discovered")
-        return 1
-    try:
-        gpu_id_for_index(1)
-    except RuntimeError as exc:
-        print(f"ERROR: {exc}")
         return 1
 
     output_dir = Path(args.output_dir).expanduser().resolve()
@@ -631,9 +781,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         with ThreadPoolExecutor(max_workers=args.max_workers) as executor:
             future_to_path = {}
             future_to_result_output: Dict[Any, Optional[Path]] = {}
-            future_to_gpu_id: Dict[Any, int] = {}
             for index, executable_path in enumerate(executable_paths, start=1):
-                gpu_id = gpu_id_for_index(index)
                 individual_result_output = (
                     result_path_for(output_dir, executable_path, index)
                     if args.write_individual_results
@@ -649,16 +797,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     metrics_output=metrics_output,
                     result_output=individual_result_output,
                     timeout_seconds=float(args.timeout_seconds),
-                    gpu_id=None,
                     save_all_stdout=args.save_all_stdout,
                 )
                 future_to_path[future] = executable_path
                 future_to_result_output[future] = individual_result_output
-                future_to_gpu_id[future] = gpu_id
 
             for future in as_completed(future_to_path):
                 executable_path = future_to_path[future]
-                gpu_id = future_to_gpu_id[future]
                 try:
                     result = future.result()
                 except Exception as exc:
@@ -673,8 +818,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         "robot_failures": [],
                         "returncode": 1,
                         "executable_path": str(executable_path),
-                        "gpu_id": gpu_id,
-                        "cuda_visible_devices": str(gpu_id),
                         "error": str(exc),
                     }
                     prune_stdout_for_result(
@@ -689,7 +832,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 print(f"{status}: {executable_path}")
 
     results.sort(key=lambda result: str(result.get("executable_path", "")))
-    summary = build_summary(results, start_time)
+    discovery_root = None
+    if args.base_line:
+        discovery_root = (
+            Path(args.root).expanduser()
+            if args.root
+            else default_baseline_root(args.base_line)
+        ).resolve()
+    summary = build_summary(
+        results,
+        start_time,
+        base_line=args.base_line,
+        discovery_root=discovery_root,
+    )
     write_result_json(output_dir / "parallel_runner_summary.json", summary)
     print(f"Summary saved to: {output_dir / 'parallel_runner_summary.json'}")
 

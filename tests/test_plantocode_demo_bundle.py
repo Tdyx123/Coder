@@ -12,6 +12,7 @@ SCRIPTS_DIR = ROOT / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
+from executor_system.parallel_runner import is_runner_compatible_executable
 from plantocode import main as plantocode_main
 
 
@@ -20,11 +21,17 @@ def write_json(path: Path, content):
     path.write_text(json.dumps(content, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def write_parallel_run_fixture_task(root: Path, floor_plan: str, task_index: int) -> Path:
+def write_parallel_run_fixture_task(
+    root: Path,
+    floor_plan: str,
+    task_index: int,
+    log_parts=("logs", "intermediate_runs"),
+) -> Path:
+    task_run_dir = root
+    for part in log_parts:
+        task_run_dir = task_run_dir / part
     task_run_dir = (
-        root
-        / "logs"
-        / "intermediate_runs"
+        task_run_dir
         / f"sample___{floor_plan}"
         / "task"
         / f"20260526_{task_index:03d}"
@@ -219,8 +226,6 @@ class PlanToCodeDemoBundleTest(unittest.TestCase):
                     str(root / "logs"),
                     "--output-dir",
                     str(root / "summary"),
-                    "--gpu-device",
-                    "1",
                 ]
             )
 
@@ -258,8 +263,8 @@ class PlanToCodeDemoBundleTest(unittest.TestCase):
 
             self.assertIsNotNone(bundle_data)
             self.assertEqual(bundle_data["no_trans"], 6)
-            self.assertEqual(bundle_data["gpu_device"], 1)
-            self.assertEqual(details[0]["gpu_device"], 1)
+            self.assertNotIn("gpu_device", bundle_data)
+            self.assertNotIn("gpu_device", details[0])
             self.assertEqual(len(bundle_data["task_plan"]["stages"]), 2)
             first_stage = bundle_data["task_plan"]["stages"][0]
             second_stage = bundle_data["task_plan"]["stages"][1]
@@ -274,6 +279,92 @@ class PlanToCodeDemoBundleTest(unittest.TestCase):
                 ["GoToObject", "OpenObject", "GoToObject", "OpenObject"],
             )
             self.assertEqual(bundle_data["object_mapping_warnings"], [])
+
+    def test_lammap_baseline_mode_writes_parallel_runner_summary_path(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            baseline_root = Path(tmp_dir) / "baselines" / "LaMMA-P"
+            task_run_dir = write_parallel_run_fixture_task(baseline_root, "6", 0)
+
+            result_code = plantocode_main(
+                [
+                    "--base-line",
+                    "LaMMA-P",
+                    "--root",
+                    str(baseline_root),
+                ]
+            )
+
+            self.assertEqual(result_code, 0)
+            executable_plan = task_run_dir / "plan_to_code" / "executable_plan.py"
+            output_dir = baseline_root / "plan_to_code_results"
+            details = json.loads((output_dir / "plan_to_code_results.json").read_text(encoding="utf-8"))
+            summary = json.loads((output_dir / "plan_to_code_summary.json").read_text(encoding="utf-8"))
+
+            self.assertEqual(summary["successful_generations"], 1)
+            self.assertEqual(details[0]["status"], "success")
+            self.assertTrue(details[0]["success"])
+            self.assertEqual(details[0]["generated"]["executable_plan"], str(executable_plan))
+            self.assertTrue(is_runner_compatible_executable(executable_plan))
+
+    def test_smart_llm_baseline_mode_writes_parallel_runner_summary_path(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            baseline_root = Path(tmp_dir) / "baselines" / "SMART-LLM"
+            task_run_dir = write_parallel_run_fixture_task(
+                baseline_root,
+                "6",
+                0,
+                log_parts=("logs", "2"),
+            )
+
+            result_code = plantocode_main(
+                [
+                    "--base-line",
+                    "SMART-LLM",
+                    "--root",
+                    str(baseline_root),
+                ]
+            )
+
+            self.assertEqual(result_code, 0)
+            executable_plan = task_run_dir / "plan_to_code" / "executable_plan.py"
+            details = json.loads((baseline_root / "plan_to_code_results.json").read_text(encoding="utf-8"))
+            summary = json.loads((baseline_root / "plan_to_code_summary.json").read_text(encoding="utf-8"))
+
+            self.assertEqual(summary["successful_generations"], 1)
+            self.assertEqual(details[0]["status"], "success")
+            self.assertTrue(details[0]["success"])
+            self.assertEqual(details[0]["generated"]["executable_plan"], str(executable_plan))
+            self.assertTrue(is_runner_compatible_executable(executable_plan))
+
+    def test_baseline_mode_explicit_logs_and_output_dirs_override_defaults(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            baseline_root = root / "baselines" / "LaMMA-P"
+            source_root = root / "custom_source"
+            output_dir = root / "custom_summary"
+            task_run_dir = write_parallel_run_fixture_task(source_root, "6", 0)
+
+            result_code = plantocode_main(
+                [
+                    "--base-line",
+                    "LaMMA-P",
+                    "--root",
+                    str(baseline_root),
+                    "--logs-dir",
+                    str(source_root / "logs"),
+                    "--output-dir",
+                    str(output_dir),
+                ]
+            )
+
+            self.assertEqual(result_code, 0)
+            executable_plan = task_run_dir / "plan_to_code" / "executable_plan.py"
+            details = json.loads((output_dir / "plan_to_code_results.json").read_text(encoding="utf-8"))
+
+            self.assertTrue(executable_plan.exists())
+            self.assertEqual(details[0]["generated"]["executable_plan"], str(executable_plan))
+            self.assertFalse((baseline_root / "plan_to_code_results" / "plan_to_code_results.json").exists())
+            self.assertTrue(is_runner_compatible_executable(executable_plan))
 
     def test_parallel_run_converts_all_summary_tasks(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

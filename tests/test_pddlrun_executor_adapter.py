@@ -75,7 +75,6 @@ class PddlRunExecutorAdapterTest(unittest.TestCase):
                 ("Cabinet",),
             )
             self.assertEqual(bundle.no_trans, 6)
-            self.assertIsNone(bundle.gpu_device)
 
     def test_explicit_plan_files_override_plan_folder_scan(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -101,12 +100,10 @@ class PddlRunExecutorAdapterTest(unittest.TestCase):
                 plan_folder=plan_folder,
                 plan_files=[selected],
                 object_names=["Book", "Drawer"],
-                gpu_device=0,
             )
 
             self.assertEqual(set(bundle.plan_files), {1})
             self.assertEqual(bundle.no_trans, 2)
-            self.assertEqual(bundle.gpu_device, 0)
 
     def test_special_action_argument_mapping(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

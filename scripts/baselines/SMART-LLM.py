@@ -98,7 +98,6 @@ class LogMetadata:
     test_set: Optional[str]
     robots: List[Any] = field(default_factory=list)
     objects: List[Any] = field(default_factory=list)
-    gpu_device: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -384,16 +383,6 @@ def read_task_from_log(task_run_dir: Path) -> str:
     return ""
 
 
-def parse_optional_int(value: Any) -> Optional[int]:
-    if value in (None, ""):
-        return None
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        return None
-    return parsed if parsed >= 0 else None
-
-
 def read_log_metadata(task_run_dir: Path) -> LogMetadata:
     text = read_log_text(task_run_dir)
     robots = read_log_assignment_from_text(text, "robots", default=[])
@@ -408,7 +397,6 @@ def read_log_metadata(task_run_dir: Path) -> LogMetadata:
         test_set=read_log_field(text, "test-set"),
         robots=robots,
         objects=objects,
-        gpu_device=parse_optional_int(read_log_field(text, "gpu_device")),
     )
 
 
@@ -1004,7 +992,6 @@ def build_bundle_data(
     no_trans: int,
     object_mappings: Dict[str, str],
     object_mapping_warnings: Sequence[str],
-    gpu_device: Optional[int] = None,
 ) -> Dict[str, Any]:
     return {
         "task": task,
@@ -1015,7 +1002,6 @@ def build_bundle_data(
         "object_mappings": dict(object_mappings),
         "object_mapping_warnings": list(object_mapping_warnings),
         "object_id_bindings": [],
-        "gpu_device": gpu_device,
     }
 
 
@@ -1184,7 +1170,6 @@ def convert_one(
             no_trans=action_count,
             object_mappings=dict(resolver.mappings),
             object_mapping_warnings=list(resolver.warnings),
-            gpu_device=metadata.gpu_device,
         )
 
         result.task_file = str(task_file)

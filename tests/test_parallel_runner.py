@@ -1,5 +1,6 @@
 import io
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -18,7 +19,6 @@ from executor_system.parallel_runner import (
     main as parallel_runner_main,
     run_action_plan_tolerant,
 )
-import executor_system.parallel_runner as parallel_runner
 from executor_system.runtime import PICKUP_OBJECT_CLIP_ERROR
 
 
@@ -68,6 +68,8 @@ def write_fake_generated_script(
         "\n".join(
             [
                 "#!/usr/bin/env python3",
+                "# generated_plan_runtime compatibility marker",
+                "# BUNDLE_DATA compatibility marker",
                 "import argparse",
                 "import json",
                 "import os",
@@ -89,8 +91,10 @@ def write_fake_generated_script(
                 "    'failed_actions': 0,",
                 "    'failure_action_ratio': 0.0,",
                 f"    'robot_failures': {robot_failures!r},",
-                "    'cuda_visible_devices': os.environ.get('CUDA_VISIBLE_DEVICES'),",
-                "    'lammap_parallel_gpu_id': os.environ.get('LAMMAP_PARALLEL_GPU_ID'),",
+                "    'observed_env': {",
+                "        'CUDA_VISIBLE_DEVICES': os.environ.get('CUDA_VISIBLE_DEVICES'),",
+                "        'LAMMAP_PARALLEL_GPU_ID': os.environ.get('LAMMAP_PARALLEL_GPU_ID'),",
+                "    },",
                 "}",
                 "Path(args.metrics_output).write_text(json.dumps(result), encoding='utf-8')",
                 f"raise SystemExit({returncode!r})",
@@ -99,6 +103,25 @@ def write_fake_generated_script(
         ),
         encoding="utf-8",
     )
+
+
+def write_incompatible_generated_script(path: Path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "\n".join(
+            [
+                "#!/usr/bin/env python3",
+                "print('legacy generated plan')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
+def write_json(path: Path, value):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 class ParallelRunnerCliTest(unittest.TestCase):
@@ -138,105 +161,37 @@ class ParallelRunnerCliTest(unittest.TestCase):
                 all("stdout" not in result for result in summary["results"])
             )
 
-    def test_default_gpu_ids_cycle_after_eight_executables(self):
+    def test_runner_does_not_assign_gpu_environment(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             output_dir = root / "runner_results"
-            scripts = []
-            for index in range(10):
-                script = root / f"run_{index:02d}" / "plan_to_code" / "executable_plan.py"
-                write_fake_generated_script(script)
-                scripts.append(script)
-
-            result_code = parallel_runner_main(
-                [
-                    *(str(script) for script in scripts),
-                    "--output-dir",
-                    str(output_dir),
-                    "--max-workers",
-                    "10",
-                    "--timeout-seconds",
-                    "5",
-                ]
-            )
-
-            self.assertEqual(result_code, 0)
-            summary = json.loads(
-                (output_dir / "parallel_runner_summary.json").read_text(encoding="utf-8")
-            )
-            expected_gpu_ids = [0, 1, 2, 3, 4, 5, 6, 7, 0, 1]
-            self.assertEqual(
-                [result["gpu_id"] for result in summary["results"]],
-                expected_gpu_ids,
-            )
-            self.assertEqual(
-                [result["cuda_visible_devices"] for result in summary["results"]],
-                [str(gpu_id) for gpu_id in expected_gpu_ids],
-            )
-            self.assertEqual(
-                [result["lammap_parallel_gpu_id"] for result in summary["results"]],
-                [str(gpu_id) for gpu_id in expected_gpu_ids],
-            )
-
-    def test_custom_global_gpu_ids_are_used_in_order(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            output_dir = root / "runner_results"
-            scripts = []
-            for index in range(5):
-                script = root / f"custom_{index:02d}" / "plan_to_code" / "executable_plan.py"
-                write_fake_generated_script(script)
-                scripts.append(script)
-
-            with patch.object(parallel_runner, "GPU_IDS", [2, 4]):
-                result_code = parallel_runner_main(
-                    [
-                        *(str(script) for script in scripts),
-                        "--output-dir",
-                        str(output_dir),
-                        "--max-workers",
-                        "5",
-                        "--timeout-seconds",
-                        "5",
-                    ]
-                )
-
-            self.assertEqual(result_code, 0)
-            summary = json.loads(
-                (output_dir / "parallel_runner_summary.json").read_text(encoding="utf-8")
-            )
-            expected_gpu_ids = [2, 4, 2, 4, 2]
-            self.assertEqual(
-                [result["gpu_id"] for result in summary["results"]],
-                expected_gpu_ids,
-            )
-            self.assertEqual(
-                [result["cuda_visible_devices"] for result in summary["results"]],
-                [str(gpu_id) for gpu_id in expected_gpu_ids],
-            )
-
-    def test_empty_gpu_ids_returns_clear_error(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
             script = root / "run" / "plan_to_code" / "executable_plan.py"
             write_fake_generated_script(script)
-            output = io.StringIO()
 
-            with patch.object(parallel_runner, "GPU_IDS", []), redirect_stdout(output):
+            with patch.dict(os.environ, {}, clear=True):
                 result_code = parallel_runner_main(
                     [
                         str(script),
                         "--output-dir",
-                        str(root / "runner_results"),
+                        str(output_dir),
                         "--timeout-seconds",
                         "5",
                     ]
                 )
 
-            self.assertEqual(result_code, 1)
-            self.assertIn(
-                "GPU_IDS must contain at least one GPU id",
-                output.getvalue(),
+            self.assertEqual(result_code, 0)
+            summary = json.loads(
+                (output_dir / "parallel_runner_summary.json").read_text(encoding="utf-8")
+            )
+            result = summary["results"][0]
+            self.assertNotIn("gpu_id", result)
+            self.assertNotIn("cuda_visible_devices", result)
+            self.assertEqual(
+                result["observed_env"],
+                {
+                    "CUDA_VISIBLE_DEVICES": None,
+                    "LAMMAP_PARALLEL_GPU_ID": None,
+                },
             )
 
     def test_write_individual_results_writes_per_task_json_files(self):
@@ -346,6 +301,218 @@ class ParallelRunnerCliTest(unittest.TestCase):
             )
             self.assertEqual(summary["total_results"], 1)
             self.assertEqual(summary["results"][0]["executable_path"], str(script.resolve()))
+
+    def test_lammap_baseline_discovers_successful_summary_entries(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "baselines" / "LaMMA-P"
+            script = (
+                root
+                / "logs"
+                / "intermediate_runs"
+                / "test_set"
+                / "task"
+                / "run"
+                / "plan_to_code"
+                / "executable_plan.py"
+            )
+            fallback_only = (
+                root
+                / "logs"
+                / "intermediate_runs"
+                / "test_set"
+                / "other"
+                / "run"
+                / "plan_to_code"
+                / "executable_plan.py"
+            )
+            skipped = (
+                root
+                / "logs"
+                / "intermediate_runs"
+                / "test_set"
+                / "skipped"
+                / "run"
+                / "plan_to_code"
+                / "executable_plan.py"
+            )
+            legacy = (
+                root
+                / "logs"
+                / "intermediate_runs"
+                / "test_set"
+                / "legacy"
+                / "run"
+                / "plan_to_code"
+                / "executable_plan.py"
+            )
+            output_dir = Path(tmp_dir) / "runner_results"
+            write_fake_generated_script(script, gcr=0.5)
+            write_fake_generated_script(fallback_only, gcr=0.75)
+            write_fake_generated_script(skipped, gcr=0.0)
+            write_incompatible_generated_script(legacy)
+            write_json(
+                root / "plan_to_code_results" / "plan_to_code_results.json",
+                [
+                    {
+                        "status": "success",
+                        "success": True,
+                        "generated": {"executable_plan": str(script)},
+                    },
+                    {
+                        "status": "skipped",
+                        "success": False,
+                        "generated": {"executable_plan": str(skipped)},
+                    },
+                    {
+                        "status": "success",
+                        "success": True,
+                        "generated": {"executable_plan": str(legacy)},
+                    },
+                    {
+                        "status": "success",
+                        "success": True,
+                        "generated": {"executable_plan": str(root / "missing.py")},
+                    },
+                ],
+            )
+
+            result_code = parallel_runner_main(
+                [
+                    "--base-line",
+                    "LaMMA-P",
+                    "--root",
+                    str(root),
+                    "--output-dir",
+                    str(output_dir),
+                    "--timeout-seconds",
+                    "5",
+                ]
+            )
+
+            self.assertEqual(result_code, 0)
+            summary = json.loads(
+                (output_dir / "parallel_runner_summary.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(summary["base_line"], "LaMMA-P")
+            self.assertEqual(summary["discovery_root"], str(root.resolve()))
+            self.assertEqual(summary["total_results"], 1)
+            self.assertEqual(summary["results"][0]["executable_path"], str(script.resolve()))
+
+    def test_smart_llm_baseline_discovers_successful_summary_entries(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "baselines" / "SMART-LLM"
+            script = root / "logs" / "2" / "task" / "plan_to_code" / "executable_plan.py"
+            skipped = root / "logs" / "2" / "skipped" / "plan_to_code" / "executable_plan.py"
+            output_dir = Path(tmp_dir) / "runner_results"
+            write_fake_generated_script(script, gcr=0.25)
+            write_fake_generated_script(skipped, gcr=0.0)
+            write_json(
+                root / "plan_to_code_results.json",
+                [
+                    {
+                        "status": "success",
+                        "success": True,
+                        "generated": {"executable_plan": str(script)},
+                    },
+                    {
+                        "status": "failed",
+                        "success": False,
+                        "generated": {"executable_plan": str(skipped)},
+                    },
+                ],
+            )
+
+            result_code = parallel_runner_main(
+                [
+                    "--base-line",
+                    "SMART-LLM",
+                    "--root",
+                    str(root),
+                    "--output-dir",
+                    str(output_dir),
+                    "--timeout-seconds",
+                    "5",
+                ]
+            )
+
+            self.assertEqual(result_code, 0)
+            summary = json.loads(
+                (output_dir / "parallel_runner_summary.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(summary["base_line"], "SMART-LLM")
+            self.assertEqual(summary["discovery_root"], str(root.resolve()))
+            self.assertEqual(summary["total_results"], 1)
+            self.assertEqual(summary["results"][0]["executable_path"], str(script.resolve()))
+
+    def test_baseline_fallback_discovers_compatible_log_executables(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "baselines" / "SMART-LLM"
+            first = root / "logs" / "2" / "first" / "plan_to_code" / "executable_plan.py"
+            second = root / "logs" / "2" / "second" / "plan_to_code" / "executable_plan.py"
+            legacy = root / "logs" / "2" / "legacy" / "plan_to_code" / "executable_plan.py"
+            output_dir = Path(tmp_dir) / "runner_results"
+            write_fake_generated_script(first, gcr=0.25)
+            write_fake_generated_script(second, gcr=0.75)
+            write_incompatible_generated_script(legacy)
+
+            result_code = parallel_runner_main(
+                [
+                    "--base-line",
+                    "SMART-LLM",
+                    "--root",
+                    str(root),
+                    "--output-dir",
+                    str(output_dir),
+                    "--max-workers",
+                    "2",
+                    "--timeout-seconds",
+                    "5",
+                ]
+            )
+
+            self.assertEqual(result_code, 0)
+            summary = json.loads(
+                (output_dir / "parallel_runner_summary.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(summary["total_results"], 2)
+            self.assertEqual(
+                [result["executable_path"] for result in summary["results"]],
+                [str(first.resolve()), str(second.resolve())],
+            )
+
+    def test_baseline_without_compatible_files_returns_clear_error(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "baselines" / "LaMMA-P"
+            legacy = (
+                root
+                / "logs"
+                / "intermediate_runs"
+                / "test_set"
+                / "task"
+                / "run"
+                / "plan_to_code"
+                / "executable_plan.py"
+            )
+            write_incompatible_generated_script(legacy)
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                result_code = parallel_runner_main(
+                    [
+                        "--base-line",
+                        "LaMMA-P",
+                        "--root",
+                        str(root),
+                        "--timeout-seconds",
+                        "5",
+                    ]
+                )
+
+            self.assertEqual(result_code, 1)
+            self.assertIn(
+                "No runner-compatible LaMMA-P executable_plan.py files discovered",
+                output.getvalue(),
+            )
 
     def test_py_dir_runs_direct_child_python_files(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

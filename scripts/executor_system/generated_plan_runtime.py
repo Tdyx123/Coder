@@ -85,7 +85,6 @@ def build_hardcoded_bundle(bundle_data: Dict[str, Any]) -> types.SimpleNamespace
         object_mappings=bundle_data["object_mappings"],
         object_mapping_warnings=bundle_data["object_mapping_warnings"],
         object_id_bindings=bundle_data.get("object_id_bindings", []),
-        gpu_device=bundle_data.get("gpu_device"),
     )
 
 
@@ -169,7 +168,6 @@ def run_standalone(
         floor_no,
         CLOUD_RENDERING,
         RENDER_IMAGE,
-        gpu_device=bundle.gpu_device,
     )
     runtime.register_object_id_bindings(bundle.object_id_bindings)
     _context.runtime = runtime
@@ -227,7 +225,6 @@ def run_runner_mode(
             floor_no,
             CLOUD_RENDERING,
             False,
-            gpu_device=bundle.gpu_device,
         )
         runtime.register_object_id_bindings(bundle.object_id_bindings)
         _context.runtime = runtime

@@ -49,7 +49,6 @@ class PddlRunPlanBundle:
     object_mappings: Dict[str, str]
     object_mapping_warnings: List[str]
     object_id_bindings: List[Dict[str, Any]] = field(default_factory=list)
-    gpu_device: Optional[int] = None
 
 
 ACTION_ALIASES = {
@@ -574,7 +573,6 @@ def build_task_plan_from_pddlrun_outputs(
     object_id_bindings: Optional[Any] = None,
     object_id_bindings_by_subtask: Optional[Any] = None,
     task_id: str = "pddlrun",
-    gpu_device: Optional[int] = None,
 ) -> PddlRunPlanBundle:
     phases = parse_allocation_phases(allocation_text)
     plan_texts = load_plan_texts(plan_files)
@@ -666,7 +664,6 @@ def build_task_plan_from_pddlrun_outputs(
         object_mappings=object_mappings,
         object_mapping_warnings=object_mapping_warnings,
         object_id_bindings=bundled_object_id_bindings,
-        gpu_device=gpu_device,
     )
 
 
@@ -681,7 +678,6 @@ def build_task_plan_from_pddlrun_paths(
     object_id_bindings: Optional[Any] = None,
     object_id_bindings_by_subtask: Optional[Any] = None,
     task_id: str = "pddlrun",
-    gpu_device: Optional[int] = None,
 ) -> PddlRunPlanBundle:
     allocation_text = load_allocation_text(allocate_file)
     resolved_plan_files = resolve_plan_files(plan_folder, plan_files)
@@ -700,5 +696,4 @@ def build_task_plan_from_pddlrun_paths(
         object_id_bindings=object_id_bindings,
         object_id_bindings_by_subtask=object_id_bindings_by_subtask,
         task_id=task_id,
-        gpu_device=gpu_device,
     )
