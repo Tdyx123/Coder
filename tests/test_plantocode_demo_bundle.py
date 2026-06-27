@@ -1,9 +1,12 @@
 import ast
+import importlib.util
+import io
 import json
 import py_compile
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
 
 
@@ -14,6 +17,24 @@ if str(SCRIPTS_DIR) not in sys.path:
 
 from executor_system.parallel_runner import is_runner_compatible_executable
 from plantocode import main as plantocode_main
+
+
+def load_script_module(name: str, path: Path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+lammap_baseline = load_script_module(
+    "plantocode_demo_lammap_baseline",
+    ROOT / "scripts" / "baselines" / "LaMMA-P.py",
+)
+smart_llm_baseline = load_script_module(
+    "plantocode_demo_smart_llm_baseline",
+    ROOT / "scripts" / "baselines" / "SMART-LLM.py",
+)
 
 
 def write_json(path: Path, content):
@@ -127,7 +148,126 @@ def write_parallel_run_summary(root: Path, parallel_run: Path, task_run_dirs):
     )
 
 
+def write_lammap_native_fixture(root: Path) -> Path:
+    baseline_root = root / "baselines" / "LaMMA-P"
+    task_run_dir = (
+        baseline_root
+        / "logs"
+        / "intermediate_runs"
+        / "unit_set"
+        / "open_the_drawer"
+        / "20260621_001"
+    )
+    write_json(
+        task_run_dir / "inputs" / "task_context.json",
+        {
+            "task": "open the drawer.",
+            "robots": [{"name": "robot1", "skills": ["GoToObject", "OpenObject"]}],
+            "objects_ai": "objects = [{'name': 'Drawer'}]",
+        },
+    )
+    write_json(
+        task_run_dir / "run_manifest.json",
+        {
+            "repo_root": str(root),
+            "task": "open the drawer.",
+            "test_set": "unit_set",
+            "floor_plan": "2",
+            "task_index": 0,
+        },
+    )
+    (task_run_dir / "08_final_match").mkdir(parents=True)
+    (task_run_dir / "08_final_match" / "02_final_plan.txt").write_text(
+        "```pddl\n"
+        "0.000: (gotoobject robot drawer) [1.000]\n"
+        "1.000: (openobject robot drawer) [1.000]\n"
+        "```",
+        encoding="utf-8",
+    )
+    dataset_dir = root / "data" / "unit_set"
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+    (dataset_dir / "FloorPlan2.jsonl").write_text(
+        json.dumps(
+            {
+                "task": "open the drawer.",
+                "robot list": [1],
+                "object_states": [{"name": "Drawer", "contains": [], "states": ["OPENED"]}],
+                "trans": 1,
+                "min_trans": 2,
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return task_run_dir
+
+
+def write_smart_native_fixture(root: Path, source_name: str = "code_plan.py") -> Path:
+    baseline_root = root / "baselines" / "SMART-LLM"
+    task_run_dir = baseline_root / "logs" / "2" / f"native_{source_name.replace('.', '_')}"
+    task_run_dir.mkdir(parents=True, exist_ok=True)
+    source_text = (
+        "```python\n"
+        if source_name == "decomposed_plan.py"
+        else ""
+    )
+    source_text += (
+        "def open_drawer(robot):\n"
+        "    GoToObject(robot, 'Drawer')\n"
+        "    OpenObject(robot, 'Drawer')\n"
+        "open_drawer(robots[0])\n"
+    )
+    if source_name == "decomposed_plan.py":
+        source_text += "```\n"
+    (task_run_dir / source_name).write_text(source_text, encoding="utf-8")
+    (task_run_dir / "log.txt").write_text(
+        "\n".join(
+            [
+                "open the drawer.",
+                "",
+                "Floor Plan: 2",
+                "",
+                "objects = [{'name': 'Drawer'}]",
+                "robots = [{'name': 'robot1'}]",
+                "trans = 0",
+                "max_trans = 0",
+                "test-set: unit_set",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    dataset_dir = root / "data" / "unit_set"
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+    (dataset_dir / "FloorPlan2.jsonl").write_text(
+        json.dumps(
+            {
+                "task": "open the drawer.",
+                "robot list": [1],
+                "object_states": [{"name": "Drawer", "contains": [], "states": ["OPENED"]}],
+                "trans": 1,
+                "min_trans": 2,
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return task_run_dir
+
+
 class PlanToCodeDemoBundleTest(unittest.TestCase):
+    def test_plantocode_rejects_baseline_options(self):
+        for argv in (
+            ["--base-line", "LaMMA-P"],
+            ["--root", "./baselines/LaMMA-P"],
+        ):
+            with self.subTest(argv=argv):
+                with redirect_stderr(io.StringIO()):
+                    with self.assertRaises(SystemExit) as raised:
+                        plantocode_main(argv)
+                self.assertEqual(raised.exception.code, 2)
+
     def test_pddlrun_fixture_generates_demo_style_script_with_hardcoded_bundle(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
@@ -285,10 +425,8 @@ class PlanToCodeDemoBundleTest(unittest.TestCase):
             baseline_root = Path(tmp_dir) / "baselines" / "LaMMA-P"
             task_run_dir = write_parallel_run_fixture_task(baseline_root, "6", 0)
 
-            result_code = plantocode_main(
+            result_code = lammap_baseline.main(
                 [
-                    "--base-line",
-                    "LaMMA-P",
                     "--root",
                     str(baseline_root),
                 ]
@@ -306,6 +444,30 @@ class PlanToCodeDemoBundleTest(unittest.TestCase):
             self.assertEqual(details[0]["generated"]["executable_plan"], str(executable_plan))
             self.assertTrue(is_runner_compatible_executable(executable_plan))
 
+    def test_lammap_baseline_mode_uses_native_final_plan_artifact(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            baseline_root = root / "baselines" / "LaMMA-P"
+            task_run_dir = write_lammap_native_fixture(root)
+
+            result_code = lammap_baseline.main(
+                [
+                    "--root",
+                    str(baseline_root),
+                ]
+            )
+
+            self.assertEqual(result_code, 0)
+            executable_plan = task_run_dir / "plan_to_code" / "executable_plan.py"
+            output_dir = baseline_root / "plan_to_code_results"
+            details = json.loads((output_dir / "plan_to_code_results.json").read_text(encoding="utf-8"))
+
+            self.assertTrue(executable_plan.exists())
+            self.assertEqual(details[0]["status"], "success")
+            self.assertEqual(details[0]["category"], "timed_direct_actions")
+            self.assertEqual(details[0]["generated"]["executable_plan"], str(executable_plan))
+            self.assertTrue(is_runner_compatible_executable(executable_plan))
+
     def test_smart_llm_baseline_mode_writes_parallel_runner_summary_path(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             baseline_root = Path(tmp_dir) / "baselines" / "SMART-LLM"
@@ -316,10 +478,8 @@ class PlanToCodeDemoBundleTest(unittest.TestCase):
                 log_parts=("logs", "2"),
             )
 
-            result_code = plantocode_main(
+            result_code = smart_llm_baseline.main(
                 [
-                    "--base-line",
-                    "SMART-LLM",
                     "--root",
                     str(baseline_root),
                 ]
@@ -336,6 +496,52 @@ class PlanToCodeDemoBundleTest(unittest.TestCase):
             self.assertEqual(details[0]["generated"]["executable_plan"], str(executable_plan))
             self.assertTrue(is_runner_compatible_executable(executable_plan))
 
+    def test_smart_llm_baseline_mode_uses_native_code_plan_artifact(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            baseline_root = root / "baselines" / "SMART-LLM"
+            task_run_dir = write_smart_native_fixture(root, "code_plan.py")
+
+            result_code = smart_llm_baseline.main(
+                [
+                    "--root",
+                    str(baseline_root),
+                ]
+            )
+
+            self.assertEqual(result_code, 0)
+            executable_plan = task_run_dir / "plan_to_code" / "executable_plan.py"
+            details = json.loads((baseline_root / "plan_to_code_results.json").read_text(encoding="utf-8"))
+
+            self.assertTrue(executable_plan.exists())
+            self.assertEqual(details[0]["status"], "success")
+            self.assertEqual(details[0]["source_path"], str(task_run_dir / "code_plan.py"))
+            self.assertEqual(details[0]["generated"]["executable_plan"], str(executable_plan))
+            self.assertTrue(is_runner_compatible_executable(executable_plan))
+
+    def test_smart_llm_baseline_mode_uses_native_decomposed_plan_artifact(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            baseline_root = root / "baselines" / "SMART-LLM"
+            task_run_dir = write_smart_native_fixture(root, "decomposed_plan.py")
+
+            result_code = smart_llm_baseline.main(
+                [
+                    "--root",
+                    str(baseline_root),
+                ]
+            )
+
+            self.assertEqual(result_code, 0)
+            executable_plan = task_run_dir / "plan_to_code" / "executable_plan.py"
+            details = json.loads((baseline_root / "plan_to_code_results.json").read_text(encoding="utf-8"))
+
+            self.assertTrue(executable_plan.exists())
+            self.assertEqual(details[0]["status"], "success")
+            self.assertEqual(details[0]["source_path"], str(task_run_dir / "decomposed_plan.py"))
+            self.assertEqual(details[0]["generated"]["executable_plan"], str(executable_plan))
+            self.assertTrue(is_runner_compatible_executable(executable_plan))
+
     def test_baseline_mode_explicit_logs_and_output_dirs_override_defaults(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
@@ -344,10 +550,8 @@ class PlanToCodeDemoBundleTest(unittest.TestCase):
             output_dir = root / "custom_summary"
             task_run_dir = write_parallel_run_fixture_task(source_root, "6", 0)
 
-            result_code = plantocode_main(
+            result_code = lammap_baseline.main(
                 [
-                    "--base-line",
-                    "LaMMA-P",
                     "--root",
                     str(baseline_root),
                     "--logs-dir",

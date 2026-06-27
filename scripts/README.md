@@ -87,13 +87,14 @@ Translates planning outputs into AI2-THOR-executable Python code.
 python scripts/plantocode.py --logs-dir ./logs/task_manager_runs --validate-code
 ```
 
-Generate baseline-compatible summaries that can be discovered by
+Generate baseline-compatible summaries through the concrete baseline entrypoints.
+The generated summaries can still be discovered by
 `executor_system/parallel_runner.py --base-line`:
 
 ```bash
-python scripts/plantocode.py \
-  --base-line LaMMA-P \
-  --root ./baselines/LaMMA-P
+python scripts/baselines/LaMMA-P.py --root ./baselines/LaMMA-P
+
+python scripts/baselines/SMART-LLM.py --root ./baselines/SMART-LLM
 
 python scripts/executor_system/parallel_runner.py \
   --base-line LaMMA-P \
@@ -104,8 +105,6 @@ python scripts/executor_system/parallel_runner.py \
 
 Arguments:
 
-- `--base-line`
-- `--root`
 - `--logs-dir`
 - `--parallel-run`
 - `--floor-plan`
@@ -119,15 +118,18 @@ Behavior worth knowing:
 - the script recursively scans complete pddlrun task folders
 - `--parallel-run` accepts a `parallel_runs/...` directory or its `summary.json`
 - `--floor-plan` restricts conversion to one floor, e.g. `6` or `FloorPlan6`
-- `--base-line LaMMA-P` defaults to reading
-  `baselines/LaMMA-P/logs/intermediate_runs` and writing
-  `baselines/LaMMA-P/plan_to_code_results`
-- `--base-line SMART-LLM` defaults to reading `baselines/SMART-LLM/logs`
-  and writing `baselines/SMART-LLM`
 - it writes summary files to `--output-dir`
 - it writes `plan_to_code/executable_plan.py` into each original log folder
 - generated `plan_to_code/executable_plan.py` can also be called with
   `--runner-mode` for no-render metric collection
+
+Baseline entrypoint defaults:
+
+- `scripts/baselines/LaMMA-P.py --root ./baselines/LaMMA-P` reads
+  `baselines/LaMMA-P/logs/intermediate_runs` and writes
+  `baselines/LaMMA-P/plan_to_code_results`
+- `scripts/baselines/SMART-LLM.py --root ./baselines/SMART-LLM` reads
+  `baselines/SMART-LLM/logs` and writes `baselines/SMART-LLM`
 
 ### `generate_single_subtask_code.py`
 
