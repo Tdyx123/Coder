@@ -13,8 +13,10 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 from executor_system.pddlrun_adapter import (
+    ObjectNameResolver,
     PddlRunAdapterError,
     build_task_plan_from_pddlrun_paths,
+    encode_plan_action,
     parse_plan_actions,
     resolve_plan_files,
 )
@@ -165,6 +167,17 @@ class PddlRunExecutorAdapterTest(unittest.TestCase):
             self.assertEqual(actions[6].args(), ("StoveBurner", "Pan"))
             self.assertEqual(actions[7].args(), ("Sink", "Mug"))
             self.assertEqual(actions[8].args(), ("Fridge", "Potato"))
+
+    def test_wait_one_tick_pddl_action_has_no_object_args(self):
+        actions = parse_plan_actions("(waitonetick robot1)\n")
+
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0].name, "WaitOneTick")
+
+        encoded = encode_plan_action(actions[0], ObjectNameResolver(["Apple"]))
+        self.assertEqual(encoded.action.action_type, "WaitOneTick")
+        self.assertEqual(encoded.action.args(), ())
+        self.assertEqual(encoded.object_tokens, ())
 
     def test_numbered_object_id_bindings_are_preserved_as_runtime_aliases(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

@@ -14,7 +14,15 @@ SCRIPTS_DIR = ROOT / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from executor_system.action_plan import Action, StagePlan, TaskPlan
+from executor_system.action_plan import (
+    ACTION_FAILED,
+    FAILURE_RETRY,
+    Action,
+    ExecutionLogger,
+    StagePlan,
+    TaskPlan,
+    TaskRunner,
+)
 from executor_system.parallel_runner import (
     main as parallel_runner_main,
     run_action_plan_tolerant,
@@ -666,7 +674,7 @@ class ParallelRunnerCliTest(unittest.TestCase):
 
 
 class TolerantExecutorTest(unittest.TestCase):
-    def test_robot_failure_stops_only_that_robot_in_current_phase(self):
+    def test_robot_failure_continues_with_next_action(self):
         runtime = FakeRuntime()
         calls = []
 
@@ -699,11 +707,11 @@ class TolerantExecutorTest(unittest.TestCase):
             result = run_action_plan_tolerant(runtime, plan, timeout_seconds=5)
 
         self.assertFalse(result["timed_out"])
-        self.assertEqual(result["executed_actions"], 3)
+        self.assertEqual(result["executed_actions"], 4)
         self.assertEqual(result["failed_actions"], 1)
-        self.assertEqual(result["failure_action_ratio"], 1 / 3)
+        self.assertEqual(result["failure_action_ratio"], 1 / 4)
         self.assertIn(("robot1", "OpenObject"), calls)
-        self.assertNotIn(("robot1", "CloseObject"), calls)
+        self.assertIn(("robot1", "CloseObject"), calls)
         self.assertIn(("robot2", "PickupObject"), calls)
         self.assertIn(("robot2", "PutObject"), calls)
 
@@ -733,7 +741,7 @@ class TolerantExecutorTest(unittest.TestCase):
         with patch("executor_system.action_plan.AI2ThorAdapter.execute", fake_execute):
             result = run_action_plan_tolerant(runtime, plan, timeout_seconds=5)
 
-        self.assertEqual(result["executed_actions"], 1)
+        self.assertEqual(result["executed_actions"], 2)
         self.assertEqual(result["failed_actions"], 0)
         self.assertEqual(result["failure_action_ratio"], 0.0)
         self.assertEqual(len(result["robot_failures"]), 1)
@@ -767,11 +775,180 @@ class TolerantExecutorTest(unittest.TestCase):
         with patch("executor_system.action_plan.AI2ThorAdapter.execute", fake_execute):
             result = run_action_plan_tolerant(runtime, plan, timeout_seconds=5)
 
-        self.assertEqual(result["executed_actions"], 1)
+        self.assertEqual(result["executed_actions"], 2)
         self.assertEqual(result["failed_actions"], 0)
         self.assertEqual(result["failure_action_ratio"], 0.0)
         self.assertEqual(len(result["robot_failures"]), 1)
         self.assertTrue(result["robot_failures"][0]["ignored_for_failure_ratio"])
+
+    def test_retryable_action_retries_then_continues_in_runner_mode(self):
+        runtime = FakeRuntime()
+        calls = []
+
+        def fake_execute(_adapter, robot_id, action, **_kwargs):
+            calls.append((robot_id, action.action_type))
+            if action.action_type == "Teleport":
+                raise RuntimeError("teleport failed")
+            return FakeEvent()
+
+        plan = TaskPlan(
+            "task",
+            [
+                StagePlan(
+                    "Phase 1",
+                    {
+                        "robot1": [
+                            Action(
+                                "Teleport",
+                                {},
+                                on_failure=FAILURE_RETRY,
+                                max_retries=1,
+                            ),
+                            Action("CloseObject", {"args": ("Cabinet",)}),
+                        ],
+                    },
+                )
+            ],
+        )
+
+        with patch("executor_system.action_plan.AI2ThorAdapter.execute", fake_execute):
+            result = run_action_plan_tolerant(runtime, plan, timeout_seconds=5)
+
+        self.assertEqual(calls.count(("robot1", "Teleport")), 2)
+        self.assertIn(("robot1", "CloseObject"), calls)
+        self.assertEqual(result["executed_actions"], 3)
+        self.assertEqual(result["failed_actions"], 0)
+        self.assertEqual(len(result["robot_failures"]), 1)
+        self.assertTrue(result["robot_failures"][0]["ignored_for_failure_ratio"])
+
+
+class OrdinaryExecutorFailureContinuationTest(unittest.TestCase):
+    def test_task_runner_continues_after_robot_action_failure(self):
+        runtime = FakeRuntime()
+        calls = []
+        logger = ExecutionLogger()
+
+        def fake_execute(_adapter, robot_id, action, **_kwargs):
+            calls.append((robot_id, action.action_type))
+            if robot_id == "robot1" and action.action_type == "OpenObject":
+                raise RuntimeError("open failed")
+            return FakeEvent()
+
+        plan = TaskPlan(
+            "task",
+            [
+                StagePlan(
+                    "Phase 1",
+                    {
+                        "robot1": [
+                            Action("OpenObject", {"args": ("Cabinet",)}),
+                            Action("CloseObject", {"args": ("Cabinet",)}),
+                        ],
+                        "robot2": [
+                            Action("PickupObject", {"args": ("Apple",)}),
+                            Action("PutObject", {"args": ("Apple", "Table")}),
+                        ],
+                    },
+                )
+            ],
+        )
+
+        with patch("executor_system.action_plan.AI2ThorAdapter.execute", fake_execute):
+            TaskRunner(runtime, logger=logger).execute(plan)
+
+        self.assertIn(("robot1", "OpenObject"), calls)
+        self.assertIn(("robot1", "CloseObject"), calls)
+        self.assertIn(("robot2", "PickupObject"), calls)
+        self.assertIn(("robot2", "PutObject"), calls)
+        failed_results = [
+            record for record in logger.records if record.status == ACTION_FAILED
+        ]
+        self.assertEqual(len(failed_results), 1)
+        self.assertEqual(failed_results[0].action.action_type, "OpenObject")
+
+    def test_wait_condition_timeout_is_skipped_and_next_action_runs(self):
+        runtime = FakeRuntime()
+        calls = []
+        logger = ExecutionLogger()
+
+        def fake_execute(_adapter, robot_id, action, **_kwargs):
+            calls.append((robot_id, action.action_type))
+            return FakeEvent()
+
+        plan = TaskPlan(
+            "task",
+            [
+                StagePlan(
+                    "Phase 1",
+                    {
+                        "robot1": [
+                            Action(
+                                "Wait",
+                                {},
+                                wait_until=lambda _world_state: False,
+                                timeout_ticks=0,
+                            ),
+                            Action("CloseObject", {"args": ("Cabinet",)}),
+                        ],
+                    },
+                )
+            ],
+        )
+
+        with patch("executor_system.action_plan.AI2ThorAdapter.execute", fake_execute):
+            TaskRunner(runtime, logger=logger).execute(plan)
+
+        self.assertNotIn(("robot1", "Wait"), calls)
+        self.assertIn(("robot1", "CloseObject"), calls)
+        failed_results = [
+            record for record in logger.records if record.status == ACTION_FAILED
+        ]
+        self.assertEqual(len(failed_results), 1)
+        self.assertEqual(failed_results[0].action.action_type, "Wait")
+
+    def test_retryable_action_retries_then_skips_and_continues(self):
+        runtime = FakeRuntime()
+        calls = []
+        logger = ExecutionLogger()
+
+        def fake_execute(_adapter, robot_id, action, **_kwargs):
+            calls.append((robot_id, action.action_type))
+            if action.action_type == "Teleport":
+                raise RuntimeError("teleport failed")
+            return FakeEvent()
+
+        plan = TaskPlan(
+            "task",
+            [
+                StagePlan(
+                    "Phase 1",
+                    {
+                        "robot1": [
+                            Action(
+                                "Teleport",
+                                {},
+                                on_failure=FAILURE_RETRY,
+                                max_retries=1,
+                            ),
+                            Action("CloseObject", {"args": ("Cabinet",)}),
+                        ],
+                    },
+                )
+            ],
+        )
+
+        with patch("executor_system.action_plan.AI2ThorAdapter.execute", fake_execute):
+            TaskRunner(runtime, logger=logger).execute(plan)
+
+        self.assertEqual(calls.count(("robot1", "Teleport")), 2)
+        self.assertIn(("robot1", "CloseObject"), calls)
+        failed_results = [
+            record for record in logger.records if record.status == ACTION_FAILED
+        ]
+        self.assertEqual(
+            [record.action.action_type for record in failed_results],
+            ["Teleport", "Teleport"],
+        )
 
 
 if __name__ == "__main__":

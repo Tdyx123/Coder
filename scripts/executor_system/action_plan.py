@@ -387,6 +387,7 @@ class PlanValidator:
         "LookDown",
         "Pass",
         "Wait",
+        "WaitOneTick",
         "WaitUntil",
         "Done",
         "Teleport",
@@ -888,6 +889,7 @@ class AI2ThorAdapter:
         "LookDown",
         "Pass",
         "Wait",
+        "WaitOneTick",
         "Done",
         "Teleport",
         "ToggleObjectOn",
@@ -961,11 +963,15 @@ class AI2ThorAdapter:
             for key, value in action.parameters.items()
             if key not in {"args", "object_resources", "objectResources"}
         }
-        payload["action"] = "Pass" if action.action_type == "Wait" else action.action_type
+        payload["action"] = (
+            "Pass"
+            if action.action_type in {"Wait", "WaitOneTick"}
+            else action.action_type
+        )
         payload.setdefault("agentId", agent_id)
         return self.runtime.step(
             payload,
-            check_success=action.action_type != "Done",
+            check_success=action.action_type not in {"Done", "WaitOneTick"},
         )
 
     def put_object(self, robot_id: str, args: Tuple[Any, ...]) -> Any:

@@ -11,7 +11,12 @@ SCRIPTS_DIR = ROOT / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from executor_system.action_plan import Action, FAILURE_FAIL_STAGE, FAILURE_RETRY
+from executor_system.action_plan import (
+    AI2ThorAdapter,
+    Action,
+    FAILURE_FAIL_STAGE,
+    FAILURE_RETRY,
+)
 from executor_system import actions as executor_actions
 from executor_system import context as runtime_context
 from executor_system import runtime as runtime_module
@@ -292,6 +297,35 @@ class ExecutorRetryPolicyTest(unittest.TestCase):
         self.assertEqual(
             Action.from_any({"action_type": "PickupObject"}).on_failure,
             FAILURE_FAIL_STAGE,
+        )
+
+    def test_wait_one_tick_executes_single_pass_step(self):
+        class FakeRuntime:
+            def __init__(self):
+                self.calls = []
+
+            def physical_agent_id(self, robot_id):
+                self.calls.append(("physical_agent_id", robot_id))
+                return 3
+
+            def step(self, payload, **kwargs):
+                self.calls.append(("step", dict(payload), dict(kwargs)))
+                return FakeEvent(True)
+
+        runtime = FakeRuntime()
+        event = AI2ThorAdapter(runtime).execute("robot1", Action("WaitOneTick"))
+
+        self.assertTrue(event.metadata["lastActionSuccess"])
+        self.assertEqual(
+            runtime.calls,
+            [
+                ("physical_agent_id", "robot1"),
+                (
+                    "step",
+                    {"action": "Pass", "agentId": 3},
+                    {"check_success": False},
+                ),
+            ],
         )
 
     def test_non_teleport_step_does_not_retry_even_when_requested(self):
@@ -1131,7 +1165,7 @@ class ExecutorRetryPolicyTest(unittest.TestCase):
         self.assertEqual(runtime.total_exec, 1)
         self.assertEqual(runtime.success_exec, 0)
 
-    def test_non_teleport_action_retry_policy_fails_without_rerunning(self):
+    def test_non_teleport_action_retry_policy_skips_without_rerunning(self):
         class FailingRuntime:
             physical_agent_count = 1
 
@@ -1160,10 +1194,10 @@ class ExecutorRetryPolicyTest(unittest.TestCase):
         action = Action("MoveAhead", on_failure=FAILURE_RETRY, max_retries=2)
         executor = Executor(runtime, "robot1", [action])
 
-        with self.assertRaisesRegex(RuntimeError, "MoveAhead failed"):
-            executor.execute()
+        executor.execute()
 
         self.assertEqual(runtime.step_calls, 1)
+        self.assertTrue(executor.state.finished())
 
     def test_teleport_and_face_retries_next_candidate_after_rotation_failure(self):
         runtime = runtime_without_init()

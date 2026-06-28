@@ -11,6 +11,7 @@ if str(SCRIPTS_DIR) not in sys.path:
 
 from executor_system.action_plan import TaskPlan
 from executor_system.parallel_runner import run_action_plan_tolerant
+from executor_system.task_plan import TaskPlanParser
 
 
 class FakeEvent:
@@ -44,6 +45,18 @@ class FakeRuntime:
 
 
 class PreTaskActionPlanTest(unittest.TestCase):
+    def test_task_plan_parser_records_wait_one_tick_helper(self):
+        def wait_once(robot):
+            WaitOneTick(robot)
+
+        plan = TaskPlanParser("task").parse(
+            [("Phase 1", [({"name": "robot1"}, [wait_once])])]
+        )
+
+        actions = plan.stages[0].robot_action_queues["robot1"]
+        self.assertEqual([action.action_type for action in actions], ["WaitOneTick"])
+        self.assertEqual(actions[0].args(), ())
+
     def test_from_dict_inserts_pre_task_stage_before_real_stages(self):
         plan = TaskPlan.from_dict(
             {

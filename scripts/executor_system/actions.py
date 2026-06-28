@@ -75,6 +75,13 @@ def find_object(
     return get_runtime().find_object(pattern, agent_id=agent_id, require_center=require_center)
 
 
+def WaitOneTick(robot: RobotRef) -> None:
+    _consume_planned_action("WaitOneTick")
+    runtime = get_runtime()
+    agent_id = runtime.physical_agent_id(robot)
+    runtime.step({"action": "Pass", "agentId": agent_id}, check_success=False)
+
+
 def GoToObject(robot: RobotRef, dest_obj: Any) -> None:
     next_action = _consume_planned_action("GoToObject", dest_obj)
     get_runtime().navigate_to_object(robot, dest_obj, next_action=next_action)

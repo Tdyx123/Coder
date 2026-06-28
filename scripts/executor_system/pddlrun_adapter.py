@@ -76,6 +76,7 @@ ACTION_ALIASES = {
     "fillwater": "FillWater",
     "coldobject": "ColdObject",
     "throwobject": "ThrowObject",
+    "waitonetick": "WaitOneTick",
 }
 
 SUPPORTED_ACTIONS = set(ACTION_ALIASES.values())
@@ -299,6 +300,9 @@ def encode_plan_action(
     action: PddlPlanAction,
     resolver: ObjectNameResolver,
 ) -> EncodedSubtaskAction:
+    if action.name == "WaitOneTick":
+        return _executor_action(action, action.name, [], [])
+
     if action.name == "GoToObject":
         _require_args(action, 2)
         dest = resolver.resolve(action.args[1])

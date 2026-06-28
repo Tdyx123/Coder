@@ -49,6 +49,7 @@ def plan_action(action_type: str, *args: Any, **kwargs: Any) -> Action:
 
 
 _ACTION_HELPER_NAMES = (
+    "WaitOneTick",
     "GoToObject",
     "PickupObject",
     "TeleportObjectToHand",

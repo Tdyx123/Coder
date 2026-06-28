@@ -346,7 +346,62 @@ def open_drawer(robot):
             self.assertEqual(stages[0]["robot_action_queues"]["robot1"][0]["action_type"], "OpenObject")
             self.assertEqual(stages[0]["robot_action_queues"]["robot2"][0]["action_type"], "PickupObject")
 
-    def test_time_sleep_becomes_wait(self):
+    def test_threaded_no_arg_functions_use_implicit_robot_defaults(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            input_root = root / "input" / "logs"
+            output_root = root / "output"
+            source_path = self.write_code_plan(
+                input_root,
+                "2",
+                "implicit_threaded",
+                (
+                    "```python\n"
+                    "import threading\n"
+                    "import time\n"
+                    "def open_drawer():\n"
+                    "    GoToObject('Drawer')\n"
+                    "    time.sleep(5)\n"
+                    "    OpenObject('Drawer')\n"
+                    "def pick_apple():\n"
+                    "    GoToObject('Apple')\n"
+                    "    PickupObject('Apple')\n"
+                    "t1 = threading.Thread(target=open_drawer)\n"
+                    "t2 = threading.Thread(target=pick_apple)\n"
+                    "t1.start()\n"
+                    "t2.start()\n"
+                    "t1.join()\n"
+                    "t2.join()\n"
+                    "```\n"
+                ),
+            )
+            self.write_log(
+                source_path,
+                robots=[{"name": "robot1"}, {"name": "robot2"}],
+                objects=[{"name": "Drawer"}, {"name": "Apple"}],
+            )
+            self.write_dataset(root, robot_count=2)
+
+            with self.patched_repo_root(root):
+                result = smart_llm_converter.convert_one(source_path, input_root, output_root, False, True)
+
+            self.assertEqual(result.status, "success")
+            executable = (
+                output_root / "logs" / "2" / "implicit_threaded" / "plan_to_code" / "executable_plan.py"
+            ).read_text(encoding="utf-8")
+            bundle = self.bundle_from_executable(executable)
+            stage = bundle["task_plan"]["stages"][0]["robot_action_queues"]
+            self.assertEqual(set(stage), {"robot1", "robot2"})
+            self.assertEqual(
+                [action["action_type"] for action in stage["robot1"]],
+                ["GoToObject", "WaitOneTick", "OpenObject"],
+            )
+            self.assertEqual(
+                [action["action_type"] for action in stage["robot2"]],
+                ["GoToObject", "PickupObject"],
+            )
+
+    def test_time_sleep_becomes_wait_one_tick_in_bundle_data(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             input_root = root / "input" / "logs"
@@ -363,6 +418,7 @@ def open_drawer(robot):
                     "    time.sleep(5)\n"
                     "    SwitchOff(robot, 'Toaster')\n"
                     "toast(robots[0])\n"
+                    "time.sleep(10)\n"
                     "```\n"
                 ),
             )
@@ -377,8 +433,69 @@ def open_drawer(robot):
                 encoding="utf-8"
             )
             bundle = self.bundle_from_executable(executable)
-            actions = bundle["task_plan"]["stages"][0]["robot_action_queues"]["robot1"]
-            self.assertEqual([action["action_type"] for action in actions], ["SwitchOn", "Wait", "SwitchOff"])
+            stages = bundle["task_plan"]["stages"]
+            first_stage_actions = stages[0]["robot_action_queues"]["robot1"]
+            second_stage_actions = stages[1]["robot_action_queues"]["robot1"]
+            self.assertEqual(
+                [action["action_type"] for action in first_stage_actions],
+                ["SwitchOn", "WaitOneTick", "SwitchOff"],
+            )
+            self.assertEqual(
+                [action["action_type"] for action in second_stage_actions],
+                ["WaitOneTick", "WaitOneTick"],
+            )
+            self.assertEqual(bundle["no_trans"], 5)
+            self.assertEqual(result.action_count, 5)
+
+    def test_top_level_implicit_actions_and_sleep_default_to_first_robot(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            input_root = root / "input" / "logs"
+            output_root = root / "output"
+            source_path = self.write_code_plan(
+                input_root,
+                "2",
+                "implicit_top_level",
+                (
+                    "```python\n"
+                    "import time\n"
+                    "def go_to_drawer():\n"
+                    "    GoToObject('Drawer')\n"
+                    "go_to_drawer()\n"
+                    "OpenObject('Drawer')\n"
+                    "time.sleep(10)\n"
+                    "```\n"
+                ),
+            )
+            self.write_log(source_path, robots=[{"name": "robot1"}, {"name": "robot2"}])
+            self.write_dataset(root, robot_count=2)
+
+            with self.patched_repo_root(root):
+                result = smart_llm_converter.convert_one(source_path, input_root, output_root, False, True)
+
+            self.assertEqual(result.status, "success")
+            executable = (
+                output_root / "logs" / "2" / "implicit_top_level" / "plan_to_code" / "executable_plan.py"
+            ).read_text(encoding="utf-8")
+            bundle = self.bundle_from_executable(executable)
+            stages = bundle["task_plan"]["stages"]
+            self.assertEqual(
+                [set(stage["robot_action_queues"]) for stage in stages],
+                [{"robot1"}, {"robot1"}, {"robot1"}],
+            )
+            self.assertEqual(
+                [action["action_type"] for action in stages[0]["robot_action_queues"]["robot1"]],
+                ["GoToObject"],
+            )
+            self.assertEqual(
+                [action["action_type"] for action in stages[1]["robot_action_queues"]["robot1"]],
+                ["OpenObject"],
+            )
+            self.assertEqual(
+                [action["action_type"] for action in stages[2]["robot_action_queues"]["robot1"]],
+                ["WaitOneTick", "WaitOneTick"],
+            )
+            self.assertEqual(result.action_count, 4)
 
     def test_single_element_robot_list_converts_and_multi_robot_team_skips(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

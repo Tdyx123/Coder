@@ -22,7 +22,6 @@ from .action_plan import (
     WorldState,
     ROBOT_ACTION_FAILED,
     ROBOT_ACTION_SUCCESS,
-    ROBOT_BLOCKED,
     ROBOT_EXECUTING,
     ROBOT_FINISHED_STAGE,
     ROBOT_WAITING_CONDITION,
@@ -178,9 +177,9 @@ class Executor:
 
             self.world_state.tick = tick
             self.world_state.refresh([self.state])
-            self.wait_for_condition(action)
-            self.state.status = ROBOT_EXECUTING
             try:
+                self.wait_for_condition(action)
+                self.state.status = ROBOT_EXECUTING
                 event = self.execute_action(action)
             except BaseException as exc:
                 if self.handle_failure(action, exc, tick):
@@ -243,26 +242,9 @@ class Executor:
         action_key = action.stable_id(self.robot_id, self.state.action_cursor)
         retries = self.state.retries_by_action.get(action_key, 0)
 
-        if action.on_failure == FAILURE_SKIP:
-            result = ActionResult(
-                self.robot_id,
-                action,
-                ACTION_FAILED,
-                error_message=str(exc),
-            )
-            self.state.last_action_result = result
-            self.state.action_cursor += 1
-            self.state.wait_ticks = 0
-            self.state.status = (
-                ROBOT_FINISHED_STAGE
-                if self.state.finished()
-                else ROBOT_ACTION_FAILED
-            )
-            self.logger.result(tick, result)
-            return True
-
         if (
-            action_allows_failure_retry(action)
+            action.on_failure != FAILURE_SKIP
+            and action_allows_failure_retry(action)
             and action.on_failure in {FAILURE_RETRY, FAILURE_WAIT_AND_RETRY}
             and retries < action.max_retries
         ):
@@ -286,11 +268,22 @@ class Executor:
                 )
             return False
 
-        self.state.status = ROBOT_BLOCKED
-        raise RuntimeError(
-            f"Stage {self.state.current_stage_id} failed on {self.robot_id} "
-            f"{action.action_type}: {exc}"
-        ) from exc
+        result = ActionResult(
+            self.robot_id,
+            action,
+            ACTION_FAILED,
+            error_message=str(exc),
+        )
+        self.state.last_action_result = result
+        self.state.action_cursor += 1
+        self.state.wait_ticks = 0
+        self.state.status = (
+            ROBOT_FINISHED_STAGE
+            if self.state.finished()
+            else ROBOT_ACTION_FAILED
+        )
+        self.logger.result(tick, result)
+        return True
 
     def submit(
         self,

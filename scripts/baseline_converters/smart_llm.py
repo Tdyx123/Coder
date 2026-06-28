@@ -42,6 +42,8 @@ FALLBACK_CODE_LINE_RE = re.compile(
     r"(?m)^\s*(?:import\s+|from\s+|def\s+|#\s*CODE\b)",
 )
 TEAM_PARAMETER_NAMES = {"robot_list", "robot_team", "team"}
+DEFAULT_ROBOT_BINDING_NAME = "__default_robot__"
+IMPLICIT_ROBOT_BINDING_NAMES = {"robots", DEFAULT_ROBOT_BINDING_NAME}
 SUPPORTED_ACTIONS = {
     "GoToObject",
     "PickupObject",
@@ -117,6 +119,7 @@ class FunctionInvocation:
     function_name: str
     args: Tuple[ast.AST, ...]
     keywords: Tuple[ast.keyword, ...] = ()
+    default_robot: Optional[str] = None
 
 
 @dataclass
@@ -507,6 +510,24 @@ def constant_int(node: ast.AST) -> Optional[int]:
     return None
 
 
+def constant_number(node: ast.AST) -> Optional[float]:
+    if (
+        isinstance(node, ast.Constant)
+        and isinstance(node.value, (int, float))
+        and not isinstance(node.value, bool)
+    ):
+        return float(node.value)
+    if isinstance(node, ast.UnaryOp):
+        value = constant_number(node.operand)
+        if value is None:
+            return None
+        if isinstance(node.op, ast.USub):
+            return -value
+        if isinstance(node.op, ast.UAdd):
+            return value
+    return None
+
+
 def subscript_index(node: ast.Subscript) -> Optional[int]:
     return constant_int(node.slice)
 
@@ -584,20 +605,43 @@ def single_robot_from_expr(
     return robots[0]
 
 
-def default_robot_from_bindings(bindings: Mapping[str, RobotBinding], robot_names: Sequence[str]) -> str:
-    referenced = {robot for robots in bindings.values() for robot in robots}
-    if not referenced and len(robot_names) == 1:
-        return robot_names[0]
+def explicit_robots_from_bindings(bindings: Mapping[str, RobotBinding]) -> set[str]:
+    return {
+        robot
+        for name, robots in bindings.items()
+        if name not in IMPLICIT_ROBOT_BINDING_NAMES
+        for robot in robots
+    }
+
+
+def default_robot_from_bindings(
+    bindings: Mapping[str, RobotBinding],
+    robot_names: Sequence[str],
+    action_name: str,
+) -> str:
+    referenced = explicit_robots_from_bindings(bindings)
     if len(referenced) == 1:
         return next(iter(referenced))
     if len(referenced) > 1:
         raise SmartLLMConversionError(
             "multi_robot_team",
-            f"Cannot attach Wait to multiple robots: {sorted(referenced)!r}.",
+            f"Cannot attach {action_name} to multiple robots: {sorted(referenced)!r}.",
         )
+
+    default_binding = tuple(bindings.get(DEFAULT_ROBOT_BINDING_NAME, ()))
+    if len(default_binding) == 1:
+        return default_binding[0]
+    if len(default_binding) > 1:
+        raise SmartLLMConversionError(
+            "multi_robot_team",
+            f"Cannot attach {action_name} to multiple default robots: {list(default_binding)!r}.",
+        )
+
+    if not referenced and len(robot_names) == 1:
+        return robot_names[0]
     raise SmartLLMConversionError(
         "unsupported_robot_expression",
-        "Cannot infer a robot for time.sleep.",
+        f"Cannot infer a robot for {action_name}.",
     )
 
 
@@ -634,6 +678,15 @@ def bind_function_parameters(
                 f"{parameter} for {function.name}() resolves to {list(resolved)!r}.",
             )
         bindings[parameter] = tuple(resolved)
+
+    if invocation.default_robot is not None:
+        bindings[DEFAULT_ROBOT_BINDING_NAME] = (invocation.default_robot,)
+    elif DEFAULT_ROBOT_BINDING_NAME in caller_bindings:
+        bindings[DEFAULT_ROBOT_BINDING_NAME] = tuple(caller_bindings[DEFAULT_ROBOT_BINDING_NAME])
+
+    explicit_robots = explicit_robots_from_bindings(bindings)
+    if len(explicit_robots) == 1:
+        bindings[DEFAULT_ROBOT_BINDING_NAME] = (next(iter(explicit_robots)),)
 
     for parameter in parameters[len(invocation.args) :]:
         if parameter in TEAM_PARAMETER_NAMES:
@@ -673,7 +726,7 @@ def encode_action_call(
             f"Keyword arguments are not supported for {action_type}.",
         )
     if not call.args:
-        robot_id = default_robot_from_bindings(bindings, robot_names)
+        robot_id = default_robot_from_bindings(bindings, robot_names, action_type)
         object_nodes: Sequence[ast.AST] = ()
     else:
         try:
@@ -681,7 +734,7 @@ def encode_action_call(
             object_nodes = call.args[1:]
         except SmartLLMConversionError:
             if isinstance(call.args[0], ast.Constant) and isinstance(call.args[0].value, str):
-                robot_id = default_robot_from_bindings(bindings, robot_names)
+                robot_id = default_robot_from_bindings(bindings, robot_names, action_type)
                 object_nodes = call.args
             else:
                 raise
@@ -700,13 +753,37 @@ def encode_wait_call(
     bindings: Mapping[str, RobotBinding],
     robot_names: Sequence[str],
     code: str,
-) -> EncodedAction:
-    return EncodedAction(
-        robot_id=default_robot_from_bindings(bindings, robot_names),
-        action_type="Wait",
-        args=(),
-        raw=ast_source(code, call),
-    )
+) -> List[EncodedAction]:
+    if call.keywords:
+        raise SmartLLMConversionError(
+            "unsupported_action_call",
+            "Keyword arguments are not supported for time.sleep.",
+        )
+    if len(call.args) != 1:
+        raise SmartLLMConversionError(
+            "unsupported_action_call",
+            "time.sleep requires exactly one numeric literal argument.",
+        )
+
+    duration = constant_number(call.args[0])
+    if duration is None:
+        raise SmartLLMConversionError(
+            "unsupported_action_argument",
+            f"time.sleep duration must be a numeric literal: {ast_source(code, call.args[0])}.",
+        )
+
+    robot_id = default_robot_from_bindings(bindings, robot_names, "time.sleep")
+    raw = ast_source(code, call)
+    tick_count = 1 if duration <= 5 else 2
+    return [
+        EncodedAction(
+            robot_id=robot_id,
+            action_type="WaitOneTick",
+            args=(),
+            raw=raw,
+        )
+        for _ in range(tick_count)
+    ]
 
 
 def action_to_dict(action: EncodedAction) -> Dict[str, Any]:
@@ -779,7 +856,7 @@ def encode_function_invocation(
         if name in SUPPORTED_ACTIONS:
             actions.append(encode_action_call(call, name, bindings, robot_names, resolver, code))
         elif name == "time.sleep":
-            actions.append(encode_wait_call(call, bindings, robot_names, code))
+            actions.extend(encode_wait_call(call, bindings, robot_names, code))
         elif name in functions:
             nested = FunctionInvocation(name, tuple(call.args), tuple(call.keywords))
             actions.extend(
@@ -885,10 +962,14 @@ def build_stage_plan_from_ast(
         node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)
     }
     stages: List[StageQueues] = []
-    global_bindings: RobotBindings = {"robots": tuple(robot_names)}
+    global_bindings: RobotBindings = {
+        "robots": tuple(robot_names),
+        DEFAULT_ROBOT_BINDING_NAME: (robot_names[0],),
+    }
     thread_invocations: Dict[str, FunctionInvocation] = {}
     active_threads: List[str] = []
     joined_threads: set[str] = set()
+    implicit_thread_count = 0
 
     def flush_active_threads() -> None:
         nonlocal active_threads
@@ -966,6 +1047,15 @@ def build_stage_plan_from_ast(
                     "unsupported_threading",
                     f"{start_target}.start() has no static threading.Thread assignment.",
                 )
+            invocation = thread_invocations[start_target]
+            if not invocation.args and invocation.default_robot is None:
+                thread_invocations[start_target] = FunctionInvocation(
+                    invocation.function_name,
+                    invocation.args,
+                    invocation.keywords,
+                    robot_names[implicit_thread_count % len(robot_names)],
+                )
+                implicit_thread_count += 1
             if start_target not in active_threads:
                 active_threads.append(start_target)
             continue
@@ -995,6 +1085,12 @@ def build_stage_plan_from_ast(
             flush_active_threads()
             action = encode_action_call(call, call_name(call), global_bindings, robot_names, resolver, code)
             append_stage(stages, [action])
+            continue
+
+        if call_name(call) == "time.sleep":
+            flush_active_threads()
+            actions = encode_wait_call(call, global_bindings, robot_names, code)
+            append_stage(stages, actions)
             continue
 
         raise SmartLLMConversionError(

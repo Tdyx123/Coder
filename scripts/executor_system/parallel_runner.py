@@ -32,14 +32,18 @@ from executor_system.action_plan import (  # noqa: E402
     Action,
     ActionResult,
     ExecutionLogger,
+    FAILURE_RETRY,
+    FAILURE_SKIP,
+    FAILURE_WAIT_AND_RETRY,
     PlanLoader,
     PlanValidator,
-    ROBOT_BLOCKED,
     ROBOT_EXECUTING,
     ROBOT_FINISHED_STAGE,
+    ROBOT_ACTION_FAILED,
     ROBOT_ACTION_SUCCESS,
     StagePlan,
     WorldState,
+    action_allows_failure_retry,
 )
 from executor_system.executor import Executor, PhaseCoordinator  # noqa: E402
 from executor_system.runtime import is_pickup_object_clip_error  # noqa: E402
@@ -195,7 +199,6 @@ class TolerantExecutor(Executor):
 
     def _execute_queue(self) -> WorldState:
         tick = 0
-        blocked = False
         try:
             while not self.state.finished():
                 _check_deadline(self.deadline)
@@ -222,24 +225,9 @@ class TolerantExecutor(Executor):
                     )
                     raise
                 except Exception as exc:
-                    self.stats.record_failure(
-                        self.state.current_stage_id,
-                        self.robot_id,
-                        action,
-                        action_index,
-                        exc,
-                    )
-                    result = ActionResult(
-                        self.robot_id,
-                        action,
-                        ACTION_FAILED,
-                        error_message=str(exc),
-                    )
-                    self.state.last_action_result = result
-                    self.state.status = ROBOT_BLOCKED
-                    self.logger.result(tick, result)
-                    blocked = True
-                    break
+                    if self.handle_failure(action, action_index, exc, tick):
+                        tick += 1
+                    continue
 
                 result = ActionResult(self.robot_id, action, ACTION_SUCCESS, event=event)
                 self.state.last_action_result = result
@@ -253,14 +241,74 @@ class TolerantExecutor(Executor):
                 self.logger.result(tick, result)
                 tick += 1
         finally:
-            if not blocked:
-                self.state.status = ROBOT_FINISHED_STAGE
+            self.state.status = ROBOT_FINISHED_STAGE
             self.world_state.refresh([self.state])
             if self.phase_coordinator is not None and self.robot_id:
                 self.phase_coordinator.mark_agent_done(
                     self.runtime.physical_agent_id(self.robot_id)
                 )
         return self.world_state
+
+    def handle_failure(
+        self,
+        action: Action,
+        action_index: int,
+        exc: BaseException,
+        tick: int,
+    ) -> bool:
+        action_key = action.stable_id(self.robot_id, self.state.action_cursor)
+        retries = self.state.retries_by_action.get(action_key, 0)
+
+        if (
+            action.on_failure != FAILURE_SKIP
+            and action_allows_failure_retry(action)
+            and action.on_failure in {FAILURE_RETRY, FAILURE_WAIT_AND_RETRY}
+            and retries < action.max_retries
+        ):
+            self.state.retries_by_action[action_key] = retries + 1
+            self.state.wait_ticks += 1
+            self.state.status = ROBOT_ACTION_FAILED
+            result = ActionResult(
+                self.robot_id,
+                action,
+                ACTION_FAILED,
+                error_message=str(exc),
+                attempts=retries + 1,
+            )
+            self.state.last_action_result = result
+            self.logger.result(tick, result)
+            if action.on_failure == FAILURE_WAIT_AND_RETRY:
+                agent_id = self.runtime.physical_agent_id(self.robot_id)
+                self.runtime.step(
+                    {"action": "Pass", "agentId": agent_id},
+                    check_success=False,
+                    save_frame=False,
+                )
+            return False
+
+        self.stats.record_failure(
+            self.state.current_stage_id,
+            self.robot_id,
+            action,
+            action_index,
+            exc,
+        )
+        result = ActionResult(
+            self.robot_id,
+            action,
+            ACTION_FAILED,
+            error_message=str(exc),
+        )
+        self.state.last_action_result = result
+        self.state.action_cursor += 1
+        self.state.wait_ticks = 0
+        self.state.status = (
+            ROBOT_FINISHED_STAGE
+            if self.state.finished()
+            else ROBOT_ACTION_FAILED
+        )
+        self.logger.result(tick, result)
+        return True
 
 
 class TolerantStageRunner:
