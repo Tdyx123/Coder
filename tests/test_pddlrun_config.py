@@ -689,7 +689,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertEqual(requirements[0]["subtask_id"], 1)
             self.assertEqual(requirements[0]["required_skills"], ["GoToObject"])
 
-    def test_v2_extracts_special_task_skills_from_normalized_action_names(self):
+    def test_v2_extracts_required_robot_skills_from_normalized_action_names(self):
         manager = pddlrun_llmseparate_v2.TaskManager.__new__(pddlrun_llmseparate_v2.TaskManager)
         plan_text = "\n".join(
             [
@@ -716,7 +716,7 @@ class PDDLRunConfigTests(unittest.TestCase):
                 "HeatByStoveBurner",
                 "FillWater",
                 "ColdObject",
-                "PrepareEgg",
+                "BreakEgg",
             ],
         )
 

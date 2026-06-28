@@ -22,7 +22,7 @@ from executor_system.task_plan import run_action_plan
 import resources.robots as robot_catalog
 
 
-DEFAULT_RUNNER_TIMEOUT_SECONDS = 100.0
+DEFAULT_RUNNER_TIMEOUT_SECONDS = 30.0
 
 
 def load_task_record(task_file: str, task_index: int) -> Dict[str, Any]:
@@ -81,7 +81,6 @@ def build_hardcoded_bundle(bundle_data: Dict[str, Any]) -> types.SimpleNamespace
         task_plan=TaskPlan.from_dict(bundle_data["task_plan"]),
         no_trans=int(bundle_data["no_trans"]),
         phases=bundle_data["phases"],
-        plan_files=bundle_data["plan_files"],
         object_mappings=bundle_data["object_mappings"],
         object_mapping_warnings=bundle_data["object_mapping_warnings"],
         object_id_bindings=bundle_data.get("object_id_bindings", []),

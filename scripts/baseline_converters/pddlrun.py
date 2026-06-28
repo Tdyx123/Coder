@@ -440,6 +440,9 @@ def resolve_manifest_plan_files(task_run_dir: Path) -> List[Path]:
         path = Path(str(raw_path)).expanduser()
         if not path.is_absolute():
             path = task_run_dir / path
+        if not path.is_file():
+            print(f"Skipping missing planner output listed in manifest: {path}")
+            continue
         plan_files.append(path)
     return plan_files
 
@@ -520,10 +523,6 @@ def serialize_bundle(bundle: PddlRunPlanBundle) -> Dict[str, Any]:
             ]
             for phase in bundle.phases
         ],
-        "plan_files": {
-            subtask_id: str(path)
-            for subtask_id, path in bundle.plan_files.items()
-        },
         "object_mappings": dict(bundle.object_mappings),
         "object_mapping_warnings": list(bundle.object_mapping_warnings),
         "object_id_bindings": list(bundle.object_id_bindings),

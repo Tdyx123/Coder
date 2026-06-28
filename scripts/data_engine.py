@@ -19,7 +19,7 @@ from file_processor import PDDLError
 from llm_handler import LLMHandler
 from resources.robots import robots
 from run_config import load_run_config
-from special_task_skills import SPECIAL_TASK_SKILL_SET
+from special_task_skills import SPECIAL_TASK_SKILL_SET, robot_skill_for_special_task_skill
 
 
 def _repo_root() -> Path:
@@ -313,7 +313,7 @@ def _cook_egg_pair_validator(
 
 def _special_robot_skills(skill: str, core_skills: Tuple[str, ...]) -> Tuple[str, ...]:
     if skill in SPECIAL_TASK_SKILL_SET:
-        return core_skills + (skill,)
+        return core_skills + (robot_skill_for_special_task_skill(skill),)
     return core_skills
 
 
@@ -534,7 +534,7 @@ SKILL_CONFIGS: Dict[str, SkillConfig] = {
         roles=("obj1", "obj2"),
         relation="action_pair",
         needed_set_by_role={"obj1": "prepare_egg_container_objects", "obj2": "egg_objects"},
-        robot_skills=("GoToObject", "PickupObject", "PutObject", "PrepareEgg"),
+        robot_skills=("GoToObject", "PickupObject", "PutObject", "BreakEgg"),
         required_pickup=(0,),
         text_builder=lambda objs: f"cook the {_lower_objects(objs)[0]} in the {_lower_objects(objs)[1]}",
         final_state_builder=lambda objs: [{"name": objs[0], "contains": [], "states": ["BROKEN", "COOKED"]}],
@@ -1148,7 +1148,11 @@ SKILL_TO_ROBOT_SKILLS = {
 }
 
 ACTION_SKILL_CORE_REQUIREMENTS = {
-    skill: [robot_skill for robot_skill in config.robot_skills if robot_skill != skill]
+    skill: [
+        robot_skill
+        for robot_skill in config.robot_skills
+        if robot_skill != robot_skill_for_special_task_skill(skill)
+    ]
     for skill, config in SKILL_CONFIGS.items()
     if skill in SPECIAL_TASK_SKILL_SET
 }
@@ -1930,7 +1934,7 @@ put sink on saltshaker, then put ladle on sinkbasin
                     if line:
                         created_set.add(line)
 
-        task_folder = f"data/final_test_new_0627_{complexity}"
+        task_folder = f"data/final_test_new_0628_{complexity}"
         task_folder_path = Path(task_folder)
         task_folder_path.mkdir(parents=True, exist_ok=True)
         TASK_FILE = task_folder_path.joinpath(f"FloorPlan{foor_plan}.jsonl")
@@ -2224,7 +2228,7 @@ if __name__ == "__main__":
 
     # [8, 6, 14, 201, 211, 218, 306, 310, 322, 405, 412, 428, 16, 203, 212, 28, 309, 312, 404, 408, 425]
     data_engine = DataEngine()
-    for base in [0]:   # [0, 200, 300, 400]
+    for base in [200, 300, 400]:   # [0, 200, 300, 400]
         for floor_plan in range(1, 31):
             # data_engine.create_tasks(base + floor_plan, 5)
             data_engine.create_tasks(base + floor_plan, 60, 1)

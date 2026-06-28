@@ -13,6 +13,13 @@ SPECIAL_TASK_SKILLS = (
 )
 
 SPECIAL_TASK_SKILL_SET = frozenset(SPECIAL_TASK_SKILLS)
+SPECIAL_TASK_ROBOT_SKILL_OVERRIDES = {
+    "PrepareEgg": "BreakEgg",
+}
+
+
+def robot_skill_for_special_task_skill(skill: str) -> str:
+    return SPECIAL_TASK_ROBOT_SKILL_OVERRIDES.get(skill, skill)
 
 
 def canonical_skill_key(skill: str) -> str:
@@ -25,7 +32,12 @@ SPECIAL_TASK_SKILL_ALIASES = {
 }
 
 SPECIAL_TASK_SKILL_PROMPT_RULE = (
-    "# - These task skills require the same-named robot skill in addition to any base action skills: "
-    + ", ".join(SPECIAL_TASK_SKILLS)
+    "# - These task skills require the corresponding robot skill in addition to any base action skills: "
+    + ", ".join(
+        f"{skill}->{robot_skill_for_special_task_skill(skill)}"
+        if robot_skill_for_special_task_skill(skill) != skill
+        else skill
+        for skill in SPECIAL_TASK_SKILLS
+    )
     + "."
 )

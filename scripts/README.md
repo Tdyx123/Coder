@@ -99,7 +99,7 @@ python scripts/baselines/SMART-LLM.py --root ./baselines/SMART-LLM
 python scripts/executor_system/parallel_runner.py \
   --base-line LaMMA-P \
   --max-workers 4 \
-  --timeout-seconds 100 \
+  --timeout-seconds 30 \
   --output-dir ./parallel_runner_results
 ```
 
@@ -179,7 +179,21 @@ files concurrently.
 python scripts/executor_system/parallel_runner.py \
   --root ./logs/task_manager_runs \
   --max-workers 4 \
-  --timeout-seconds 100 \
+  --timeout-seconds 30 \
+  --output-dir ./parallel_runner_results
+```
+
+Run generated code for one `parallel_runs/...` run. Generate the code first:
+
+```bash
+python scripts/plantocode.py \
+  --parallel-run parallel_runs/pddlrun_llmseparate_<timestamp> \
+  --output-dir ./plan_to_code_results
+
+python scripts/executor_system/parallel_runner.py \
+  --parallel-run parallel_runs/pddlrun_llmseparate_<timestamp> \
+  --max-workers 4 \
+  --timeout-seconds 30 \
   --output-dir ./parallel_runner_results
 ```
 
@@ -189,7 +203,7 @@ Run every Python file directly under a directory:
 python scripts/executor_system/parallel_runner.py \
   --py-dir ./data/single_subtask_code \
   --max-workers 4 \
-  --timeout-seconds 100 \
+  --timeout-seconds 30 \
   --output-dir ./parallel_runner_results
 ```
 
@@ -197,12 +211,18 @@ Behavior worth knowing:
 
 - each generated file is run in a subprocess with `--runner-mode`
 - `--root` recursively discovers `plan_to_code/executable_plan.py` files
+- `--parallel-run` uses one parallel run summary to find that run's generated
+  `task_run_dir/plan_to_code/executable_plan.py` files; it does not generate
+  code, so run `scripts/plantocode.py --parallel-run ...` first
 - `--py-dir` runs direct child `*.py` files from the given directory
+- `--parallel-run` cannot be combined with `--root`, `--base-line`, `--py-dir`,
+  or positional executable paths
 - runner mode sets `renderImage=False` and skips video/metadata output
-- each subprocess has a 100 second timeout by default
-- summary metrics are written to `parallel_runner_summary.json`
-- per-task `result_*.json` files are not written by default; pass
-  `--write-individual-results` to save them
+- each subprocess has a 30 second timeout by default
+- timed-out tasks are retried up to two times after each full round completes
+- each completed round cleans up matching GPU processes before the next retry round
+- summary metrics are written to a dated JSON filename, such as `0628_01.json`
+  or `LaMMA-P_0628_01.json`
 - `stdout` is kept only for results with `robot_failures` by default; pass
   `--save-all-stdout` to keep it for every result
 

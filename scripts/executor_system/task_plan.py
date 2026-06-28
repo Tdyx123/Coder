@@ -59,7 +59,7 @@ _ACTION_HELPER_NAMES = (
     "OpenObject",
     "CloseObject",
     "BreakObject",
-    "PrepareEgg",
+    "BreakEgg",
     "SliceObject",
     "CleanObject",
     "DirtyObject",

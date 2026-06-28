@@ -6,7 +6,7 @@ import py_compile
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 
@@ -40,6 +40,17 @@ smart_llm_baseline = load_script_module(
 def write_json(path: Path, content):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(content, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def load_bundle_data_from_executable(path: Path):
+    executable_text = path.read_text(encoding="utf-8")
+    parsed = ast.parse(executable_text)
+    for node in parsed.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if any(isinstance(target, ast.Name) and target.id == "BUNDLE_DATA" for target in node.targets):
+            return ast.literal_eval(node.value)
+    raise AssertionError("BUNDLE_DATA assignment not found")
 
 
 def write_parallel_run_fixture_task(
@@ -419,6 +430,520 @@ class PlanToCodeDemoBundleTest(unittest.TestCase):
                 ["GoToObject", "OpenObject", "GoToObject", "OpenObject"],
             )
             self.assertEqual(bundle_data["object_mapping_warnings"], [])
+
+    def test_plantocode_falls_back_to_robot1_when_allocation_has_no_assignments(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            task_run_dir = write_parallel_run_fixture_task(root, "6", 0)
+            task = "open the cabinet and drawer with incomplete allocation output."
+
+            write_json(
+                task_run_dir / "inputs" / "task_context.json",
+                {
+                    "task": task,
+                    "robots": [
+                        {"name": "robot1", "skills": ["GoToObject", "OpenObject"]},
+                        {"name": "robot2", "skills": ["GoToObject", "OpenObject"]},
+                    ],
+                    "objects_ai": "objects = [{'name': 'Cabinet'}, {'name': 'Drawer'}]",
+                },
+            )
+            (task_run_dir / "02_allocate" / "02_allocate_output.txt").write_text(
+                "# Sequence of Operations:\nNo executable allocation was produced.\n",
+                encoding="utf-8",
+            )
+
+            outputs_dir = task_run_dir / "08_planner" / "outputs"
+            plan_1 = outputs_dir / "subtask_01_problem_validated_plan.txt"
+            plan_2 = outputs_dir / "subtask_02_problem_validated_plan.txt"
+            plan_2.write_text(
+                "(gotoobject robot2 drawer)\n(openobject robot2 drawer)\n",
+                encoding="utf-8",
+            )
+            write_json(
+                task_run_dir / "08_planner" / "planner_manifest.json",
+                [
+                    {
+                        "problem_file": "subtask_01_problem_validated.pddl",
+                        "return_code": 0,
+                        "compatibility_output": str(plan_1),
+                    },
+                    {
+                        "problem_file": "subtask_02_problem_validated.pddl",
+                        "return_code": 0,
+                        "compatibility_output": str(plan_2),
+                    },
+                ],
+            )
+            write_json(
+                task_run_dir / "run_manifest.json",
+                {
+                    "repo_root": str(root),
+                    "task": task,
+                    "test_set": "sample",
+                    "floor_plan": "6",
+                    "task_index": 0,
+                    "task_run_dir": str(task_run_dir),
+                },
+            )
+            (root / "data" / "sample" / "FloorPlan6.jsonl").write_text(
+                json.dumps(
+                    {
+                        "task": task,
+                        "robot list": [1, 2],
+                        "object_states": [
+                            {"name": "Cabinet", "contains": [], "states": ["OPENED"]},
+                            {"name": "Drawer", "contains": [], "states": ["OPENED"]},
+                        ],
+                        "trans": 2,
+                        "min_trans": 4,
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result_code = plantocode_main(
+                [
+                    "--logs-dir",
+                    str(root / "logs"),
+                    "--output-dir",
+                    str(root / "summary"),
+                ]
+            )
+
+            self.assertEqual(result_code, 0)
+            executable_plan = task_run_dir / "plan_to_code" / "executable_plan.py"
+            summary = json.loads((root / "summary" / "plan_to_code_summary.json").read_text(encoding="utf-8"))
+            details = json.loads((root / "summary" / "plan_to_code_results.json").read_text(encoding="utf-8"))
+            bundle_data = load_bundle_data_from_executable(executable_plan)
+
+            self.assertTrue(executable_plan.exists())
+            py_compile.compile(str(executable_plan), doraise=True)
+            self.assertEqual(summary["successful_generations"], 1)
+            self.assertEqual(summary["failed_generations"], 0)
+            self.assertEqual(details[0]["status"], "success")
+            self.assertEqual(details[0]["phase_count"], 1)
+            self.assertEqual(details[0]["no_trans"], 4)
+            self.assertEqual(
+                bundle_data["phases"],
+                [[{"subtask_id": 1, "robot_number": 1}, {"subtask_id": 2, "robot_number": 1}]],
+            )
+            stage = bundle_data["task_plan"]["stages"][0]
+            self.assertEqual(list(stage["robot_action_queues"]), ["robot1"])
+            self.assertEqual(
+                [action["action_type"] for action in stage["robot_action_queues"]["robot1"]],
+                ["GoToObject", "OpenObject", "GoToObject", "OpenObject"],
+            )
+            self.assertEqual(
+                [action["parameters"]["args"] for action in stage["robot_action_queues"]["robot1"]],
+                [("Cabinet",), ("Cabinet",), ("Drawer",), ("Drawer",)],
+            )
+
+    def test_plantocode_falls_back_to_robot1_when_allocation_references_unknown_robot(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            task_run_dir = write_parallel_run_fixture_task(root, "6", 0)
+            task = "open the cabinet with an out of range allocation robot."
+
+            write_json(
+                task_run_dir / "inputs" / "task_context.json",
+                {
+                    "task": task,
+                    "robots": [
+                        {"name": "robot1", "skills": ["GoToObject", "OpenObject"]},
+                        {"name": "robot2", "skills": ["GoToObject", "OpenObject"]},
+                        {"name": "robot3", "skills": ["GoToObject", "OpenObject"]},
+                        {"name": "robot4", "skills": ["GoToObject", "OpenObject"]},
+                    ],
+                    "objects_ai": "objects = [{'name': 'Cabinet'}]",
+                },
+            )
+            (task_run_dir / "02_allocate" / "02_allocate_output.txt").write_text(
+                "# Sequence of Operations:\nSubtask 1: Robot 18;\n",
+                encoding="utf-8",
+            )
+            write_json(
+                task_run_dir / "run_manifest.json",
+                {
+                    "repo_root": str(root),
+                    "task": task,
+                    "test_set": "sample",
+                    "floor_plan": "6",
+                    "task_index": 0,
+                    "task_run_dir": str(task_run_dir),
+                },
+            )
+            (root / "data" / "sample" / "FloorPlan6.jsonl").write_text(
+                json.dumps(
+                    {
+                        "task": task,
+                        "robot list": [1, 2, 3, 4],
+                        "object_states": [
+                            {"name": "Cabinet", "contains": [], "states": ["OPENED"]},
+                        ],
+                        "trans": 1,
+                        "min_trans": 2,
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result_code = plantocode_main(
+                [
+                    "--logs-dir",
+                    str(root / "logs"),
+                    "--output-dir",
+                    str(root / "summary"),
+                ]
+            )
+
+            self.assertEqual(result_code, 0)
+            executable_plan = task_run_dir / "plan_to_code" / "executable_plan.py"
+            summary = json.loads((root / "summary" / "plan_to_code_summary.json").read_text(encoding="utf-8"))
+            details = json.loads((root / "summary" / "plan_to_code_results.json").read_text(encoding="utf-8"))
+            bundle_data = load_bundle_data_from_executable(executable_plan)
+
+            self.assertTrue(executable_plan.exists())
+            py_compile.compile(str(executable_plan), doraise=True)
+            self.assertEqual(summary["successful_generations"], 1)
+            self.assertEqual(summary["failed_generations"], 0)
+            self.assertEqual(details[0]["status"], "success")
+            self.assertEqual(details[0]["phase_count"], 1)
+            self.assertEqual(details[0]["no_trans"], 2)
+            self.assertEqual(
+                bundle_data["phases"],
+                [[{"subtask_id": 1, "robot_number": 1}]],
+            )
+            stage = bundle_data["task_plan"]["stages"][0]
+            self.assertEqual(list(stage["robot_action_queues"]), ["robot1"])
+            self.assertEqual(
+                [action["action_type"] for action in stage["robot_action_queues"]["robot1"]],
+                ["GoToObject", "OpenObject"],
+            )
+
+    def test_plantocode_skips_allocated_subtask_without_plan(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            task_run_dir = write_parallel_run_fixture_task(root, "6", 0)
+            task = "open the cabinet, skip an unplanned subtask, then open the drawer."
+
+            write_json(
+                task_run_dir / "inputs" / "task_context.json",
+                {
+                    "task": task,
+                    "robots": [{"name": "robot1", "skills": ["GoToObject", "OpenObject"]}],
+                    "objects_ai": "objects = [{'name': 'Cabinet'}, {'name': 'Drawer'}]",
+                },
+            )
+            (task_run_dir / "02_allocate" / "02_allocate_output.txt").write_text(
+                "# Sequence of Operations:\n"
+                "Subtask 1: Robot 1;\n"
+                "Subtask 2: Robot 1;\n"
+                "Subtask 3: Robot 1;\n",
+                encoding="utf-8",
+            )
+            outputs_dir = task_run_dir / "08_planner" / "outputs"
+            plan_1 = outputs_dir / "subtask_01_problem_validated_plan.txt"
+            plan_3 = outputs_dir / "subtask_03_problem_validated_plan.txt"
+            plan_3.write_text(
+                "(gotoobject robot1 drawer)\n(openobject robot1 drawer)\n",
+                encoding="utf-8",
+            )
+            write_json(
+                task_run_dir / "08_planner" / "planner_manifest.json",
+                [
+                    {
+                        "problem_file": "subtask_01_problem_validated.pddl",
+                        "return_code": 0,
+                        "compatibility_output": str(plan_1),
+                    },
+                    {
+                        "problem_file": "subtask_03_problem_validated.pddl",
+                        "return_code": 0,
+                        "compatibility_output": str(plan_3),
+                    },
+                ],
+            )
+            write_json(
+                task_run_dir / "run_manifest.json",
+                {
+                    "repo_root": str(root),
+                    "task": task,
+                    "test_set": "sample",
+                    "floor_plan": "6",
+                    "task_index": 0,
+                    "task_run_dir": str(task_run_dir),
+                },
+            )
+            (root / "data" / "sample" / "FloorPlan6.jsonl").write_text(
+                json.dumps(
+                    {
+                        "task": task,
+                        "robot list": [1],
+                        "object_states": [
+                            {"name": "Cabinet", "contains": [], "states": ["OPENED"]},
+                            {"name": "Drawer", "contains": [], "states": ["OPENED"]},
+                        ],
+                        "trans": 2,
+                        "min_trans": 4,
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result_code = plantocode_main(
+                [
+                    "--logs-dir",
+                    str(root / "logs"),
+                    "--output-dir",
+                    str(root / "summary"),
+                ]
+            )
+
+            self.assertEqual(result_code, 0)
+            executable_plan = task_run_dir / "plan_to_code" / "executable_plan.py"
+            details = json.loads((root / "summary" / "plan_to_code_results.json").read_text(encoding="utf-8"))
+            bundle_data = load_bundle_data_from_executable(executable_plan)
+
+            self.assertEqual(details[0]["status"], "success")
+            self.assertEqual(details[0]["phase_count"], 2)
+            self.assertEqual(details[0]["no_trans"], 4)
+            self.assertEqual(
+                bundle_data["phases"],
+                [
+                    [{"subtask_id": 1, "robot_number": 1}],
+                    [{"subtask_id": 3, "robot_number": 1}],
+                ],
+            )
+            self.assertEqual(bundle_data["no_trans"], 4)
+            self.assertNotIn("plan_files", bundle_data)
+            first_stage = bundle_data["task_plan"]["stages"][0]
+            second_stage = bundle_data["task_plan"]["stages"][1]
+            self.assertEqual(
+                [action["parameters"]["args"] for action in first_stage["robot_action_queues"]["robot1"]],
+                [("Cabinet",), ("Cabinet",)],
+            )
+            self.assertEqual(
+                [action["parameters"]["args"] for action in second_stage["robot_action_queues"]["robot1"]],
+                [("Drawer",), ("Drawer",)],
+            )
+
+    def test_plantocode_appends_unassigned_planner_subtasks_in_final_phase(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            task_run_dir = write_parallel_run_fixture_task(root, "6", 0)
+            task = "open the cabinet, then run the extra drawer plan last."
+
+            write_json(
+                task_run_dir / "inputs" / "task_context.json",
+                {
+                    "task": task,
+                    "robots": [
+                        {"name": "robot1", "skills": ["GoToObject", "OpenObject"]},
+                        {"name": "robot2", "skills": ["GoToObject", "OpenObject"]},
+                    ],
+                    "objects_ai": "objects = [{'name': 'Cabinet'}, {'name': 'Drawer'}]",
+                },
+            )
+            (task_run_dir / "02_allocate" / "02_allocate_output.txt").write_text(
+                "# Sequence of Operations:\n"
+                "Subtask 1: Robot 1;\n"
+                "Subtask 2: Robot 1;\n",
+                encoding="utf-8",
+            )
+            outputs_dir = task_run_dir / "08_planner" / "outputs"
+            plan_1 = outputs_dir / "subtask_01_problem_validated_plan.txt"
+            plan_3 = outputs_dir / "subtask_03_problem_validated_plan.txt"
+            plan_3.write_text(
+                "(gotoobject robot2 drawer)\n(openobject robot2 drawer)\n",
+                encoding="utf-8",
+            )
+            write_json(
+                task_run_dir / "08_planner" / "planner_manifest.json",
+                [
+                    {
+                        "problem_file": "subtask_01_problem_validated.pddl",
+                        "return_code": 0,
+                        "compatibility_output": str(plan_1),
+                    },
+                    {
+                        "problem_file": "subtask_03_problem_validated.pddl",
+                        "return_code": 0,
+                        "compatibility_output": str(plan_3),
+                    },
+                ],
+            )
+            write_json(
+                task_run_dir / "run_manifest.json",
+                {
+                    "repo_root": str(root),
+                    "task": task,
+                    "test_set": "sample",
+                    "floor_plan": "6",
+                    "task_index": 0,
+                    "task_run_dir": str(task_run_dir),
+                },
+            )
+            (root / "data" / "sample" / "FloorPlan6.jsonl").write_text(
+                json.dumps(
+                    {
+                        "task": task,
+                        "robot list": [1, 2],
+                        "object_states": [
+                            {"name": "Cabinet", "contains": [], "states": ["OPENED"]},
+                            {"name": "Drawer", "contains": [], "states": ["OPENED"]},
+                        ],
+                        "trans": 2,
+                        "min_trans": 4,
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result_code = plantocode_main(
+                [
+                    "--logs-dir",
+                    str(root / "logs"),
+                    "--output-dir",
+                    str(root / "summary"),
+                ]
+            )
+
+            self.assertEqual(result_code, 0)
+            executable_plan = task_run_dir / "plan_to_code" / "executable_plan.py"
+            details = json.loads((root / "summary" / "plan_to_code_results.json").read_text(encoding="utf-8"))
+            bundle_data = load_bundle_data_from_executable(executable_plan)
+
+            self.assertEqual(details[0]["status"], "success")
+            self.assertEqual(details[0]["phase_count"], 2)
+            self.assertEqual(
+                bundle_data["phases"],
+                [
+                    [{"subtask_id": 1, "robot_number": 1}],
+                    [{"subtask_id": 3, "robot_number": 2}],
+                ],
+            )
+            second_stage = bundle_data["task_plan"]["stages"][1]
+            self.assertEqual(list(second_stage["robot_action_queues"]), ["robot2"])
+            self.assertEqual(
+                [action["parameters"]["args"] for action in second_stage["robot_action_queues"]["robot2"]],
+                [("Drawer",), ("Drawer",)],
+            )
+
+    def test_plantocode_skips_missing_manifest_plan_file(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            task_run_dir = write_parallel_run_fixture_task(root, "6", 0)
+            task = "open the cabinet, skip a failed subtask, then open the drawer."
+
+            write_json(
+                task_run_dir / "inputs" / "task_context.json",
+                {
+                    "task": task,
+                    "robots": [{"name": "robot1", "skills": ["GoToObject", "OpenObject"]}],
+                    "objects_ai": "objects = [{'name': 'Cabinet'}, {'name': 'Drawer'}]",
+                },
+            )
+            (task_run_dir / "02_allocate" / "02_allocate_output.txt").write_text(
+                "# Sequence of Operations:\n"
+                "Subtask 1: Robot 1;\n"
+                "Subtask 2: Robot 1;\n"
+                "Subtask 3: Robot 1;\n",
+                encoding="utf-8",
+            )
+            outputs_dir = task_run_dir / "08_planner" / "outputs"
+            plan_1 = outputs_dir / "subtask_01_problem_validated_plan.txt"
+            missing_plan_2 = outputs_dir / "subtask_02_problem_validated_plan.txt"
+            plan_3 = outputs_dir / "subtask_03_problem_validated_plan.txt"
+            plan_3.write_text(
+                "(gotoobject robot1 drawer)\n(openobject robot1 drawer)\n",
+                encoding="utf-8",
+            )
+            write_json(
+                task_run_dir / "08_planner" / "planner_manifest.json",
+                [
+                    {
+                        "problem_file": "subtask_01_problem_validated.pddl",
+                        "return_code": 0,
+                        "compatibility_output": str(plan_1),
+                    },
+                    {
+                        "problem_file": "subtask_02_problem_validated.pddl",
+                        "return_code": 0,
+                        "compatibility_output": str(missing_plan_2),
+                    },
+                    {
+                        "problem_file": "subtask_03_problem_validated.pddl",
+                        "return_code": 0,
+                        "compatibility_output": str(plan_3),
+                    },
+                ],
+            )
+            write_json(
+                task_run_dir / "run_manifest.json",
+                {
+                    "repo_root": str(root),
+                    "task": task,
+                    "test_set": "sample",
+                    "floor_plan": "6",
+                    "task_index": 0,
+                    "task_run_dir": str(task_run_dir),
+                },
+            )
+            (root / "data" / "sample" / "FloorPlan6.jsonl").write_text(
+                json.dumps(
+                    {
+                        "task": task,
+                        "robot list": [1],
+                        "object_states": [
+                            {"name": "Cabinet", "contains": [], "states": ["OPENED"]},
+                            {"name": "Drawer", "contains": [], "states": ["OPENED"]},
+                        ],
+                        "trans": 2,
+                        "min_trans": 4,
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                result_code = plantocode_main(
+                    [
+                        "--logs-dir",
+                        str(root / "logs"),
+                        "--output-dir",
+                        str(root / "summary"),
+                    ]
+                )
+
+            output = stdout.getvalue()
+            self.assertEqual(result_code, 0)
+            self.assertIn("Skipping missing planner output listed in manifest", output)
+            self.assertIn(str(missing_plan_2), output)
+            self.assertNotIn("Planner output file(s) not found", output)
+
+            executable_plan = task_run_dir / "plan_to_code" / "executable_plan.py"
+            details = json.loads((root / "summary" / "plan_to_code_results.json").read_text(encoding="utf-8"))
+            bundle_data = load_bundle_data_from_executable(executable_plan)
+
+            self.assertEqual(details[0]["status"], "success")
+            self.assertEqual(details[0]["phase_count"], 2)
+            self.assertEqual(bundle_data["phases"], [
+                [{"subtask_id": 1, "robot_number": 1}],
+                [{"subtask_id": 3, "robot_number": 1}],
+            ])
+            self.assertNotIn("plan_files", bundle_data)
 
     def test_lammap_baseline_mode_writes_parallel_runner_summary_path(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

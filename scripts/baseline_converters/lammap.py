@@ -113,7 +113,8 @@ ACTION_ALIASES = {
     "dirtyobject": "DirtyObject",
     "emptyliquid": "EmptyLiquid",
     "emptyliquidfromobject": "EmptyLiquid",
-    "prepareegg": "PrepareEgg",
+    "prepareegg": "BreakEgg",
+    "breakegg": "BreakEgg",
     "runmicrowave": "RunMicrowave",
     "microwave": "RunMicrowave",
     "runcoffeemachine": "RunCoffeeMachine",
@@ -158,7 +159,8 @@ ACTION_PREFIXES = [
     ("wash", "CleanObject"),
     ("dirtyobject", "DirtyObject"),
     ("dirty", "DirtyObject"),
-    ("prepareegg", "PrepareEgg"),
+    ("prepareegg", "BreakEgg"),
+    ("breakegg", "BreakEgg"),
     ("runmicrowave", "RunMicrowave"),
     ("microwave", "RunMicrowave"),
     ("runcoffeemachine", "RunCoffeeMachine"),
@@ -530,7 +532,7 @@ def action_object_args(action_type: str, tokens: Sequence[str]) -> Tuple[str, ..
         "CleanObject",
         "DirtyObject",
         "EmptyLiquid",
-        "PrepareEgg",
+        "BreakEgg",
     }:
         if not tokens:
             raise FinalPlanEncodingError(f"{action_type} requires one object argument.")

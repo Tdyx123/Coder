@@ -7,12 +7,12 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple, Un
 
 from .config import NAVIGATION_GRID_SIZE
 from .utils import (
-    is_prepare_egg_target,
+    is_break_egg_target,
     log,
     object_center,
     object_key,
     position_to_grid_key,
-    require_prepare_egg_target,
+    require_break_egg_target,
 )
 
 @dataclass(frozen=True)
@@ -364,7 +364,7 @@ class PlanValidator:
         "OpenObject",
         "CloseObject",
         "BreakObject",
-        "PrepareEgg",
+        "BreakEgg",
         "SliceObject",
         "CleanObject",
         "DirtyObject",
@@ -424,8 +424,8 @@ class PlanValidator:
                     self.validate_action(stage.stage_id, robot_id, action)
 
     def validate_action(self, stage_id: str, robot_id: str, action: Action) -> None:
-        if action.action_type == "PrepareEgg":
-            self.validate_prepare_egg_action(stage_id, robot_id, action)
+        if action.action_type == "BreakEgg":
+            self.validate_break_egg_action(stage_id, robot_id, action)
             return
         if action.action_type in self.HIGH_LEVEL_ACTIONS:
             return
@@ -436,18 +436,18 @@ class PlanValidator:
             f"in stage {stage_id!r}."
         )
 
-    def validate_prepare_egg_action(
+    def validate_break_egg_action(
         self,
         stage_id: str,
         robot_id: str,
         action: Action,
     ) -> None:
         args = action.args()
-        if len(args) == 1 and is_prepare_egg_target(args[0]):
+        if len(args) == 1 and is_break_egg_target(args[0]):
             return
         got = args[0] if args else None
         raise RuntimeError(
-            f"PrepareEgg for {robot_id!r} in stage {stage_id!r} requires "
+            f"BreakEgg for {robot_id!r} in stage {stage_id!r} requires "
             f"Egg as its only object argument; got {got!r}."
         )
 
@@ -541,7 +541,7 @@ class ResourceInferencer:
         "SwitchOn",
         "SwitchOff",
         "BreakObject",
-        "PrepareEgg",
+        "BreakEgg",
         "SliceObject",
         "CleanObject",
         "DirtyObject",
@@ -672,7 +672,7 @@ class ResourceInferencer:
             "ToggleObjectOn",
             "ToggleObjectOff",
             "BreakObject",
-            "PrepareEgg",
+            "BreakEgg",
             "SliceObject",
             "CleanObject",
             "DirtyObject",
@@ -936,10 +936,10 @@ class AI2ThorAdapter:
             return self.runtime.toggle_objects("ToggleObjectOn", robot_id, args[0])
         if action.action_type == "SwitchOff":
             return self.runtime.toggle_objects("ToggleObjectOff", robot_id, args[0])
-        if action.action_type == "PrepareEgg":
+        if action.action_type == "BreakEgg":
             if len(args) != 1:
-                raise RuntimeError("PrepareEgg requires exactly one Egg target.")
-            require_prepare_egg_target(args[0])
+                raise RuntimeError("BreakEgg requires exactly one Egg target.")
+            require_break_egg_target(args[0])
             return self.runtime.object_action("BreakObject", robot_id, args[0])
         if action.action_type in {
             "OpenObject",

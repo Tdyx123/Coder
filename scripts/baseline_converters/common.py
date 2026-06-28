@@ -51,7 +51,6 @@ def build_bundle_data(
     object_mappings: Dict[str, str],
     object_mapping_warnings: Sequence[str],
     phases: Sequence[Any] = (),
-    plan_files: Optional[Dict[str, str]] = None,
     object_id_bindings: Sequence[Any] = (),
 ) -> Dict[str, Any]:
     return {
@@ -59,7 +58,6 @@ def build_bundle_data(
         "task_plan": task_plan_data,
         "no_trans": no_trans,
         "phases": list(phases),
-        "plan_files": dict(plan_files or {}),
         "object_mappings": dict(object_mappings),
         "object_mapping_warnings": list(object_mapping_warnings),
         "object_id_bindings": list(object_id_bindings),
@@ -212,4 +210,3 @@ def sanitize_slug(value: str, max_length: int = 96) -> str:
     if not slug:
         slug = "task"
     return slug[:max_length].rstrip("._") or "task"
-

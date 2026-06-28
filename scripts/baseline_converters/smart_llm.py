@@ -65,8 +65,12 @@ SUPPORTED_ACTIONS = {
     "HeatByStoveBurner",
     "FireByStoveBurner",
     "ColdObject",
+    "BreakEgg",
     "PrepareEgg",
     "ThrowObject",
+}
+EXECUTOR_ACTION_ALIASES = {
+    "PrepareEgg": "BreakEgg",
 }
 THREAD_CONSTRUCTORS = {"threading.Thread", "Thread"}
 
@@ -720,6 +724,7 @@ def encode_action_call(
     resolver: ObjectNameResolver,
     code: str,
 ) -> EncodedAction:
+    action_type = EXECUTOR_ACTION_ALIASES.get(action_type, action_type)
     if call.keywords:
         raise SmartLLMConversionError(
             "unsupported_action_call",

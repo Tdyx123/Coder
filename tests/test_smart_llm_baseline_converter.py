@@ -300,6 +300,48 @@ def open_drawer(robot):
             self.assertEqual(task_summary["task_index"], 0)
             self.assertTrue(task_summary["task_file"].endswith("data/unit_set/FloorPlan2.jsonl"))
 
+    def test_prepare_egg_calls_are_encoded_as_break_egg_actions(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            input_root = root / "input" / "logs"
+            output_root = root / "output"
+            source_path = self.write_code_plan(
+                input_root,
+                "2",
+                "task",
+                (
+                    "def break_egg(robot):\n"
+                    "    PrepareEgg(robot, 'Egg')\n"
+                    "    BreakEgg(robot, 'Egg')\n\n"
+                    "break_egg(robots[0])\n"
+                ),
+            )
+            self.write_log(
+                source_path,
+                task_text="prepare the egg",
+                objects=[{"name": "Egg"}],
+            )
+            self.write_dataset(root, tasks=["prepare the egg"])
+
+            with self.patched_repo_root(root):
+                with redirect_stdout(io.StringIO()):
+                    status = smart_llm_converter.main(
+                        [
+                            "--input-root",
+                            str(input_root),
+                            "--output-root",
+                            str(output_root),
+                        ]
+                    )
+
+            self.assertEqual(status, 0)
+            executable_path = output_root / "logs" / "2" / "task" / "plan_to_code" / "executable_plan.py"
+            executable = executable_path.read_text(encoding="utf-8")
+            bundle = self.bundle_from_executable(executable)
+            actions = bundle["task_plan"]["stages"][0]["robot_action_queues"]["robot1"]
+            self.assertEqual([action["action_type"] for action in actions], ["BreakEgg", "BreakEgg"])
+            self.assertEqual([action["parameters"]["args"] for action in actions], [["Egg"], ["Egg"]])
+
     def test_threaded_parallel_stage_is_encoded_as_one_stage(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)

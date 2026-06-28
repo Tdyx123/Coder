@@ -144,6 +144,20 @@ class LaMMAPFinalPlanToCodeTest(unittest.TestCase):
         self.assertEqual(result.category, "timed_direct_actions")
         self.assertEqual([action.action_type for action in result.actions], ["GoToObject", "OpenObject"])
 
+    def test_prepareegg_and_breakegg_actions_encode_as_break_egg(self):
+        result = lammap.classify_final_plan(
+            """```pddl
+0.0: (prepareegg robot1 egg pan) [1.0]
+1.0: (breakegg robot1 egg) [1.0]
+```"""
+        )
+
+        self.assertEqual([action.action_type for action in result.actions], ["BreakEgg", "BreakEgg"])
+        resolver = lammap.ObjectNameResolver(["Egg", "Pan"])
+        encoded = lammap.encode_actions(result.actions, resolver, [{"name": "robot1"}])
+        self.assertEqual([action.action_type for action in encoded], ["BreakEgg", "BreakEgg"])
+        self.assertEqual([action.args for action in encoded], [("Egg",), ("Egg",)])
+
     def test_build_task_plan_data_groups_contiguous_robot_segments(self):
         actions = [
             lammap.EncodedAction(0, "0", 0, "robot1", "GoToObject", ("Drawer",), "a"),

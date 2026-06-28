@@ -13,7 +13,7 @@ from .goals import (
     record_groundtruth_state,
     state_satisfied,
 )
-from .utils import RobotRef, log, object_center, object_key, require_prepare_egg_target
+from .utils import RobotRef, log, object_center, object_key, require_break_egg_target
 
 @dataclass
 class _PlannedActionContext:
@@ -143,9 +143,9 @@ def BreakObject(robot: RobotRef, obj_name: Any) -> None:
     get_runtime().object_action("BreakObject", robot, obj_name)
 
 
-def PrepareEgg(robot: RobotRef, obj_name: Any) -> None:
-    require_prepare_egg_target(obj_name)
-    _consume_planned_action("PrepareEgg", obj_name)
+def BreakEgg(robot: RobotRef, obj_name: Any) -> None:
+    require_break_egg_target(obj_name)
+    _consume_planned_action("BreakEgg", obj_name)
     get_runtime().object_action("BreakObject", robot, obj_name)
 
 

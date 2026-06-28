@@ -175,13 +175,13 @@ def egg_query_base_key(pattern: Any) -> str:
     return pattern_key
 
 
-def is_prepare_egg_target(pattern: Any) -> bool:
+def is_break_egg_target(pattern: Any) -> bool:
     return egg_query_base_key(pattern) == "egg"
 
 
-def require_prepare_egg_target(pattern: Any) -> None:
-    if not is_prepare_egg_target(pattern):
-        raise RuntimeError(f"PrepareEgg can only target Egg; got {pattern!r}.")
+def require_break_egg_target(pattern: Any) -> None:
+    if not is_break_egg_target(pattern):
+        raise RuntimeError(f"BreakEgg can only target Egg; got {pattern!r}.")
 
 
 def is_broken_egg_object(obj: Dict[str, Any]) -> bool:

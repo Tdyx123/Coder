@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import subprocess
@@ -15,7 +14,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 
 _THIS_DIR = Path(__file__).resolve().parent
@@ -47,9 +46,12 @@ from executor_system.action_plan import (  # noqa: E402
 )
 from executor_system.executor import Executor, PhaseCoordinator  # noqa: E402
 from executor_system.runtime import is_pickup_object_clip_error  # noqa: E402
+from baseline_converters import pddlrun  # noqa: E402
 
 
-DEFAULT_TIMEOUT_SECONDS = 100.0
+DEFAULT_TIMEOUT_SECONDS = 30.0
+MAX_TIMEOUT_RETRIES = 2
+GPU_CLEANUP_PROCESS_SUFFIX = "0d69f666c7f282e54abfe58f1e917"
 IGNORED_FAILURE_ACTION_TYPES = {"Teleport", "TeleportObjectToHand"}
 BASE_LINE_CHOICES = ("LaMMA-P", "SMART-LLM")
 
@@ -73,6 +75,22 @@ def write_result_json(path: Path, result: Dict[str, Any]) -> None:
         json.dumps(result, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+
+
+def action_success_rate(executed_actions: int, failed_actions: int) -> float:
+    return (
+        (executed_actions - failed_actions) / executed_actions
+        if executed_actions
+        else 1.0
+    )
+
+
+def normalize_result_metrics(result: Dict[str, Any]) -> Dict[str, Any]:
+    result.pop("exec_rate", None)
+    executed_actions = int(result.get("executed_actions", 0) or 0)
+    failed_actions = int(result.get("failed_actions", 0) or 0)
+    result["action_sr"] = action_success_rate(executed_actions, failed_actions)
+    return result
 
 
 @dataclass
@@ -130,6 +148,7 @@ class TolerantRunStats:
             "run_time_seconds": time.monotonic() - self.start_time,
             "executed_actions": executed_actions,
             "failed_actions": failed_actions,
+            "action_sr": action_success_rate(executed_actions, failed_actions),
             "failure_action_ratio": (
                 failed_actions / executed_actions if executed_actions else 0.0
             ),
@@ -565,14 +584,67 @@ def discover_baseline_executable_plans(
     return discover_baseline_fallback_executables(base_line, discovery_root)
 
 
+def discover_parallel_run_executable_plans(parallel_run: str) -> List[Path]:
+    try:
+        task_run_dirs = pddlrun.discover_parallel_run_task_runs(parallel_run)
+    except pddlrun.PlanToCodeError as exc:
+        raise RuntimeError(str(exc)) from exc
+
+    candidates: List[Path] = []
+    missing_count = 0
+    incompatible_count = 0
+    seen = set()
+    for task_run_dir in task_run_dirs:
+        executable_path = task_run_dir / "plan_to_code" / "executable_plan.py"
+        try:
+            resolved_path = executable_path.expanduser().resolve()
+        except OSError:
+            missing_count += 1
+            continue
+        if not resolved_path.is_file():
+            missing_count += 1
+            continue
+        if not is_runner_compatible_executable(resolved_path):
+            incompatible_count += 1
+            continue
+        if resolved_path in seen:
+            continue
+        seen.add(resolved_path)
+        candidates.append(resolved_path)
+
+    skipped_parts = []
+    if missing_count:
+        skipped_parts.append(f"{missing_count} missing")
+    if incompatible_count:
+        skipped_parts.append(f"{incompatible_count} incompatible")
+    if skipped_parts:
+        print(
+            "Skipped "
+            + ", ".join(skipped_parts)
+            + f" generated executable(s) for parallel run: {parallel_run}"
+        )
+
+    if not candidates:
+        raise RuntimeError(
+            "No runner-compatible plan_to_code/executable_plan.py files found "
+            f"for parallel run: {parallel_run}. Run "
+            "`python scripts/plantocode.py --parallel-run "
+            f"{parallel_run}` first."
+        )
+    return candidates
+
+
 def discover_executable_plans(
     explicit_paths: Sequence[str],
     root: Optional[str],
     py_dirs: Sequence[str] = (),
     base_line: Optional[str] = None,
+    parallel_run: Optional[str] = None,
 ) -> List[Path]:
     candidates: List[Path] = []
     baseline_candidates: List[Path] = []
+    if parallel_run:
+        candidates.extend(discover_parallel_run_executable_plans(parallel_run))
     if base_line:
         baseline_candidates = discover_baseline_executable_plans(base_line, root)
         candidates.extend(baseline_candidates)
@@ -612,9 +684,15 @@ def discover_executable_plans(
     return resolved
 
 
-def result_path_for(output_dir: Path, executable_path: Path, index: int) -> Path:
-    digest = hashlib.sha1(str(executable_path).encode("utf-8")).hexdigest()[:10]
-    return output_dir / f"result_{index:04d}_{digest}.json"
+def summary_output_path(output_dir: Path, base_line: Optional[str] = None) -> Path:
+    date_suffix = time.strftime("%m%d")
+    stem = f"{base_line}_{date_suffix}" if base_line else date_suffix
+    max_sequence = 0
+    for path in output_dir.glob(f"{stem}_*.json"):
+        sequence_text = path.stem[len(stem) + 1 :]
+        if sequence_text.isdigit():
+            max_sequence = max(max_sequence, int(sequence_text))
+    return output_dir / f"{stem}_{max_sequence + 1:02d}.json"
 
 
 def prune_stdout_for_result(
@@ -627,11 +705,127 @@ def prune_stdout_for_result(
     return result
 
 
+def parse_gpu_cleanup_pids(
+    nvidia_smi_output: str,
+    *,
+    process_suffix: str = GPU_CLEANUP_PROCESS_SUFFIX,
+) -> List[int]:
+    pids: List[int] = []
+    for raw_line in nvidia_smi_output.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        pid_text, separator, process_name = line.partition(",")
+        if not separator:
+            continue
+        if not process_name.strip().endswith(process_suffix):
+            continue
+        try:
+            pids.append(int(pid_text.strip()))
+        except ValueError:
+            continue
+    return pids
+
+
+def cleanup_gpu_processes(round_index: int) -> Dict[str, Any]:
+    event: Dict[str, Any] = {
+        "round": round_index,
+        "matched_pids": [],
+        "killed_pids": [],
+        "error": "",
+    }
+    try:
+        query = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-compute-apps=pid,process_name",
+                "--format=csv,noheader",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    except OSError as exc:
+        event["error"] = str(exc)
+        return event
+
+    if query.returncode != 0:
+        event["error"] = query.stderr.strip() or (
+            f"nvidia-smi exited with status {query.returncode}"
+        )
+        return event
+
+    matched_pids = parse_gpu_cleanup_pids(query.stdout)
+    event["matched_pids"] = matched_pids
+    if not matched_pids:
+        return event
+
+    try:
+        kill_result = subprocess.run(
+            ["kill", "-9", *[str(pid) for pid in matched_pids]],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    except OSError as exc:
+        event["error"] = str(exc)
+        return event
+
+    if kill_result.returncode == 0:
+        event["killed_pids"] = matched_pids
+    else:
+        event["error"] = kill_result.stderr.strip() or (
+            f"kill exited with status {kill_result.returncode}"
+        )
+    return event
+
+
+def gpu_cleanup_error_event(round_index: int, exc: BaseException) -> Dict[str, Any]:
+    return {
+        "round": round_index,
+        "matched_pids": [],
+        "killed_pids": [],
+        "error": str(exc),
+    }
+
+
+def failed_result_for_exception(executable_path: Path, exc: BaseException) -> Dict[str, Any]:
+    result = {
+        "status": "failed",
+        "timed_out": False,
+        "run_time_seconds": 0.0,
+        "gcr": None,
+        "executed_actions": 0,
+        "failed_actions": 0,
+        "action_sr": 1.0,
+        "failure_action_ratio": 0.0,
+        "robot_failures": [],
+        "returncode": 1,
+        "executable_path": str(executable_path),
+        "error": str(exc),
+    }
+    return normalize_result_metrics(result)
+
+
+def compact_attempt_result(result: Dict[str, Any], attempt: int) -> Dict[str, Any]:
+    return {
+        "attempt": attempt,
+        "status": result.get("status", "unknown"),
+        "timed_out": bool(result.get("timed_out")),
+        "returncode": result.get("returncode"),
+        "timeout_message": result.get("timeout_message", ""),
+        "run_time_seconds": result.get("run_time_seconds", 0.0),
+        "executed_actions": result.get("executed_actions", 0),
+        "failed_actions": result.get("failed_actions", 0),
+        "action_sr": result.get("action_sr", 1.0),
+        "failure_action_ratio": result.get("failure_action_ratio", 0.0),
+    }
+
+
 def run_generated_executable(
     executable_path: Path,
     *,
     metrics_output: Path,
-    result_output: Optional[Path],
     timeout_seconds: float,
     save_all_stdout: bool = False,
 ) -> Dict[str, Any]:
@@ -664,6 +858,7 @@ def run_generated_executable(
             "gcr": None,
             "executed_actions": 0,
             "failed_actions": 0,
+            "action_sr": 1.0,
             "failure_action_ratio": 0.0,
             "robot_failures": [],
             "returncode": 124,
@@ -672,8 +867,6 @@ def run_generated_executable(
             "stderr": exc.stderr or "",
         }
         prune_stdout_for_result(result, save_all_stdout=save_all_stdout)
-        if result_output is not None:
-            write_result_json(result_output, result)
         return result
 
     if metrics_output.is_file():
@@ -697,14 +890,131 @@ def run_generated_executable(
     result.setdefault("failed_actions", 0)
     result.setdefault("failure_action_ratio", 0.0)
     result.setdefault("robot_failures", [])
+    normalize_result_metrics(result)
     result["returncode"] = completed.returncode
     result["executable_path"] = str(executable_path)
     result["stdout"] = completed.stdout
     result["stderr"] = completed.stderr
     prune_stdout_for_result(result, save_all_stdout=save_all_stdout)
-    if result_output is not None:
-        write_result_json(result_output, result)
     return result
+
+
+def run_executable_round(
+    *,
+    executor: ThreadPoolExecutor,
+    executable_paths: Sequence[Path],
+    temp_metrics_dir: Path,
+    round_index: int,
+    timeout_seconds: float,
+    save_all_stdout: bool,
+) -> Dict[Path, Dict[str, Any]]:
+    future_to_path = {}
+    for index, executable_path in enumerate(executable_paths, start=1):
+        metrics_output = temp_metrics_dir / (
+            f"metrics_round_{round_index:02d}_{index:04d}.json"
+        )
+        future = executor.submit(
+            run_generated_executable,
+            executable_path,
+            metrics_output=metrics_output,
+            timeout_seconds=timeout_seconds,
+            save_all_stdout=save_all_stdout,
+        )
+        future_to_path[future] = executable_path
+
+    round_results: Dict[Path, Dict[str, Any]] = {}
+    for future in as_completed(future_to_path):
+        executable_path = future_to_path[future]
+        try:
+            result = future.result()
+        except Exception as exc:
+            result = failed_result_for_exception(executable_path, exc)
+            prune_stdout_for_result(
+                result,
+                save_all_stdout=save_all_stdout,
+            )
+        round_results[executable_path] = result
+        status = result.get("status", "unknown")
+        print(f"{status}: {executable_path}")
+    return round_results
+
+
+def add_attempt_metadata(
+    result: Dict[str, Any],
+    attempts: Sequence[Dict[str, Any]],
+) -> Dict[str, Any]:
+    final_result = dict(result)
+    attempt_list = [dict(attempt) for attempt in attempts]
+    final_result["attempt_count"] = len(attempt_list)
+    final_result["timed_out_attempt_count"] = sum(
+        1 for attempt in attempt_list if attempt.get("timed_out")
+    )
+    final_result["attempts"] = attempt_list
+    return final_result
+
+
+def run_executables_with_retries(
+    executable_paths: Sequence[Path],
+    *,
+    max_workers: int,
+    temp_metrics_dir: Path,
+    timeout_seconds: float,
+    save_all_stdout: bool,
+) -> tuple[List[Dict[str, Any]], List[str], List[Dict[str, Any]]]:
+    attempts_by_path: Dict[Path, List[Dict[str, Any]]] = {
+        path: [] for path in executable_paths
+    }
+    final_results_by_path: Dict[Path, Dict[str, Any]] = {}
+    pending_paths = list(executable_paths)
+    gpu_cleanup_events: List[Dict[str, Any]] = []
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        for round_index in range(MAX_TIMEOUT_RETRIES + 1):
+            if not pending_paths:
+                break
+            round_results = run_executable_round(
+                executor=executor,
+                executable_paths=pending_paths,
+                temp_metrics_dir=temp_metrics_dir,
+                round_index=round_index,
+                timeout_seconds=timeout_seconds,
+                save_all_stdout=save_all_stdout,
+            )
+
+            try:
+                gpu_cleanup_events.append(cleanup_gpu_processes(round_index))
+            except Exception as exc:
+                gpu_cleanup_events.append(gpu_cleanup_error_event(round_index, exc))
+
+            next_pending_paths: List[Path] = []
+            attempt_number = round_index + 1
+            for executable_path in pending_paths:
+                result = round_results[executable_path]
+                normalize_result_metrics(result)
+                attempts_by_path[executable_path].append(
+                    compact_attempt_result(result, attempt_number)
+                )
+                final_results_by_path[executable_path] = result
+                if result.get("timed_out"):
+                    next_pending_paths.append(executable_path)
+
+            if round_index >= MAX_TIMEOUT_RETRIES:
+                break
+            pending_paths = next_pending_paths
+
+    results: List[Dict[str, Any]] = []
+    timeout_retry_tasks: List[str] = []
+    for executable_path in executable_paths:
+        attempts = attempts_by_path[executable_path]
+        if any(attempt.get("timed_out") for attempt in attempts):
+            timeout_retry_tasks.append(str(executable_path))
+        results.append(
+            add_attempt_metadata(
+                final_results_by_path[executable_path],
+                attempts,
+            )
+        )
+    return results, timeout_retry_tasks, gpu_cleanup_events
 
 
 def build_summary(
@@ -713,8 +1023,11 @@ def build_summary(
     *,
     base_line: Optional[str] = None,
     discovery_root: Optional[Path] = None,
+    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    timeout_retry_tasks: Optional[Iterable[str]] = None,
+    gpu_cleanup_events: Optional[Sequence[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
-    result_list = [dict(result) for result in results]
+    result_list = [normalize_result_metrics(dict(result)) for result in results]
     summary = {
         "total_results": len(result_list),
         "success_count": sum(
@@ -728,6 +1041,14 @@ def build_summary(
             if result.get("returncode") not in (0, None) and not result.get("timed_out")
         ),
         "timeout_count": sum(1 for result in result_list if result.get("timed_out")),
+        "timeout_retry_policy": {
+            "max_retries": MAX_TIMEOUT_RETRIES,
+            "timeout_seconds": float(timeout_seconds),
+        },
+        "timeout_retry_tasks": list(timeout_retry_tasks or []),
+        "gpu_cleanup_events": [
+            dict(event) for event in (gpu_cleanup_events or [])
+        ],
         "total_run_time_seconds": time.monotonic() - start_time,
         "results": result_list,
     }
@@ -750,6 +1071,13 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--root",
         help="Root directory to recursively search for plan_to_code/executable_plan.py.",
+    )
+    parser.add_argument(
+        "--parallel-run",
+        help=(
+            "Path to one parallel_runs output directory or summary.json whose "
+            "generated task executable_plan.py files should be run."
+        ),
     )
     parser.add_argument(
         "--base-line",
@@ -779,13 +1107,8 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--output-dir",
-        default="./parallel_runner_results",
-        help="Directory for the summary and optional per-task result JSON files.",
-    )
-    parser.add_argument(
-        "--write-individual-results",
-        action="store_true",
-        help="Write per-task result_*.json files in --output-dir.",
+        default="./coderun_results",
+        help="Directory for the summary JSON file.",
     )
     parser.add_argument(
         "--save-all-stdout",
@@ -803,6 +1126,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.timeout_seconds <= 0:
         print("ERROR: --timeout-seconds must be positive")
         return 1
+    if args.parallel_run and (
+        args.executable_plans or args.root or args.py_dir or args.base_line
+    ):
+        print(
+            "ERROR: --parallel-run cannot be combined with positional "
+            "executable plans, --root, --py-dir, or --base-line"
+        )
+        return 1
 
     try:
         executable_paths = discover_executable_plans(
@@ -810,6 +1141,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             args.root,
             args.py_dir,
             args.base_line,
+            args.parallel_run,
         )
     except RuntimeError as exc:
         print(f"ERROR: {exc}")
@@ -823,61 +1155,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
     start_time = time.monotonic()
     results: List[Dict[str, Any]] = []
+    timeout_retry_tasks: List[str] = []
+    gpu_cleanup_events: List[Dict[str, Any]] = []
 
     with tempfile.TemporaryDirectory(prefix="parallel_runner_metrics_") as temp_dir:
         temp_metrics_dir = Path(temp_dir)
-        with ThreadPoolExecutor(max_workers=args.max_workers) as executor:
-            future_to_path = {}
-            future_to_result_output: Dict[Any, Optional[Path]] = {}
-            for index, executable_path in enumerate(executable_paths, start=1):
-                individual_result_output = (
-                    result_path_for(output_dir, executable_path, index)
-                    if args.write_individual_results
-                    else None
-                )
-                metrics_output = individual_result_output or (
-                    temp_metrics_dir
-                    / result_path_for(output_dir, executable_path, index).name
-                )
-                future = executor.submit(
-                    run_generated_executable,
-                    executable_path,
-                    metrics_output=metrics_output,
-                    result_output=individual_result_output,
-                    timeout_seconds=float(args.timeout_seconds),
-                    save_all_stdout=args.save_all_stdout,
-                )
-                future_to_path[future] = executable_path
-                future_to_result_output[future] = individual_result_output
-
-            for future in as_completed(future_to_path):
-                executable_path = future_to_path[future]
-                try:
-                    result = future.result()
-                except Exception as exc:
-                    result = {
-                        "status": "failed",
-                        "timed_out": False,
-                        "run_time_seconds": 0.0,
-                        "gcr": None,
-                        "executed_actions": 0,
-                        "failed_actions": 0,
-                        "failure_action_ratio": 0.0,
-                        "robot_failures": [],
-                        "returncode": 1,
-                        "executable_path": str(executable_path),
-                        "error": str(exc),
-                    }
-                    prune_stdout_for_result(
-                        result,
-                        save_all_stdout=args.save_all_stdout,
-                    )
-                    result_output = future_to_result_output[future]
-                    if result_output is not None:
-                        write_result_json(result_output, result)
-                results.append(result)
-                status = result.get("status", "unknown")
-                print(f"{status}: {executable_path}")
+        results, timeout_retry_tasks, gpu_cleanup_events = run_executables_with_retries(
+            executable_paths,
+            max_workers=args.max_workers,
+            temp_metrics_dir=temp_metrics_dir,
+            timeout_seconds=float(args.timeout_seconds),
+            save_all_stdout=args.save_all_stdout,
+        )
 
     results.sort(key=lambda result: str(result.get("executable_path", "")))
     discovery_root = None
@@ -892,9 +1181,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         start_time,
         base_line=args.base_line,
         discovery_root=discovery_root,
+        timeout_seconds=float(args.timeout_seconds),
+        timeout_retry_tasks=timeout_retry_tasks,
+        gpu_cleanup_events=gpu_cleanup_events,
     )
-    write_result_json(output_dir / "parallel_runner_summary.json", summary)
-    print(f"Summary saved to: {output_dir / 'parallel_runner_summary.json'}")
+    summary_path = summary_output_path(output_dir, args.base_line)
+    write_result_json(summary_path, summary)
+    print(f"Summary saved to: {summary_path}")
 
     return 0 if summary["failure_count"] == 0 and summary["timeout_count"] == 0 else 1
 

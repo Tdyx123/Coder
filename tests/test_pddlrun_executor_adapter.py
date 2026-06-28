@@ -20,6 +20,7 @@ from executor_system.pddlrun_adapter import (
     parse_plan_actions,
     resolve_plan_files,
 )
+from executor_system.action_plan import Action, MultiStageActionPlan, PlanValidator, StagePlan
 
 
 class PddlRunExecutorAdapterTest(unittest.TestCase):
@@ -77,6 +78,279 @@ class PddlRunExecutorAdapterTest(unittest.TestCase):
                 ("Cabinet",),
             )
             self.assertEqual(bundle.no_trans, 6)
+
+    def test_allocation_subtasks_without_plans_are_skipped(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            allocate_file = self.write_file(
+                root / "02_allocate" / "02_allocate_output.txt",
+                "# Sequence of Operations:\n"
+                "Subtask 1: Robot 2;\n"
+                "Subtask 2: Robot 1;Subtask 3: Robot 1;\n",
+            )
+            plan_folder = root / "08_planner" / "outputs"
+            self.write_file(
+                plan_folder / "subtask_01_problem_validated_plan.txt",
+                "(gotoobject robot1 window1)\n(breakobject robot1 window1)\n",
+            )
+            self.write_file(
+                plan_folder / "subtask_03_problem_validated_plan.txt",
+                "(gotoobject robot1 drawer)\n(openobject robot1 drawer)\n",
+            )
+
+            bundle = build_task_plan_from_pddlrun_paths(
+                task="break window and open drawer",
+                robots=[{"name": "robot1"}, {"name": "robot2"}],
+                allocate_file=allocate_file,
+                plan_folder=plan_folder,
+                plan_files=[],
+                object_names=["Window", "Cabinet", "Drawer"],
+            )
+
+            self.assertEqual(
+                [[(item.subtask_id, item.robot_number) for item in phase] for phase in bundle.phases],
+                [[(1, 2)], [(3, 1)]],
+            )
+            self.assertEqual(len(bundle.task_plan.stages), 2)
+            first_stage = bundle.task_plan.stages[0]
+            second_stage = bundle.task_plan.stages[1]
+            self.assertEqual(list(first_stage.robot_action_queues), ["robot2"])
+            self.assertEqual(
+                [action.action_type for action in first_stage.robot_action_queues["robot2"]],
+                ["GoToObject", "BreakObject"],
+            )
+            self.assertEqual(list(second_stage.robot_action_queues), ["robot1"])
+            self.assertEqual(
+                [action.action_type for action in second_stage.robot_action_queues["robot1"]],
+                ["GoToObject", "OpenObject"],
+            )
+            self.assertEqual(bundle.no_trans, 4)
+
+    def test_unassigned_planner_outputs_are_appended_in_final_phase(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            allocate_file = self.write_file(
+                root / "02_allocate" / "02_allocate_output.txt",
+                "# Sequence of Operations:\n"
+                "Subtask 1: Robot 1;\n"
+                "Subtask 2: Robot 1;\n",
+            )
+            plan_folder = root / "08_planner" / "outputs"
+            self.write_file(
+                plan_folder / "subtask_01_problem_validated_plan.txt",
+                "(gotoobject robot1 cabinet)\n(openobject robot1 cabinet)\n",
+            )
+            self.write_file(
+                plan_folder / "subtask_03_problem_validated_plan.txt",
+                "(gotoobject robot2 drawer)\n(openobject robot2 drawer)\n",
+            )
+
+            bundle = build_task_plan_from_pddlrun_paths(
+                task="open cabinet and drawer",
+                robots=[{"name": "robot1"}, {"name": "robot2"}],
+                allocate_file=allocate_file,
+                plan_folder=plan_folder,
+                plan_files=[],
+                object_names=["Cabinet", "Drawer"],
+            )
+
+            self.assertEqual(
+                [[(item.subtask_id, item.robot_number) for item in phase] for phase in bundle.phases],
+                [[(1, 1)], [(3, 2)]],
+            )
+            self.assertEqual(len(bundle.task_plan.stages), 2)
+            self.assertEqual(bundle.task_plan.stages[1].stage_id, "Phase 2")
+            self.assertEqual(list(bundle.task_plan.stages[1].robot_action_queues), ["robot2"])
+            self.assertEqual(
+                [action.action_type for action in bundle.task_plan.stages[1].robot_action_queues["robot2"]],
+                ["GoToObject", "OpenObject"],
+            )
+            self.assertEqual(bundle.no_trans, 4)
+
+    def test_allocation_without_assignments_falls_back_to_robot1_for_all_plans(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            allocate_file = self.write_file(
+                root / "02_allocate" / "02_allocate_output.txt",
+                "# Sequence of Operations:\nNo executable allocation was produced.\n",
+            )
+            plan_folder = root / "08_planner" / "outputs"
+            self.write_file(
+                plan_folder / "subtask_01_problem_validated_plan.txt",
+                "(gotoobject robot2 cabinet)\n(openobject robot2 cabinet)\n",
+            )
+            self.write_file(
+                plan_folder / "subtask_03_problem_validated_plan.txt",
+                "(gotoobject robot2 drawer)\n(openobject robot2 drawer)\n",
+            )
+
+            bundle = build_task_plan_from_pddlrun_paths(
+                task="open cabinet and drawer",
+                robots=[{"name": "robot1"}, {"name": "robot2"}],
+                allocate_file=allocate_file,
+                plan_folder=plan_folder,
+                plan_files=[],
+                object_names=["Cabinet", "Drawer"],
+            )
+
+            self.assertEqual(
+                [[(item.subtask_id, item.robot_number) for item in phase] for phase in bundle.phases],
+                [[(1, 1), (3, 1)]],
+            )
+            self.assertEqual(len(bundle.task_plan.stages), 1)
+            stage = bundle.task_plan.stages[0]
+            self.assertEqual(stage.stage_id, "Phase 1")
+            self.assertEqual(list(stage.robot_action_queues), ["robot1"])
+            self.assertEqual(
+                [action.action_type for action in stage.robot_action_queues["robot1"]],
+                ["GoToObject", "OpenObject", "GoToObject", "OpenObject"],
+            )
+            self.assertEqual(bundle.no_trans, 4)
+
+    def test_allocation_unknown_robot_number_falls_back_to_robot1(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            allocate_file = self.write_file(
+                root / "02_allocate" / "02_allocate_output.txt",
+                "# Sequence of Operations:\nSubtask 1: Robot 18;\n",
+            )
+            plan_folder = root / "08_planner" / "outputs"
+            self.write_file(
+                plan_folder / "subtask_01_problem_validated_plan.txt",
+                "(gotoobject robot18 cabinet)\n(openobject robot18 cabinet)\n",
+            )
+
+            bundle = build_task_plan_from_pddlrun_paths(
+                task="open cabinet",
+                robots=[
+                    {"name": "robot1"},
+                    {"name": "robot2"},
+                    {"name": "robot3"},
+                    {"name": "robot4"},
+                ],
+                allocate_file=allocate_file,
+                plan_folder=plan_folder,
+                plan_files=[],
+                object_names=["Cabinet"],
+            )
+
+            self.assertEqual(
+                [[(item.subtask_id, item.robot_number) for item in phase] for phase in bundle.phases],
+                [[(1, 1)]],
+            )
+            self.assertEqual(len(bundle.task_plan.stages), 1)
+            stage = bundle.task_plan.stages[0]
+            self.assertEqual(list(stage.robot_action_queues), ["robot1"])
+            self.assertEqual(
+                [action.action_type for action in stage.robot_action_queues["robot1"]],
+                ["GoToObject", "OpenObject"],
+            )
+            self.assertEqual(bundle.no_trans, 2)
+
+    def test_unassigned_plan_unknown_robot_number_falls_back_to_robot1(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            allocate_file = self.write_file(
+                root / "02_allocate" / "02_allocate_output.txt",
+                "# Sequence of Operations:\nSubtask 1: Robot 1;\n",
+            )
+            plan_folder = root / "08_planner" / "outputs"
+            self.write_file(
+                plan_folder / "subtask_01_problem_validated_plan.txt",
+                "(gotoobject robot1 cabinet)\n(openobject robot1 cabinet)\n",
+            )
+            self.write_file(
+                plan_folder / "subtask_02_problem_validated_plan.txt",
+                "(gotoobject robot18 drawer)\n(openobject robot18 drawer)\n",
+            )
+
+            bundle = build_task_plan_from_pddlrun_paths(
+                task="open cabinet and drawer",
+                robots=[
+                    {"name": "robot1"},
+                    {"name": "robot2"},
+                    {"name": "robot3"},
+                    {"name": "robot4"},
+                ],
+                allocate_file=allocate_file,
+                plan_folder=plan_folder,
+                plan_files=[],
+                object_names=["Cabinet", "Drawer"],
+            )
+
+            self.assertEqual(
+                [[(item.subtask_id, item.robot_number) for item in phase] for phase in bundle.phases],
+                [[(1, 1)], [(2, 1)]],
+            )
+            self.assertEqual(list(bundle.task_plan.stages[1].robot_action_queues), ["robot1"])
+            self.assertEqual(
+                [action.action_type for action in bundle.task_plan.stages[1].robot_action_queues["robot1"]],
+                ["GoToObject", "OpenObject"],
+            )
+            self.assertEqual(bundle.no_trans, 4)
+
+    def test_phases_empty_after_missing_plan_filter_are_dropped(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            allocate_file = self.write_file(
+                root / "02_allocate" / "02_allocate_output.txt",
+                "# Sequence of Operations:\n"
+                "Subtask 1: Robot 1;\n"
+                "Subtask 2: Robot 1;\n"
+                "Subtask 3: Robot 1;\n",
+            )
+            plan_folder = root / "08_planner" / "outputs"
+            self.write_file(
+                plan_folder / "subtask_02_problem_validated_plan.txt",
+                "(gotoobject robot1 drawer)\n(openobject robot1 drawer)\n",
+            )
+
+            bundle = build_task_plan_from_pddlrun_paths(
+                task="open drawer",
+                robots=[{"name": "robot1"}],
+                allocate_file=allocate_file,
+                plan_folder=plan_folder,
+                plan_files=[],
+                object_names=["Cabinet", "Drawer", "Window"],
+            )
+
+            self.assertEqual(
+                [[(item.subtask_id, item.robot_number) for item in phase] for phase in bundle.phases],
+                [[(2, 1)]],
+            )
+            self.assertEqual(len(bundle.task_plan.stages), 1)
+            self.assertEqual(bundle.task_plan.stages[0].stage_id, "Phase 1")
+            self.assertEqual(
+                [action.action_type for action in bundle.task_plan.stages[0].robot_action_queues["robot1"]],
+                ["GoToObject", "OpenObject"],
+            )
+            self.assertEqual(bundle.no_trans, 2)
+
+    def test_allocation_with_no_planned_subtasks_reports_clear_error(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            allocate_file = self.write_file(
+                root / "02_allocate" / "02_allocate_output.txt",
+                "# Sequence of Operations:\nSubtask 1: Robot 1;\n",
+            )
+            plan_folder = root / "08_planner" / "outputs"
+            self.write_file(
+                plan_folder / "subtask_02_problem_validated_plan.txt",
+                "(gotoobject robot1 drawer)\n(openobject robot1 drawer)\n",
+            )
+
+            with self.assertRaisesRegex(
+                PddlRunAdapterError,
+                "no subtask\\(s\\) with planner output",
+            ):
+                build_task_plan_from_pddlrun_paths(
+                    task="open drawer",
+                    robots=[{"name": "robot1"}],
+                    allocate_file=allocate_file,
+                    plan_folder=plan_folder,
+                    plan_files=[],
+                    object_names=["Drawer"],
+                )
 
     def test_explicit_plan_files_override_plan_folder_scan(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -157,7 +431,7 @@ class PddlRunExecutorAdapterTest(unittest.TestCase):
             )
 
             actions = bundle.task_plan.stages[0].robot_action_queues["robot1"]
-            self.assertEqual(actions[0].action_type, "PrepareEgg")
+            self.assertEqual(actions[0].action_type, "BreakEgg")
             self.assertEqual(actions[0].args(), ("Egg",))
             self.assertEqual(actions[1].args(), ("Potato",))
             self.assertEqual(actions[2].args(), ("Bowl",))
@@ -167,6 +441,46 @@ class PddlRunExecutorAdapterTest(unittest.TestCase):
             self.assertEqual(actions[6].args(), ("StoveBurner", "Pan"))
             self.assertEqual(actions[7].args(), ("Sink", "Mug"))
             self.assertEqual(actions[8].args(), ("Fridge", "Potato"))
+
+    def test_prepareegg_and_breakegg_pddl_actions_encode_to_break_egg(self):
+        actions = parse_plan_actions(
+            "(prepareegg robot1 egg pan)\n"
+            "(breakegg robot1 egg)\n"
+        )
+
+        self.assertEqual([action.name for action in actions], ["BreakEgg", "BreakEgg"])
+        encoded = [
+            encode_plan_action(action, ObjectNameResolver(["Egg", "Pan"]))
+            for action in actions
+        ]
+        self.assertEqual([item.action.action_type for item in encoded], ["BreakEgg", "BreakEgg"])
+        self.assertEqual([item.action.args() for item in encoded], [("Egg",), ("Egg",)])
+
+    def test_break_egg_executor_action_validator_requires_single_egg_target(self):
+        valid_plan = MultiStageActionPlan(
+            "break-egg",
+            [StagePlan("Stage 1", {"robot1": [Action("BreakEgg", {"args": ("Egg",)})]})],
+        )
+        PlanValidator().validate(valid_plan)
+
+        invalid_plan = MultiStageActionPlan(
+            "break-egg",
+            [
+                StagePlan(
+                    "Stage 1",
+                    {"robot1": [Action("BreakEgg", {"args": ("Egg", "Pan")})]},
+                )
+            ],
+        )
+        with self.assertRaisesRegex(RuntimeError, "BreakEgg.*requires Egg"):
+            PlanValidator().validate(invalid_plan)
+
+        old_internal_name_plan = MultiStageActionPlan(
+            "prepare-egg",
+            [StagePlan("Stage 1", {"robot1": [Action("PrepareEgg", {"args": ("Egg",)})]})],
+        )
+        with self.assertRaisesRegex(RuntimeError, "Unsupported action 'PrepareEgg'"):
+            PlanValidator().validate(old_internal_name_plan)
 
     def test_wait_one_tick_pddl_action_has_no_object_args(self):
         actions = parse_plan_actions("(waitonetick robot1)\n")

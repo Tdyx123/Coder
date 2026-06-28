@@ -61,7 +61,8 @@ ACTION_ALIASES = {
     "openobject": "OpenObject",
     "closeobject": "CloseObject",
     "breakobject": "BreakObject",
-    "prepareegg": "PrepareEgg",
+    "prepareegg": "BreakEgg",
+    "breakegg": "BreakEgg",
     "sliceobject": "SliceObject",
     "cleanobject": "CleanObject",
     "dirtyobject": "DirtyObject",
@@ -80,6 +81,9 @@ ACTION_ALIASES = {
 }
 
 SUPPORTED_ACTIONS = set(ACTION_ALIASES.values())
+NO_ALLOCATION_ASSIGNMENTS_ERROR = (
+    "No subtask-to-robot assignments found in allocation output."
+)
 
 
 def object_key(value: Any) -> str:
@@ -217,9 +221,7 @@ def parse_allocation_phases(allocation_text: str) -> List[List[SubtaskAssignment
 
     nonempty = [candidate for candidate in candidates if candidate[0] > 0]
     if not nonempty:
-        raise PddlRunAdapterError(
-            "No subtask-to-robot assignments found in allocation output."
-        )
+        raise PddlRunAdapterError(NO_ALLOCATION_ASSIGNMENTS_ERROR)
 
     _, _, selected_lines = max(nonempty, key=lambda item: (item[0], item[1]))
     assignment_re = re.compile(
@@ -337,7 +339,7 @@ def encode_plan_action(
         obj = resolver.resolve(action.args[1])
         return _executor_action(action, action.name, [obj], [action.args[1]])
 
-    if action.name == "PrepareEgg":
+    if action.name == "BreakEgg":
         _require_args(action, 2)
         egg = resolver.resolve(action.args[1])
         return _executor_action(action, action.name, [egg], [action.args[1]])
@@ -567,6 +569,42 @@ def _group_phase_by_robot(
     return grouped
 
 
+def _normalize_robot_number(robots: Sequence[Any], robot_number: int) -> int:
+    if 1 <= robot_number <= len(robots):
+        return robot_number
+    if robots:
+        return 1
+    return robot_number
+
+
+def _normalize_phase_robot_numbers(
+    robots: Sequence[Any],
+    phases: Sequence[Sequence[SubtaskAssignment]],
+) -> List[List[SubtaskAssignment]]:
+    return [
+        [
+            SubtaskAssignment(
+                subtask_id=assignment.subtask_id,
+                robot_number=_normalize_robot_number(robots, assignment.robot_number),
+            )
+            for assignment in phase
+        ]
+        for phase in phases
+    ]
+
+
+def _infer_robot_number_from_plan_actions(
+    actions: Sequence[EncodedSubtaskAction],
+) -> int:
+    for encoded in actions:
+        if not encoded.pddl.args:
+            continue
+        match = re.fullmatch(r"robot[_-]?(\d+)", encoded.pddl.args[0], re.IGNORECASE)
+        if match:
+            return int(match.group(1))
+    return 1
+
+
 def build_task_plan_from_pddlrun_outputs(
     *,
     task: str,
@@ -578,8 +616,18 @@ def build_task_plan_from_pddlrun_outputs(
     object_id_bindings_by_subtask: Optional[Any] = None,
     task_id: str = "pddlrun",
 ) -> PddlRunPlanBundle:
-    phases = parse_allocation_phases(allocation_text)
     plan_texts = load_plan_texts(plan_files)
+    try:
+        phases = parse_allocation_phases(allocation_text)
+    except PddlRunAdapterError as exc:
+        if str(exc) != NO_ALLOCATION_ASSIGNMENTS_ERROR:
+            raise
+        phases = [
+            [
+                SubtaskAssignment(subtask_id=subtask_id, robot_number=1)
+                for subtask_id in plan_texts
+            ]
+        ]
     object_names_list = list(object_names or [])
     global_object_id_bindings = _coerce_object_id_bindings(object_id_bindings)
     subtask_object_id_bindings = _coerce_object_id_bindings_by_subtask(
@@ -621,17 +669,38 @@ def build_task_plan_from_pddlrun_outputs(
     planned_subtasks = set(encoded_by_subtask)
     missing_plans = sorted(assigned_subtasks - planned_subtasks)
     unassigned_plans = sorted(planned_subtasks - assigned_subtasks)
-    if missing_plans:
+    filtered_phases: List[List[SubtaskAssignment]] = []
+    for phase in phases:
+        filtered_phase = [
+            assignment
+            for assignment in phase
+            if assignment.subtask_id in planned_subtasks
+        ]
+        if filtered_phase:
+            filtered_phases.append(filtered_phase)
+
+    if not filtered_phases and missing_plans:
         raise PddlRunAdapterError(
-            f"Allocation references subtask(s) without planner output: {missing_plans}"
+            "Allocation references no subtask(s) with planner output; "
+            f"missing planner output for allocated subtask(s): {missing_plans}"
         )
     if unassigned_plans:
-        raise PddlRunAdapterError(
-            f"Planner output contains unassigned subtask(s): {unassigned_plans}"
+        filtered_phases.append(
+            [
+                SubtaskAssignment(
+                    subtask_id=subtask_id,
+                    robot_number=_infer_robot_number_from_plan_actions(
+                        encoded_by_subtask[subtask_id]
+                    ),
+                )
+                for subtask_id in unassigned_plans
+            ]
         )
 
+    filtered_phases = _normalize_phase_robot_numbers(robots, filtered_phases)
+
     stages: List[StagePlan] = []
-    for phase_index, phase in enumerate(phases, start=1):
+    for phase_index, phase in enumerate(filtered_phases, start=1):
         queues: Dict[str, List[Action]] = OrderedDict()
         for robot_number, subtask_ids in _group_phase_by_robot(phase).items():
             robot_id = _robot_id_for_number(robots, robot_number)
@@ -663,7 +732,7 @@ def build_task_plan_from_pddlrun_outputs(
         task=task,
         task_plan=TaskPlan(task_id, stages),
         no_trans=no_trans,
-        phases=phases,
+        phases=filtered_phases,
         plan_files={subtask_id: path for subtask_id, (path, _text) in plan_texts.items()},
         object_mappings=object_mappings,
         object_mapping_warnings=object_mapping_warnings,

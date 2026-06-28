@@ -21,7 +21,11 @@ from llm_handler import LLMError, LLMHandler
 from llm_logger import get_llm_logger
 from parsing_utils import ParsingUtils
 from run_config import RunConfig, load_run_config as _load_run_config, normalize_floor_plan
-from special_task_skills import SPECIAL_TASK_SKILL_ALIASES, SPECIAL_TASK_SKILL_PROMPT_RULE
+from special_task_skills import (
+    SPECIAL_TASK_SKILL_ALIASES,
+    SPECIAL_TASK_SKILL_PROMPT_RULE,
+    robot_skill_for_special_task_skill,
+)
 
 import sys
 sys.path.append(".")
@@ -1661,7 +1665,7 @@ class TaskManager:
         required_skills: List[str] = []
         seen: Set[str] = set()
         for action in actions_in_plan:
-            skill = action["skill"]
+            skill = robot_skill_for_special_task_skill(action["skill"])
             if skill not in seen:
                 seen.add(skill)
                 required_skills.append(skill)

@@ -13,7 +13,7 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 import data_engine
-from special_task_skills import SPECIAL_TASK_SKILLS
+from special_task_skills import SPECIAL_TASK_SKILLS, robot_skill_for_special_task_skill
 
 
 class DataEngineObjectPropertiesTests(unittest.TestCase):
@@ -505,7 +505,7 @@ class DataEngineObjectPropertiesTests(unittest.TestCase):
             ["GoToObject", "OpenObject", "CloseObject", "PickupObject", "PutObject"],
         )
 
-    def test_special_task_skills_always_require_same_named_robot_skill(self):
+    def test_special_task_skills_always_require_corresponding_robot_skill(self):
         original_robots = data_engine.robots
         data_engine.robots = []
         self.addCleanup(lambda: setattr(data_engine, "robots", original_robots))
@@ -515,7 +515,7 @@ class DataEngineObjectPropertiesTests(unittest.TestCase):
                 required = data_engine._required_robot_skills_for_subtask(
                     {"skill": skill, "objects": ["Apple", "Microwave"]}
                 )
-                self.assertIn(skill, required)
+                self.assertIn(robot_skill_for_special_task_skill(skill), required)
 
     def test_robot_can_complete_special_task_only_with_same_named_skill(self):
         engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
@@ -570,7 +570,7 @@ class DataEngineObjectPropertiesTests(unittest.TestCase):
                 "GoToObject",
                 "PickupObject",
                 "PutObject",
-                "PrepareEgg",
+                "BreakEgg",
             ],
         }
 
@@ -736,7 +736,7 @@ class DataEngineObjectPropertiesTests(unittest.TestCase):
             data_engine._required_robot_skills_for_subtask(
                 {"skill": "PrepareEgg", "objects": ["Egg", "Pan"]}
             ),
-            ["GoToObject", "PickupObject", "PutObject", "PrepareEgg"],
+            ["GoToObject", "PickupObject", "PutObject", "BreakEgg"],
         )
 
     def test_prepare_egg_rejects_stove_placeable_object_that_cannot_contain_egg(self):
@@ -814,7 +814,7 @@ class DataEngineObjectPropertiesTests(unittest.TestCase):
             data_engine._required_robot_skills_for_subtask(
                 {"skill": "CookEgg", "objects": ["Egg", "Pan"]}
             ),
-            ["GoToObject", "PickupObject", "PutObject", "PrepareEgg"],
+            ["GoToObject", "PickupObject", "PutObject", "BreakEgg"],
         )
 
     def test_cook_egg_rejects_scene_without_stove_burner(self):

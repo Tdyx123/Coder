@@ -45,7 +45,7 @@ ALL_GENERATED_EXECUTOR_SKILLS = [
     "SliceObject",
     "CleanObject",
     "DirtyObject",
-    "PrepareEgg",
+    "BreakEgg",
     "RunMicrowave",
     "RunCoffeeMachine",
     "RunToaster",
@@ -833,7 +833,7 @@ def build_actions_for_subtask(
             action("PickupObject", egg),
             action("GoToObject", container),
             action("PutObject", egg, container),
-            action("PrepareEgg", egg),
+            action("BreakEgg", egg),
         ])
     if skill == "CookEgg":
         egg, container = objects
@@ -843,7 +843,7 @@ def build_actions_for_subtask(
             action("PickupObject", egg),
             action("GoToObject", container),
             action("PutObject", egg, container),
-            action("PrepareEgg", egg),
+            action("BreakEgg", egg),
             action("PickupObject", container),
             action("GoToObject", stove_burner),
             action("CookByStoveBurner", stove_burner, container, egg),
@@ -1077,7 +1077,7 @@ TASK_FILE = {task_file_literal}
 TASK_INDEX = {task_index!r}
 EMBEDDED_TASK_RECORD = {task_record_literal}
 EMBEDDED_FLOOR_PLAN = {floor_plan_literal}
-DEFAULT_RUNNER_TIMEOUT_SECONDS = 100.0
+DEFAULT_RUNNER_TIMEOUT_SECONDS = 30.0
 
 
 runtime = None

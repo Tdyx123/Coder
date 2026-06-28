@@ -537,7 +537,7 @@ class GenerateSingleSubtaskCodeTests(unittest.TestCase):
                 ("PickupObject", ["Egg"]),
                 ("GoToObject", ["Pan"]),
                 ("PutObject", ["Egg", "Pan"]),
-                ("PrepareEgg", ["Egg"]),
+                ("BreakEgg", ["Egg"]),
             ],
         )
         self.assertNotIn(("PickupObject", ["Pan"]), self._action_pairs(prepare_egg_actions))
@@ -554,7 +554,7 @@ class GenerateSingleSubtaskCodeTests(unittest.TestCase):
                 ("PickupObject", ["Egg"]),
                 ("GoToObject", ["Pan"]),
                 ("PutObject", ["Egg", "Pan"]),
-                ("PrepareEgg", ["Egg"]),
+                ("BreakEgg", ["Egg"]),
                 ("PickupObject", ["Pan"]),
                 ("GoToObject", ["StoveBurner"]),
                 ("CookByStoveBurner", ["StoveBurner", "Pan", "Egg"]),
@@ -562,7 +562,7 @@ class GenerateSingleSubtaskCodeTests(unittest.TestCase):
         )
         self.assertGreater(
             cook_egg_pairs.index(("PickupObject", ["Pan"])),
-            cook_egg_pairs.index(("PrepareEgg", ["Egg"])),
+            cook_egg_pairs.index(("BreakEgg", ["Egg"])),
         )
         self.assertEqual(cook_egg_actions[-1]["action_type"], "CookByStoveBurner")
         self.assertEqual(
