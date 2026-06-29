@@ -1506,6 +1506,7 @@ MUTUALLY_EXCLUSIVE_STATES = {
     "FILLEDWITHWATER": "FILLEDWITHCOFFEE",
     "FILLEDWITHCOFFEE": "FILLEDWITHWATER",
 }
+BROKEN_STATE = "BROKEN"
 
 
 class DataEngine:
@@ -1597,6 +1598,11 @@ class DataEngine:
                             contains_by_name[name].append(contained)
 
                 for state in ps["states"]:
+                    if state == BROKEN_STATE:
+                        states_by_name[name] = [BROKEN_STATE]
+                        continue
+                    if BROKEN_STATE in states_by_name[name]:
+                        continue
                     opposite = MUTUALLY_EXCLUSIVE_STATES.get(state)
                     if opposite in states_by_name[name]:
                         states_by_name[name].remove(opposite)

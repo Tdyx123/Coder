@@ -2745,6 +2745,14 @@ class ThorRuntime:
             search_center=center,
             restrict_to_candidate_positions=True,
         )
+        if phase_coordinator is not None:
+            notify_position_changed = getattr(
+                phase_coordinator,
+                "notify_agent_position_changed",
+                None,
+            )
+            if callable(notify_position_changed):
+                notify_position_changed(agent_id)
 
         log(f"Reached: {dest_obj}")
         self.record_operated_object_name(dest)

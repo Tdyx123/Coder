@@ -15,6 +15,7 @@ SCRIPTS_DIR = ROOT / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
+from executor_system.generated_plan_runtime import build_hardcoded_bundle
 from executor_system.parallel_runner import is_runner_compatible_executable
 from plantocode import main as plantocode_main
 
@@ -268,6 +269,33 @@ def write_smart_native_fixture(root: Path, source_name: str = "code_plan.py") ->
 
 
 class PlanToCodeDemoBundleTest(unittest.TestCase):
+    def test_generated_runtime_requires_bundle_gcr(self):
+        bundle_data = {
+            "task": "unit task",
+            "task_plan": {"task_id": "unit", "stages": []},
+            "no_trans": 0,
+            "phases": [],
+            "object_mappings": {},
+            "object_mapping_warnings": [],
+        }
+
+        with self.assertRaisesRegex(RuntimeError, "missing required 'gcr'"):
+            build_hardcoded_bundle(bundle_data)
+
+    def test_generated_runtime_rejects_non_list_bundle_gcr(self):
+        bundle_data = {
+            "task": "unit task",
+            "task_plan": {"task_id": "unit", "stages": []},
+            "gcr": {"name": "Drawer"},
+            "no_trans": 0,
+            "phases": [],
+            "object_mappings": {},
+            "object_mapping_warnings": [],
+        }
+
+        with self.assertRaisesRegex(RuntimeError, r"BUNDLE_DATA\['gcr'\] must be a list"):
+            build_hardcoded_bundle(bundle_data)
+
     def test_plantocode_rejects_baseline_options(self):
         for argv in (
             ["--base-line", "LaMMA-P"],
@@ -414,6 +442,14 @@ class PlanToCodeDemoBundleTest(unittest.TestCase):
 
             self.assertIsNotNone(bundle_data)
             self.assertEqual(bundle_data["no_trans"], 6)
+            self.assertEqual(
+                bundle_data["gcr"],
+                [
+                    {"name": "Window", "contains": [], "states": ["BROKEN"]},
+                    {"name": "Cabinet", "contains": [], "states": ["OPENED"]},
+                    {"name": "Drawer", "contains": [], "states": ["OPENED"]},
+                ],
+            )
             self.assertNotIn("gpu_device", bundle_data)
             self.assertNotIn("gpu_device", details[0])
             self.assertEqual(len(bundle_data["task_plan"]["stages"]), 2)

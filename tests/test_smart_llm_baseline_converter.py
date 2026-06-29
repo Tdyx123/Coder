@@ -71,15 +71,17 @@ class SmartLLMBaselineConverterTest(unittest.TestCase):
         test_set: str = "unit_set",
         tasks=None,
         robot_count: int = 1,
+        object_states=None,
     ) -> Path:
         tasks = tasks or ["open the drawer"]
+        object_states = [] if object_states is None else object_states
         path = repo_root / "data" / test_set / f"FloorPlan{floor}.jsonl"
         path.parent.mkdir(parents=True, exist_ok=True)
         records = [
             {
                 "task": task,
                 "robot list": list(range(1, robot_count + 1)),
-                "object_states": [],
+                "object_states": list(object_states),
                 "trans": 0,
                 "min_trans": 0,
             }
@@ -258,7 +260,8 @@ def open_drawer(robot):
                 ),
             )
             self.write_log(source_path)
-            self.write_dataset(root)
+            expected_gcr = [{"name": "Drawer", "contains": [], "states": ["OPENED"]}]
+            self.write_dataset(root, object_states=expected_gcr)
 
             with self.patched_repo_root(root):
                 with redirect_stdout(io.StringIO()):
@@ -288,6 +291,7 @@ def open_drawer(robot):
             self.assertEqual([action["action_type"] for action in actions], ["GoToObject", "OpenObject"])
             self.assertEqual(actions[0]["parameters"]["args"], ["Drawer"])
             self.assertEqual(bundle["no_trans"], 2)
+            self.assertEqual(bundle["gcr"], expected_gcr)
 
             task_summary = json.loads(
                 (output_root / "logs" / "2" / "task" / "plan_to_code" / "conversion_summary.json").read_text(
@@ -300,7 +304,7 @@ def open_drawer(robot):
             self.assertEqual(task_summary["task_index"], 0)
             self.assertTrue(task_summary["task_file"].endswith("data/unit_set/FloorPlan2.jsonl"))
 
-    def test_prepare_egg_calls_are_encoded_as_break_egg_actions(self):
+    def test_prepare_egg_calls_keep_prepare_egg_action_with_two_args(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             input_root = root / "input" / "logs"
@@ -311,7 +315,7 @@ def open_drawer(robot):
                 "task",
                 (
                     "def break_egg(robot):\n"
-                    "    PrepareEgg(robot, 'Egg')\n"
+                    "    PrepareEgg(robot, 'Egg', 'Pan')\n"
                     "    BreakEgg(robot, 'Egg')\n\n"
                     "break_egg(robots[0])\n"
                 ),
@@ -319,7 +323,7 @@ def open_drawer(robot):
             self.write_log(
                 source_path,
                 task_text="prepare the egg",
-                objects=[{"name": "Egg"}],
+                objects=[{"name": "Egg"}, {"name": "Pan"}],
             )
             self.write_dataset(root, tasks=["prepare the egg"])
 
@@ -339,8 +343,8 @@ def open_drawer(robot):
             executable = executable_path.read_text(encoding="utf-8")
             bundle = self.bundle_from_executable(executable)
             actions = bundle["task_plan"]["stages"][0]["robot_action_queues"]["robot1"]
-            self.assertEqual([action["action_type"] for action in actions], ["BreakEgg", "BreakEgg"])
-            self.assertEqual([action["parameters"]["args"] for action in actions], [["Egg"], ["Egg"]])
+            self.assertEqual([action["action_type"] for action in actions], ["PrepareEgg", "BreakEgg"])
+            self.assertEqual([action["parameters"]["args"] for action in actions], [["Egg", "Pan"], ["Egg"]])
 
     def test_threaded_parallel_stage_is_encoded_as_one_stage(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

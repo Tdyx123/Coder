@@ -508,10 +508,18 @@ def serialize_task_plan(task_plan: TaskPlan) -> Dict[str, Any]:
     }
 
 
-def serialize_bundle(bundle: PddlRunPlanBundle) -> Dict[str, Any]:
+def gcr_from_task_record(task_record: Dict[str, Any]) -> List[Any]:
+    gcr = task_record.get("object_states")
+    if not isinstance(gcr, list):
+        raise PlanToCodeError("Dataset task record is missing list object_states for BUNDLE_DATA['gcr'].")
+    return gcr
+
+
+def serialize_bundle(bundle: PddlRunPlanBundle, gcr: Sequence[Any]) -> Dict[str, Any]:
     return {
         "task": bundle.task,
         "task_plan": serialize_task_plan(bundle.task_plan),
+        "gcr": list(gcr),
         "no_trans": bundle.no_trans,
         "phases": [
             [
@@ -535,7 +543,7 @@ def render_bundle_literal(bundle_data: Dict[str, Any]) -> str:
 
 def render_demo_executable(run_inputs: RunInputs, bundle: PddlRunPlanBundle) -> str:
     return common_render_executable_plan(
-        bundle_data=serialize_bundle(bundle),
+        bundle_data=serialize_bundle(bundle, gcr_from_task_record(run_inputs.task_record)),
         task_file=run_inputs.task_file,
         task_index=run_inputs.task_index,
         description="Run a hardcoded pddlrun bundle through executor_system.",

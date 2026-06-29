@@ -20,7 +20,14 @@ from executor_system.pddlrun_adapter import (
     parse_plan_actions,
     resolve_plan_files,
 )
-from executor_system.action_plan import Action, MultiStageActionPlan, PlanValidator, StagePlan
+from executor_system.action_plan import (
+    AI2ThorAdapter,
+    Action,
+    MultiStageActionPlan,
+    PlanValidator,
+    ResourceInferencer,
+    StagePlan,
+)
 
 
 class PddlRunExecutorAdapterTest(unittest.TestCase):
@@ -326,6 +333,119 @@ class PddlRunExecutorAdapterTest(unittest.TestCase):
             )
             self.assertEqual(bundle.no_trans, 2)
 
+    def test_empty_robot_action_queue_is_dropped_from_stage(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            allocate_file = self.write_file(
+                root / "02_allocate" / "02_allocate_output.txt",
+                "# Sequence of Operations:\n"
+                "Subtask 1: Robot 1;Subtask 2: Robot 2;\n",
+            )
+            plan_folder = root / "08_planner" / "outputs"
+            self.write_file(
+                plan_folder / "subtask_01_problem_validated_plan.txt",
+                "; cost = 0 (unit cost)\n",
+            )
+            self.write_file(
+                plan_folder / "subtask_02_problem_validated_plan.txt",
+                "(gotoobject robot2 drawer)\n(openobject robot2 drawer)\n",
+            )
+
+            bundle = build_task_plan_from_pddlrun_paths(
+                task="open drawer",
+                robots=[{"name": "robot1"}, {"name": "robot2"}],
+                allocate_file=allocate_file,
+                plan_folder=plan_folder,
+                plan_files=[],
+                object_names=["Drawer"],
+            )
+
+            self.assertEqual(
+                [[(item.subtask_id, item.robot_number) for item in phase] for phase in bundle.phases],
+                [[(2, 2)]],
+            )
+            self.assertEqual(len(bundle.task_plan.stages), 1)
+            stage = bundle.task_plan.stages[0]
+            self.assertEqual(stage.stage_id, "Phase 1")
+            self.assertEqual(list(stage.robot_action_queues), ["robot2"])
+            self.assertEqual(
+                [action.action_type for action in stage.robot_action_queues["robot2"]],
+                ["GoToObject", "OpenObject"],
+            )
+            self.assertEqual(bundle.no_trans, 2)
+
+    def test_empty_stage_is_dropped_after_empty_subtask_pruning(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            allocate_file = self.write_file(
+                root / "02_allocate" / "02_allocate_output.txt",
+                "# Sequence of Operations:\n"
+                "Subtask 1: Robot 1;\n"
+                "Subtask 2: Robot 1;\n",
+            )
+            plan_folder = root / "08_planner" / "outputs"
+            self.write_file(
+                plan_folder / "subtask_01_problem_validated_plan.txt",
+                "\n; empty plan\n",
+            )
+            self.write_file(
+                plan_folder / "subtask_02_problem_validated_plan.txt",
+                "(gotoobject robot1 drawer)\n(openobject robot1 drawer)\n",
+            )
+
+            bundle = build_task_plan_from_pddlrun_paths(
+                task="open drawer",
+                robots=[{"name": "robot1"}],
+                allocate_file=allocate_file,
+                plan_folder=plan_folder,
+                plan_files=[],
+                object_names=["Drawer"],
+            )
+
+            self.assertEqual(
+                [[(item.subtask_id, item.robot_number) for item in phase] for phase in bundle.phases],
+                [[(2, 1)]],
+            )
+            self.assertEqual(len(bundle.task_plan.stages), 1)
+            self.assertEqual(bundle.task_plan.stages[0].stage_id, "Phase 1")
+            self.assertEqual(
+                [action.action_type for action in bundle.task_plan.stages[0].robot_action_queues["robot1"]],
+                ["GoToObject", "OpenObject"],
+            )
+            self.assertEqual(bundle.no_trans, 2)
+
+    def test_all_empty_planner_outputs_report_clear_error(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            allocate_file = self.write_file(
+                root / "02_allocate" / "02_allocate_output.txt",
+                "# Sequence of Operations:\n"
+                "Subtask 1: Robot 1;\n"
+                "Subtask 2: Robot 2;\n",
+            )
+            plan_folder = root / "08_planner" / "outputs"
+            self.write_file(
+                plan_folder / "subtask_01_problem_validated_plan.txt",
+                "; cost = 0 (unit cost)\n",
+            )
+            self.write_file(
+                plan_folder / "subtask_02_problem_validated_plan.txt",
+                "\n",
+            )
+
+            with self.assertRaisesRegex(
+                PddlRunAdapterError,
+                "No executable actions found in planner outputs",
+            ):
+                build_task_plan_from_pddlrun_paths(
+                    task="nothing to do",
+                    robots=[{"name": "robot1"}, {"name": "robot2"}],
+                    allocate_file=allocate_file,
+                    plan_folder=plan_folder,
+                    plan_files=[],
+                    object_names=["Drawer"],
+                )
+
     def test_allocation_with_no_planned_subtasks_reports_clear_error(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
@@ -431,8 +551,8 @@ class PddlRunExecutorAdapterTest(unittest.TestCase):
             )
 
             actions = bundle.task_plan.stages[0].robot_action_queues["robot1"]
-            self.assertEqual(actions[0].action_type, "BreakEgg")
-            self.assertEqual(actions[0].args(), ("Egg",))
+            self.assertEqual(actions[0].action_type, "PrepareEgg")
+            self.assertEqual(actions[0].args(), ("Egg", "Pan"))
             self.assertEqual(actions[1].args(), ("Potato",))
             self.assertEqual(actions[2].args(), ("Bowl",))
             self.assertEqual(actions[3].args(), ("Microwave", "Potato"))
@@ -442,19 +562,20 @@ class PddlRunExecutorAdapterTest(unittest.TestCase):
             self.assertEqual(actions[7].args(), ("Sink", "Mug"))
             self.assertEqual(actions[8].args(), ("Fridge", "Potato"))
 
-    def test_prepareegg_and_breakegg_pddl_actions_encode_to_break_egg(self):
+    def test_prepareegg_and_breakegg_pddl_actions_keep_distinct_shapes(self):
         actions = parse_plan_actions(
             "(prepareegg robot1 egg pan)\n"
             "(breakegg robot1 egg)\n"
         )
 
-        self.assertEqual([action.name for action in actions], ["BreakEgg", "BreakEgg"])
+        self.assertEqual([action.name for action in actions], ["PrepareEgg", "BreakEgg"])
         encoded = [
             encode_plan_action(action, ObjectNameResolver(["Egg", "Pan"]))
             for action in actions
         ]
-        self.assertEqual([item.action.action_type for item in encoded], ["BreakEgg", "BreakEgg"])
-        self.assertEqual([item.action.args() for item in encoded], [("Egg",), ("Egg",)])
+        self.assertEqual([item.action.action_type for item in encoded], ["PrepareEgg", "BreakEgg"])
+        self.assertEqual([item.action.args() for item in encoded], [("Egg", "Pan"), ("Egg",)])
+        self.assertEqual([item.object_tokens for item in encoded], [("egg", "pan"), ("egg",)])
 
     def test_break_egg_executor_action_validator_requires_single_egg_target(self):
         valid_plan = MultiStageActionPlan(
@@ -475,12 +596,50 @@ class PddlRunExecutorAdapterTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "BreakEgg.*requires Egg"):
             PlanValidator().validate(invalid_plan)
 
-        old_internal_name_plan = MultiStageActionPlan(
+    def test_prepare_egg_executor_action_validator_requires_two_args_with_egg_first(self):
+        valid_plan = MultiStageActionPlan(
+            "prepare-egg",
+            [StagePlan("Stage 1", {"robot1": [Action("PrepareEgg", {"args": ("Egg", "Pan")})]})],
+        )
+        PlanValidator().validate(valid_plan)
+
+        one_arg_plan = MultiStageActionPlan(
             "prepare-egg",
             [StagePlan("Stage 1", {"robot1": [Action("PrepareEgg", {"args": ("Egg",)})]})],
         )
-        with self.assertRaisesRegex(RuntimeError, "Unsupported action 'PrepareEgg'"):
-            PlanValidator().validate(old_internal_name_plan)
+        with self.assertRaisesRegex(RuntimeError, "PrepareEgg.*exactly two"):
+            PlanValidator().validate(one_arg_plan)
+
+        non_egg_plan = MultiStageActionPlan(
+            "prepare-egg",
+            [StagePlan("Stage 1", {"robot1": [Action("PrepareEgg", {"args": ("Potato", "Pan")})]})],
+        )
+        with self.assertRaisesRegex(RuntimeError, "PrepareEgg.*Egg"):
+            PlanValidator().validate(non_egg_plan)
+
+    def test_prepare_egg_executor_breaks_first_egg_arg_and_keeps_two_resources(self):
+        class FakeRuntime:
+            def __init__(self):
+                self.calls = []
+
+            def object_action(self, action_type, robot_id, obj_name):
+                self.calls.append((action_type, robot_id, obj_name))
+                return "event"
+
+        action = Action("PrepareEgg", {"args": ("Egg", "Pan")})
+        self.assertEqual(ResourceInferencer().object_names(action), ("Egg", "Pan"))
+
+        runtime = FakeRuntime()
+        result = AI2ThorAdapter(runtime).execute("robot1", action)
+
+        self.assertEqual(result, "event")
+        self.assertEqual(runtime.calls, [("BreakObject", "robot1", "Egg")])
+
+        with self.assertRaisesRegex(RuntimeError, "PrepareEgg requires Egg and container"):
+            AI2ThorAdapter(runtime).execute("robot1", Action("PrepareEgg", {"args": ("Egg",)}))
+
+        with self.assertRaisesRegex(RuntimeError, "BreakEgg can only target Egg"):
+            AI2ThorAdapter(runtime).execute("robot1", Action("PrepareEgg", {"args": ("Potato", "Pan")}))
 
     def test_wait_one_tick_pddl_action_has_no_object_args(self):
         actions = parse_plan_actions("(waitonetick robot1)\n")

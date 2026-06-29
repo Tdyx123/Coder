@@ -62,6 +62,35 @@ def goal_state_verified(obj_name: Any, state: str) -> bool:
         return signature in verified_ground_truth_goal_signatures
 
 
+def record_satisfied_temperature_goal_states(
+    objects: Sequence[Dict[str, Any]],
+) -> int:
+    """Record satisfied HOT/COLD ground-truth states without mutating goals."""
+
+    with ground_truth_lock:
+        goals = [dict(goal) for goal in get_ground_truth()]
+
+    recorded = 0
+    temperature_states = {"HOT", "COLD"}
+    for goal in goals:
+        obj_name = goal.get("name")
+        states = [
+            str(state).upper()
+            for state in goal_states(goal)
+            if str(state).upper() in temperature_states
+        ]
+        if not obj_name or not states:
+            continue
+        matching_objects = [obj for obj in objects if matches_object(obj_name, obj)]
+        for state in states:
+            if goal_state_verified(obj_name, state):
+                continue
+            if any(state_satisfied(obj, state) for obj in matching_objects):
+                record_verified_goal_state(obj_name, state)
+                recorded += 1
+    return recorded
+
+
 def object_filled_with_liquid(obj: Dict[str, Any], liquid_type: str) -> bool:
     liquid_key = object_key(liquid_type)
     direct_state_field = {

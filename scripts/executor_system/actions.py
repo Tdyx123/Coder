@@ -149,6 +149,12 @@ def BreakEgg(robot: RobotRef, obj_name: Any) -> None:
     get_runtime().object_action("BreakObject", robot, obj_name)
 
 
+def PrepareEgg(robot: RobotRef, obj_name: Any, container_name: Any) -> None:
+    require_break_egg_target(obj_name)
+    _consume_planned_action("PrepareEgg", obj_name, container_name)
+    get_runtime().object_action("BreakObject", robot, obj_name)
+
+
 def SliceObject(robot: RobotRef, obj_name: Any) -> None:
     _consume_planned_action("SliceObject", obj_name)
     get_runtime().object_action("SliceObject", robot, obj_name)

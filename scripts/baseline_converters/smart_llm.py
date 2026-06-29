@@ -69,9 +69,6 @@ SUPPORTED_ACTIONS = {
     "PrepareEgg",
     "ThrowObject",
 }
-EXECUTOR_ACTION_ALIASES = {
-    "PrepareEgg": "BreakEgg",
-}
 THREAD_CONSTRUCTORS = {"threading.Thread", "Thread"}
 
 
@@ -504,6 +501,38 @@ def find_task_index(task_file: Path, task_text: str) -> int:
     )
 
 
+def read_task_record_gcr(task_file: Path, task_index: int) -> List[Any]:
+    if task_index < 0:
+        raise SmartLLMConversionError("invalid_task_file", "task_index must be 0-based and non-negative.")
+
+    with task_file.open("r", encoding="utf-8") as handle:
+        for index, raw_line in enumerate(handle):
+            if index != task_index:
+                continue
+            line = raw_line.strip()
+            if not line:
+                raise SmartLLMConversionError(
+                    "invalid_task_file",
+                    f"Dataset line {task_index} is empty: {task_file}",
+                )
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise SmartLLMConversionError("invalid_task_file", str(exc)) from exc
+            gcr = record.get("object_states")
+            if not isinstance(gcr, list):
+                raise SmartLLMConversionError(
+                    "invalid_task_file",
+                    "Dataset task record is missing list object_states for BUNDLE_DATA['gcr'].",
+                )
+            return gcr
+
+    raise SmartLLMConversionError(
+        "invalid_task_file",
+        f"task_index {task_index} is out of range for {task_file}",
+    )
+
+
 def constant_int(node: ast.AST) -> Optional[int]:
     if isinstance(node, ast.Constant) and isinstance(node.value, int):
         return int(node.value)
@@ -724,7 +753,6 @@ def encode_action_call(
     resolver: ObjectNameResolver,
     code: str,
 ) -> EncodedAction:
-    action_type = EXECUTOR_ACTION_ALIASES.get(action_type, action_type)
     if call.keywords:
         raise SmartLLMConversionError(
             "unsupported_action_call",
@@ -745,6 +773,11 @@ def encode_action_call(
                 raise
 
     object_args = tuple(resolver.resolve(string_constant(arg)) for arg in object_nodes)
+    if action_type == "PrepareEgg" and len(object_args) != 2:
+        raise SmartLLMConversionError(
+            "unsupported_action_call",
+            "PrepareEgg requires exactly two object arguments: Egg and container.",
+        )
     return EncodedAction(
         robot_id=robot_id,
         action_type=action_type,
@@ -1131,6 +1164,7 @@ def build_bundle_data(
     *,
     task: str,
     task_plan_data: Dict[str, Any],
+    gcr: Sequence[Any],
     no_trans: int,
     object_mappings: Dict[str, str],
     object_mapping_warnings: Sequence[str],
@@ -1138,6 +1172,7 @@ def build_bundle_data(
     return common_build_bundle_data(
         task=task,
         task_plan_data=task_plan_data,
+        gcr=gcr,
         no_trans=no_trans,
         object_mappings=object_mappings,
         object_mapping_warnings=object_mapping_warnings,
@@ -1260,6 +1295,7 @@ def convert_one(
 
         task_file = dataset_path_for_metadata(metadata)
         task_index = find_task_index(task_file, metadata.task)
+        gcr = read_task_record_gcr(task_file, task_index)
         robot_names = robot_names_from_log(metadata.robots)
         resolver = ObjectNameResolver(object_names_from_log(metadata.objects))
         stages, action_count = build_stage_plan_from_ast(
@@ -1275,6 +1311,7 @@ def convert_one(
         bundle_data = build_bundle_data(
             task=metadata.task,
             task_plan_data=task_plan_data,
+            gcr=gcr,
             no_trans=action_count,
             object_mappings=dict(resolver.mappings),
             object_mapping_warnings=list(resolver.warnings),

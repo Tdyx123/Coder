@@ -234,6 +234,7 @@ class TolerantExecutor(Executor):
                     self.wait_for_condition(action)
                     _check_deadline(self.deadline)
                     event = self.execute_action(action)
+                    self.record_temperature_goal_progress()
                 except PlanExecutionTimeout as exc:
                     self.stats.record_failure(
                         self.state.current_stage_id,

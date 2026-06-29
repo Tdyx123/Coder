@@ -113,6 +113,7 @@ def run_single_job(
                 objects_ai=objects_ai,
                 config=config,
                 test_set=args.test_set,
+                task_index=job.task_index,
             )
     except Exception as exc:
         status = "error"

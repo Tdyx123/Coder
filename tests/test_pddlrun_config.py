@@ -194,11 +194,38 @@ class PDDLRunConfigTests(unittest.TestCase):
                 expected_run_dir / "06_split" / "generated_subtask",
             )
             manifest = json.loads((expected_run_dir / "run_manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["task_index"], 0)
             self.assertEqual(manifest["test_set"], "final_test")
             self.assertEqual(manifest["floor_plan"], "6")
             self.assertEqual(manifest["run_date"], "20260521")
             self.assertEqual(manifest["run_sequence"], 1)
             self.assertEqual(manifest["task_run_dir"], str(expected_run_dir))
+
+    def test_prepare_task_run_dir_uses_manifest_task_index_override(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            config = RunConfig(root, values={"storage": {"base_dir": "runs"}})
+            manager = TaskManager(
+                str(root),
+                "test-model",
+                config=config,
+                test_set="final_test",
+                floor_plan="FloorPlan6",
+            )
+
+            with patch("pddlrun_llmseparate.datetime", FixedDatetime):
+                manager._prepare_task_run_dir(
+                    0,
+                    "Pick up the apple",
+                    robots=[],
+                    objects_ai="objects=[]",
+                    domain_content="(define (domain test))",
+                    manifest_task_index=42,
+                )
+
+            expected_run_dir = root / "runs" / "final_test___6" / "Pick_up_the_apple" / "20260521_001"
+            manifest = json.loads((expected_run_dir / "run_manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["task_index"], 42)
 
     def test_prepare_task_run_dir_increments_sequence_and_normalizes_floorplan(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

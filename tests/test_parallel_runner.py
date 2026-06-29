@@ -3,6 +3,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -31,7 +32,15 @@ from executor_system.parallel_runner import (
     parse_gpu_cleanup_pids,
     run_action_plan_tolerant,
 )
-from executor_system.runtime import PICKUP_OBJECT_CLIP_ERROR
+from executor_system import executor as executor_module
+from executor_system.demo_state import (
+    ground_truth_lock,
+    set_ground_truth,
+    verified_ground_truth_goal_signatures,
+)
+from executor_system.executor import PhaseCoordinator
+from executor_system.goals import goal_state_verified
+from executor_system.runtime import PICKUP_OBJECT_CLIP_ERROR, ThorRuntime
 
 
 class FakeEvent:
@@ -47,6 +56,7 @@ class FakeRuntime:
 
     def __init__(self):
         self.robot_agent_map = {"robot1": 0, "robot2": 1}
+        self.objects = []
 
     def physical_agent_id(self, robot_id):
         return self.robot_agent_map[str(robot_id)]
@@ -60,8 +70,217 @@ class FakeRuntime:
     def agent_held_objects_for(self, _agent_id):
         return set()
 
+    def current_objects(self, _agent_id=None):
+        return [dict(obj) for obj in self.objects]
+
     def step(self, _payload, **_kwargs):
         return FakeEvent()
+
+
+class PhaseCoordinatorTest(unittest.TestCase):
+    def test_wait_until_goto_candidates_clear_rechecks_after_timeout(self):
+        class BlockingRuntime:
+            physical_agent_count = 2
+
+            def __init__(self):
+                self.calls = 0
+
+            def agent_blocker_ids_for_positions(self, _positions, _agent_id):
+                self.calls += 1
+                return {1} if self.calls == 1 else set()
+
+        runtime = BlockingRuntime()
+        coordinator = PhaseCoordinator(runtime, active_agent_ids=[0, 1])
+
+        with patch.object(executor_module, "GOTO_CANDIDATE_WAIT_SECONDS", 0.01):
+            thread = threading.Thread(
+                target=coordinator.wait_until_goto_candidates_clear,
+                args=(0, [{"x": 0.0, "y": 0.0, "z": 0.0}]),
+            )
+            thread.start()
+            thread.join(timeout=1.0)
+
+        self.assertFalse(thread.is_alive())
+        self.assertGreaterEqual(runtime.calls, 2)
+
+    def test_navigate_to_object_notifies_phase_coordinator_after_move(self):
+        runtime = object.__new__(ThorRuntime)
+        order = []
+        destination = {
+            "objectId": "Apple|+01.00|+00.90|+00.00",
+            "objectType": "Apple",
+            "position": {"x": 1.0, "y": 0.9, "z": 0.0},
+        }
+        candidate = {"x": 0.75, "y": 0.0, "z": 0.0}
+
+        runtime.physical_agent_id = lambda _robot: 0
+        runtime.prepare_hand_for_goto_if_needed = lambda *_args, **_kwargs: None
+        runtime.refresh_reachable_positions = lambda _agent_id: None
+        runtime.find_object = lambda *_args, **_kwargs: destination
+        runtime.teleport_candidate_positions = (
+            lambda *_args, **_kwargs: [dict(candidate)]
+        )
+        runtime.record_operated_object_name = lambda _obj: order.append("record")
+
+        def teleport_and_face_candidate_positions(*_args, **_kwargs):
+            order.append("teleport")
+            return dict(candidate)
+
+        runtime.teleport_and_face_candidate_positions = (
+            teleport_and_face_candidate_positions
+        )
+
+        class RecordingCoordinator:
+            def notify_agent_position_changed(self, agent_id):
+                order.append(("notify", agent_id))
+
+            def wait_until_goto_candidates_clear(self, agent_id, positions):
+                order.append(("wait", agent_id, [dict(position) for position in positions]))
+
+        result = ThorRuntime.navigate_to_object(
+            runtime,
+            "robot1",
+            "Apple",
+            phase_coordinator=RecordingCoordinator(),
+        )
+
+        self.assertIs(result, destination)
+        self.assertEqual(
+            order,
+            [
+                ("wait", 0, [candidate]),
+                "teleport",
+                ("notify", 0),
+                "record",
+            ],
+        )
+
+
+class TemperatureGroundTruthProgressTest(unittest.TestCase):
+    def setUp(self):
+        with ground_truth_lock:
+            verified_ground_truth_goal_signatures.clear()
+        set_ground_truth([])
+
+    def tearDown(self):
+        with ground_truth_lock:
+            verified_ground_truth_goal_signatures.clear()
+        set_ground_truth([])
+
+    def test_task_runner_records_hot_goal_after_successful_action(self):
+        runtime = FakeRuntime()
+        runtime.objects = [
+            {
+                "objectId": "Apple|+00.00|+00.90|+00.00",
+                "objectType": "Apple",
+                "name": "Apple",
+                "temperature": "RoomTemp",
+            }
+        ]
+        set_ground_truth([{"name": "Apple", "contains": [], "states": ["HOT"]}])
+
+        def fake_execute(_adapter, _robot_id, _action, **_kwargs):
+            runtime.objects[0]["temperature"] = "Hot"
+            return FakeEvent()
+
+        plan = TaskPlan(
+            "task",
+            [StagePlan("Phase 1", {"robot1": [Action("Wait", {})]})],
+        )
+
+        with patch("executor_system.action_plan.AI2ThorAdapter.execute", fake_execute):
+            TaskRunner(runtime).execute(plan)
+
+        self.assertTrue(goal_state_verified("Apple", "HOT"))
+
+    def test_tolerant_runner_records_cold_goal_after_successful_action(self):
+        runtime = FakeRuntime()
+        runtime.objects = [
+            {
+                "objectId": "Apple|+00.00|+00.90|+00.00",
+                "objectType": "Apple",
+                "name": "Apple",
+                "temperature": "RoomTemp",
+            }
+        ]
+        set_ground_truth([{"name": "Apple", "contains": [], "states": ["COLD"]}])
+
+        def fake_execute(_adapter, _robot_id, _action, **_kwargs):
+            runtime.objects[0]["temperature"] = "Cold"
+            return FakeEvent()
+
+        plan = TaskPlan(
+            "task",
+            [StagePlan("Phase 1", {"robot1": [Action("Wait", {})]})],
+        )
+
+        with patch("executor_system.action_plan.AI2ThorAdapter.execute", fake_execute):
+            result = run_action_plan_tolerant(runtime, plan, timeout_seconds=5)
+
+        self.assertFalse(result["timed_out"])
+        self.assertTrue(goal_state_verified("Apple", "COLD"))
+
+    def test_temperature_check_records_only_satisfied_state_without_mutating_goals(self):
+        runtime = FakeRuntime()
+        runtime.objects = [
+            {
+                "objectId": "Bread|+00.00|+00.90|+00.00",
+                "objectType": "Bread",
+                "name": "Bread",
+                "temperature": "RoomTemp",
+                "isCooked": False,
+            }
+        ]
+        ground_truth = [{"name": "Bread", "contains": [], "states": ["HOT", "COOKED"]}]
+        set_ground_truth(ground_truth)
+
+        def fake_execute(_adapter, _robot_id, _action, **_kwargs):
+            runtime.objects[0]["temperature"] = "Hot"
+            return FakeEvent()
+
+        plan = TaskPlan(
+            "task",
+            [StagePlan("Phase 1", {"robot1": [Action("Wait", {})]})],
+        )
+
+        with patch("executor_system.action_plan.AI2ThorAdapter.execute", fake_execute):
+            TaskRunner(runtime).execute(plan)
+
+        eval_runtime = object.__new__(ThorRuntime)
+        eval_runtime.stats_lock = threading.Lock()
+        eval_runtime.total_exec = 0
+        eval_runtime.success_exec = 0
+        eval_runtime.current_objects = runtime.current_objects
+
+        self.assertEqual(len(ground_truth), 1)
+        self.assertTrue(goal_state_verified("Bread", "HOT"))
+        self.assertFalse(goal_state_verified("Bread", "COOKED"))
+        self.assertEqual(ThorRuntime.evaluate(eval_runtime, ground_truth)["gcr"], 0.0)
+
+    def test_failed_action_does_not_record_temperature_goal(self):
+        runtime = FakeRuntime()
+        runtime.objects = [
+            {
+                "objectId": "Apple|+00.00|+00.90|+00.00",
+                "objectType": "Apple",
+                "name": "Apple",
+                "temperature": "Cold",
+            }
+        ]
+        set_ground_truth([{"name": "Apple", "contains": [], "states": ["COLD"]}])
+
+        def fake_execute(_adapter, _robot_id, _action, **_kwargs):
+            raise RuntimeError("action failed")
+
+        plan = TaskPlan(
+            "task",
+            [StagePlan("Phase 1", {"robot1": [Action("OpenObject", {})]})],
+        )
+
+        with patch("executor_system.action_plan.AI2ThorAdapter.execute", fake_execute):
+            TaskRunner(runtime).execute(plan)
+
+        self.assertFalse(goal_state_verified("Apple", "COLD"))
 
 
 def write_fake_generated_script(

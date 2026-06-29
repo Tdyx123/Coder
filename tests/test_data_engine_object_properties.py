@@ -985,6 +985,36 @@ class DataEngineObjectPropertiesTests(unittest.TestCase):
             [{"name": "Mug", "contains": [], "states": ["FILLEDWITHWATER"]}],
         )
 
+    def test_task_final_state_broken_state_excludes_other_states(self):
+        engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
+
+        self.assertEqual(
+            engine.get_task_final_state(
+                [{"skill": "CookEgg", "objects": ["Egg", "Pan"]}]
+            ),
+            [{"name": "Egg", "contains": [], "states": ["BROKEN"]}],
+        )
+        self.assertEqual(
+            engine.get_task_final_state(
+                [
+                    {"skill": "RunToaster", "objects": ["Bread", "Toaster"]},
+                    {"skill": "Slice", "objects": ["Bread"]},
+                    {"skill": "Break", "objects": ["Bread"]},
+                ]
+            ),
+            [{"name": "Bread", "contains": [], "states": ["BROKEN"]}],
+        )
+        self.assertEqual(
+            engine.get_task_final_state(
+                [
+                    {"skill": "Break", "objects": ["Bread"]},
+                    {"skill": "RunToaster", "objects": ["Bread", "Toaster"]},
+                    {"skill": "Slice", "objects": ["Bread"]},
+                ]
+            ),
+            [{"name": "Bread", "contains": [], "states": ["BROKEN"]}],
+        )
+
     def test_task_final_state_accumulates_nonexclusive_states_and_ignores_duplicates(self):
         engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
 

@@ -76,9 +76,15 @@ def transition_metric(no_trans: int, no_trans_gt: int, max_trans: int) -> float:
 
 
 def build_hardcoded_bundle(bundle_data: Dict[str, Any]) -> types.SimpleNamespace:
+    if "gcr" not in bundle_data:
+        raise RuntimeError("BUNDLE_DATA is missing required 'gcr' target object_states.")
+    if not isinstance(bundle_data["gcr"], list):
+        raise RuntimeError("BUNDLE_DATA['gcr'] must be a list of target object_states.")
+
     return types.SimpleNamespace(
         task=bundle_data["task"],
         task_plan=TaskPlan.from_dict(bundle_data["task_plan"]),
+        gcr=list(bundle_data["gcr"]),
         no_trans=int(bundle_data["no_trans"]),
         phases=bundle_data["phases"],
         object_mappings=bundle_data["object_mappings"],
@@ -141,9 +147,9 @@ def _runtime_inputs(
     task_record = load_task_record(task_file, task_index)
     floor_no = floor_plan_from_task_file(task_file)
     robots = build_robot_team(task_record.get("robot list") or [])
-    ground_truth = list(task_record.get("object_states") or [])
-    _demo_state.set_ground_truth(ground_truth)
     bundle = build_hardcoded_bundle(bundle_data)
+    ground_truth = list(bundle.gcr)
+    _demo_state.set_ground_truth(ground_truth)
     return task_record, floor_no, robots, ground_truth, bundle
 
 

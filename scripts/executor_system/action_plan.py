@@ -365,6 +365,7 @@ class PlanValidator:
         "CloseObject",
         "BreakObject",
         "BreakEgg",
+        "PrepareEgg",
         "SliceObject",
         "CleanObject",
         "DirtyObject",
@@ -427,6 +428,9 @@ class PlanValidator:
         if action.action_type == "BreakEgg":
             self.validate_break_egg_action(stage_id, robot_id, action)
             return
+        if action.action_type == "PrepareEgg":
+            self.validate_prepare_egg_action(stage_id, robot_id, action)
+            return
         if action.action_type in self.HIGH_LEVEL_ACTIONS:
             return
         if action.action_type in self.AI2THOR_ACTIONS:
@@ -449,6 +453,22 @@ class PlanValidator:
         raise RuntimeError(
             f"BreakEgg for {robot_id!r} in stage {stage_id!r} requires "
             f"Egg as its only object argument; got {got!r}."
+        )
+
+    def validate_prepare_egg_action(
+        self,
+        stage_id: str,
+        robot_id: str,
+        action: Action,
+    ) -> None:
+        args = action.args()
+        if len(args) == 2 and is_break_egg_target(args[0]):
+            return
+        got = args[0] if args else None
+        raise RuntimeError(
+            f"PrepareEgg for {robot_id!r} in stage {stage_id!r} requires "
+            f"Egg as its first object argument and exactly two object arguments; "
+            f"got {got!r}."
         )
 
 
@@ -542,6 +562,7 @@ class ResourceInferencer:
         "SwitchOff",
         "BreakObject",
         "BreakEgg",
+        "PrepareEgg",
         "SliceObject",
         "CleanObject",
         "DirtyObject",
@@ -662,6 +683,8 @@ class ResourceInferencer:
         args = action.args()
         if action.action_type == "GoToObject":
             return (args[0],) if args else ()
+        if action.action_type == "PrepareEgg":
+            return tuple(args[:2])
         if action.action_type in {
             "PickupObject",
             "TeleportObjectToHand",
@@ -939,6 +962,11 @@ class AI2ThorAdapter:
         if action.action_type == "BreakEgg":
             if len(args) != 1:
                 raise RuntimeError("BreakEgg requires exactly one Egg target.")
+            require_break_egg_target(args[0])
+            return self.runtime.object_action("BreakObject", robot_id, args[0])
+        if action.action_type == "PrepareEgg":
+            if len(args) != 2:
+                raise RuntimeError("PrepareEgg requires Egg and container targets.")
             require_break_egg_target(args[0])
             return self.runtime.object_action("BreakObject", robot_id, args[0])
         if action.action_type in {

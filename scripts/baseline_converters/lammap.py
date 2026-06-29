@@ -113,7 +113,7 @@ ACTION_ALIASES = {
     "dirtyobject": "DirtyObject",
     "emptyliquid": "EmptyLiquid",
     "emptyliquidfromobject": "EmptyLiquid",
-    "prepareegg": "BreakEgg",
+    "prepareegg": "PrepareEgg",
     "breakegg": "BreakEgg",
     "runmicrowave": "RunMicrowave",
     "microwave": "RunMicrowave",
@@ -159,7 +159,7 @@ ACTION_PREFIXES = [
     ("wash", "CleanObject"),
     ("dirtyobject", "DirtyObject"),
     ("dirty", "DirtyObject"),
-    ("prepareegg", "BreakEgg"),
+    ("prepareegg", "PrepareEgg"),
     ("breakegg", "BreakEgg"),
     ("runmicrowave", "RunMicrowave"),
     ("microwave", "RunMicrowave"),
@@ -537,6 +537,10 @@ def action_object_args(action_type: str, tokens: Sequence[str]) -> Tuple[str, ..
         if not tokens:
             raise FinalPlanEncodingError(f"{action_type} requires one object argument.")
         return (tokens[0],)
+    if action_type == "PrepareEgg":
+        if len(tokens) < 2:
+            raise FinalPlanEncodingError("PrepareEgg requires egg and container arguments.")
+        return (tokens[0], tokens[1])
     if action_type == "RunMicrowave":
         return split_machine_object(tokens, ("microwave",), action_type)
     if action_type == "RunCoffeeMachine":
@@ -768,10 +772,31 @@ def dataset_path_for_run(
     return task_file
 
 
+def load_task_record_gcr(task_file: Path, task_index: int) -> List[Any]:
+    if task_index < 0:
+        raise FinalPlanEncodingError("task_index must be 0-based and non-negative.")
+    with task_file.open("r", encoding="utf-8") as handle:
+        for index, raw_line in enumerate(handle):
+            if index != task_index:
+                continue
+            line = raw_line.strip()
+            if not line:
+                raise FinalPlanEncodingError(f"Dataset line {task_index} is empty: {task_file}")
+            record = json.loads(line)
+            gcr = record.get("object_states")
+            if not isinstance(gcr, list):
+                raise FinalPlanEncodingError(
+                    "Dataset task record is missing list object_states for BUNDLE_DATA['gcr']."
+                )
+            return gcr
+    raise FinalPlanEncodingError(f"task_index {task_index} is out of range for {task_file}")
+
+
 def build_bundle_data(
     *,
     task: str,
     task_plan_data: Dict[str, Any],
+    gcr: Sequence[Any],
     no_trans: int,
     object_mappings: Dict[str, str],
     object_mapping_warnings: Sequence[str],
@@ -779,6 +804,7 @@ def build_bundle_data(
     return common_build_bundle_data(
         task=task,
         task_plan_data=task_plan_data,
+        gcr=gcr,
         no_trans=no_trans,
         object_mappings=object_mappings,
         object_mapping_warnings=object_mapping_warnings,
@@ -882,9 +908,11 @@ def process_task_run(
         task_id = f"lammap_{normalize_floor_plan(floor_plan) if floor_plan else 'unknown'}_{task_index if task_index is not None else 'task'}"
         task_plan_data = build_task_plan_data(task_id, encoded_actions)
         task_file = dataset_path_for_run(data_repo_root, test_set, floor_plan or None, task_index)
+        gcr = load_task_record_gcr(task_file, int(task_index))
         bundle_data = build_bundle_data(
             task=task,
             task_plan_data=task_plan_data,
+            gcr=gcr,
             no_trans=len(encoded_actions),
             object_mappings=dict(resolver.mappings),
             object_mapping_warnings=list(resolver.warnings),

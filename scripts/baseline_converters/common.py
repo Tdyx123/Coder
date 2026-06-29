@@ -47,6 +47,7 @@ def build_bundle_data(
     *,
     task: str,
     task_plan_data: Dict[str, Any],
+    gcr: Sequence[Any],
     no_trans: int,
     object_mappings: Dict[str, str],
     object_mapping_warnings: Sequence[str],
@@ -56,6 +57,7 @@ def build_bundle_data(
     return {
         "task": task,
         "task_plan": task_plan_data,
+        "gcr": list(gcr),
         "no_trans": no_trans,
         "phases": list(phases),
         "object_mappings": dict(object_mappings),

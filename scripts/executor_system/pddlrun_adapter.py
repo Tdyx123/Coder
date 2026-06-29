@@ -61,7 +61,7 @@ ACTION_ALIASES = {
     "openobject": "OpenObject",
     "closeobject": "CloseObject",
     "breakobject": "BreakObject",
-    "prepareegg": "BreakEgg",
+    "prepareegg": "PrepareEgg",
     "breakegg": "BreakEgg",
     "sliceobject": "SliceObject",
     "cleanobject": "CleanObject",
@@ -343,6 +343,17 @@ def encode_plan_action(
         _require_args(action, 2)
         egg = resolver.resolve(action.args[1])
         return _executor_action(action, action.name, [egg], [action.args[1]])
+
+    if action.name == "PrepareEgg":
+        _require_args(action, 3)
+        egg = resolver.resolve(action.args[1])
+        container = resolver.resolve(action.args[2])
+        return _executor_action(
+            action,
+            action.name,
+            [egg, container],
+            [action.args[1], action.args[2]],
+        )
 
     if action.name == "SliceObject":
         _require_args(action, 2)
@@ -667,14 +678,19 @@ def build_task_plan_from_pddlrun_outputs(
         for assignment in phase
     }
     planned_subtasks = set(encoded_by_subtask)
+    executable_subtasks = {
+        subtask_id
+        for subtask_id, actions in encoded_by_subtask.items()
+        if actions
+    }
     missing_plans = sorted(assigned_subtasks - planned_subtasks)
-    unassigned_plans = sorted(planned_subtasks - assigned_subtasks)
+    unassigned_plans = sorted(executable_subtasks - assigned_subtasks)
     filtered_phases: List[List[SubtaskAssignment]] = []
     for phase in phases:
         filtered_phase = [
             assignment
             for assignment in phase
-            if assignment.subtask_id in planned_subtasks
+            if assignment.subtask_id in executable_subtasks
         ]
         if filtered_phase:
             filtered_phases.append(filtered_phase)
@@ -684,6 +700,8 @@ def build_task_plan_from_pddlrun_outputs(
             "Allocation references no subtask(s) with planner output; "
             f"missing planner output for allocated subtask(s): {missing_plans}"
         )
+    if not executable_subtasks:
+        raise PddlRunAdapterError("No executable actions found in planner outputs.")
     if unassigned_plans:
         filtered_phases.append(
             [
@@ -710,8 +728,13 @@ def build_task_plan_from_pddlrun_outputs(
                     encoded.action.with_robot(robot_id)
                     for encoded in encoded_by_subtask[subtask_id]
                 )
-            queues[robot_id] = actions
-        stages.append(StagePlan(f"Phase {phase_index}", dict(queues)))
+            if actions:
+                queues[robot_id] = actions
+        if queues:
+            stages.append(StagePlan(f"Phase {phase_index}", dict(queues)))
+
+    if not stages:
+        raise PddlRunAdapterError("No executable actions found in planner outputs.")
 
     no_trans = sum(
         len(actions)

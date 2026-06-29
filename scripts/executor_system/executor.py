@@ -27,6 +27,11 @@ from .action_plan import (
     ROBOT_WAITING_CONDITION,
     action_allows_failure_retry,
 )
+from .goals import record_satisfied_temperature_goal_states
+from .utils import log
+
+
+GOTO_CANDIDATE_WAIT_SECONDS = 0.1
 
 
 class PhaseCoordinator:
@@ -53,6 +58,10 @@ class PhaseCoordinator:
     def mark_agent_failed(self, agent_id: int, exc: BaseException) -> None:
         with self.condition:
             self.failed_agent_errors[int(agent_id)] = exc
+            self.condition.notify_all()
+
+    def notify_agent_position_changed(self, agent_id: int) -> None:
+        with self.condition:
             self.condition.notify_all()
 
     def wait_until_goto_candidates_clear(
@@ -84,7 +93,7 @@ class PhaseCoordinator:
                     blocker_agent_id = min(completed_blockers)
                     self.relocating_agent_ids.add(blocker_agent_id)
                 else:
-                    self.condition.wait()
+                    self.condition.wait(timeout=GOTO_CANDIDATE_WAIT_SECONDS)
                     continue
 
             try:
@@ -181,6 +190,7 @@ class Executor:
                 self.wait_for_condition(action)
                 self.state.status = ROBOT_EXECUTING
                 event = self.execute_action(action)
+                self.record_temperature_goal_progress()
             except BaseException as exc:
                 if self.handle_failure(action, exc, tick):
                     tick += 1
@@ -237,6 +247,15 @@ class Executor:
             world_state=self.world_state,
             phase_coordinator=self.phase_coordinator,
         )
+
+    def record_temperature_goal_progress(self) -> None:
+        current_objects = getattr(self.runtime, "current_objects", None)
+        if not callable(current_objects):
+            return
+        try:
+            record_satisfied_temperature_goal_states(current_objects())
+        except Exception as exc:
+            log(f"Skipping HOT/COLD ground-truth check: {exc}")
 
     def handle_failure(self, action: Action, exc: BaseException, tick: int) -> bool:
         action_key = action.stable_id(self.robot_id, self.state.action_cursor)

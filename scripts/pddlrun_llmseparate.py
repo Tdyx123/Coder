@@ -478,11 +478,20 @@ class TaskManager:
         if self.current_task_run_dir and self.current_task_manifest:
             self._write_json_artifact(self.config.artifact("manifest", "run_manifest.json"), self.current_task_manifest)
 
-    def _prepare_task_run_dir(self, task_idx: int, task: str, robots: List[dict], objects_ai: str, domain_content: str) -> None:
+    def _prepare_task_run_dir(
+        self,
+        task_idx: int,
+        task: str,
+        robots: List[dict],
+        objects_ai: str,
+        domain_content: str,
+        manifest_task_index: Optional[int] = None,
+    ) -> None:
         """Create and initialize the storage directory for the current task."""
         now = datetime.now()
         timestamp = now.strftime("%Y%m%d_%H%M%S_%f")
         date_prefix = now.strftime("%Y%m%d")
+        manifest_task_index = task_idx if manifest_task_index is None else int(manifest_task_index)
         run_sequence = None
         if self.test_set and self.floor_plan:
             self.current_task_run_dir, run_sequence = self._create_dataset_task_run_dir(task, date_prefix)
@@ -502,7 +511,7 @@ class TaskManager:
             each_run_path=self.current_each_run_dir,
         )
         self.current_task_manifest = {
-            "task_index": task_idx,
+            "task_index": manifest_task_index,
             "task": task,
             "model": self.model,
             "created_at": timestamp,
@@ -519,7 +528,7 @@ class TaskManager:
         }
         get_llm_logger().set_context(
             instance_id=self.instance_id,
-            task_index=task_idx,
+            task_index=manifest_task_index,
             task=task,
             task_run_dir=self.current_task_run_dir,
             task_log_file=os.path.join(self.current_task_run_dir, self.config.artifact("llm_calls", "00_llm/llm_calls.jsonl")),
@@ -631,9 +640,8 @@ class TaskManager:
     
     def log_results(self, task: str, idx: int, available_robots: List[dict], 
                    gt_test_tasks: List[str], trans_cnt_tasks: List[int], 
-                   min_trans_cnt_tasks: List[int], objects_ai: str,
-                   bddl_file_path: Optional[str] = None):
-        """Log results including BDDL file if provided."""
+                   min_trans_cnt_tasks: List[int], objects_ai: str):
+        """Log task processing results."""
         # print(f"\n[DEBUG] Logging task {idx + 1}")
         # print(f"Current list lengths:")
         # print(f"- code_planpddl: {len(self.code_planpddl)}")
@@ -737,13 +745,6 @@ class TaskManager:
                 if os.path.isfile(full_file_name):
                     shutil.copy(full_file_name, validated_subtask_folder)
 
-
-            # Add BDDL file to logs if provided
-            if bddl_file_path and os.path.exists(bddl_file_path):
-                bddl_content = self.file_processor.read_file(bddl_file_path)
-                bddl_output_path = os.path.join(log_folder, "task.bddl")
-                self.file_processor.write_file(bddl_output_path, bddl_content)
-            
         except Exception as e:
             print(f"Error writing plans for task {idx + 1}: {str(e)}")
 
@@ -763,6 +764,7 @@ class TaskManager:
         available_robots: List[dict],
         objects_ai: str,
         robot_domain_name_maps: Optional[List[Dict[str, str]]] = None,
+        task_indices: Optional[List[int]] = None,
     ) -> None:
         """Process a list of tasks."""
         try:
@@ -794,6 +796,11 @@ class TaskManager:
             
             # Process each task
             for task_idx, (task, robots) in enumerate(zip(test_tasks, available_robots)):
+                manifest_task_index = (
+                    task_idx
+                    if task_indices is None
+                    else int(task_indices[task_idx])
+                )
                 print(f"\n{'='*50}")
                 print(f"Processing Task: {task}: {task_idx + 1}/{len(test_tasks)}")
                 print(f"{'='*50}")
@@ -802,7 +809,14 @@ class TaskManager:
                     if task_idx < len(effective_robot_domain_name_maps)
                     else {}
                 )
-                self._prepare_task_run_dir(task_idx, task, robots, objects_ai, domain_content)
+                self._prepare_task_run_dir(
+                    task_idx,
+                    task,
+                    robots,
+                    objects_ai,
+                    domain_content,
+                    manifest_task_index=manifest_task_index,
+                )
                 
                 # Clean generated subtask directory before starting new task
                 self.clean_generated_subtask_directory()
@@ -2307,49 +2321,6 @@ class TaskManager:
         
         return text
 
-    def process_bddl_task(self, bddl_file_path: str, available_robots: List[dict]) -> None:
-        """Process a task from BDDL file format.
-        
-        Args:
-            bddl_file_path (str): Path to BDDL file
-            available_robots (List[dict]): List of available robots
-        """
-        # Parse BDDL file
-        bddl_data = self.file_processor.parse_bddl_file(bddl_file_path)
-        
-        # Convert task name to instruction
-        task_instruction = bddl_data["task_name"].replace("-", " ").replace("_", " ")
-        
-        # Process task as before but with additional BDDL context
-        self.process_tasks(
-            test_tasks=[task_instruction],
-            available_robots=[available_robots],
-            objects_ai=bddl_data["objects"],
-            bddl_context=bddl_data  # Pass full BDDL data for reference
-        )
-
-    def create_bddl_dataset(self, tasks: List[str], output_dir: str) -> None:
-        """Create BDDL format files for a list of tasks.
-        
-        Args:
-            tasks (List[str]): List of task descriptions
-            output_dir (str): Directory to save BDDL files
-        """
-        os.makedirs(output_dir, exist_ok=True)
-        
-        for i, task in enumerate(tasks):
-            # Generate BDDL content
-            bddl_content = self._generate_bddl_content(
-                task_name=task.lower().replace(" ", "_"),
-                task_index=i,
-                objects=self.objects_ai,  # Use existing objects
-            )
-            
-            # Save BDDL file
-            output_path = os.path.join(output_dir, f"problem{i}.bddl")
-            self.file_processor.write_file(output_path, bddl_content)
-
-
 def build_robot_team(robot_ids: List[int]) -> List[dict]:
     """Build a task-local robot team definition from dataset robot ids."""
     task_robots: List[dict] = []
@@ -2378,6 +2349,7 @@ def run_single_floor_plan_task(
     objects_ai: Optional[str] = None,
     config: Optional[RunConfig] = None,
     test_set: str = "final_test",
+    task_index: Optional[int] = None,
 ) -> TaskProcessingResult:
     """Run a single dataset record as an isolated task-safe execution unit."""
     run_config = config or load_run_config(base_path)
@@ -2402,6 +2374,7 @@ def run_single_floor_plan_task(
         available_robots=[robot_team],
         objects_ai=objects_description,
         robot_domain_name_maps=[robot_domain_name_map],
+        task_indices=[task_index] if task_index is not None else None,
     )
 
     return {"task_run_dir": task_manager.current_task_run_dir, 
@@ -2442,12 +2415,11 @@ def validate_dataset_file(run_config: RunConfig, test_set: str, floor_plan: Unio
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--bddl-file", type=str, help="Path to BDDL file")
     parser.add_argument(
         "--floor-plan", 
         type=str, 
-        required=False,  # Changed from True
-        help="Required unless --bddl-file is provided"
+        required=True,
+        help="Floor plan dataset identifier to run"
     )
     parser.add_argument(
         "--model",
@@ -2479,13 +2451,7 @@ def parse_arguments() -> argparse.Namespace:
         help="Zero-based task index to run from the selected floor plan dataset."
     )
 
-    args = parser.parse_args()
-    
-    # Validate that either bddl_file or floor_plan is provided
-    if not args.bddl_file and args.floor_plan is None:
-        parser.error("Either --bddl-file or --floor-plan must be provided")
-        
-    return args
+    return parser.parse_args()
 
 def main():
     """Main execution function."""
@@ -2504,80 +2470,39 @@ def main():
             config=run_config,
         )
         
-        if args.bddl_file:
-            # Process single BDDL task
-            bddl_data = task_manager.file_processor.parse_bddl_file(args.bddl_file)
-            print("\nBDDL Data:")
-            print(f"Task Name: {bddl_data['task_name']}")
-            print(f"Objects: {bddl_data['objects']}")
-            print(f"Init State: {bddl_data['init_state']}")
-            print(f"Goal State: {bddl_data['goal_state']}\n")
-            
-            # Convert task name to instruction
-            task_instruction = bddl_data["task_name"].replace("-", " ").replace("_", " ")
-            
-            # Use a default robot configuration with more capabilities
-            available_robots = [{
-                "name": "robot1",
-                "skills": ["grasp", "place", "pour", "move", "pick", "hold"],
-                "mass_capacity": 10.0
-            }]
-            
-            # Format objects for processing
-            objects_ai = f"\n\nobjects = {bddl_data['objects']}"
-            
-            # Process the task
-            task_manager.process_tasks(
-                test_tasks=[task_instruction],
-                available_robots=[available_robots],
-                objects_ai=objects_ai
+        # Dataset workflow: run a single task selected by task index
+        test_file = validate_dataset_file(run_config, args.test_set, args.floor_plan)
+        task_records = load_dataset_records(str(test_file))
+        if not task_records:
+            raise PDDLError(f"No tasks found in dataset: {test_file}")
+        if args.task_index < 0 or args.task_index >= len(task_records):
+            raise PDDLError(
+                f"Task index {args.task_index} is out of range for {test_file}. "
+                f"Valid range: 0 to {len(task_records) - 1}"
             )
-            
-            # Log results for BDDL task
-            if args.log_results:
-                task_manager.log_results(
-                    task=task_instruction,
-                    idx=0,
-                    available_robots=available_robots,
-                    gt_test_tasks=[""],  # No ground truth for BDDL tasks
-                    trans_cnt_tasks=[0],
-                    min_trans_cnt_tasks=[0],
-                    objects_ai=objects_ai,
-                    bddl_file_path=args.bddl_file
-                )
-        else:
-            # Dataset workflow: run a single task selected by task index
-            test_file = validate_dataset_file(run_config, args.test_set, args.floor_plan)
-            task_records = load_dataset_records(str(test_file))
-            if not task_records:
-                raise PDDLError(f"No tasks found in dataset: {test_file}")
-            if args.task_index < 0 or args.task_index >= len(task_records):
-                raise PDDLError(
-                    f"Task index {args.task_index} is out of range for {test_file}. "
-                    f"Valid range: 0 to {len(task_records) - 1}"
-                )
 
-            selected_record = task_records[args.task_index]
-            selected_task = selected_record.get("task", f"task_{args.task_index}")
+        selected_record = task_records[args.task_index]
+        selected_task = selected_record.get("task", f"task_{args.task_index}")
 
-            print(f"\n----Test set tasks----\nTotal: {len(task_records)} tasks\n")
-            print(f"Selected task index: {args.task_index}")
-            print(f"Selected task: {selected_task}\n")
-            
-            # Get AI2thor objects 
-            scene_floor_plan = int(PDDLUtils.extract_floor_plan_number(args.floor_plan))
-            objects_ai = f"\n\nobjects = {PDDLUtils.get_ai2_thor_objects(scene_floor_plan, run_config)}"
-            run_single_floor_plan_task(
-                base_path=base_path,
-                model=args.model,
-                floor_plan=args.floor_plan,
-                task_record=selected_record,
-                prompt_decompse_set=args.prompt_decompse_set,
-                prompt_allocation_set=args.prompt_allocation_set,
-                objects_ai=objects_ai,
-                config=run_config,
-                test_set=args.test_set,
-            )
+        print(f"\n----Test set tasks----\nTotal: {len(task_records)} tasks\n")
+        print(f"Selected task index: {args.task_index}")
+        print(f"Selected task: {selected_task}\n")
+        
+        # Get AI2thor objects 
+        scene_floor_plan = int(PDDLUtils.extract_floor_plan_number(args.floor_plan))
+        objects_ai = f"\n\nobjects = {PDDLUtils.get_ai2_thor_objects(scene_floor_plan, run_config)}"
+        run_single_floor_plan_task(
+            base_path=base_path,
+            model=args.model,
+            floor_plan=args.floor_plan,
+            task_record=selected_record,
+            prompt_decompse_set=args.prompt_decompse_set,
+            prompt_allocation_set=args.prompt_allocation_set,
+            objects_ai=objects_ai,
+            config=run_config,
+            test_set=args.test_set,
+            task_index=args.task_index,
+        )
         
     except Exception as e:
         print(f"Error in main execution: {str(e)}")

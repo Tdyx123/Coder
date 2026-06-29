@@ -1,3 +1,4 @@
+import ast
 import importlib.util
 import json
 import py_compile
@@ -28,6 +29,16 @@ lammap = load_module()
 def write_json(path: Path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def bundle_from_executable_text(executable_text: str):
+    parsed = ast.parse(executable_text)
+    for node in parsed.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if any(isinstance(target, ast.Name) and target.id == "BUNDLE_DATA" for target in node.targets):
+            return ast.literal_eval(node.value)
+    raise AssertionError("BUNDLE_DATA assignment not found")
 
 
 def write_run(
@@ -144,7 +155,7 @@ class LaMMAPFinalPlanToCodeTest(unittest.TestCase):
         self.assertEqual(result.category, "timed_direct_actions")
         self.assertEqual([action.action_type for action in result.actions], ["GoToObject", "OpenObject"])
 
-    def test_prepareegg_and_breakegg_actions_encode_as_break_egg(self):
+    def test_prepareegg_and_breakegg_actions_keep_distinct_shapes(self):
         result = lammap.classify_final_plan(
             """```pddl
 0.0: (prepareegg robot1 egg pan) [1.0]
@@ -152,11 +163,11 @@ class LaMMAPFinalPlanToCodeTest(unittest.TestCase):
 ```"""
         )
 
-        self.assertEqual([action.action_type for action in result.actions], ["BreakEgg", "BreakEgg"])
+        self.assertEqual([action.action_type for action in result.actions], ["PrepareEgg", "BreakEgg"])
         resolver = lammap.ObjectNameResolver(["Egg", "Pan"])
         encoded = lammap.encode_actions(result.actions, resolver, [{"name": "robot1"}])
-        self.assertEqual([action.action_type for action in encoded], ["BreakEgg", "BreakEgg"])
-        self.assertEqual([action.args for action in encoded], [("Egg",), ("Egg",)])
+        self.assertEqual([action.action_type for action in encoded], ["PrepareEgg", "BreakEgg"])
+        self.assertEqual([action.args for action in encoded], [("Egg", "Pan"), ("Egg",)])
 
     def test_build_task_plan_data_groups_contiguous_robot_segments(self):
         actions = [
@@ -256,6 +267,14 @@ class LaMMAPFinalPlanToCodeTest(unittest.TestCase):
             self.assertIn("BUNDLE_DATA", executable_text)
             self.assertIn("TASK_FILE", executable_text)
             self.assertIn("TASK_INDEX", executable_text)
+            bundle_data = bundle_from_executable_text(executable_text)
+            self.assertEqual(
+                bundle_data["gcr"],
+                [
+                    {"name": "Drawer", "contains": [], "states": ["OPENED"]},
+                    {"name": "Mug", "contains": [], "states": []},
+                ],
+            )
             global_summary = json.loads((output_dir / "plan_to_code_summary.json").read_text(encoding="utf-8"))
             self.assertEqual(global_summary["successful_generations"], 1)
             results = json.loads((output_dir / "plan_to_code_results.json").read_text(encoding="utf-8"))
