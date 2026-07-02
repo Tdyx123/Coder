@@ -2235,6 +2235,6 @@ if __name__ == "__main__":
     # [8, 6, 14, 201, 211, 218, 306, 310, 322, 405, 412, 428, 16, 203, 212, 28, 309, 312, 404, 408, 425]
     data_engine = DataEngine()
     for base in [200]:   # [0, 200, 300, 400]
-        for floor_plan in range(14, 31):
+        for floor_plan in range(15, 31):
             # data_engine.create_tasks(base + floor_plan, 5)
             data_engine.create_tasks(base + floor_plan, 30, 0)

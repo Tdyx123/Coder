@@ -75307,3 +75307,4 @@
 [{"objects": ["Pillow", "ArmChair"], "skill": "PutOn"}, {"objects": ["RemoteControl", "Shelf"], "skill": "PutOn"}]
 [{"objects": ["Watch", "CoffeeTable"], "skill": "PutOn"}, {"objects": ["Drawer"], "skill": "Open"}]
 [{"objects": ["KeyChain", "Shelf"], "skill": "PutOn"}, {"objects": ["DeskLamp"], "skill": "SwitchOn"}]
+[{"objects": ["KeyChain", "Shelf"], "skill": "PutOn"}, {"objects": ["Window"], "skill": "Break"}]

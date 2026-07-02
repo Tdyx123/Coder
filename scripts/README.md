@@ -96,6 +96,8 @@ python scripts/baselines/LaMMA-P.py --root ./baselines/LaMMA-P
 
 python scripts/baselines/SMART-LLM.py --root ./baselines/SMART-LLM
 
+python scripts/baselines/Scale-Plan.py --root ./baselines/Scale-Plan
+
 python scripts/executor_system/parallel_runner.py \
   --base-line LaMMA-P \
   --max-workers 4 \
@@ -130,6 +132,9 @@ Baseline entrypoint defaults:
   `baselines/LaMMA-P/plan_to_code_results`
 - `scripts/baselines/SMART-LLM.py --root ./baselines/SMART-LLM` reads
   `baselines/SMART-LLM/logs` and writes `baselines/SMART-LLM`
+- `scripts/baselines/Scale-Plan.py --root ./baselines/Scale-Plan` reads
+  `baselines/Scale-Plan/logs/intermediate_runs` and writes
+  `baselines/Scale-Plan/plan_to_code_results`
 
 ### `generate_single_subtask_code.py`
 

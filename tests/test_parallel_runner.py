@@ -1028,6 +1028,85 @@ class ParallelRunnerCliTest(unittest.TestCase):
             self.assertEqual(summary["total_results"], 1)
             self.assertEqual(summary["results"][0]["executable_path"], str(script.resolve()))
 
+    def test_scale_plan_baseline_discovers_successful_summary_entries(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "baselines" / "Scale-Plan"
+            script = (
+                root
+                / "logs"
+                / "intermediate_runs"
+                / "unit_set"
+                / "task"
+                / "run"
+                / "plan_to_code"
+                / "executable_plan.py"
+            )
+            skipped = (
+                root
+                / "logs"
+                / "intermediate_runs"
+                / "unit_set"
+                / "skipped"
+                / "run"
+                / "plan_to_code"
+                / "executable_plan.py"
+            )
+            legacy = (
+                root
+                / "logs"
+                / "intermediate_runs"
+                / "unit_set"
+                / "legacy"
+                / "run"
+                / "plan_to_code"
+                / "executable_plan.py"
+            )
+            output_dir = Path(tmp_dir) / "runner_results"
+            write_fake_generated_script(script, gcr=0.8)
+            write_fake_generated_script(skipped, gcr=0.0)
+            write_incompatible_generated_script(legacy)
+            write_json(
+                root / "plan_to_code_results" / "plan_to_code_results.json",
+                [
+                    {
+                        "status": "success",
+                        "success": True,
+                        "generated": {"executable_plan": str(script)},
+                    },
+                    {
+                        "status": "failed",
+                        "success": False,
+                        "generated": {"executable_plan": str(skipped)},
+                    },
+                    {
+                        "status": "success",
+                        "success": True,
+                        "generated": {"executable_plan": str(legacy)},
+                    },
+                ],
+            )
+
+            result_code = parallel_runner_main(
+                [
+                    "--base-line",
+                    "Scale-Plan",
+                    "--root",
+                    str(root),
+                    "--output-dir",
+                    str(output_dir),
+                    "--timeout-seconds",
+                    "5",
+                ]
+            )
+
+            self.assertEqual(result_code, 0)
+            summary_path, summary = load_only_summary(output_dir)
+            self.assertRegex(summary_path.name, r"^Scale-Plan_\d{4}_01\.json$")
+            self.assertEqual(summary["base_line"], "Scale-Plan")
+            self.assertEqual(summary["discovery_root"], str(root.resolve()))
+            self.assertEqual(summary["total_results"], 1)
+            self.assertEqual(summary["results"][0]["executable_path"], str(script.resolve()))
+
     def test_baseline_fallback_discovers_compatible_log_executables(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir) / "baselines" / "SMART-LLM"
@@ -1056,6 +1135,66 @@ class ParallelRunnerCliTest(unittest.TestCase):
 
             self.assertEqual(result_code, 0)
             _summary_path, summary = load_only_summary(output_dir)
+            self.assertEqual(summary["total_results"], 2)
+            self.assertEqual(
+                [result["executable_path"] for result in summary["results"]],
+                [str(first.resolve()), str(second.resolve())],
+            )
+
+    def test_scale_plan_baseline_fallback_discovers_intermediate_run_executables(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "baselines" / "Scale-Plan"
+            first = (
+                root
+                / "logs"
+                / "intermediate_runs"
+                / "unit_set"
+                / "first"
+                / "plan_to_code"
+                / "executable_plan.py"
+            )
+            second = (
+                root
+                / "logs"
+                / "intermediate_runs"
+                / "unit_set"
+                / "second"
+                / "plan_to_code"
+                / "executable_plan.py"
+            )
+            legacy = (
+                root
+                / "logs"
+                / "intermediate_runs"
+                / "unit_set"
+                / "legacy"
+                / "plan_to_code"
+                / "executable_plan.py"
+            )
+            output_dir = Path(tmp_dir) / "runner_results"
+            write_fake_generated_script(first, gcr=0.4)
+            write_fake_generated_script(second, gcr=0.9)
+            write_incompatible_generated_script(legacy)
+
+            result_code = parallel_runner_main(
+                [
+                    "--base-line",
+                    "Scale-Plan",
+                    "--root",
+                    str(root),
+                    "--output-dir",
+                    str(output_dir),
+                    "--max-workers",
+                    "2",
+                    "--timeout-seconds",
+                    "5",
+                ]
+            )
+
+            self.assertEqual(result_code, 0)
+            _summary_path, summary = load_only_summary(output_dir)
+            self.assertEqual(summary["base_line"], "Scale-Plan")
+            self.assertEqual(summary["discovery_root"], str(root.resolve()))
             self.assertEqual(summary["total_results"], 2)
             self.assertEqual(
                 [result["executable_path"] for result in summary["results"]],
