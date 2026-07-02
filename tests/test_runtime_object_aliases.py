@@ -9,6 +9,7 @@ SCRIPTS_DIR = ROOT / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
+from executor_system.demo_state import ground_truth_lock, verified_ground_truth_goal_signatures
 from executor_system.runtime import ThorRuntime
 
 
@@ -33,6 +34,10 @@ def runtime_with_objects(objects):
 
 
 class RuntimeObjectAliasTest(unittest.TestCase):
+    def setUp(self):
+        with ground_truth_lock:
+            verified_ground_truth_goal_signatures.clear()
+
     def test_numbered_aliases_resolve_to_bound_object_ids(self):
         first_id = "Drawer|+01.00|+00.20|-00.30"
         second_id = "Drawer|+01.00|+00.60|-00.30"
@@ -206,6 +211,335 @@ class RuntimeObjectAliasTest(unittest.TestCase):
         )
 
         self.assertEqual(runtime.find_object("Egg_1", agent_id=0)["objectId"], broken_id)
+
+    def test_find_objects_records_inferred_alias_for_unregistered_pattern(self):
+        mug_id = "Mug|+00.00|+00.90|+00.00"
+        runtime = runtime_with_objects(
+            [
+                {
+                    "objectId": mug_id,
+                    "objectType": "Mug",
+                    "visible": True,
+                    "position": {"x": 0.0, "y": 0.9, "z": 0.0},
+                }
+            ]
+        )
+
+        matches = runtime.find_objects("Mug", agent_id=0)
+
+        self.assertEqual([obj["objectId"] for obj in matches], [mug_id])
+        self.assertEqual(runtime.object_alias_bindings["Mug"]["object_id"], mug_id)
+        self.assertEqual(runtime.object_alias_bindings["Mug"]["object_type"], "Mug")
+        self.assertEqual(
+            runtime.object_alias_bindings["Mug"]["last_position"],
+            {"x": 0.0, "y": 0.9, "z": 0.0},
+        )
+        self.assertEqual(runtime.object_alias_bindings["Mug"]["count"], 1)
+        self.assertFalse(runtime.object_alias_bindings["Mug"]["multiple"])
+        self.assertTrue(runtime.object_alias_bindings["Mug"]["inferred"])
+        self.assertEqual(runtime.object_alias_key_to_token["mug"], "Mug")
+        self.assertIn("Mug", runtime.object_alias_by_object_id[mug_id])
+
+    def test_find_objects_records_first_sorted_match_for_multiple_matches(self):
+        hidden_id = "Apple|+00.00|+00.90|+00.00"
+        visible_id = "Apple|+01.00|+00.90|+00.00"
+        runtime = runtime_with_objects(
+            [
+                {
+                    "objectId": hidden_id,
+                    "objectType": "Apple",
+                    "visible": False,
+                    "position": {"x": 0.0, "y": 0.9, "z": 0.0},
+                },
+                {
+                    "objectId": visible_id,
+                    "objectType": "Apple",
+                    "visible": True,
+                    "position": {"x": 1.0, "y": 0.9, "z": 0.0},
+                },
+            ]
+        )
+
+        matches = runtime.find_objects("Apple", agent_id=0)
+
+        self.assertEqual(
+            [obj["objectId"] for obj in matches],
+            [visible_id, hidden_id],
+        )
+        self.assertEqual(runtime.object_alias_bindings["Apple"]["object_id"], visible_id)
+        self.assertEqual(runtime.object_alias_bindings["Apple"]["count"], 2)
+        self.assertTrue(runtime.object_alias_bindings["Apple"]["multiple"])
+        self.assertIn("Apple", runtime.object_alias_by_object_id[visible_id])
+
+    def test_find_objects_refreshes_existing_alias_without_new_token(self):
+        old_id = "Mug|+00.00|+00.90|+00.00"
+        new_id = "Mug|+01.00|+00.95|+00.00"
+        runtime = runtime_with_objects(
+            [
+                {
+                    "objectId": new_id,
+                    "objectType": "Mug",
+                    "visible": True,
+                    "position": {"x": 1.0, "y": 0.95, "z": 0.0},
+                }
+            ]
+        )
+        runtime.register_object_id_bindings(
+            [
+                {
+                    "object": "Mug_1",
+                    "object_type": "Mug",
+                    "object_id": old_id,
+                    "number": 1,
+                    "count": 1,
+                    "multiple": False,
+                }
+            ]
+        )
+
+        matches = runtime.find_objects("Mug_1", agent_id=0)
+
+        self.assertEqual([obj["objectId"] for obj in matches], [new_id])
+        self.assertEqual(runtime.object_alias_bindings["Mug_1"]["object_id"], new_id)
+        self.assertEqual(list(runtime.object_alias_bindings), ["Mug_1"])
+        self.assertNotIn(old_id, runtime.object_alias_by_object_id)
+        self.assertIn("Mug_1", runtime.object_alias_by_object_id[new_id])
+
+    def test_find_objects_does_not_record_alias_when_no_match(self):
+        runtime = runtime_with_objects(
+            [
+                {
+                    "objectId": "Mug|+00.00|+00.90|+00.00",
+                    "objectType": "Mug",
+                    "visible": True,
+                }
+            ]
+        )
+
+        self.assertEqual(runtime.find_objects("MissingObject", agent_id=0), [])
+        self.assertNotIn("MissingObject", runtime.object_alias_bindings)
+        self.assertNotIn("missingobject", runtime.object_alias_key_to_token)
+        self.assertEqual(runtime.object_alias_by_object_id, {})
+
+    def test_goal_satisfied_resolves_numbered_alias_name(self):
+        first_id = "Drawer|+01.00|+00.20|-00.30"
+        second_id = "Drawer|+01.00|+00.60|-00.30"
+        runtime = runtime_with_objects(
+            [
+                {
+                    "objectId": first_id,
+                    "objectType": "Drawer",
+                    "visible": True,
+                    "isOpen": False,
+                },
+                {
+                    "objectId": second_id,
+                    "objectType": "Drawer",
+                    "visible": True,
+                    "isOpen": True,
+                },
+            ]
+        )
+        runtime.register_object_id_bindings(
+            [
+                {
+                    "object": "Drawer_1",
+                    "object_type": "Drawer",
+                    "object_id": first_id,
+                    "number": 1,
+                    "count": 2,
+                    "multiple": True,
+                },
+                {
+                    "object": "Drawer_2",
+                    "object_type": "Drawer",
+                    "object_id": second_id,
+                    "number": 2,
+                    "count": 2,
+                    "multiple": True,
+                },
+            ]
+        )
+
+        self.assertTrue(
+            runtime.goal_satisfied(
+                {"name": "Drawer_2", "contains": [], "states": ["OPENED"]}
+            )
+        )
+        self.assertFalse(
+            runtime.goal_satisfied(
+                {"name": "Drawer_1", "contains": [], "states": ["OPENED"]}
+            )
+        )
+
+    def test_goal_satisfied_resolves_numbered_alias_contains(self):
+        drawer_id = "Drawer|+01.00|+00.60|-00.30"
+        first_card_id = "CreditCard|+00.00|+00.90|+00.00"
+        second_card_id = "CreditCard|+01.00|+00.90|+00.00"
+        runtime = runtime_with_objects(
+            [
+                {
+                    "objectId": drawer_id,
+                    "objectType": "Drawer",
+                    "visible": True,
+                    "receptacleObjectIds": [second_card_id],
+                },
+                {
+                    "objectId": first_card_id,
+                    "objectType": "CreditCard",
+                    "visible": True,
+                },
+                {
+                    "objectId": second_card_id,
+                    "objectType": "CreditCard",
+                    "visible": True,
+                },
+            ]
+        )
+        runtime.register_object_id_bindings(
+            [
+                {
+                    "object": "Drawer_1",
+                    "object_type": "Drawer",
+                    "object_id": drawer_id,
+                    "number": 1,
+                    "count": 1,
+                    "multiple": False,
+                },
+                {
+                    "object": "CreditCard_1",
+                    "object_type": "CreditCard",
+                    "object_id": first_card_id,
+                    "number": 1,
+                    "count": 2,
+                    "multiple": True,
+                },
+                {
+                    "object": "CreditCard_2",
+                    "object_type": "CreditCard",
+                    "object_id": second_card_id,
+                    "number": 2,
+                    "count": 2,
+                    "multiple": True,
+                },
+            ]
+        )
+
+        self.assertTrue(
+            runtime.goal_satisfied(
+                {"name": "Drawer_1", "contains": ["CreditCard_2"], "states": []}
+            )
+        )
+        self.assertFalse(
+            runtime.goal_satisfied(
+                {"name": "Drawer_1", "contains": ["CreditCard_1"], "states": []}
+            )
+        )
+
+    def test_goal_satisfied_only_checks_first_state_candidate(self):
+        first_id = "Drawer|+01.00|+00.20|-00.30"
+        second_id = "Drawer|+01.00|+00.60|-00.30"
+        runtime = runtime_with_objects(
+            [
+                {
+                    "objectId": first_id,
+                    "objectType": "Drawer",
+                    "visible": True,
+                    "isOpen": False,
+                },
+                {
+                    "objectId": second_id,
+                    "objectType": "Drawer",
+                    "visible": True,
+                    "isOpen": True,
+                },
+            ]
+        )
+
+        self.assertFalse(
+            runtime.goal_satisfied(
+                {"name": "Drawer", "contains": [], "states": ["OPENED"]}
+            )
+        )
+
+        runtime._test_objects = [
+            {
+                "objectId": second_id,
+                "objectType": "Drawer",
+                "visible": True,
+                "isOpen": True,
+            },
+            {
+                "objectId": first_id,
+                "objectType": "Drawer",
+                "visible": True,
+                "isOpen": False,
+            },
+        ]
+
+        self.assertTrue(
+            runtime.goal_satisfied(
+                {"name": "Drawer", "contains": [], "states": ["OPENED"]}
+            )
+        )
+
+    def test_goal_satisfied_only_checks_first_contains_candidate(self):
+        first_drawer_id = "Drawer|+01.00|+00.20|-00.30"
+        second_drawer_id = "Drawer|+01.00|+00.60|-00.30"
+        credit_card_id = "CreditCard|+01.00|+00.90|+00.00"
+        runtime = runtime_with_objects(
+            [
+                {
+                    "objectId": first_drawer_id,
+                    "objectType": "Drawer",
+                    "visible": True,
+                    "receptacleObjectIds": [],
+                },
+                {
+                    "objectId": second_drawer_id,
+                    "objectType": "Drawer",
+                    "visible": True,
+                    "receptacleObjectIds": [credit_card_id],
+                },
+                {
+                    "objectId": credit_card_id,
+                    "objectType": "CreditCard",
+                    "visible": True,
+                },
+            ]
+        )
+
+        self.assertFalse(
+            runtime.goal_satisfied(
+                {"name": "Drawer", "contains": ["CreditCard"], "states": []}
+            )
+        )
+
+        runtime._test_objects = [
+            {
+                "objectId": second_drawer_id,
+                "objectType": "Drawer",
+                "visible": True,
+                "receptacleObjectIds": [credit_card_id],
+            },
+            {
+                "objectId": first_drawer_id,
+                "objectType": "Drawer",
+                "visible": True,
+                "receptacleObjectIds": [],
+            },
+            {
+                "objectId": credit_card_id,
+                "objectType": "CreditCard",
+                "visible": True,
+            },
+        ]
+
+        self.assertTrue(
+            runtime.goal_satisfied(
+                {"name": "Drawer", "contains": ["CreditCard"], "states": []}
+            )
+        )
 
 
 if __name__ == "__main__":

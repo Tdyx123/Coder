@@ -6,9 +6,9 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Sequence
 
-from run_config import RunConfig, load_run_config, normalize_floor_plan
+from run_config import RunConfig, apply_rag_cli_override, load_run_config, normalize_floor_plan
 
 
 @dataclass(frozen=True)
@@ -18,7 +18,7 @@ class TaskJob:
     record: Dict[str, Any]
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Parallel wrapper for pddlrun_llmseparate.py. "
@@ -38,7 +38,21 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Accepted for compatibility; this parallel runner does not write legacy log_results output.",
     )
-    return parser.parse_args()
+    rag_group = parser.add_mutually_exclusive_group()
+    rag_group.add_argument(
+        "--rag",
+        dest="rag",
+        action="store_true",
+        help="Enable local PDDL RAG examples in prompts (default).",
+    )
+    rag_group.add_argument(
+        "--no-rag",
+        dest="rag",
+        action="store_false",
+        help="Disable local PDDL RAG examples in prompts.",
+    )
+    parser.set_defaults(rag=True)
+    return parser.parse_args(argv)
 
 
 def floor_plan_sort_key(value: str) -> tuple:
@@ -63,6 +77,27 @@ def all_subtasks_passed(result: Dict[str, Any]) -> bool:
     total = safe_count(result.get("total"))
     tc = safe_count(result.get("tc"))
     return total > 0 and tc == total
+
+
+def config_bool(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def prewarm_rag_if_configured(config: RunConfig) -> bool:
+    if not config_bool(config.get("rag", "enabled", False)):
+        return False
+    if not config_bool(config.get("rag", "prewarm_runtime_db", True), True):
+        return False
+
+    from pddlrun_llmseparate import prewarm_rag_runtime_db
+
+    return prewarm_rag_runtime_db(config)
 
 
 def load_jobs(
@@ -134,6 +169,8 @@ def run_single_job(
         summary["task_run_dir"] = result.get("task_run_dir")
         summary["tc"] = result.get("tc")
         summary["total"] = result.get("total")
+        if "llm_token_usage" in result:
+            summary["llm_token_usage"] = result["llm_token_usage"]
     return summary
 
 
@@ -187,6 +224,7 @@ def main() -> None:
     args = parse_args()
     repo_root = Path(__file__).resolve().parent.parent
     config = load_run_config(repo_root)
+    apply_rag_cli_override(config, args.rag)
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     output_root = (
         config.resolve_path(args.output_root)
@@ -194,6 +232,9 @@ def main() -> None:
         else config.path("storage", "parallel_output_root") / f"pddlrun_llmseparate_{timestamp}"
     )
     output_root.mkdir(parents=True, exist_ok=True)
+
+    if prewarm_rag_if_configured(config):
+        print(f"Prewarmed RAG runtime DB: {config.path('rag', 'runtime_db_path')}")
 
     floor_plans = [normalize_floor_plan(value) for value in args.floor_plans]
     summaries: List[Dict[str, Any]] = []

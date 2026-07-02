@@ -54,6 +54,20 @@ DEFAULT_RUN_CONFIG: Dict[str, Any] = {
             "final_match": {"max_tokens": 1300, "frequency_penalty": 0.0},
         },
     },
+    "rag": {
+        "enabled": False,
+        "corpus_path": "data/rag/pddlrun_clean_corpus.jsonl",
+        "index_path": "data/rag/pddlrun_clean_index.json",
+        "runtime_db_path": "data/rag/pddlrun_clean_runtime.sqlite",
+        "quality": ["success"],
+        "retrieval_eligible_only": True,
+        "top_k": 2,
+        "max_example_chars": 3000,
+        "max_block_chars": 8000,
+        "max_query_tokens": 12,
+        "query_timeout_seconds": 5,
+        "prewarm_runtime_db": True,
+    },
     "artifacts": {
         "manifest": "run_manifest.json",
         "llm_calls": "00_llm/llm_calls.jsonl",
@@ -100,6 +114,16 @@ def normalize_floor_plan(value: str) -> str:
     if text.startswith("FloorPlan"):
         text = text[len("FloorPlan"):]
     return text
+
+
+def apply_rag_cli_override(config: "RunConfig", enabled: bool) -> "RunConfig":
+    """Apply the CLI-level RAG default without changing library defaults."""
+    rag_config = config.values.setdefault("rag", {})
+    if not isinstance(rag_config, dict):
+        rag_config = {}
+        config.values["rag"] = rag_config
+    rag_config["enabled"] = bool(enabled)
+    return config
 
 
 class RunConfig:

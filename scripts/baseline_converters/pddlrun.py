@@ -13,7 +13,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 REPO_ROOT = SCRIPTS_DIR.parent
@@ -27,6 +27,7 @@ from executor_system.pddlrun_adapter import (
     PddlRunAdapterError,
     PddlRunPlanBundle,
     build_task_plan_from_pddlrun_paths,
+    object_key,
 )
 from baseline_converters.common import (
     render_bundle_literal as common_render_bundle_literal,
@@ -515,6 +516,174 @@ def gcr_from_task_record(task_record: Dict[str, Any]) -> List[Any]:
     return gcr
 
 
+def binding_type_key(binding: Dict[str, Any]) -> str:
+    object_type = binding.get("object_type")
+    if isinstance(object_type, str) and object_type:
+        return object_key(object_type)
+
+    object_token = str(binding.get("object") or "")
+    object_token = re.sub(r"[_-]?\d+$", "", object_token)
+    return object_key(object_token)
+
+
+def binding_is_multi_instance(binding: Dict[str, Any], group_size: int) -> bool:
+    if group_size > 1:
+        return True
+    if bool(binding.get("multiple")):
+        return True
+    try:
+        return int(binding.get("count") or 0) > 1
+    except (TypeError, ValueError):
+        return False
+
+
+def multi_instance_binding_groups(
+    object_id_bindings: Sequence[Dict[str, Any]],
+) -> Dict[str, List[Dict[str, Any]]]:
+    grouped: Dict[str, List[Dict[str, Any]]] = {}
+    for raw_binding in object_id_bindings:
+        if not isinstance(raw_binding, dict):
+            continue
+        object_token = raw_binding.get("object")
+        object_id = raw_binding.get("object_id")
+        if not isinstance(object_token, str) or not object_token:
+            continue
+        if not isinstance(object_id, str) or not object_id:
+            continue
+        type_key = binding_type_key(raw_binding)
+        if not type_key:
+            continue
+        grouped.setdefault(type_key, []).append(dict(raw_binding))
+
+    return {
+        type_key: bindings
+        for type_key, bindings in grouped.items()
+        if any(binding_is_multi_instance(binding, len(bindings)) for binding in bindings)
+    }
+
+
+def binding_lookup_tables(
+    grouped_bindings: Dict[str, List[Dict[str, Any]]],
+) -> Tuple[Dict[str, Tuple[str, str]], Dict[str, Tuple[str, str]]]:
+    by_token_key: Dict[str, Tuple[str, str]] = {}
+    by_object_id: Dict[str, Tuple[str, str]] = {}
+    for type_key, bindings in grouped_bindings.items():
+        for binding in bindings:
+            token = str(binding.get("object") or "")
+            object_id = str(binding.get("object_id") or "")
+            if token:
+                by_token_key[object_key(token)] = (type_key, token)
+            if object_id:
+                by_object_id[object_id] = (type_key, token)
+    return by_token_key, by_object_id
+
+
+def record_plan_token(
+    raw_value: Any,
+    plan_tokens_by_type: Dict[str, List[str]],
+    binding_by_token_key: Dict[str, Tuple[str, str]],
+    binding_by_object_id: Dict[str, Tuple[str, str]],
+) -> None:
+    value = str(raw_value or "")
+    if not value:
+        return
+
+    binding_ref = binding_by_object_id.get(value) or binding_by_token_key.get(object_key(value))
+    if binding_ref is None:
+        return
+
+    type_key, token = binding_ref
+    tokens = plan_tokens_by_type.setdefault(type_key, [])
+    if token not in tokens:
+        tokens.append(token)
+
+
+def plan_tokens_by_multi_instance_type(
+    bundle: PddlRunPlanBundle,
+    grouped_bindings: Dict[str, List[Dict[str, Any]]],
+) -> Dict[str, List[str]]:
+    binding_by_token_key, binding_by_object_id = binding_lookup_tables(grouped_bindings)
+    plan_tokens_by_type: Dict[str, List[str]] = {}
+
+    for stage in bundle.task_plan.stages:
+        for actions in stage.robot_action_queues.values():
+            for action in actions:
+                for arg in action.args():
+                    record_plan_token(arg, plan_tokens_by_type, binding_by_token_key, binding_by_object_id)
+
+    for source, target in bundle.object_mappings.items():
+        record_plan_token(source, plan_tokens_by_type, binding_by_token_key, binding_by_object_id)
+        record_plan_token(target, plan_tokens_by_type, binding_by_token_key, binding_by_object_id)
+
+    return plan_tokens_by_type
+
+
+def selected_gcr_token(
+    value: Any,
+    grouped_bindings: Dict[str, List[Dict[str, Any]]],
+    plan_tokens_by_type: Dict[str, List[str]],
+    binding_by_token_key: Dict[str, Tuple[str, str]],
+    binding_by_object_id: Dict[str, Tuple[str, str]],
+) -> Any:
+    if not isinstance(value, str) or not value:
+        return value
+    if value in binding_by_object_id or object_key(value) in binding_by_token_key:
+        return value
+
+    type_key = object_key(value)
+    bindings = grouped_bindings.get(type_key)
+    if not bindings:
+        return value
+
+    plan_tokens = plan_tokens_by_type.get(type_key) or []
+    if plan_tokens:
+        return plan_tokens[0]
+    return str(bindings[0].get("object") or value)
+
+
+def gcr_for_bundle(task_record: Dict[str, Any], bundle: PddlRunPlanBundle) -> List[Any]:
+    gcr = gcr_from_task_record(task_record)
+    grouped_bindings = multi_instance_binding_groups(bundle.object_id_bindings)
+    if not grouped_bindings:
+        return list(gcr)
+
+    binding_by_token_key, binding_by_object_id = binding_lookup_tables(grouped_bindings)
+    plan_tokens_by_type = plan_tokens_by_multi_instance_type(bundle, grouped_bindings)
+    normalized_gcr: List[Any] = []
+
+    for raw_goal in gcr:
+        if not isinstance(raw_goal, dict):
+            normalized_gcr.append(raw_goal)
+            continue
+
+        goal = dict(raw_goal)
+        if "name" in goal:
+            goal["name"] = selected_gcr_token(
+                goal["name"],
+                grouped_bindings,
+                plan_tokens_by_type,
+                binding_by_token_key,
+                binding_by_object_id,
+            )
+
+        contains = goal.get("contains")
+        if isinstance(contains, list):
+            goal["contains"] = [
+                selected_gcr_token(
+                    item,
+                    grouped_bindings,
+                    plan_tokens_by_type,
+                    binding_by_token_key,
+                    binding_by_object_id,
+                )
+                for item in contains
+            ]
+
+        normalized_gcr.append(goal)
+
+    return normalized_gcr
+
+
 def serialize_bundle(bundle: PddlRunPlanBundle, gcr: Sequence[Any]) -> Dict[str, Any]:
     return {
         "task": bundle.task,
@@ -543,7 +712,7 @@ def render_bundle_literal(bundle_data: Dict[str, Any]) -> str:
 
 def render_demo_executable(run_inputs: RunInputs, bundle: PddlRunPlanBundle) -> str:
     return common_render_executable_plan(
-        bundle_data=serialize_bundle(bundle, gcr_from_task_record(run_inputs.task_record)),
+        bundle_data=serialize_bundle(bundle, gcr_for_bundle(run_inputs.task_record, bundle)),
         task_file=run_inputs.task_file,
         task_index=run_inputs.task_index,
         description="Run a hardcoded pddlrun bundle through executor_system.",

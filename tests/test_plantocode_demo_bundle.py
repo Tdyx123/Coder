@@ -36,6 +36,10 @@ smart_llm_baseline = load_script_module(
     "plantocode_demo_smart_llm_baseline",
     ROOT / "scripts" / "baselines" / "SMART-LLM.py",
 )
+scale_plan_baseline = load_script_module(
+    "plantocode_demo_scale_plan_baseline",
+    ROOT / "scripts" / "baselines" / "Scale-Plan.py",
+)
 
 
 def write_json(path: Path, content):
@@ -268,6 +272,124 @@ def write_smart_native_fixture(root: Path, source_name: str = "code_plan.py") ->
     return task_run_dir
 
 
+def write_scale_plan_fixture(root: Path) -> Path:
+    baseline_root = root / "baselines" / "Scale-Plan"
+    task = "open the drawer and the cabinet."
+    task_run_dir = (
+        baseline_root
+        / "logs"
+        / "intermediate_runs"
+        / "unit_set"
+        / "open_drawer_and_cabinet"
+        / "20260701_001"
+    )
+    dataset_dir = root / "data" / "unit_set"
+    dataset_file = dataset_dir / "FloorPlan6.jsonl"
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+    dataset_file.write_text(
+        json.dumps(
+            {
+                "task": task,
+                "robot list": [1, 2],
+                "object_states": [
+                    {"name": "Drawer", "contains": [], "states": ["OPENED"]},
+                    {"name": "Cabinet", "contains": [], "states": ["OPENED"]},
+                ],
+                "trans": 2,
+                "min_trans": 4,
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    write_json(
+        task_run_dir / "inputs" / "task_context.json",
+        {
+            "task": task,
+            "task_index": 0,
+            "test_set": "unit_set",
+            "test_set_path": str(dataset_dir),
+            "dataset_file": str(dataset_file),
+            "floor_plan": "6",
+            "robots": [
+                {"name": "robot1", "skills": ["GoToObject", "OpenObject"]},
+                {"name": "robot2", "skills": ["GoToObject", "OpenObject"]},
+            ],
+            "objects_ai": "objects = [{'name': 'Drawer'}, {'name': 'Cabinet'}]",
+        },
+    )
+    write_json(
+        task_run_dir / "run_manifest.json",
+        {
+            "repo_root": str(root),
+            "task": task,
+            "test_set": "unit_set",
+            "test_set_path": str(dataset_dir),
+            "dataset_file": str(dataset_file),
+            "floor_plan": "6",
+            "task_index": 0,
+        },
+    )
+    write_json(
+        task_run_dir / "05_plan" / "03_final_plan.json",
+        {
+            "stages": [
+                {
+                    "stage_id": "parallel-1",
+                    "parallel_group_id": "parallel-1",
+                    "subtask_ids": ["subtask-1", "subtask-2"],
+                    "plans": [
+                        {
+                            "subtask_id": "subtask-1",
+                            "robot": "robot1",
+                            "plan": "(GoToObject robot1 Drawer)\n(OpenObject robot1 Drawer)",
+                        },
+                        {
+                            "subtask_id": "subtask-2",
+                            "robot": "robot2",
+                            "plan": "(GoToObject robot2 Cabinet)\n(OpenObject robot2 Cabinet)",
+                        },
+                    ],
+                }
+            ]
+        },
+    )
+
+    relative_task_run = task_run_dir.relative_to(baseline_root / "logs" / "intermediate_runs")
+    external_task_run_dir = (
+        Path("/home/dwb/thor/Scale-Plan/logs/intermediate_runs")
+        / relative_task_run
+    )
+    write_json(
+        baseline_root / "logs" / "scale_plan_parallel" / "pddlrun_scale_plan_fixture" / "summary.json",
+        {
+            "repo_root": "/home/dwb/thor/Scale-Plan",
+            "test_set": "unit_set",
+            "test_set_path": str(dataset_dir),
+            "summaries": [
+                {
+                    "floor_plan": "6",
+                    "dataset_file": str(dataset_file),
+                    "task_count": 1,
+                    "success_count": 1,
+                    "failure_count": 0,
+                    "results": [
+                        {
+                            "floor_plan": "6",
+                            "task_index": 0,
+                            "task": task,
+                            "status": "success",
+                            "task_run_dir": str(external_task_run_dir),
+                        }
+                    ],
+                }
+            ],
+        },
+    )
+    return task_run_dir
+
+
 class PlanToCodeDemoBundleTest(unittest.TestCase):
     def test_generated_runtime_requires_bundle_gcr(self):
         bundle_data = {
@@ -466,6 +588,176 @@ class PlanToCodeDemoBundleTest(unittest.TestCase):
                 ["GoToObject", "OpenObject", "GoToObject", "OpenObject"],
             )
             self.assertEqual(bundle_data["object_mapping_warnings"], [])
+
+    def test_plantocode_gcr_uses_plan_multi_instance_tokens_and_defaults_first(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            task_run_dir = root / "logs" / "intermediate_runs" / "sample___6" / "task" / "20260526_002"
+            task = "open the selected drawer and put the selected credit card inside."
+
+            write_json(
+                task_run_dir / "inputs" / "task_context.json",
+                {
+                    "task": task,
+                    "robots": [{"name": "robot1", "skills": ["GoToObject", "OpenObject", "PickupObject", "PutObject"]}],
+                    "objects_ai": (
+                        "objects = [{'name': 'Drawer'}, {'name': 'CreditCard'}, "
+                        "{'name': 'Box'}, {'name': 'Watch'}]"
+                    ),
+                },
+            )
+            (task_run_dir / "02_allocate").mkdir(parents=True)
+            (task_run_dir / "02_allocate" / "02_allocate_output.txt").write_text(
+                "# Sequence of Operations:\nSubtask 1: Robot 1;\n",
+                encoding="utf-8",
+            )
+
+            outputs_dir = task_run_dir / "08_planner" / "outputs"
+            outputs_dir.mkdir(parents=True)
+            plan_path = outputs_dir / "subtask_01_problem_validated_plan.txt"
+            plan_path.write_text(
+                "(gotoobject robot1 Drawer_2)\n"
+                "(openobject robot1 Drawer_2)\n"
+                "(gotoobject robot1 CreditCard_2)\n"
+                "(pickupobject robot1 CreditCard_2)\n"
+                "(gotoobject robot1 Drawer_2)\n"
+                "(putobject robot1 CreditCard_2 Drawer_2)\n",
+                encoding="utf-8",
+            )
+            write_json(
+                task_run_dir / "08_planner" / "planner_manifest.json",
+                [
+                    {
+                        "problem_file": "subtask_01_problem_validated.pddl",
+                        "return_code": 0,
+                        "compatibility_output": str(plan_path),
+                    }
+                ],
+            )
+
+            bindings = [
+                {
+                    "object": "Drawer_1",
+                    "object_type": "Drawer",
+                    "object_id": "Drawer|+00.00|+00.50|+00.00",
+                    "number": 1,
+                    "count": 2,
+                    "multiple": True,
+                },
+                {
+                    "object": "Drawer_2",
+                    "object_type": "Drawer",
+                    "object_id": "Drawer|+01.00|+00.50|+00.00",
+                    "number": 2,
+                    "count": 2,
+                    "multiple": True,
+                },
+                {
+                    "object": "CreditCard_1",
+                    "object_type": "CreditCard",
+                    "object_id": "CreditCard|+00.00|+00.90|+00.00",
+                    "number": 1,
+                    "count": 2,
+                    "multiple": True,
+                },
+                {
+                    "object": "CreditCard_2",
+                    "object_type": "CreditCard",
+                    "object_id": "CreditCard|+01.00|+00.90|+00.00",
+                    "number": 2,
+                    "count": 2,
+                    "multiple": True,
+                },
+                {
+                    "object": "Box_1",
+                    "object_type": "Box",
+                    "object_id": "Box|+00.00|+00.80|+00.00",
+                    "number": 1,
+                    "count": 2,
+                    "multiple": True,
+                },
+                {
+                    "object": "Box_2",
+                    "object_type": "Box",
+                    "object_id": "Box|+01.00|+00.80|+00.00",
+                    "number": 2,
+                    "count": 2,
+                    "multiple": True,
+                },
+                {
+                    "object": "Watch_1",
+                    "object_type": "Watch",
+                    "object_id": "Watch|+00.00|+00.95|+00.00",
+                    "number": 1,
+                    "count": 2,
+                    "multiple": True,
+                },
+                {
+                    "object": "Watch_2",
+                    "object_type": "Watch",
+                    "object_id": "Watch|+01.00|+00.95|+00.00",
+                    "number": 2,
+                    "count": 2,
+                    "multiple": True,
+                },
+            ]
+            write_json(
+                task_run_dir / "05_problem_generation" / "key_object_id_bindings.json",
+                bindings,
+            )
+            write_json(
+                task_run_dir / "run_manifest.json",
+                {
+                    "repo_root": str(root),
+                    "task": task,
+                    "test_set": "sample",
+                    "floor_plan": "6",
+                    "task_index": 0,
+                    "task_run_dir": str(task_run_dir),
+                },
+            )
+
+            dataset_dir = root / "data" / "sample"
+            dataset_dir.mkdir(parents=True)
+            (dataset_dir / "FloorPlan6.jsonl").write_text(
+                json.dumps(
+                    {
+                        "task": task,
+                        "robot list": [1],
+                        "object_states": [
+                            {"name": "Drawer", "contains": ["CreditCard"], "states": ["OPENED"]},
+                            {"name": "Box", "contains": ["Watch"], "states": []},
+                        ],
+                        "trans": 1,
+                        "min_trans": 6,
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result_code = plantocode_main(
+                [
+                    "--logs-dir",
+                    str(root / "logs"),
+                    "--output-dir",
+                    str(root / "summary"),
+                ]
+            )
+
+            self.assertEqual(result_code, 0)
+            bundle_data = load_bundle_data_from_executable(
+                task_run_dir / "plan_to_code" / "executable_plan.py"
+            )
+
+            self.assertEqual(
+                bundle_data["gcr"],
+                [
+                    {"name": "Drawer_2", "contains": ["CreditCard_2"], "states": ["OPENED"]},
+                    {"name": "Box_1", "contains": ["Watch_1"], "states": []},
+                ],
+            )
 
     def test_plantocode_falls_back_to_robot1_when_allocation_has_no_assignments(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1102,6 +1394,45 @@ class PlanToCodeDemoBundleTest(unittest.TestCase):
             self.assertEqual(details[0]["source_path"], str(task_run_dir / "decomposed_plan.py"))
             self.assertEqual(details[0]["generated"]["executable_plan"], str(executable_plan))
             self.assertTrue(is_runner_compatible_executable(executable_plan))
+
+    def test_scale_plan_baseline_mode_uses_summary_index_and_final_plan_json(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            baseline_root = root / "baselines" / "Scale-Plan"
+            task_run_dir = write_scale_plan_fixture(root)
+
+            result_code = scale_plan_baseline.main(
+                [
+                    "--root",
+                    str(baseline_root),
+                ]
+            )
+
+            self.assertEqual(result_code, 0)
+            executable_plan = task_run_dir / "plan_to_code" / "executable_plan.py"
+            output_dir = baseline_root / "plan_to_code_results"
+            details = json.loads((output_dir / "plan_to_code_results.json").read_text(encoding="utf-8"))
+            summary = json.loads((output_dir / "plan_to_code_summary.json").read_text(encoding="utf-8"))
+            bundle_data = load_bundle_data_from_executable(executable_plan)
+
+            self.assertEqual(summary["successful_generations"], 1)
+            self.assertEqual(details[0]["status"], "success")
+            self.assertNotIn("source_task_run_dir", details[0])
+            self.assertEqual(details[0]["generated"]["executable_plan"], str(executable_plan))
+            self.assertTrue(is_runner_compatible_executable(executable_plan))
+
+            stages = bundle_data["task_plan"]["stages"]
+            self.assertEqual(len(stages), 1)
+            queues = stages[0]["robot_action_queues"]
+            self.assertEqual(set(queues), {"robot1", "robot2"})
+            self.assertEqual([action["action_type"] for action in queues["robot1"]], [
+                "GoToObject",
+                "OpenObject",
+            ])
+            self.assertEqual([action["action_type"] for action in queues["robot2"]], [
+                "GoToObject",
+                "OpenObject",
+            ])
 
     def test_baseline_mode_explicit_logs_and_output_dirs_override_defaults(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

@@ -940,6 +940,45 @@ class ThorRuntime:
                 self.object_alias_key_to_token[key] = token
         return object_id
 
+    def _record_object_alias_match(
+        self,
+        pattern: Any,
+        obj: Dict[str, Any],
+        match_count: int,
+    ) -> Optional[str]:
+        object_id = str(obj.get("objectId") or "")
+        token = self.object_alias_token_for_pattern(pattern)
+        if token is not None:
+            return self._set_object_alias_current_object(token, obj)
+        token = str(pattern)
+        if not token or not object_id:
+            return None
+
+        binding: Dict[str, Any] = {
+            "object": token,
+            "object_id": object_id,
+            "count": int(match_count),
+            "multiple": match_count > 1,
+            "inferred": True,
+        }
+        self._refresh_binding_from_object(binding, obj)
+        self._ensure_object_alias_state()
+        with self.object_alias_lock:
+            old_binding = self.object_alias_bindings.get(token)
+            if old_binding:
+                old_id = str(old_binding.get("object_id") or "")
+                if old_id and old_id != object_id:
+                    old_tokens = self.object_alias_by_object_id.get(old_id)
+                    if old_tokens is not None:
+                        old_tokens.discard(token)
+                        if not old_tokens:
+                            self.object_alias_by_object_id.pop(old_id, None)
+            self.object_alias_bindings[token] = binding
+            self.object_alias_by_object_id.setdefault(object_id, set()).add(token)
+            for key in self.object_alias_keys_for_binding(binding):
+                self.object_alias_key_to_token[key] = token
+        return object_id
+
     def _event_objects(self, event: Any) -> List[Dict[str, Any]]:
         metadata = getattr(event, "metadata", {}) or {}
         objects = metadata.get("objects") or []
@@ -1320,6 +1359,8 @@ class ThorRuntime:
                     not self.object_name_was_operated(obj, operated_object_names),
                 )
             )
+        if matches:
+            self._record_object_alias_match(pattern, matches[0], len(matches))
         return matches
 
     def find_object(
@@ -2727,10 +2768,21 @@ class ThorRuntime:
             include_agent_positions=False,
         )[:TELEPORT_CANDIDATE_LIMIT]
         if phase_coordinator is not None:
-            phase_coordinator.wait_until_goto_candidates_clear(
+            candidate_waited = phase_coordinator.wait_until_goto_candidates_clear(
                 agent_id,
-                candidate_positions,
+                candidate_positions[:1],
             )
+            if candidate_waited:
+                self.refresh_reachable_positions(agent_id)
+                dest = self.find_object(dest_obj, agent_id=agent_id, require_center=True)
+                center = object_center(dest)
+                if not center:
+                    raise RuntimeError(f"Object {dest_obj!r} has no usable center.")
+                candidate_positions = self.teleport_candidate_positions(
+                    center,
+                    agent_id=agent_id,
+                    include_agent_positions=False,
+                )[:TELEPORT_CANDIDATE_LIMIT]
         target_position = candidate_positions[0]
         object_resource = str(dest.get("objectId")) if dest.get("objectId") else None
         log(
@@ -3336,26 +3388,51 @@ class ThorRuntime:
                 return True
 
         obj_name = goal.get("name")
+        resolved_obj_name = self.resolve_object_alias(obj_name)
         states = [str(state).upper() for state in goal_states(goal)]
         verified_states = {
-            state for state in states if goal_state_verified(obj_name, state)
+            state
+            for state in states
+            if goal_state_verified(obj_name, state)
+            or (
+                resolved_obj_name != obj_name
+                and goal_state_verified(resolved_obj_name, state)
+            )
         }
         contains = goal.get("contains") or []
+        resolved_contains = [
+            self.resolve_object_alias(item)
+            for item in contains
+        ]
         if states and all(state in verified_states for state in states) and not contains:
             return True
 
-        candidates = [obj for obj in self.current_objects() if matches_object(obj_name, obj)]
+        object_match_patterns = [resolved_obj_name]
+        if resolved_obj_name != obj_name:
+            object_match_patterns.append(obj_name)
+        candidates = [
+            obj
+            for obj in self.current_objects()
+            if any(matches_object(pattern, obj) for pattern in object_match_patterns)
+        ]
+        if not candidates:
+            return False
 
-        for obj in candidates:
-            if states and not all(
-                state in verified_states or state_satisfied(obj, state)
-                for state in states
-            ):
-                continue
-            if contains and not contains_satisfied(obj, contains):
-                continue
-            return True
-        return False
+        obj = candidates[0]
+        if states and not all(
+            state in verified_states or state_satisfied(obj, state)
+            for state in states
+        ):
+            return False
+        if contains and not (
+            contains_satisfied(obj, resolved_contains)
+            or (
+                resolved_contains != contains
+                and contains_satisfied(obj, contains)
+            )
+        ):
+            return False
+        return True
 
     def evaluate(self, goals: Sequence[Dict[str, Any]]) -> Dict[str, float]:
         goals = list(goals)

@@ -1,11 +1,13 @@
 import argparse
 import json
+import os
 import re
+import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 
-DEFAULT_SUMMARY = Path("parallel_runs/pddlrun_llmseparate_20260506_162101/summary.json")
+DEFAULT_PARALLEL_RUNS_DIR = Path("parallel_runs")
 DEFAULT_WITH_ERRORS_NAME = "no_plan_with_errors.jsonl"
 ERROR_MARKERS = (
     "error",
@@ -27,8 +29,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--summary",
-        default=str(DEFAULT_SUMMARY),
-        help=f"Path to the parallel run summary JSON. Default: {DEFAULT_SUMMARY}",
+        nargs="+",
+        default=None,
+        help=(
+            "Path(s) to parallel run summary JSON files. "
+            f"Default: {DEFAULT_PARALLEL_RUNS_DIR}/*/summary.json"
+        ),
     )
     parser.add_argument(
         "--output-dir",
@@ -46,6 +52,49 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 def read_json(path: Path) -> Any:
     with path.open("r", encoding="utf-8") as handle:
         return json.load(handle)
+
+
+def resolve_path(value: str) -> Path:
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    return path.resolve()
+
+
+def dedupe_sorted_paths(paths: Iterable[Path]) -> List[Path]:
+    return sorted(set(paths), key=lambda path: str(path))
+
+
+def discover_default_summary_paths(parallel_runs_dir: Path = DEFAULT_PARALLEL_RUNS_DIR) -> List[Path]:
+    root = parallel_runs_dir.expanduser()
+    if not root.is_absolute():
+        root = Path.cwd() / root
+    root = root.resolve()
+    return dedupe_sorted_paths(path.resolve() for path in root.glob("*/summary.json") if path.is_file())
+
+
+def resolve_summary_paths(summary_values: Optional[Sequence[str]]) -> Tuple[List[Path], bool]:
+    if summary_values is None:
+        return discover_default_summary_paths(), True
+    return dedupe_sorted_paths(resolve_path(value) for value in summary_values), False
+
+
+def resolve_output_dir(
+    output_dir_value: Optional[str],
+    summary_paths: Sequence[Path],
+    used_default_summaries: bool,
+) -> Path:
+    if output_dir_value:
+        return resolve_path(output_dir_value)
+
+    if used_default_summaries:
+        return resolve_path(str(DEFAULT_PARALLEL_RUNS_DIR))
+
+    if len(summary_paths) == 1:
+        return summary_paths[0].parent
+
+    common_parent = os.path.commonpath([str(path.parent) for path in summary_paths])
+    return Path(common_parent).resolve()
 
 
 def read_text_if_exists(path: Optional[Path]) -> Optional[str]:
@@ -234,6 +283,13 @@ def extract_no_plan_records(summary_path: Path) -> List[Dict[str, Any]]:
     return with_errors
 
 
+def extract_no_plan_records_from_summaries(summary_paths: Iterable[Path]) -> List[Dict[str, Any]]:
+    with_errors: List[Dict[str, Any]] = []
+    for summary_path in summary_paths:
+        with_errors.extend(extract_no_plan_records(summary_path))
+    return with_errors
+
+
 def write_jsonl(path: Path, records: Iterable[Dict[str, Any]]) -> int:
     count = 0
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -246,22 +302,24 @@ def write_jsonl(path: Path, records: Iterable[Dict[str, Any]]) -> int:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
-    summary_path = Path(args.summary).expanduser()
-    if not summary_path.is_absolute():
-        summary_path = Path.cwd() / summary_path
-    summary_path = summary_path.resolve()
+    summary_paths, used_default_summaries = resolve_summary_paths(args.summary)
+    if not summary_paths:
+        print(
+            f"No summary files found at {resolve_path(str(DEFAULT_PARALLEL_RUNS_DIR))}/*/summary.json",
+            file=sys.stderr,
+        )
+        return 1
 
-    output_dir = Path(args.output_dir).expanduser() if args.output_dir else summary_path.parent
-    if not output_dir.is_absolute():
-        output_dir = Path.cwd() / output_dir
-    output_dir = output_dir.resolve()
-
-    with_errors = extract_no_plan_records(summary_path)
+    output_dir = resolve_output_dir(args.output_dir, summary_paths, used_default_summaries)
+    with_errors = extract_no_plan_records_from_summaries(summary_paths)
     with_errors_path = output_dir / args.with_errors_name
 
     with_errors_count = write_jsonl(with_errors_path, with_errors)
 
-    print(f"Wrote {with_errors_count} record(s) with errors to {with_errors_path}")
+    print(
+        f"Wrote {with_errors_count} record(s) with errors from "
+        f"{len(summary_paths)} summary file(s) to {with_errors_path}"
+    )
     return 0
 
 

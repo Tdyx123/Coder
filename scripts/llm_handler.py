@@ -17,7 +17,7 @@ from llm_logger import log_llm_call
 from run_config import DEFAULT_RUN_CONFIG, RunConfig, load_run_config
 
 
-DEFAULT_MAX_TOKENS = 15000
+DEFAULT_MAX_TOKENS = 8000
 DEFAULT_TEMPERATURE = DEFAULT_RUN_CONFIG["llm"]["default_temperature"]
 DEFAULT_RETRY_DELAY = DEFAULT_RUN_CONFIG["llm"]["default_retry_delay"]
 MAX_RETRIES = DEFAULT_RUN_CONFIG["llm"]["max_retries"]

@@ -6,7 +6,8 @@ the actual controller.step boundary with its controller lock.
 """
 
 import threading
-from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
+import time
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 from .action_plan import (
     ACTION_FAILED,
@@ -37,7 +38,14 @@ GOTO_CANDIDATE_WAIT_SECONDS = 0.1
 class PhaseCoordinator:
     """Shared state for robot executors running in the same phase."""
 
-    def __init__(self, runtime: Any, active_agent_ids: Sequence[int]) -> None:
+    def __init__(
+        self,
+        runtime: Any,
+        active_agent_ids: Sequence[int],
+        *,
+        deadline: Optional[float] = None,
+        timeout_error_factory: Optional[Callable[[str], BaseException]] = None,
+    ) -> None:
         self.runtime = runtime
         self.condition = threading.Condition()
         self.active_agent_ids: Set[int] = {int(agent_id) for agent_id in active_agent_ids}
@@ -49,6 +57,8 @@ class PhaseCoordinator:
         self.completed_agent_ids: Set[int] = set(self.all_agent_ids - self.active_agent_ids)
         self.failed_agent_errors: Dict[int, BaseException] = {}
         self.relocating_agent_ids: Set[int] = set()
+        self.deadline = deadline
+        self.timeout_error_factory = timeout_error_factory
 
     def mark_agent_done(self, agent_id: int) -> None:
         with self.condition:
@@ -68,21 +78,25 @@ class PhaseCoordinator:
         self,
         agent_id: int,
         candidate_positions: Sequence[dict],
-    ) -> None:
+    ) -> bool:
         protected_positions = [dict(position) for position in candidate_positions]
         if not protected_positions:
-            return
+            return False
 
+        current_agent_id = int(agent_id)
+        waited_or_relocated = False
         while True:
+            self._raise_if_deadline_expired()
             blockers = self.runtime.agent_blocker_ids_for_positions(
                 protected_positions,
-                int(agent_id),
+                current_agent_id,
             )
             with self.condition:
                 self._raise_if_failed_locked()
+                self._raise_if_deadline_expired()
                 blockers = set(blockers)
                 if not blockers:
-                    return
+                    return waited_or_relocated
 
                 completed_blockers = (
                     blockers
@@ -92,20 +106,38 @@ class PhaseCoordinator:
                 if completed_blockers:
                     blocker_agent_id = min(completed_blockers)
                     self.relocating_agent_ids.add(blocker_agent_id)
+                    waited_or_relocated = True
                 else:
-                    self.condition.wait(timeout=GOTO_CANDIDATE_WAIT_SECONDS)
+                    if current_agent_id == min(blockers | {current_agent_id}):
+                        return waited_or_relocated
+                    waited_or_relocated = True
+                    self.condition.wait(timeout=self._condition_wait_seconds())
                     continue
 
             try:
                 self.runtime.teleport_completed_agent_away_from_positions(
                     blocker_agent_id,
-                    int(agent_id),
+                    current_agent_id,
                     protected_positions,
                 )
             finally:
                 with self.condition:
                     self.relocating_agent_ids.discard(blocker_agent_id)
                     self.condition.notify_all()
+
+    def _condition_wait_seconds(self) -> float:
+        if self.deadline is None:
+            return GOTO_CANDIDATE_WAIT_SECONDS
+        remaining = max(0.0, self.deadline - time.monotonic())
+        return min(GOTO_CANDIDATE_WAIT_SECONDS, remaining)
+
+    def _raise_if_deadline_expired(self) -> None:
+        if self.deadline is None or time.monotonic() < self.deadline:
+            return
+        message = "GoToObject candidate wait exceeded timeout."
+        if self.timeout_error_factory is not None:
+            raise self.timeout_error_factory(message)
+        raise TimeoutError(message)
 
     def _raise_if_failed_locked(self) -> None:
         if not self.failed_agent_errors:

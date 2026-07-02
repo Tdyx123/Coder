@@ -353,7 +353,12 @@ class TolerantStageRunner:
             self.runtime.physical_agent_id(robot_id)
             for robot_id in stage.robot_action_queues
         }
-        phase_coordinator = PhaseCoordinator(self.runtime, active_agent_ids)
+        phase_coordinator = PhaseCoordinator(
+            self.runtime,
+            active_agent_ids,
+            deadline=self.deadline,
+            timeout_error_factory=PlanExecutionTimeout,
+        )
         executors = [
             TolerantExecutor(
                 self.runtime,

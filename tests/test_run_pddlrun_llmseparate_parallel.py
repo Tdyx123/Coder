@@ -2,6 +2,7 @@ import json
 import sys
 import tempfile
 import unittest
+from concurrent.futures import Future
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -13,10 +14,93 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 from run_config import RunConfig
-from run_pddlrun_llmseparate_parallel import TaskJob, load_jobs, run_single_job
+from run_pddlrun_llmseparate_parallel import (
+    TaskJob,
+    load_jobs,
+    main as parallel_main,
+    parse_args,
+    prewarm_rag_if_configured,
+    run_single_job,
+)
 
 
 class ParallelRunnerTests(unittest.TestCase):
+    def test_cli_defaults_to_rag_enabled(self):
+        args = parse_args(["--floor-plans", "6"])
+
+        self.assertTrue(args.rag)
+
+    def test_cli_no_rag_disables_rag(self):
+        args = parse_args(["--floor-plans", "6", "--no-rag"])
+
+        self.assertFalse(args.rag)
+
+    def test_prewarm_rag_if_configured_calls_single_runner_prewarm(self):
+        config = RunConfig(ROOT, values={"rag": {"enabled": True, "prewarm_runtime_db": True}})
+
+        with patch("pddlrun_llmseparate.prewarm_rag_runtime_db", return_value=True) as mock_prewarm:
+            self.assertTrue(prewarm_rag_if_configured(config))
+
+        mock_prewarm.assert_called_once_with(config)
+
+    def test_main_prewarms_rag_before_submitting_floor_jobs(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            prewarm_state = {"called": False}
+
+            class FakeExecutor:
+                def __init__(self, max_workers):
+                    self.max_workers = max_workers
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, exc_type, exc, tb):
+                    return False
+
+                def submit(self, fn, *args, **kwargs):
+                    self_case.assertTrue(prewarm_state["called"])
+                    future = Future()
+                    future.set_result(
+                        {
+                            "floor_plan": "6",
+                            "task_count": 0,
+                            "success_count": 0,
+                            "failure_count": 0,
+                            "all_pass_count": 0,
+                            "pass_one_count": 0,
+                            "results": [],
+                        }
+                    )
+                    return future
+
+            self_case = self
+            args = SimpleNamespace(
+                floor_plans=["6"],
+                model="test-model",
+                test_set="sample_set",
+                max_floor_plan_workers=1,
+                max_task_workers=1,
+                output_root=str(root / "parallel"),
+                prompt_decompse_set="pddl_train_task_decomposesep",
+                prompt_allocation_set="pddl_train_task_allocationsep",
+                rag=True,
+                disable_log_results=False,
+            )
+            config = RunConfig(root, values={"rag": {"enabled": False, "prewarm_runtime_db": True}})
+
+            def fake_prewarm(config_arg):
+                prewarm_state["called"] = True
+                return True
+
+            with patch("run_pddlrun_llmseparate_parallel.parse_args", return_value=args), \
+                patch("run_pddlrun_llmseparate_parallel.load_run_config", return_value=config), \
+                patch("run_pddlrun_llmseparate_parallel.prewarm_rag_if_configured", side_effect=fake_prewarm), \
+                patch("run_pddlrun_llmseparate_parallel.ThreadPoolExecutor", FakeExecutor):
+                parallel_main()
+
+            self.assertTrue(prewarm_state["called"])
+
     def test_load_jobs_skips_truthy_invalid_records(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
@@ -59,6 +143,11 @@ class ParallelRunnerTests(unittest.TestCase):
                 "task_run_dir": "/tmp/sample-run",
                 "tc": 1,
                 "total": 1,
+                "llm_token_usage": {
+                    "prompt_tokens": 12,
+                    "completion_tokens": 3,
+                    "total_tokens": 15,
+                },
             }
             summary = run_single_job(
                 ROOT,
@@ -69,6 +158,14 @@ class ParallelRunnerTests(unittest.TestCase):
             )
 
         self.assertEqual(summary["task_index"], 17)
+        self.assertEqual(
+            summary["llm_token_usage"],
+            {
+                "prompt_tokens": 12,
+                "completion_tokens": 3,
+                "total_tokens": 15,
+            },
+        )
         mock_run.assert_called_once()
         self.assertEqual(mock_run.call_args.kwargs["task_index"], 17)
 

@@ -1,5 +1,6 @@
 import copy
 import ast
+from contextlib import contextmanager
 import json
 import os
 import argparse
@@ -7,20 +8,32 @@ from pathlib import Path
 from datetime import datetime
 import random
 import subprocess
+import threading
 import time
 import re
 import shutil
 import sys
-from typing import List, Dict, Tuple, Optional, Union, Any, Set
+from typing import List, Dict, Tuple, Optional, Union, Any, Set, Sequence
 import uuid
+
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 
 from ai2thor_object_cache import get_ai2_thor_objects_cached
 from llm_client import get_available_models as get_litellm_models
 from file_processor import FileProcessor, PDDLError
 from llm_handler import LLMError, LLMHandler
 from llm_logger import get_llm_logger
+from pddl_rag import PDDLRagError, PDDLRagRetriever, PDDLRagTimeoutError
 from parsing_utils import ParsingUtils
-from run_config import RunConfig, load_run_config as _load_run_config, normalize_floor_plan
+from run_config import (
+    RunConfig,
+    apply_rag_cli_override,
+    load_run_config as _load_run_config,
+    normalize_floor_plan,
+)
 from special_task_skills import SPECIAL_TASK_SKILL_PROMPT_RULE
 
 import sys
@@ -102,6 +115,108 @@ def load_run_storage_config(base_path: str) -> Dict[str, Any]:
     """Load runtime storage configuration for intermediate artifacts."""
     config = load_run_config(base_path)
     return {"storage": {"base_dir": str(config.storage_base_dir)}}
+
+
+_RAG_RETRIEVAL_LOCK = threading.RLock()
+
+
+@contextmanager
+def _locked_rag_retrieval(retriever: Any):
+    """Serialize RAG retrieval because the shared runtime DB is built lazily."""
+    with _RAG_RETRIEVAL_LOCK:
+        runtime_db_path = getattr(retriever, "runtime_db_path", None)
+        if fcntl is None or runtime_db_path is None:
+            yield
+            return
+
+        runtime_db_path = Path(runtime_db_path)
+        lock_path = runtime_db_path.with_name(runtime_db_path.name + ".lock")
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with lock_path.open("a", encoding="utf-8") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+def _config_bool(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def prewarm_rag_runtime_db(config: RunConfig) -> bool:
+    """Build or validate the shared RAG runtime DB before worker threads start."""
+    if not _config_bool(config.get("rag", "enabled", False)):
+        return False
+    if not _config_bool(config.get("rag", "prewarm_runtime_db", True), True):
+        return False
+
+    try:
+        retriever = PDDLRagRetriever.from_config(config)
+    except PDDLRagError as exc:
+        raise PDDLError(f"Error loading PDDL RAG configuration: {exc}") from exc
+    if retriever is None:
+        return False
+
+    try:
+        with _locked_rag_retrieval(retriever):
+            retriever.ensure_runtime_db()
+    except PDDLRagError as exc:
+        raise PDDLError(f"Error prewarming PDDL RAG runtime DB: {exc}") from exc
+    return True
+
+
+LLM_TOKEN_USAGE_KEYS = ("prompt_tokens", "completion_tokens", "total_tokens")
+
+
+def empty_llm_token_usage() -> Dict[str, int]:
+    """Return the fixed token usage shape used in run summaries."""
+    return {key: 0 for key in LLM_TOKEN_USAGE_KEYS}
+
+
+def _safe_token_count(value: Any) -> int:
+    if value is None or isinstance(value, bool):
+        return 0
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def summarize_llm_token_usage(llm_calls_path: Union[str, Path]) -> Dict[str, int]:
+    """Sum token usage entries from an LLM calls JSONL log."""
+    totals = empty_llm_token_usage()
+    path = Path(llm_calls_path)
+    if not path.exists():
+        return totals
+
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            for raw_line in handle:
+                line = raw_line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(entry, dict):
+                    continue
+                usage = entry.get("usage")
+                if not isinstance(usage, dict):
+                    continue
+                for key in LLM_TOKEN_USAGE_KEYS:
+                    totals[key] += _safe_token_count(usage.get(key))
+    except OSError:
+        return empty_llm_token_usage()
+
+    return totals
 
 # Action mapping from actions module
 
@@ -299,6 +414,10 @@ class TaskManager:
         self.file_processor = FileProcessor(base_path, config=self.config)
         self.validator = PDDLValidator(self.llm, self.file_processor, self.config)
         self.planner = PDDLPlanner(base_path, self.file_processor, self.config)
+        try:
+            self.rag_retriever = PDDLRagRetriever.from_config(self.config)
+        except PDDLRagError as exc:
+            raise PDDLError(f"Error loading PDDL RAG configuration: {exc}") from exc
         
         # Initialize paths
         self.resources_path = str(self.config.resources_dir)
@@ -431,6 +550,149 @@ class TaskManager:
         if section not in self.current_task_manifest["artifacts"]:
             self.current_task_manifest["artifacts"][section] = {}
         self.current_task_manifest["artifacts"][section][key] = relative_path
+
+    def _json_for_prompt(self, value: Any) -> str:
+        """Serialize prompt context without failing on unusual runtime objects."""
+        try:
+            return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+        except (TypeError, ValueError):
+            return str(value)
+
+    def _split_camel_tokens(self, text: str) -> List[str]:
+        spaced = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", str(text))
+        return [token.lower() for token in re.findall(r"[A-Za-z0-9]+", spaced)]
+
+    def _extract_object_names_from_objects_ai(self, objects_ai: str) -> List[str]:
+        match = re.search(r"objects\s*=\s*(\[.*\])", objects_ai, re.DOTALL)
+        if not match:
+            return []
+        try:
+            parsed = ast.literal_eval(match.group(1))
+        except (SyntaxError, ValueError):
+            return []
+        if not isinstance(parsed, list):
+            return []
+
+        names: List[str] = []
+        seen = set()
+        for item in parsed:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name", "")).strip()
+            key = name.lower()
+            if not name or key in seen:
+                continue
+            seen.add(key)
+            names.append(name)
+        return names
+
+    def _task_relevant_object_names(self, task: str, objects_ai: str, limit: int = 12) -> List[str]:
+        task_tokens = set(self._split_camel_tokens(task))
+        names = []
+        for name in self._extract_object_names_from_objects_ai(objects_ai):
+            name_tokens = set(self._split_camel_tokens(name))
+            if name_tokens and task_tokens.intersection(name_tokens):
+                names.append(name)
+            if len(names) >= limit:
+                break
+        return names
+
+    def _robot_skill_summary_for_rag(self, robots: List[dict], limit: int = 16) -> str:
+        skills: List[str] = []
+        seen = set()
+        for robot in robots:
+            skills_value = robot.get("skills", []) if isinstance(robot, dict) else []
+            for skill in skills_value:
+                skill_text = str(skill).strip()
+                key = skill_text.lower()
+                if skill_text and key not in seen:
+                    seen.add(key)
+                    skills.append(skill_text)
+                if len(skills) >= limit:
+                    return ", ".join(skills)
+        return ", ".join(skills)
+
+    def _object_names_for_rag(self, objects: Optional[List[Dict[str, Any]]], limit: int = 12) -> str:
+        if not objects:
+            return ""
+        names: List[str] = []
+        seen = set()
+        for item in objects:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name", item.get("object", ""))).strip()
+            key = name.lower()
+            if name and key not in seen:
+                seen.add(key)
+                names.append(name)
+            if len(names) >= limit:
+                break
+        return ", ".join(names)
+
+    def _record_rag_retrieval(
+        self,
+        key: str,
+        stage: str,
+        examples: List[Any],
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Record retrieved RAG examples in the current task manifest."""
+        if not isinstance(self.current_task_manifest, dict):
+            return
+
+        rag_section = self.current_task_manifest.setdefault("rag", {})
+        retrievals = rag_section.setdefault("retrievals", {})
+        record = {
+            "stage": stage,
+            "examples": [example.to_manifest_record() for example in examples],
+        }
+        if metadata:
+            record.update(metadata)
+        retrievals[key] = record
+
+    def _rag_prompt_block(self, stage: str, query_text: str, manifest_key: str) -> str:
+        """Return formatted RAG examples for a stage, or an empty string when disabled."""
+        if not self.rag_retriever:
+            return ""
+
+        started_at = time.monotonic()
+        query_tokens = []
+        if hasattr(self.rag_retriever, "query_tokens"):
+            try:
+                query_tokens = list(self.rag_retriever.query_tokens(query_text))
+            except Exception:
+                query_tokens = []
+
+        try:
+            with _locked_rag_retrieval(self.rag_retriever):
+                examples = self.rag_retriever.retrieve(stage, query_text)
+        except PDDLRagTimeoutError as exc:
+            self._record_rag_retrieval(
+                manifest_key,
+                stage,
+                [],
+                {
+                    "query_tokens": query_tokens,
+                    "elapsed_seconds": round(time.monotonic() - started_at, 3),
+                    "timeout": True,
+                    "error": str(exc),
+                },
+            )
+            return ""
+        except PDDLRagError as exc:
+            raise PDDLError(f"Error retrieving PDDL RAG examples for {stage}: {exc}") from exc
+
+        metadata = {
+            "query_tokens": query_tokens,
+            "elapsed_seconds": round(time.monotonic() - started_at, 3),
+            "timeout": False,
+        }
+        if not examples:
+            self._record_rag_retrieval(manifest_key, stage, [], metadata)
+            return ""
+
+        self._record_rag_retrieval(manifest_key, stage, examples, metadata)
+        return "\n" + self.rag_retriever.format_prompt_block(stage, examples) + "\n"
 
     def _replace_domain_robot_name(self, domain_content: str, real_robot_name: str, normalized_robot_name: str) -> str:
         """Replace a real robot domain token with the task-local robot token."""
@@ -1667,6 +1929,12 @@ class TaskManager:
             prompt += objects_ai
             prompt += f"\nrobots = {robots}\n\n"
             prompt += decompose_prompt
+            rag_query = (
+                f"Task: {task}\n"
+                f"Robot skills: {self._robot_skill_summary_for_rag(robots)}\n"
+                f"Relevant objects: {', '.join(self._task_relevant_object_names(task, objects_ai))}"
+            )
+            prompt += self._rag_prompt_block("decompose", rag_query, "decompose")
             prompt += "# GENERAL TASK DECOMPOSITION \n"
             prompt += "Decompose and parallel subtasks where ever possible.\n"
             prompt += "For each subtask, the robot's skills meet the assigned subtask's requirements. \n"
@@ -1729,6 +1997,13 @@ class TaskManager:
             # Build prompt incrementally like the original
             prompt = "\n"
             prompt += allocated_prompt
+            rag_query = (
+                f"Task: {self.current_task_manifest.get('task', '')}\n"
+                f"Decomposition:\n{decomposed_plan}\n"
+                f"Robot skills: {self._robot_skill_summary_for_rag(robots)}\n"
+                f"Key objects: {self._object_names_for_rag(key_objects)}"
+            )
+            prompt += self._rag_prompt_block("allocate", rag_query, "allocate")
             prompt += decomposed_plan
             prompt += f"\n# TASK ALLOCATION"
             prompt += f"\n# Scenario: There are {len(robots)} robots available. The task should be performed using the minimum number of robots necessary. Robot should be assigned to subtasks that match its skills, and mass capacity should only be considered when a subtask requires picking up the relevant object. Using your reasoning come up with a solution to satisfy all constraints."
@@ -1952,9 +2227,21 @@ class TaskManager:
                 ensure_ascii=False,
                 indent=2,
             )
+            rag_query = (
+                f"Task: {self.current_task_manifest.get('task', '')}\n"
+                f"Subtask {subtask_idx}: {subtask}\n"
+                f"Assigned robot: {real_robot_name}\n"
+                f"Key object PDDL states: {key_object_pddl_states_text[:1200]}"
+            )
+            rag_block = self._rag_prompt_block(
+                "problem_generation",
+                rag_query,
+                f"problem_generation_subtask_{subtask_idx:02d}",
+            )
 
             prompt = (
                 "\n" + problem_examplecontent +
+                rag_block +
                 " Finish the tasks like example\n"
                 "Subtask examination from action perspective:" + subtask +
                 "\nDomain file content:" + domain_content +
@@ -2377,9 +2664,20 @@ def run_single_floor_plan_task(
         task_indices=[task_index] if task_index is not None else None,
     )
 
+    llm_token_usage = empty_llm_token_usage()
+    if task_manager.current_task_run_dir:
+        llm_calls_path = (
+            Path(task_manager.current_task_run_dir)
+            / task_manager.config.artifact("llm_calls", "00_llm/llm_calls.jsonl")
+        )
+        llm_token_usage = summarize_llm_token_usage(llm_calls_path)
+        task_manager.current_task_manifest["llm_token_usage"] = llm_token_usage
+        task_manager._persist_manifest()
+
     return {"task_run_dir": task_manager.current_task_run_dir, 
             "tc": task_manager.tc,
-            "total": task_manager.total}
+            "total": task_manager.total,
+            "llm_token_usage": llm_token_usage}
     
 
 def load_dataset_records(test_file: str) -> List[Dict[str, Any]]:
@@ -2413,7 +2711,7 @@ def validate_dataset_file(run_config: RunConfig, test_set: str, floor_plan: Unio
     )
 
 
-def parse_arguments() -> argparse.Namespace:
+def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--floor-plan", 
@@ -2450,8 +2748,22 @@ def parse_arguments() -> argparse.Namespace:
         default=0,
         help="Zero-based task index to run from the selected floor plan dataset."
     )
+    rag_group = parser.add_mutually_exclusive_group()
+    rag_group.add_argument(
+        "--rag",
+        dest="rag",
+        action="store_true",
+        help="Enable local PDDL RAG examples in prompts (default).",
+    )
+    rag_group.add_argument(
+        "--no-rag",
+        dest="rag",
+        action="store_false",
+        help="Disable local PDDL RAG examples in prompts.",
+    )
+    parser.set_defaults(rag=True)
 
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 def main():
     """Main execution function."""
@@ -2460,6 +2772,7 @@ def main():
         args = parse_arguments()
         base_path = str(_repo_root())
         run_config = load_run_config(base_path)
+        apply_rag_cli_override(run_config, args.rag)
         
         # Initialize task manager
         task_manager = TaskManager(

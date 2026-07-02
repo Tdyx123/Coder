@@ -8015,6 +8015,336 @@
         ]
       },
       "reason": "Failed in parallel runner"
+    },
+    {
+      "floor_plan": 15,
+      "subtask": {
+        "skill": "Open",
+        "objects": [
+          "Blinds"
+        ]
+      },
+      "reason": "Blinds cannot be opened reliably in runner"
+    },
+    {
+      "floor_plan": 18,
+      "subtask": {
+        "skill": "Open",
+        "objects": [
+          "Blinds"
+        ]
+      },
+      "reason": "Blinds cannot be opened reliably in runner"
+    },
+    {
+      "floor_plan": 21,
+      "subtask": {
+        "skill": "Open",
+        "objects": [
+          "Blinds"
+        ]
+      },
+      "reason": "Blinds cannot be opened reliably in runner"
+    },
+    {
+      "floor_plan": 23,
+      "subtask": {
+        "skill": "Open",
+        "objects": [
+          "Blinds"
+        ]
+      },
+      "reason": "Blinds cannot be opened reliably in runner"
+    },
+    {
+      "floor_plan": 28,
+      "subtask": {
+        "skill": "Open",
+        "objects": [
+          "Blinds"
+        ]
+      },
+      "reason": "Blinds cannot be opened reliably in runner"
+    },
+    {
+      "floor_plan": 226,
+      "subtask": {
+        "skill": "Open",
+        "objects": [
+          "Blinds"
+        ]
+      },
+      "reason": "Blinds cannot be opened reliably in runner"
+    },
+    {
+      "floor_plan": 301,
+      "subtask": {
+        "skill": "Open",
+        "objects": [
+          "Blinds"
+        ]
+      },
+      "reason": "Blinds cannot be opened reliably in runner"
+    },
+    {
+      "floor_plan": 302,
+      "subtask": {
+        "skill": "Open",
+        "objects": [
+          "Blinds"
+        ]
+      },
+      "reason": "Blinds cannot be opened reliably in runner"
+    },
+    {
+      "floor_plan": 303,
+      "subtask": {
+        "skill": "Open",
+        "objects": [
+          "Blinds"
+        ]
+      },
+      "reason": "Blinds cannot be opened reliably in runner"
+    },
+    {
+      "floor_plan": 304,
+      "subtask": {
+        "skill": "Open",
+        "objects": [
+          "Blinds"
+        ]
+      },
+      "reason": "Blinds cannot be opened reliably in runner"
+    },
+    {
+      "floor_plan": 305,
+      "subtask": {
+        "skill": "Open",
+        "objects": [
+          "Blinds"
+        ]
+      },
+      "reason": "Blinds cannot be opened reliably in runner"
+    },
+    {
+      "floor_plan": 306,
+      "subtask": {
+        "skill": "Open",
+        "objects": [
+          "Blinds"
+        ]
+      },
+      "reason": "Blinds cannot be opened reliably in runner"
+    },
+    {
+      "floor_plan": 307,
+      "subtask": {
+        "skill": "Open",
+        "objects": [
+          "Blinds"
+        ]
+      },
+      "reason": "Blinds cannot be opened reliably in runner"
+    },
+    {
+      "floor_plan": 308,
+      "subtask": {
+        "skill": "Open",
+        "objects": [
+          "Blinds"
+        ]
+      },
+      "reason": "Blinds cannot be opened reliably in runner"
+    },
+    {
+      "floor_plan": 309,
+      "subtask": {
+        "skill": "Open",
+        "objects": [
+          "Blinds"
+        ]
+      },
+      "reason": "Blinds cannot be opened reliably in runner"
+    },
+    {
+      "floor_plan": 310,
+      "subtask": {
+        "skill": "Open",
+        "objects": [
+          "Blinds"
+        ]
+      },
+      "reason": "Blinds cannot be opened reliably in runner"
+    },
+    {
+      "floor_plan": 311,
+      "subtask": {
+        "skill": "Open",
+        "objects": [
+          "Blinds"
+        ]
+      },
+      "reason": "Blinds cannot be opened reliably in runner"
+    },
+    {
+      "floor_plan": 313,
+      "subtask": {
+        "skill": "Open",
+        "objects": [
+          "Blinds"
+        ]
+      },
+      "reason": "Blinds cannot be opened reliably in runner"
+    },
+    {
+      "floor_plan": 314,
+      "subtask": {
+        "skill": "Open",
+        "objects": [
+          "Blinds"
+        ]
+      },
+      "reason": "Blinds cannot be opened reliably in runner"
+    },
+    {
+      "floor_plan": 315,
+      "subtask": {
+        "skill": "Open",
+        "objects": [
+          "Blinds"
+        ]
+      },
+      "reason": "Blinds cannot be opened reliably in runner"
+    },
+    {
+      "floor_plan": 316,
+      "subtask": {
+        "skill": "Open",
+        "objects": [
+          "Blinds"
+        ]
+      },
+      "reason": "Blinds cannot be opened reliably in runner"
+    },
+    {
+      "floor_plan": 317,
+      "subtask": {
+        "skill": "Open",
+        "objects": [
+          "Blinds"
+        ]
+      },
+      "reason": "Blinds cannot be opened reliably in runner"
+    },
+    {
+      "floor_plan": 318,
+      "subtask": {
+        "skill": "Open",
+        "objects": [
+          "Blinds"
+        ]
+      },
+      "reason": "Blinds cannot be opened reliably in runner"
+    },
+    {
+      "floor_plan": 319,
+      "subtask": {
+        "skill": "Open",
+        "objects": [
+          "Blinds"
+        ]
+      },
+      "reason": "Blinds cannot be opened reliably in runner"
+    },
+    {
+      "floor_plan": 321,
+      "subtask": {
+        "skill": "Open",
+        "objects": [
+          "Blinds"
+        ]
+      },
+      "reason": "Blinds cannot be opened reliably in runner"
+    },
+    {
+      "floor_plan": 323,
+      "subtask": {
+        "skill": "Open",
+        "objects": [
+          "Blinds"
+        ]
+      },
+      "reason": "Blinds cannot be opened reliably in runner"
+    },
+    {
+      "floor_plan": 324,
+      "subtask": {
+        "skill": "Open",
+        "objects": [
+          "Blinds"
+        ]
+      },
+      "reason": "Blinds cannot be opened reliably in runner"
+    },
+    {
+      "floor_plan": 325,
+      "subtask": {
+        "skill": "Open",
+        "objects": [
+          "Blinds"
+        ]
+      },
+      "reason": "Blinds cannot be opened reliably in runner"
+    },
+    {
+      "floor_plan": 326,
+      "subtask": {
+        "skill": "Open",
+        "objects": [
+          "Blinds"
+        ]
+      },
+      "reason": "Blinds cannot be opened reliably in runner"
+    },
+    {
+      "floor_plan": 327,
+      "subtask": {
+        "skill": "Open",
+        "objects": [
+          "Blinds"
+        ]
+      },
+      "reason": "Blinds cannot be opened reliably in runner"
+    },
+    {
+      "floor_plan": 328,
+      "subtask": {
+        "skill": "Open",
+        "objects": [
+          "Blinds"
+        ]
+      },
+      "reason": "Blinds cannot be opened reliably in runner"
+    },
+    {
+      "floor_plan": 329,
+      "subtask": {
+        "skill": "Open",
+        "objects": [
+          "Blinds"
+        ]
+      },
+      "reason": "Blinds cannot be opened reliably in runner"
+    },
+    {
+      "floor_plan": 330,
+      "subtask": {
+        "skill": "Open",
+        "objects": [
+          "Blinds"
+        ]
+      },
+      "reason": "Blinds cannot be opened reliably in runner"
     }
   ]
 }

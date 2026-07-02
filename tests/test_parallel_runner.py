@@ -4,6 +4,7 @@ import os
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -27,6 +28,7 @@ from executor_system.action_plan import (
 )
 from executor_system.parallel_runner import (
     DEFAULT_TIMEOUT_SECONDS,
+    PlanExecutionTimeout,
     cleanup_gpu_processes,
     main as parallel_runner_main,
     parse_gpu_cleanup_pids,
@@ -78,7 +80,7 @@ class FakeRuntime:
 
 
 class PhaseCoordinatorTest(unittest.TestCase):
-    def test_wait_until_goto_candidates_clear_rechecks_after_timeout(self):
+    def test_wait_until_goto_candidates_clear_allows_high_priority_active_agent(self):
         class BlockingRuntime:
             physical_agent_count = 2
 
@@ -87,21 +89,97 @@ class PhaseCoordinatorTest(unittest.TestCase):
 
             def agent_blocker_ids_for_positions(self, _positions, _agent_id):
                 self.calls += 1
-                return {1} if self.calls == 1 else set()
+                return {1}
 
         runtime = BlockingRuntime()
         coordinator = PhaseCoordinator(runtime, active_agent_ids=[0, 1])
 
         with patch.object(executor_module, "GOTO_CANDIDATE_WAIT_SECONDS", 0.01):
-            thread = threading.Thread(
-                target=coordinator.wait_until_goto_candidates_clear,
-                args=(0, [{"x": 0.0, "y": 0.0, "z": 0.0}]),
+            waited = coordinator.wait_until_goto_candidates_clear(
+                0,
+                [{"x": 0.0, "y": 0.0, "z": 0.0}],
             )
-            thread.start()
-            thread.join(timeout=1.0)
 
-        self.assertFalse(thread.is_alive())
+        self.assertFalse(waited)
+        self.assertEqual(runtime.calls, 1)
+
+    def test_wait_until_goto_candidates_clear_rechecks_low_priority_active_agent(self):
+        class BlockingRuntime:
+            physical_agent_count = 2
+
+            def __init__(self):
+                self.calls = 0
+
+            def agent_blocker_ids_for_positions(self, _positions, _agent_id):
+                self.calls += 1
+                return {0} if self.calls == 1 else set()
+
+        runtime = BlockingRuntime()
+        coordinator = PhaseCoordinator(runtime, active_agent_ids=[0, 1])
+
+        with patch.object(executor_module, "GOTO_CANDIDATE_WAIT_SECONDS", 0.01):
+            waited = coordinator.wait_until_goto_candidates_clear(
+                1,
+                [{"x": 0.0, "y": 0.0, "z": 0.0}],
+            )
+
+        self.assertTrue(waited)
         self.assertGreaterEqual(runtime.calls, 2)
+
+    def test_wait_until_goto_candidates_clear_relocates_completed_blocker(self):
+        class BlockingRuntime:
+            physical_agent_count = 2
+
+            def __init__(self):
+                self.blocked = True
+                self.relocations = []
+
+            def agent_blocker_ids_for_positions(self, _positions, _agent_id):
+                return {1} if self.blocked else set()
+
+            def teleport_completed_agent_away_from_positions(
+                self,
+                blocker_agent_id,
+                priority_agent_id,
+                positions,
+            ):
+                self.relocations.append(
+                    (
+                        blocker_agent_id,
+                        priority_agent_id,
+                        [dict(position) for position in positions],
+                    )
+                )
+                self.blocked = False
+
+        runtime = BlockingRuntime()
+        coordinator = PhaseCoordinator(runtime, active_agent_ids=[0])
+        candidate = {"x": 0.0, "y": 0.0, "z": 0.0}
+
+        waited = coordinator.wait_until_goto_candidates_clear(0, [candidate])
+
+        self.assertTrue(waited)
+        self.assertEqual(runtime.relocations, [(1, 0, [candidate])])
+
+    def test_wait_until_goto_candidates_clear_raises_deadline_timeout(self):
+        class BlockingRuntime:
+            physical_agent_count = 2
+
+            def agent_blocker_ids_for_positions(self, _positions, _agent_id):
+                return {0}
+
+        coordinator = PhaseCoordinator(
+            BlockingRuntime(),
+            active_agent_ids=[0, 1],
+            deadline=time.monotonic() - 1.0,
+            timeout_error_factory=PlanExecutionTimeout,
+        )
+
+        with self.assertRaises(PlanExecutionTimeout):
+            coordinator.wait_until_goto_candidates_clear(
+                1,
+                [{"x": 0.0, "y": 0.0, "z": 0.0}],
+            )
 
     def test_navigate_to_object_notifies_phase_coordinator_after_move(self):
         runtime = object.__new__(ThorRuntime)
@@ -154,6 +232,80 @@ class PhaseCoordinatorTest(unittest.TestCase):
                 "record",
             ],
         )
+
+    def test_navigate_to_object_recomputes_candidates_after_coordinator_wait(self):
+        runtime = object.__new__(ThorRuntime)
+        first_destination = {
+            "objectId": "Apple|+01.00|+00.90|+00.00",
+            "objectType": "Apple",
+            "position": {"x": 1.0, "y": 0.9, "z": 0.0},
+        }
+        second_destination = {
+            "objectId": "Apple|+01.10|+00.90|+00.00",
+            "objectType": "Apple",
+            "position": {"x": 1.1, "y": 0.9, "z": 0.0},
+        }
+        first_candidate = {"x": 0.75, "y": 0.0, "z": 0.0}
+        second_candidate = {"x": 1.25, "y": 0.0, "z": 0.0}
+        refresh_calls = []
+        find_calls = []
+        candidate_calls = []
+        teleport_calls = []
+        waited_positions = []
+        notifications = []
+
+        runtime.physical_agent_id = lambda _robot: 0
+        runtime.prepare_hand_for_goto_if_needed = lambda *_args, **_kwargs: None
+        runtime.refresh_reachable_positions = lambda agent_id: refresh_calls.append(agent_id)
+
+        def find_object(*_args, **_kwargs):
+            index = len(find_calls)
+            find_calls.append((_args, _kwargs))
+            return [first_destination, second_destination][index]
+
+        def teleport_candidate_positions(*_args, **_kwargs):
+            index = len(candidate_calls)
+            candidate_calls.append((_args, _kwargs))
+            return [[first_candidate], [second_candidate]][index]
+
+        def teleport_and_face_candidate_positions(_agent_id, positions, **kwargs):
+            teleport_calls.append(
+                ([dict(position) for position in positions], dict(kwargs["face_target"]))
+            )
+            return dict(positions[0])
+
+        runtime.find_object = find_object
+        runtime.teleport_candidate_positions = teleport_candidate_positions
+        runtime.teleport_and_face_candidate_positions = teleport_and_face_candidate_positions
+        runtime.record_operated_object_name = lambda _obj: None
+
+        class WaitingCoordinator:
+            def wait_until_goto_candidates_clear(self, agent_id, positions):
+                waited_positions.append(
+                    (agent_id, [dict(position) for position in positions])
+                )
+                return True
+
+            def notify_agent_position_changed(self, agent_id):
+                notifications.append(agent_id)
+
+        result = ThorRuntime.navigate_to_object(
+            runtime,
+            "robot1",
+            "Apple",
+            phase_coordinator=WaitingCoordinator(),
+        )
+
+        self.assertIs(result, second_destination)
+        self.assertEqual(refresh_calls, [0, 0])
+        self.assertEqual(len(find_calls), 2)
+        self.assertEqual(len(candidate_calls), 2)
+        self.assertEqual(waited_positions, [(0, [first_candidate])])
+        self.assertEqual(
+            teleport_calls,
+            [([second_candidate], second_destination["position"])],
+        )
+        self.assertEqual(notifications, [0])
 
 
 class TemperatureGroundTruthProgressTest(unittest.TestCase):

@@ -60,6 +60,21 @@ llm:
       max_tokens: 1300
       frequency_penalty: 0.0
 
+rag:
+  enabled: false
+  corpus_path: data/rag/pddlrun_clean_corpus.jsonl
+  index_path: data/rag/pddlrun_clean_index.json
+  runtime_db_path: data/rag/pddlrun_clean_runtime.sqlite
+  quality:
+    - success
+  retrieval_eligible_only: true
+  top_k: 2
+  max_example_chars: 3000
+  max_block_chars: 8000
+  max_query_tokens: 12
+  query_timeout_seconds: 5
+  prewarm_runtime_db: true
+
 artifacts:
   manifest: run_manifest.json
   llm_calls: 00_llm/llm_calls.jsonl
