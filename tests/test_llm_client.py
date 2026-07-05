@@ -147,6 +147,7 @@ class LLMClientTests(unittest.TestCase):
             )
 
         self.assertTrue(seen_kwargs[0]["stream"])
+        self.assertEqual(seen_kwargs[0]["stream_options"], {"include_usage": True})
         self.assertEqual(llm_client.extract_text(response), "Hello")
         self.assertEqual(response["choices"][0]["finish_reason"], "stop")
         self.assertEqual(llm_client.extract_response_metadata(response)["key_index"], 0)

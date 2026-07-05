@@ -76,13 +76,16 @@ class SummarizeRunMetricsTest(unittest.TestCase):
                                 {
                                     "duration_seconds": 10,
                                     "task_run_dir": str(task_dir),
+                                    "llm_token_usage": {"total_tokens": 11},
                                 },
                                 {
                                     "duration_seconds": 20,
+                                    "llm_token_usage": {"total_tokens": "29"},
                                 },
                                 {
                                     "duration_seconds": "bad",
                                     "task_run_dir": str(missing_outputs_dir),
+                                    "llm_token_usage": {"total_tokens": None},
                                 },
                             ]
                         }
@@ -143,6 +146,8 @@ class SummarizeRunMetricsTest(unittest.TestCase):
                     "0.25",
                     "0.75 +- 0.25",
                     "0.75 +- 0.25",
+                    "40",
+                    "30",
                 ],
             )
 
@@ -284,7 +289,7 @@ class SummarizeRunMetricsTest(unittest.TestCase):
             assert_row(
                 self,
                 output_path.read_text(encoding="utf-8"),
-                ["zero", "", "", "", "", "0 +- 0", "", "", "", ""],
+                ["zero", "", "", "", "", "0 +- 0", "", "", "", "", "", ""],
             )
 
     def test_lammap_baseline_uses_planner_summary_and_baseline_action_counts(self):
@@ -302,9 +307,18 @@ class SummarizeRunMetricsTest(unittest.TestCase):
                     "summaries": [
                         {
                             "results": [
-                                {"duration_seconds": 10},
-                                {"duration_seconds": 20},
-                                {"duration_seconds": "bad"},
+                                {
+                                    "duration_seconds": 10,
+                                    "llm_token_usage": {"total_tokens": 25},
+                                },
+                                {
+                                    "duration_seconds": 20,
+                                    "llm_token_usage": {"total_tokens": 17},
+                                },
+                                {
+                                    "duration_seconds": "bad",
+                                    "llm_token_usage": {"total_tokens": "bad"},
+                                },
                             ]
                         }
                     ],
@@ -360,6 +374,8 @@ class SummarizeRunMetricsTest(unittest.TestCase):
                     "0.5",
                     "0.5 +- 0.5",
                     "0.75 +- 0.25",
+                    "42",
+                    "30",
                 ],
             )
 
@@ -418,6 +434,8 @@ class SummarizeRunMetricsTest(unittest.TestCase):
                     "1",
                     "1 +- 0",
                     "1 +- 0",
+                    "",
+                    "8",
                 ],
             )
 
@@ -480,6 +498,8 @@ class SummarizeRunMetricsTest(unittest.TestCase):
                     "1",
                     "1 +- 0",
                     "0.25 +- 0",
+                    "",
+                    "",
                 ],
             )
 
@@ -530,6 +550,8 @@ class SummarizeRunMetricsTest(unittest.TestCase):
                     "0",
                     "0 +- 0",
                     "0.5 +- 0",
+                    "",
+                    "",
                 ],
             )
 

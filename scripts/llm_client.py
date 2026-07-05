@@ -304,6 +304,7 @@ def complete_with_provider(
         "temperature": temperature,
         "custom_llm_provider": "openai",
         "stream": True,
+        "stream_options": {"include_usage": True},
     }
     if frequency_penalty is not None:
         kwargs["frequency_penalty"] = frequency_penalty

@@ -122,6 +122,45 @@ def mean_and_population_stddev(values: Iterable[Any]) -> str:
     return f"{format_number(mean)} +- {format_number(math.sqrt(variance))}"
 
 
+def safe_token_count(value: Any) -> int:
+    if value is None or isinstance(value, bool):
+        return 0
+    if isinstance(value, float) and not math.isfinite(value):
+        return 0
+    try:
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
+def total_planner_tokens(task_results: Sequence[Dict[str, Any]]) -> str:
+    saw_total_tokens = False
+    total_tokens = 0
+    for result in task_results:
+        llm_token_usage = result.get("llm_token_usage")
+        if not isinstance(llm_token_usage, dict) or "total_tokens" not in llm_token_usage:
+            continue
+        saw_total_tokens = True
+        total_tokens += safe_token_count(llm_token_usage.get("total_tokens"))
+    if not saw_total_tokens:
+        return ""
+    return str(total_tokens)
+
+
+def total_planner_run_time(task_results: Sequence[Dict[str, Any]]) -> str:
+    durations = numeric_values(result.get("duration_seconds") for result in task_results)
+    if not durations:
+        return ""
+    return format_number(sum(durations))
+
+
+def planner_total_metric_columns(task_results: Sequence[Dict[str, Any]]) -> List[str]:
+    return [
+        total_planner_tokens(task_results),
+        total_planner_run_time(task_results),
+    ]
+
+
 def format_number(value: float) -> str:
     return f"{value:.4g}"
 
@@ -293,6 +332,7 @@ def build_lammap_row(
         "",
         mean_and_population_stddev(result.get("action_count") for result in baseline_results),
         *coderun_metric_columns(coderun_summary, generate_code_denominator),
+        *planner_total_metric_columns(task_results),
     ]
 
 
@@ -311,6 +351,8 @@ def build_smart_llm_row(
         "",
         mean_and_population_stddev(result.get("action_count") for result in baseline_results),
         *coderun_metric_columns(coderun_summary, generate_code_denominator),
+        "",
+        "",
     ]
 
 
@@ -352,6 +394,7 @@ def build_row(
         safe_ratio(parallel_summary.get("pass_one_count"), plan_denominator),
         mean_and_population_stddev(plan_length_for_task(result) for result in task_results),
         *coderun_metric_columns(coderun_summary, plan_denominator),
+        *planner_total_metric_columns(task_results),
     ]
 
 
