@@ -1985,6 +1985,7 @@ class PDDLRunConfigTests(unittest.TestCase):
 
             def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
                 captured["prompt"] = messages[-1]["content"]
+                captured["max_tokens"] = max_tokens
                 return {}, "#SubTask 1: Open the fridge"
 
             with patch.object(manager.llm, "query_model", side_effect=fake_query_model):
@@ -1997,7 +1998,51 @@ class PDDLRunConfigTests(unittest.TestCase):
 
             self.assertNotIn(RAG_PROMPT_TITLE, captured["prompt"])
             self.assertIn("# decompose example", captured["prompt"])
+            self.assertEqual(1300, captured["max_tokens"])
+            self.assertIn(
+                "# decompose example",
+                (root / "run" / "01_decompose" / "01_decompose_prompt.txt").read_text(encoding="utf-8"),
+            )
+            self.assertEqual(
+                "#SubTask 1: Open the fridge",
+                (root / "run" / "01_decompose" / "02_decompose_output.txt").read_text(encoding="utf-8"),
+            )
             self.assertNotIn("decompose_rag", manager.current_task_manifest)
+
+    def test_generate_decomposed_plan_can_skip_artifact_writes(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            prompt_dir = root / "prompts" / "v1"
+            prompt_dir.mkdir(parents=True)
+            (prompt_dir / "pddl_train_task_decomposesep.txt").write_text(
+                "# decompose example\n",
+                encoding="utf-8",
+            )
+            manager = TaskManager(str(root), "test-model", config=RunConfig(root))
+            manager.current_task_run_dir = str(root / "run")
+            manager.current_task_manifest = {"artifacts": {}, "task": "Open the fridge"}
+            captured = {}
+
+            def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
+                captured["prompt"] = messages[-1]["content"]
+                captured["max_tokens"] = max_tokens
+                return {}, "#SubTask 1: Open the fridge"
+
+            with patch.object(manager.llm, "query_model", side_effect=fake_query_model):
+                result = manager._generate_decomposed_plan(
+                    "Open the fridge",
+                    "(define (domain allactionrobot))",
+                    [{"name": "robot1", "skills": ["GoToObject", "OpenObject"]}],
+                    "\n\nobjects = [{'name': 'Fridge', 'mass': 5.0}]",
+                    write_artifacts=False,
+                )
+
+            self.assertEqual("#SubTask 1: Open the fridge", result)
+            self.assertIn("# decompose example", captured["prompt"])
+            self.assertEqual(1300, captured["max_tokens"])
+            self.assertFalse((root / "run" / "01_decompose" / "01_decompose_prompt.txt").exists())
+            self.assertFalse((root / "run" / "01_decompose" / "02_decompose_output.txt").exists())
+            self.assertEqual({}, manager.current_task_manifest["artifacts"])
 
     def test_decompose_rag_prompt_block_serializes_concurrent_retrievals(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -2104,6 +2149,7 @@ class PDDLRunConfigTests(unittest.TestCase):
 
             def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
                 captured["prompt"] = messages[-1]["content"]
+                captured["max_tokens"] = max_tokens
                 return {}, "#SubTask 1: Open the fridge"
 
             with patch.object(manager.llm, "query_model", side_effect=fake_query_model):
@@ -2120,6 +2166,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertIn("doc_id: decompose:fridge", prompt)
             self.assertIn("# Historical decomposition for opening a fridge", prompt)
             self.assertNotIn("# static decompose example should be replaced", prompt)
+            self.assertEqual(1300, captured["max_tokens"])
             self.assertEqual(
                 manager.current_task_manifest["decompose_rag"]["retrievals"]["decompose"]["examples"][0]["doc_id"],
                 "decompose:fridge",

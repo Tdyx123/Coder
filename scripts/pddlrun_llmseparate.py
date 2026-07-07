@@ -1850,8 +1850,14 @@ class TaskManager:
 
         return filtered_states
 
-    def _generate_decomposed_plan(self, task: str, domain_content: str, robots: List[dict], objects_ai: str) -> str:
-        """Generate decomposed plan for a task."""
+    def _run_decompose_generation(
+        self,
+        task: str,
+        domain_content: str,
+        robots: List[dict],
+        objects_ai: str,
+    ) -> Dict[str, str]:
+        """Build the decomposition prompt and run the LLM without writing artifacts."""
         try:
             decompose_prompt = ""
             if not self.decompose_rag_retriever:
@@ -1872,18 +1878,42 @@ class TaskManager:
             prompt += "Specifically, if a subtask involves picking up an object, the robot's mass_capacity must be strictly greater than the object's mass. \n"
             prompt += "Strictly follow the format in the examples above when examples are provided.\n"
             prompt += f"# Task Description: {task}"
-            decompose_prompt_artifact = self.config.artifact("decompose_prompt", "01_decompose/01_decompose_prompt.txt")
-            decompose_output_artifact = self.config.artifact("decompose_output", "01_decompose/02_decompose_output.txt")
-            self._write_text_artifact(decompose_prompt_artifact, prompt)
-            self._record_artifact("decompose", "prompt", decompose_prompt_artifact)
             
             messages = [{"role": "user", "content": prompt}]
             call_config = self.config.llm_call("decompose")
             _, text = self.llm.query_model(
                 messages,
                 self.model,
+                max_tokens=call_config.get("max_tokens", 1300),
                 frequency_penalty=call_config.get("frequency_penalty", 0.0),
             )
+
+            return {"prompt": prompt, "text": text}
+            
+        except Exception as e:
+            raise PDDLError(f"Error generating decomposed plan: {str(e)}")
+
+    def _generate_decomposed_plan(
+        self,
+        task: str,
+        domain_content: str,
+        robots: List[dict],
+        objects_ai: str,
+        write_artifacts: bool = True,
+    ) -> str:
+        """Generate decomposed plan for a task."""
+        try:
+            result = self._run_decompose_generation(task, domain_content, robots, objects_ai)
+            prompt = result["prompt"]
+            text = result["text"]
+
+            if not write_artifacts:
+                return text
+
+            decompose_prompt_artifact = self.config.artifact("decompose_prompt", "01_decompose/01_decompose_prompt.txt")
+            decompose_output_artifact = self.config.artifact("decompose_output", "01_decompose/02_decompose_output.txt")
+            self._write_text_artifact(decompose_prompt_artifact, prompt)
+            self._record_artifact("decompose", "prompt", decompose_prompt_artifact)
             self._write_text_artifact(decompose_output_artifact, text)
             self._record_artifact("decompose", "output", decompose_output_artifact)
             self._persist_manifest()

@@ -17,6 +17,7 @@ from pddlrun_llmseparate import (
     build_robot_domain_name_map,
     build_robot_team,
 )
+from llm_logger import get_llm_logger
 from run_config import RunConfig
 
 
@@ -143,22 +144,17 @@ class LiveDecomposeRagComparisonTest(unittest.TestCase):
                 with_rag = self._run_decomposition(sample, record, rag_config)
                 without_rag = self._run_decomposition(sample, record, no_rag_config)
 
-                self.assertTrue(with_rag["decomposition"].strip())
-                self.assertTrue(without_rag["decomposition"].strip())
-                for result in [with_rag, without_rag]:
-                    self.assertTrue(result["prompt_path"].exists())
-                    self.assertTrue(result["output_path"].exists())
-                    self.assertTrue(result["manifest_path"].exists())
+                self.assertTrue(with_rag["text"].strip())
+                self.assertTrue(without_rag["text"].strip())
 
-                rag_manifest = self._load_manifest(with_rag["manifest_path"])
+                rag_manifest = with_rag["manifest"]
                 rag_retrievals = (
                     rag_manifest.get("decompose_rag", {})
                     .get("retrievals", {})
                 )
                 self.assertIn("decompose", rag_retrievals)
 
-                no_rag_prompt = without_rag["prompt_path"].read_text(encoding="utf-8")
-                self.assertNotIn(RAG_PROMPT_TITLE, no_rag_prompt)
+                self.assertNotIn(RAG_PROMPT_TITLE, without_rag["prompt"])
 
                 self._print_comparison(sample_number, sample, with_rag, without_rag)
 
@@ -200,48 +196,43 @@ class LiveDecomposeRagComparisonTest(unittest.TestCase):
             test_set=sample["test_set"],
             floor_plan=sample["floor_plan"],
         )
+        manager.current_task_manifest = {
+            "artifacts": {},
+            "task": record["task"],
+            "task_index": sample["task_index"],
+        }
         domain_content = manager.file_processor.read_file(str(config.allaction_domain_path()))
         robot_team = build_robot_team(record["robot list"])
         manager.current_robot_domain_names = build_robot_domain_name_map(record["robot list"])
         floor_plan_number = int(PDDLUtils.extract_floor_plan_number(sample["floor_plan"]))
         objects_ai = f"\n\nobjects = {PDDLUtils.get_ai2_thor_objects(floor_plan_number, config)}"
 
-        manager._prepare_task_run_dir(
-            sample["task_index"],
-            record["task"],
-            robot_team,
-            objects_ai,
-            domain_content,
-            manifest_task_index=sample["task_index"],
+        mode = "WITH RAG" if config.get("decompose_rag", "enabled", False) else "WITHOUT RAG"
+        print(
+            f"\n[LLM START] {mode} floor_plan={sample['floor_plan']} "
+            f"task_index={sample['task_index']}",
+            flush=True,
         )
-        decomposition = manager._generate_decomposed_plan(
-            record["task"],
-            domain_content,
-            robot_team,
-            objects_ai,
-        )
-
-        task_run_dir = Path(manager.current_task_run_dir)
+        get_llm_logger().clear_context()
+        try:
+            result = manager._run_decompose_generation(
+                record["task"],
+                domain_content,
+                robot_team,
+                objects_ai,
+            )
+        finally:
+            get_llm_logger().clear_context()
+            print(
+                f"[LLM END] {mode} floor_plan={sample['floor_plan']} "
+                f"task_index={sample['task_index']}",
+                flush=True,
+            )
         return {
-            "decomposition": decomposition,
-            "task_run_dir": task_run_dir,
-            "prompt_path": task_run_dir / config.artifact(
-                "decompose_prompt",
-                "01_decompose/01_decompose_prompt.txt",
-            ),
-            "output_path": task_run_dir / config.artifact(
-                "decompose_output",
-                "01_decompose/02_decompose_output.txt",
-            ),
-            "manifest_path": task_run_dir / config.artifact(
-                "manifest",
-                "run_manifest.json",
-            ),
+            "prompt": result["prompt"],
+            "text": result["text"],
+            "manifest": manager.current_task_manifest,
         }
-
-    def _load_manifest(self, manifest_path: Path) -> Dict[str, Any]:
-        self.assertTrue(manifest_path.exists(), f"Manifest missing: {manifest_path}")
-        return json.loads(manifest_path.read_text(encoding="utf-8"))
 
     def _print_comparison(
         self,
@@ -256,16 +247,11 @@ class LiveDecomposeRagComparisonTest(unittest.TestCase):
         print(f"task_index: {sample['task_index']}")
         print(f"task: {sample['task']}")
         print("\n--- WITH RAG ---")
-        print(with_rag["decomposition"])
+        print(with_rag["text"])
         print("\n--- WITHOUT RAG ---")
-        print(without_rag["decomposition"])
-        print("\nartifact paths:")
-        print(f"with_rag task_run_dir: {with_rag['task_run_dir']}")
-        print(f"with_rag prompt_path: {with_rag['prompt_path']}")
-        print(f"with_rag output_path: {with_rag['output_path']}")
-        print(f"without_rag task_run_dir: {without_rag['task_run_dir']}")
-        print(f"without_rag prompt_path: {without_rag['prompt_path']}")
-        print(f"without_rag output_path: {without_rag['output_path']}")
+        print(without_rag["text"])
+        print("\nartifacts:")
+        print("artifacts disabled; core method result in memory")
         print("=" * 88)
 
 
