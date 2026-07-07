@@ -221,7 +221,7 @@ class PDDLRagRetriever:
         *,
         quality: Sequence[str] = ("success",),
         retrieval_eligible_only: bool = True,
-        top_k: int = 2,
+        top_k: int = 3,
         max_example_chars: int = 3000,
         max_block_chars: int = 8000,
         max_query_tokens: int = DEFAULT_MAX_QUERY_TOKENS,
@@ -254,7 +254,7 @@ class PDDLRagRetriever:
             runtime_db_path=config.path(section, "runtime_db_path"),
             quality=_quality_values(config.get(section, "quality", ["success"])),
             retrieval_eligible_only=_as_bool(config.get(section, "retrieval_eligible_only", True)),
-            top_k=_as_positive_int(config.get(section, "top_k", 2), 2),
+            top_k=_as_positive_int(config.get(section, "top_k", 3), 3),
             max_example_chars=_as_positive_int(config.get(section, "max_example_chars", 3000), 3000),
             max_block_chars=_as_positive_int(config.get(section, "max_block_chars", 8000), 8000),
             max_query_tokens=_as_positive_int(
@@ -361,27 +361,15 @@ class PDDLRagRetriever:
         if not examples:
             return ""
 
-        parts = [
-            RAG_PROMPT_TITLE,
-            f"# Stage: {stage}",
-            RAG_SAFETY_RULES,
-        ]
-        for index, example in enumerate(examples, start=1):
-            content = _truncate_text(example.content, self.max_example_chars)
+        parts = [RAG_SAFETY_RULES]
+        for example in examples[:3]:
             parts.extend(
                 [
-                    f"\n# Retrieved Example {index}",
-                    f"doc_id: {example.doc_id}",
-                    f"quality: {example.quality}",
-                    f"task: {example.task}",
-                    f"score: {example.score:.6f}",
-                    "content:",
-                    content,
+                    "\n# Example",
+                    example.content,
                 ]
             )
-        parts.append("# End Retrieved Task Decomposition Examples (RAG)")
-        block = "\n".join(parts).strip() + "\n"
-        return _truncate_text(block, self.max_block_chars)
+        return "\n".join(parts).strip() + "\n"
 
     def _validate_sources(self) -> None:
         if self._validated:

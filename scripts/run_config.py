@@ -61,7 +61,7 @@ DEFAULT_RUN_CONFIG: Dict[str, Any] = {
         "runtime_db_path": "data/rag/task_decompose_runtime.sqlite",
         "quality": ["success"],
         "retrieval_eligible_only": True,
-        "top_k": 2,
+        "top_k": 3,
         "max_example_chars": 3000,
         "max_block_chars": 8000,
         "max_query_tokens": 12,

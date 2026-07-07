@@ -23,6 +23,9 @@ from run_config import RunConfig
 
 MODEL = "deepseek-v4-pro"
 TEST_SET = "final_test_new_0630_1"
+LOG_DIR = Path(__file__).resolve().parent / "logs"
+WITH_RAG_LOG_FILE = LOG_DIR / "test_decompose_rag_live_comparison_withrag.txt"
+NO_RAG_LOG_FILE = LOG_DIR / "test_decompose_rag_live_comparison_norag.txt"
 
 SAMPLES: List[Dict[str, Any]] = [
     {
@@ -132,6 +135,7 @@ class LiveDecomposeRagComparisonTest(unittest.TestCase):
     maxDiff = None
 
     def test_live_decomposition_with_and_without_rag(self):
+        self._reset_logs()
         rag_config = make_config(decompose_rag_enabled=True)
         no_rag_config = make_config(decompose_rag_enabled=False)
 
@@ -156,7 +160,25 @@ class LiveDecomposeRagComparisonTest(unittest.TestCase):
 
                 self.assertNotIn(RAG_PROMPT_TITLE, without_rag["prompt"])
 
-                self._print_comparison(sample_number, sample, with_rag, without_rag)
+                self._append_decomposition_log(
+                    WITH_RAG_LOG_FILE,
+                    sample_number,
+                    sample,
+                    "WITH RAG",
+                    with_rag,
+                )
+                self._append_decomposition_log(
+                    NO_RAG_LOG_FILE,
+                    sample_number,
+                    sample,
+                    "WITHOUT RAG",
+                    without_rag,
+                )
+
+    def _reset_logs(self) -> None:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        WITH_RAG_LOG_FILE.write_text("", encoding="utf-8")
+        NO_RAG_LOG_FILE.write_text("", encoding="utf-8")
 
     def _load_and_validate_sample(
         self,
@@ -207,12 +229,6 @@ class LiveDecomposeRagComparisonTest(unittest.TestCase):
         floor_plan_number = int(PDDLUtils.extract_floor_plan_number(sample["floor_plan"]))
         objects_ai = f"\n\nobjects = {PDDLUtils.get_ai2_thor_objects(floor_plan_number, config)}"
 
-        mode = "WITH RAG" if config.get("decompose_rag", "enabled", False) else "WITHOUT RAG"
-        print(
-            f"\n[LLM START] {mode} floor_plan={sample['floor_plan']} "
-            f"task_index={sample['task_index']}",
-            flush=True,
-        )
         get_llm_logger().clear_context()
         try:
             result = manager._run_decompose_generation(
@@ -223,36 +239,42 @@ class LiveDecomposeRagComparisonTest(unittest.TestCase):
             )
         finally:
             get_llm_logger().clear_context()
-            print(
-                f"[LLM END] {mode} floor_plan={sample['floor_plan']} "
-                f"task_index={sample['task_index']}",
-                flush=True,
-            )
         return {
             "prompt": result["prompt"],
             "text": result["text"],
             "manifest": manager.current_task_manifest,
         }
 
-    def _print_comparison(
+    def _append_decomposition_log(
         self,
+        log_file: Path,
         sample_number: int,
         sample: Dict[str, Any],
-        with_rag: Dict[str, Any],
-        without_rag: Dict[str, Any],
+        mode: str,
+        result: Dict[str, Any],
     ) -> None:
-        print("\n" + "=" * 88)
-        print(f"TASK {sample_number}/{len(SAMPLES)}")
-        print(f"floor_plan: {sample['floor_plan']}")
-        print(f"task_index: {sample['task_index']}")
-        print(f"task: {sample['task']}")
-        print("\n--- WITH RAG ---")
-        print(with_rag["text"])
-        print("\n--- WITHOUT RAG ---")
-        print(without_rag["text"])
-        print("\nartifacts:")
-        print("artifacts disabled; core method result in memory")
-        print("=" * 88)
+        lines = [
+            "",
+            "=" * 88,
+            f"TASK {sample_number}/{len(SAMPLES)}",
+            f"mode: {mode}",
+            f"floor_plan: {sample['floor_plan']}",
+            f"task_index: {sample['task_index']}",
+            f"task: {sample['task']}",
+            "",
+            "prompt:",
+            str(result["prompt"]),
+            "",
+            "decomposition:",
+            str(result["text"]),
+            "",
+            "artifacts:",
+            "artifacts disabled; core method result in memory",
+            "=" * 88,
+        ]
+        with log_file.open("a", encoding="utf-8") as handle:
+            handle.write("\n".join(lines))
+            handle.write("\n")
 
 
 if __name__ == "__main__":

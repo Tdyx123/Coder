@@ -4,6 +4,7 @@
 /.python-version
 *.pyc
 /tests/artifacts/
+/tests/logs/
 AGENTS.md
 /data/single_subtask_code/
 /data/rag/

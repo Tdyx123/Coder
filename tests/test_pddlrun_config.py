@@ -1996,8 +1996,15 @@ class PDDLRunConfigTests(unittest.TestCase):
                     "\n\nobjects = [{'name': 'Fridge', 'mass': 5.0}]",
             )
 
-            self.assertNotIn(RAG_PROMPT_TITLE, captured["prompt"])
-            self.assertIn("# decompose example", captured["prompt"])
+            prompt = captured["prompt"]
+            self.assertNotIn(RAG_PROMPT_TITLE, prompt)
+            self.assertIn("objects = ['Fridge']", prompt)
+            self.assertNotIn("objects = [{'name': 'Fridge', 'mass': 5.0}]", prompt)
+            self.assertNotIn("'mass':", prompt)
+            self.assertNotIn("robots =", prompt)
+            self.assertNotIn("robot's skills meet", prompt)
+            self.assertNotIn("mass_capacity must be strictly greater", prompt)
+            self.assertIn("# decompose example", prompt)
             self.assertEqual(1300, captured["max_tokens"])
             self.assertIn(
                 "# decompose example",
@@ -2008,6 +2015,37 @@ class PDDLRunConfigTests(unittest.TestCase):
                 (root / "run" / "01_decompose" / "02_decompose_output.txt").read_text(encoding="utf-8"),
             )
             self.assertNotIn("decompose_rag", manager.current_task_manifest)
+
+    def test_decompose_prompt_preserves_duplicate_object_names(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            prompt_dir = root / "prompts" / "v1"
+            prompt_dir.mkdir(parents=True)
+            (prompt_dir / "pddl_train_task_decomposesep.txt").write_text(
+                "# decompose example\n",
+                encoding="utf-8",
+            )
+            manager = TaskManager(str(root), "test-model", config=RunConfig(root))
+            manager.current_task_run_dir = str(root / "run")
+            manager.current_task_manifest = {"artifacts": {}, "task": "Open the cabinet"}
+            captured = {}
+
+            def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
+                captured["prompt"] = messages[-1]["content"]
+                return {}, "#SubTask 1: Open the cabinet"
+
+            with patch.object(manager.llm, "query_model", side_effect=fake_query_model):
+                manager._generate_decomposed_plan(
+                    "Open the cabinet",
+                    "(define (domain allactionrobot))",
+                    [{"name": "robot1", "skills": ["GoToObject", "OpenObject"]}],
+                    "\n\nobjects = [{'name': 'Cabinet', 'mass': 0.0}, {'name': 'Cabinet', 'mass': 1.0}]",
+                    write_artifacts=False,
+                )
+
+            prompt = captured["prompt"]
+            self.assertIn("objects = ['Cabinet', 'Cabinet']", prompt)
+            self.assertNotIn("'mass':", prompt)
 
     def test_generate_decomposed_plan_can_skip_artifact_writes(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -2161,9 +2199,11 @@ class PDDLRunConfigTests(unittest.TestCase):
                 )
 
             prompt = captured["prompt"]
-            self.assertIn(RAG_PROMPT_TITLE, prompt)
+            self.assertNotIn(RAG_PROMPT_TITLE, prompt)
+            self.assertNotIn("# End Retrieved Task Decomposition Examples (RAG)", prompt)
             self.assertIn("Do not copy object names, robot tokens, floor-plan facts", prompt)
-            self.assertIn("doc_id: decompose:fridge", prompt)
+            self.assertIn("# Example", prompt)
+            self.assertNotIn("doc_id: decompose:fridge", prompt)
             self.assertIn("# Historical decomposition for opening a fridge", prompt)
             self.assertNotIn("# static decompose example should be replaced", prompt)
             self.assertEqual(1300, captured["max_tokens"])

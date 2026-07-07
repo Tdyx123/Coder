@@ -10,7 +10,12 @@ SCRIPTS_DIR = ROOT / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from pddl_rag import PDDLRagError, PDDLRagRetriever, RAG_PROMPT_TITLE, _tokenize_query
+from pddl_rag import (
+    PDDLRagError,
+    PDDLRagExample,
+    PDDLRagRetriever,
+    _tokenize_query,
+)
 from run_config import RunConfig
 
 
@@ -42,6 +47,20 @@ def doc(
         "quality": quality,
         "retrieval_eligible": retrieval_eligible,
     }
+
+
+def rag_example(doc_id: str, content: str) -> PDDLRagExample:
+    return PDDLRagExample(
+        doc_id=doc_id,
+        stage="decompose",
+        quality="success",
+        retrieval_eligible=True,
+        task=f"task {doc_id}",
+        query_text=f"query {doc_id}",
+        content=content,
+        metadata={"task_run_dir": f"/tmp/{doc_id}"},
+        score=0.0,
+    )
 
 
 class PDDLRagRetrieverTest(unittest.TestCase):
@@ -84,6 +103,30 @@ class PDDLRagRetrieverTest(unittest.TestCase):
 
             with self.assertRaises(PDDLRagError):
                 PDDLRagRetriever.from_config(config)
+
+    def test_from_config_defaults_to_top_three(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            corpus_path = root / "rag" / "clean.jsonl"
+            index_path = root / "rag" / "clean_index.json"
+            corpus_path.parent.mkdir(parents=True, exist_ok=True)
+            corpus_path.write_text("", encoding="utf-8")
+            index_path.write_text("{}", encoding="utf-8")
+            config = RunConfig(
+                root,
+                values={
+                    "decompose_rag": {
+                        "enabled": True,
+                        "corpus_path": str(corpus_path),
+                        "index_path": str(index_path),
+                        "runtime_db_path": str(root / "rag" / "runtime.sqlite"),
+                    }
+                },
+            )
+
+            retriever = PDDLRagRetriever.from_config(config)
+
+            self.assertEqual(retriever.top_k, 3)
 
     def test_retrieve_builds_cache_filters_stage_quality_and_eligible_docs(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -151,47 +194,39 @@ class PDDLRagRetrieverTest(unittest.TestCase):
             self.assertTrue(all(example.quality == "success" for example in examples))
             self.assertTrue(all(example.retrieval_eligible for example in examples))
 
-    def test_format_prompt_block_includes_safety_rules_and_truncates_content(self):
+    def test_format_prompt_block_includes_top_three_full_contents_without_metadata(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
-            corpus_path = root / "rag" / "clean.jsonl"
-            index_path = root / "rag" / "clean_index.json"
-            write_jsonl(
-                corpus_path,
-                [
-                    doc(
-                        "problem_generation:one",
-                        "problem_generation",
-                        "Task: slice potato",
-                        "A" * 80,
-                    )
-                ],
+            retriever = PDDLRagRetriever(
+                root / "rag" / "clean.jsonl",
+                root / "rag" / "clean_index.json",
+                root / "rag" / "runtime.sqlite",
+                max_example_chars=20,
+                max_block_chars=60,
             )
-            index_path.write_text("{}", encoding="utf-8")
-            retriever = PDDLRagRetriever.from_config(
-                RunConfig(
-                    root,
-                    values={
-                        "decompose_rag": {
-                            "enabled": True,
-                            "corpus_path": str(corpus_path),
-                            "index_path": str(index_path),
-                            "runtime_db_path": str(root / "rag" / "runtime.sqlite"),
-                            "max_example_chars": 20,
-                        }
-                    },
-                )
-            )
-
-            examples = retriever.retrieve("problem_generation", "slice potato")
+            examples = [
+                rag_example("decompose:one", "A" * 80),
+                rag_example("decompose:two", "B" * 80),
+                rag_example("decompose:three", "C" * 80),
+                rag_example("decompose:four", "D" * 80),
+            ]
             block = retriever.format_prompt_block("problem_generation", examples)
 
-            self.assertIn(RAG_PROMPT_TITLE, block)
             self.assertIn("Do not copy object names, robot tokens, floor-plan facts", block)
-            self.assertIn("doc_id: problem_generation:one", block)
-            self.assertIn("quality: success", block)
-            self.assertIn("task: task problem_generation:one", block)
-            self.assertIn("...[truncated]", block)
+            self.assertEqual(block.count("# Example"), 3)
+            self.assertNotIn("# Retrieved Task Decomposition Examples (RAG)", block)
+            self.assertNotIn("# End Retrieved Task Decomposition Examples (RAG)", block)
+            self.assertNotIn("# Retrieved Example", block)
+            self.assertNotIn("# Stage:", block)
+            self.assertNotIn("doc_id:", block)
+            self.assertNotIn("quality:", block)
+            self.assertNotIn("task:", block)
+            self.assertNotIn("score:", block)
+            self.assertIn("A" * 80, block)
+            self.assertIn("B" * 80, block)
+            self.assertIn("C" * 80, block)
+            self.assertNotIn("D" * 80, block)
+            self.assertNotIn("...[truncated]", block)
 
 
 if __name__ == "__main__":

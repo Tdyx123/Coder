@@ -1197,32 +1197,49 @@ class TaskManager:
     def _object_match_key(value: str) -> str:
         return re.sub(r'[^a-z0-9]+', '', str(value).lower())
 
-    def _parse_objects_ai(self, objects_ai: Union[str, List[Any]]) -> List[Dict[str, Any]]:
-        """Parse the floorplan object list while preserving object properties."""
+    @staticmethod
+    def _literal_objects_from_context(objects_ai: Union[str, List[Any]]) -> List[Any]:
+        """Extract the literal objects list from the shared objects context."""
         if not objects_ai:
             return []
 
-        parsed: Any
         if isinstance(objects_ai, list):
-            parsed = objects_ai
-        else:
-            text = str(objects_ai).strip()
-            objects_marker = re.search(r'\bobjects\s*=', text, re.IGNORECASE)
-            if objects_marker:
-                text = text[objects_marker.end():].strip()
+            return objects_ai
 
-            start = text.find("[")
-            end = text.rfind("]")
-            if start != -1 and end != -1 and start <= end:
-                text = text[start:end + 1]
+        text = str(objects_ai).strip()
+        objects_marker = re.search(r'\bobjects\s*=', text, re.IGNORECASE)
+        if objects_marker:
+            text = text[objects_marker.end():].strip()
 
-            try:
-                parsed = ast.literal_eval(text)
-            except (SyntaxError, ValueError):
-                return []
+        start = text.find("[")
+        end = text.rfind("]")
+        if start != -1 and end != -1 and start <= end:
+            text = text[start:end + 1]
 
-        if not isinstance(parsed, list):
+        try:
+            parsed = ast.literal_eval(text)
+        except (SyntaxError, ValueError):
             return []
+
+        return parsed if isinstance(parsed, list) else []
+
+    def _format_decompose_objects_prompt(self, objects_ai: Union[str, List[Any]]) -> str:
+        """Format decomposition objects as a name-only array."""
+        names: List[str] = []
+        for item in self._literal_objects_from_context(objects_ai):
+            if isinstance(item, dict):
+                name = item.get("name")
+            else:
+                name = item
+
+            if isinstance(name, str) and name.strip():
+                names.append(name.strip())
+
+        return f"objects = {names!r}"
+
+    def _parse_objects_ai(self, objects_ai: Union[str, List[Any]]) -> List[Dict[str, Any]]:
+        """Parse the floorplan object list while preserving object properties."""
+        parsed = self._literal_objects_from_context(objects_ai)
 
         objects: List[Dict[str, Any]] = []
         seen: Set[str] = set()
@@ -1866,16 +1883,14 @@ class TaskManager:
             
             # Construct the prompt incrementally like the original
             prompt = f"from pddl domain file with all possible actions: \n{domain_content}\n\n"
-            prompt += objects_ai
-            prompt += f"\nrobots = {robots}\n\n"
+            prompt += self._format_decompose_objects_prompt(objects_ai)
+            prompt += "\n\n"
             prompt += decompose_prompt
             if self.decompose_rag_retriever:
                 rag_query = f"Task: {task}"
                 prompt += self._decompose_rag_prompt_block(rag_query)
             prompt += "# GENERAL TASK DECOMPOSITION \n"
             prompt += "Decompose and parallel subtasks where ever possible.\n"
-            prompt += "For each subtask, the robot's skills meet the assigned subtask's requirements. \n"
-            prompt += "Specifically, if a subtask involves picking up an object, the robot's mass_capacity must be strictly greater than the object's mass. \n"
             prompt += "Strictly follow the format in the examples above when examples are provided.\n"
             prompt += f"# Task Description: {task}"
             
