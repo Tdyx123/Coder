@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
-from run_config import RunConfig, apply_rag_cli_override, load_run_config, normalize_floor_plan
+from run_config import RunConfig, apply_decompose_rag_cli_override, load_run_config, normalize_floor_plan
 
 
 @dataclass(frozen=True)
@@ -38,20 +38,20 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="Accepted for compatibility; this parallel runner does not write legacy log_results output.",
     )
-    rag_group = parser.add_mutually_exclusive_group()
-    rag_group.add_argument(
-        "--rag",
-        dest="rag",
+    decompose_rag_group = parser.add_mutually_exclusive_group()
+    decompose_rag_group.add_argument(
+        "--decompose-rag",
+        dest="decompose_rag",
         action="store_true",
-        help="Enable local PDDL RAG examples in prompts (default).",
+        help="Enable task decomposition RAG few-shot examples (default).",
     )
-    rag_group.add_argument(
-        "--no-rag",
-        dest="rag",
+    decompose_rag_group.add_argument(
+        "--no-decompose-rag",
+        dest="decompose_rag",
         action="store_false",
-        help="Disable local PDDL RAG examples in prompts.",
+        help="Disable task decomposition RAG and use the static decomposition prompt examples.",
     )
-    parser.set_defaults(rag=True)
+    parser.set_defaults(decompose_rag=True)
     return parser.parse_args(argv)
 
 
@@ -89,15 +89,15 @@ def config_bool(value: Any, default: bool = False) -> bool:
     return bool(value)
 
 
-def prewarm_rag_if_configured(config: RunConfig) -> bool:
-    if not config_bool(config.get("rag", "enabled", False)):
+def prewarm_decompose_rag_if_configured(config: RunConfig) -> bool:
+    if not config_bool(config.get("decompose_rag", "enabled", False)):
         return False
-    if not config_bool(config.get("rag", "prewarm_runtime_db", True), True):
+    if not config_bool(config.get("decompose_rag", "prewarm_runtime_db", True), True):
         return False
 
-    from pddlrun_llmseparate import prewarm_rag_runtime_db
+    from pddlrun_llmseparate import prewarm_decompose_rag_runtime_db
 
-    return prewarm_rag_runtime_db(config)
+    return prewarm_decompose_rag_runtime_db(config)
 
 
 def load_jobs(
@@ -224,7 +224,7 @@ def main() -> None:
     args = parse_args()
     repo_root = Path(__file__).resolve().parent.parent
     config = load_run_config(repo_root)
-    apply_rag_cli_override(config, args.rag)
+    apply_decompose_rag_cli_override(config, args.decompose_rag)
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     output_root = (
         config.resolve_path(args.output_root)
@@ -233,8 +233,8 @@ def main() -> None:
     )
     output_root.mkdir(parents=True, exist_ok=True)
 
-    if prewarm_rag_if_configured(config):
-        print(f"Prewarmed RAG runtime DB: {config.path('rag', 'runtime_db_path')}")
+    if prewarm_decompose_rag_if_configured(config):
+        print(f"Prewarmed task decomposition RAG runtime DB: {config.path('decompose_rag', 'runtime_db_path')}")
 
     floor_plans = [normalize_floor_plan(value) for value in args.floor_plans]
     summaries: List[Dict[str, Any]] = []

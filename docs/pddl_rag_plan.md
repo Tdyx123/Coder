@@ -1,5 +1,7 @@
 # PDDL Run RAG 方案
 
+> 当前运行链路已改为任务分解专用 RAG：只召回 `decompose` 阶段的“任务 + 分解方案”作为 few-shot。本文后续关于 `allocate`、`problem_generation` 的阶段级 RAG 设计属于历史方案记录。
+
 ## 摘要
 
 本方案从 `logs/intermediate_runs` 构建轻量本地 RAG 语料，不调用 LLM，不运行 planner，也不改变当前 `pddlrun_llmseparate.py` 主流程。

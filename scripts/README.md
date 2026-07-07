@@ -43,8 +43,9 @@ Arguments currently supported by the script:
 - `--prompt-decompse-set`
 - `--prompt-allocation-set`
 - `--test-set`
-- `--log-results`
-- `--no-log-results`
+- `--task-index`
+- `--decompose-rag`
+- `--no-decompose-rag`
 
 Current defaults in code:
 
@@ -72,6 +73,8 @@ Arguments:
 - `--prompt-decompse-set`
 - `--prompt-allocation-set`
 - `--disable-log-results`
+- `--decompose-rag`
+- `--no-decompose-rag`
 
 If `--output-root` is not provided, summary files are written under:
 

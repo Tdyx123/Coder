@@ -180,8 +180,8 @@ class BuildPDDLRagCorpusTest(unittest.TestCase):
             )
 
             self.assertEqual(result, 0)
-            docs = read_jsonl(output_dir / "pddlrun_corpus.jsonl")
-            self.assertEqual({doc["stage"] for doc in docs}, {"decompose", "allocate", "problem_generation"})
+            docs = read_jsonl(output_dir / "task_decompose_corpus.jsonl")
+            self.assertEqual({doc["stage"] for doc in docs}, {"decompose"})
             self.assertTrue(all(doc["quality"] == "success" for doc in docs))
             self.assertTrue(all(doc["retrieval_eligible"] for doc in docs))
             self.assertTrue(
@@ -192,17 +192,21 @@ class BuildPDDLRagCorpusTest(unittest.TestCase):
                 )
             )
 
-            problem_doc = next(doc for doc in docs if doc["stage"] == "problem_generation")
-            self.assertIn("(define (problem validated-book))", problem_doc["content"])
-            self.assertEqual(problem_doc["metadata"]["planner_return_code"], 0)
+            decompose_doc = docs[0]
+            self.assertIn("# Task", decompose_doc["content"])
+            self.assertIn("# Decomposition Output", decompose_doc["content"])
+            self.assertIn("# SubTask 1: Open the book", decompose_doc["content"])
+            self.assertEqual(decompose_doc["query_text"], "Task: success task")
+            self.assertNotIn("# Robots", decompose_doc["content"])
+            self.assertNotIn("# Key Objects", decompose_doc["content"])
 
-            index = read_json(output_dir / "pddlrun_index.json")
-            self.assertEqual(index["document_count"], 3)
+            index = read_json(output_dir / "task_decompose_index.json")
+            self.assertEqual(index["document_count"], 1)
             self.assertIn("book", index["postings"])
 
-            summary = read_json(output_dir / "pddlrun_summary.json")
-            self.assertEqual(summary["document_count"], 3)
-            self.assertEqual(summary["retrieval_eligible_count"], 3)
+            summary = read_json(output_dir / "task_decompose_summary.json")
+            self.assertEqual(summary["document_count"], 1)
+            self.assertEqual(summary["retrieval_eligible_count"], 1)
             self.assertEqual(summary["by_stage_quality"]["decompose"]["success"], 1)
 
     def test_keeps_failed_documents_but_marks_them_ineligible(self):
@@ -229,11 +233,11 @@ class BuildPDDLRagCorpusTest(unittest.TestCase):
             )
 
             self.assertEqual(result, 0)
-            docs = read_jsonl(output_dir / "pddlrun_corpus.jsonl")
+            docs = read_jsonl(output_dir / "task_decompose_corpus.jsonl")
             self.assertTrue(docs)
             self.assertTrue(all(doc["quality"] == "failed" for doc in docs))
             self.assertTrue(all(not doc["retrieval_eligible"] for doc in docs))
-            summary = read_json(output_dir / "pddlrun_summary.json")
+            summary = read_json(output_dir / "task_decompose_summary.json")
             self.assertEqual(summary["retrieval_eligible_count"], 0)
 
     def test_supports_old_manifest_missing_optional_artifacts(self):
@@ -261,12 +265,12 @@ class BuildPDDLRagCorpusTest(unittest.TestCase):
             )
 
             self.assertEqual(result, 0)
-            docs = read_jsonl(output_dir / "pddlrun_corpus.jsonl")
-            self.assertEqual(len(docs), 3)
+            docs = read_jsonl(output_dir / "task_decompose_corpus.jsonl")
+            self.assertEqual(len(docs), 1)
             decompose_doc = next(doc for doc in docs if doc["stage"] == "decompose")
             self.assertEqual(decompose_doc["metadata"]["key_object_count"], 0)
 
-    def test_records_skip_reason_for_missing_stage_artifact(self):
+    def test_rejects_non_decompose_stage(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             logs_root = root / "logs" / "intermediate_runs"
@@ -279,23 +283,19 @@ class BuildPDDLRagCorpusTest(unittest.TestCase):
                 include_allocate=False,
             )
 
-            result = main(
-                [
-                    "--base-path",
-                    str(root),
-                    "--logs-root",
-                    str(logs_root),
-                    "--output-dir",
-                    str(output_dir),
-                    "--stages",
-                    "allocate",
-                ]
-            )
-
-            self.assertEqual(result, 0)
-            self.assertEqual(read_jsonl(output_dir / "pddlrun_corpus.jsonl"), [])
-            summary = read_json(output_dir / "pddlrun_summary.json")
-            self.assertEqual(summary["skip_reasons"]["missing_allocate_output"], 1)
+            with self.assertRaises(ValueError):
+                main(
+                    [
+                        "--base-path",
+                        str(root),
+                        "--logs-root",
+                        str(logs_root),
+                        "--output-dir",
+                        str(output_dir),
+                        "--stages",
+                        "allocate",
+                    ]
+                )
 
 
 if __name__ == "__main__":

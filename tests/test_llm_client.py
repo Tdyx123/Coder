@@ -130,6 +130,52 @@ class LLMClientTests(unittest.TestCase):
         self.assertEqual(seen_kwargs[0]["presence_penalty"], 1.5)
         self.assertEqual(seen_kwargs[0]["repetition_penalty"], 1.0)
 
+    def test_complete_with_provider_applies_qwen37_max_request_params(self):
+        seen_kwargs = []
+
+        def fake_completion(**kwargs):
+            seen_kwargs.append(kwargs)
+            return self._stream_response("ok")
+
+        with patch.object(llm_client, "completion", side_effect=fake_completion):
+            llm_client.complete_with_provider(
+                model="Qwen3.7-Max",
+                prompt="hello",
+                provider=self.provider,
+                max_tokens=16,
+                temperature=0.1,
+                extra_body={"request_id": "abc", "enable_thinking": True},
+            )
+
+        self.assertNotIn("max_tokens", seen_kwargs[0])
+        self.assertEqual(seen_kwargs[0]["max_completion_tokens"], 16)
+        self.assertEqual(
+            seen_kwargs[0]["extra_body"],
+            {"request_id": "abc", "enable_thinking": False},
+        )
+
+    def test_complete_with_provider_disables_deepseek_v4_pro_thinking(self):
+        seen_kwargs = []
+
+        def fake_completion(**kwargs):
+            seen_kwargs.append(kwargs)
+            return self._stream_response("ok")
+
+        with patch.object(llm_client, "completion", side_effect=fake_completion):
+            llm_client.complete_with_provider(
+                model="DeepSeek-V4-Pro",
+                prompt="hello",
+                provider=self.provider,
+                max_tokens=16,
+                temperature=0.1,
+                extra_body={"request_id": "abc", "thinking": {"type": "enabled"}},
+            )
+
+        self.assertEqual(
+            seen_kwargs[0]["extra_body"],
+            {"request_id": "abc", "thinking": {"type": "disabled"}},
+        )
+
     def test_complete_with_provider_streams_and_aggregates_text(self):
         seen_kwargs = []
 

@@ -19,27 +19,27 @@ from run_pddlrun_llmseparate_parallel import (
     load_jobs,
     main as parallel_main,
     parse_args,
-    prewarm_rag_if_configured,
+    prewarm_decompose_rag_if_configured,
     run_single_job,
 )
 
 
 class ParallelRunnerTests(unittest.TestCase):
-    def test_cli_defaults_to_rag_enabled(self):
+    def test_cli_defaults_to_decompose_rag_enabled(self):
         args = parse_args(["--floor-plans", "6"])
 
-        self.assertTrue(args.rag)
+        self.assertTrue(args.decompose_rag)
 
-    def test_cli_no_rag_disables_rag(self):
-        args = parse_args(["--floor-plans", "6", "--no-rag"])
+    def test_cli_no_decompose_rag_disables_decompose_rag(self):
+        args = parse_args(["--floor-plans", "6", "--no-decompose-rag"])
 
-        self.assertFalse(args.rag)
+        self.assertFalse(args.decompose_rag)
 
-    def test_prewarm_rag_if_configured_calls_single_runner_prewarm(self):
-        config = RunConfig(ROOT, values={"rag": {"enabled": True, "prewarm_runtime_db": True}})
+    def test_prewarm_decompose_rag_if_configured_calls_single_runner_prewarm(self):
+        config = RunConfig(ROOT, values={"decompose_rag": {"enabled": True, "prewarm_runtime_db": True}})
 
-        with patch("pddlrun_llmseparate.prewarm_rag_runtime_db", return_value=True) as mock_prewarm:
-            self.assertTrue(prewarm_rag_if_configured(config))
+        with patch("pddlrun_llmseparate.prewarm_decompose_rag_runtime_db", return_value=True) as mock_prewarm:
+            self.assertTrue(prewarm_decompose_rag_if_configured(config))
 
         mock_prewarm.assert_called_once_with(config)
 
@@ -84,10 +84,10 @@ class ParallelRunnerTests(unittest.TestCase):
                 output_root=str(root / "parallel"),
                 prompt_decompse_set="pddl_train_task_decomposesep",
                 prompt_allocation_set="pddl_train_task_allocationsep",
-                rag=True,
+                decompose_rag=True,
                 disable_log_results=False,
             )
-            config = RunConfig(root, values={"rag": {"enabled": False, "prewarm_runtime_db": True}})
+            config = RunConfig(root, values={"decompose_rag": {"enabled": False, "prewarm_runtime_db": True}})
 
             def fake_prewarm(config_arg):
                 prewarm_state["called"] = True
@@ -95,7 +95,7 @@ class ParallelRunnerTests(unittest.TestCase):
 
             with patch("run_pddlrun_llmseparate_parallel.parse_args", return_value=args), \
                 patch("run_pddlrun_llmseparate_parallel.load_run_config", return_value=config), \
-                patch("run_pddlrun_llmseparate_parallel.prewarm_rag_if_configured", side_effect=fake_prewarm), \
+                patch("run_pddlrun_llmseparate_parallel.prewarm_decompose_rag_if_configured", side_effect=fake_prewarm), \
                 patch("run_pddlrun_llmseparate_parallel.ThreadPoolExecutor", FakeExecutor):
                 parallel_main()
 

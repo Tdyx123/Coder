@@ -1,4 +1,4 @@
-"""Local SQLite-backed RAG retrieval for pddlrun prompts."""
+"""Local SQLite-backed RAG retrieval for task decomposition prompts."""
 
 from __future__ import annotations
 
@@ -18,9 +18,9 @@ TOKEN_RE = re.compile(r"[A-Za-z0-9_]+")
 DEFAULT_MAX_QUERY_TOKENS = 12
 DEFAULT_QUERY_TIMEOUT_SECONDS = 5.0
 DEFAULT_CANDIDATE_LIMIT = 5000
-RAG_PROMPT_TITLE = "# Retrieved PDDL Run Examples (RAG)"
+RAG_PROMPT_TITLE = "# Retrieved Task Decomposition Examples (RAG)"
 RAG_SAFETY_RULES = (
-    "# Use these examples only as references for structure and reasoning style.\n"
+    "# Use these examples only as few-shot references for decomposition structure and reasoning style.\n"
     "# Do not copy object names, robot tokens, floor-plan facts, or PDDL facts "
     "unless they are present in the current task context."
 )
@@ -211,7 +211,7 @@ def _truncate_text(text: str, max_chars: int) -> str:
 
 
 class PDDLRagRetriever:
-    """Retrieve clean PDDL run examples using a local SQLite FTS cache."""
+    """Retrieve task-decomposition examples using a local SQLite FTS cache."""
 
     def __init__(
         self,
@@ -240,25 +240,29 @@ class PDDLRagRetriever:
         self._validated = False
 
     @classmethod
-    def from_config(cls, config: RunConfig) -> Optional["PDDLRagRetriever"]:
-        if not _as_bool(config.get("rag", "enabled", False)):
+    def from_config(
+        cls,
+        config: RunConfig,
+        section: str = "decompose_rag",
+    ) -> Optional["PDDLRagRetriever"]:
+        if not _as_bool(config.get(section, "enabled", False)):
             return None
 
         retriever = cls(
-            corpus_path=config.path("rag", "corpus_path"),
-            index_path=config.path("rag", "index_path"),
-            runtime_db_path=config.path("rag", "runtime_db_path"),
-            quality=_quality_values(config.get("rag", "quality", ["success"])),
-            retrieval_eligible_only=_as_bool(config.get("rag", "retrieval_eligible_only", True)),
-            top_k=_as_positive_int(config.get("rag", "top_k", 2), 2),
-            max_example_chars=_as_positive_int(config.get("rag", "max_example_chars", 3000), 3000),
-            max_block_chars=_as_positive_int(config.get("rag", "max_block_chars", 8000), 8000),
+            corpus_path=config.path(section, "corpus_path"),
+            index_path=config.path(section, "index_path"),
+            runtime_db_path=config.path(section, "runtime_db_path"),
+            quality=_quality_values(config.get(section, "quality", ["success"])),
+            retrieval_eligible_only=_as_bool(config.get(section, "retrieval_eligible_only", True)),
+            top_k=_as_positive_int(config.get(section, "top_k", 2), 2),
+            max_example_chars=_as_positive_int(config.get(section, "max_example_chars", 3000), 3000),
+            max_block_chars=_as_positive_int(config.get(section, "max_block_chars", 8000), 8000),
             max_query_tokens=_as_positive_int(
-                config.get("rag", "max_query_tokens", DEFAULT_MAX_QUERY_TOKENS),
+                config.get(section, "max_query_tokens", DEFAULT_MAX_QUERY_TOKENS),
                 DEFAULT_MAX_QUERY_TOKENS,
             ),
             query_timeout_seconds=_as_positive_float(
-                config.get("rag", "query_timeout_seconds", DEFAULT_QUERY_TIMEOUT_SECONDS),
+                config.get(section, "query_timeout_seconds", DEFAULT_QUERY_TIMEOUT_SECONDS),
                 DEFAULT_QUERY_TIMEOUT_SECONDS,
             ),
         )
@@ -375,7 +379,7 @@ class PDDLRagRetriever:
                     content,
                 ]
             )
-        parts.append("# End Retrieved PDDL Run Examples (RAG)")
+        parts.append("# End Retrieved Task Decomposition Examples (RAG)")
         block = "\n".join(parts).strip() + "\n"
         return _truncate_text(block, self.max_block_chars)
 

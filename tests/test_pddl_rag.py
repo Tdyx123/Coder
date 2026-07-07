@@ -80,7 +80,7 @@ class PDDLRagRetrieverTest(unittest.TestCase):
 
     def test_enabled_config_requires_clean_sources(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
-            config = RunConfig(tmp_dir, values={"rag": {"enabled": True}})
+            config = RunConfig(tmp_dir, values={"decompose_rag": {"enabled": True}})
 
             with self.assertRaises(PDDLRagError):
                 PDDLRagRetriever.from_config(config)
@@ -132,7 +132,7 @@ class PDDLRagRetrieverTest(unittest.TestCase):
             config = RunConfig(
                 root,
                 values={
-                    "rag": {
+                    "decompose_rag": {
                         "enabled": True,
                         "corpus_path": str(corpus_path),
                         "index_path": str(index_path),
@@ -172,7 +172,7 @@ class PDDLRagRetrieverTest(unittest.TestCase):
                 RunConfig(
                     root,
                     values={
-                        "rag": {
+                        "decompose_rag": {
                             "enabled": True,
                             "corpus_path": str(corpus_path),
                             "index_path": str(index_path),

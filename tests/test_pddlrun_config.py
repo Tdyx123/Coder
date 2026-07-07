@@ -48,7 +48,7 @@ from migrate_intermediate_runs_layout import main as migrate_intermediate_runs_m
 from parsing_utils import ParsingUtils
 from run_config import DEFAULT_RUN_CONFIG as SHARED_DEFAULT_RUN_CONFIG
 from run_config import RunConfig as SharedRunConfig
-from run_config import apply_rag_cli_override
+from run_config import apply_decompose_rag_cli_override
 
 
 class FixedDatetime:
@@ -141,7 +141,7 @@ def rag_config_values(root: Path, records):
     write_jsonl(corpus_path, records)
     index_path.write_text("{}", encoding="utf-8")
     return {
-        "rag": {
+        "decompose_rag": {
             "enabled": True,
             "corpus_path": str(corpus_path),
             "index_path": str(index_path),
@@ -217,27 +217,27 @@ class PDDLRunConfigTests(unittest.TestCase):
                 },
             )
 
-    def test_apply_rag_cli_override_sets_enabled_flag(self):
+    def test_apply_decompose_rag_cli_override_sets_enabled_flag(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             config = RunConfig(tmp_dir)
 
-            self.assertFalse(config.get("rag", "enabled"))
-            self.assertIs(apply_rag_cli_override(config, True), config)
-            self.assertTrue(config.get("rag", "enabled"))
-            apply_rag_cli_override(config, False)
-            self.assertFalse(config.get("rag", "enabled"))
+            self.assertFalse(config.get("decompose_rag", "enabled"))
+            self.assertIs(apply_decompose_rag_cli_override(config, True), config)
+            self.assertTrue(config.get("decompose_rag", "enabled"))
+            apply_decompose_rag_cli_override(config, False)
+            self.assertFalse(config.get("decompose_rag", "enabled"))
 
-    def test_single_runner_cli_defaults_to_rag_enabled(self):
+    def test_single_runner_cli_defaults_to_decompose_rag_enabled(self):
         with patch("pddlrun_llmseparate.get_available_models", return_value=["deepseek-chat"]):
             args = parse_arguments(["--floor-plan", "6"])
 
-        self.assertTrue(args.rag)
+        self.assertTrue(args.decompose_rag)
 
-    def test_single_runner_cli_no_rag_disables_rag(self):
+    def test_single_runner_cli_no_decompose_rag_disables_decompose_rag(self):
         with patch("pddlrun_llmseparate.get_available_models", return_value=["deepseek-chat"]):
-            args = parse_arguments(["--floor-plan", "6", "--no-rag"])
+            args = parse_arguments(["--floor-plan", "6", "--no-decompose-rag"])
 
-        self.assertFalse(args.rag)
+        self.assertFalse(args.decompose_rag)
 
     def test_load_run_config_resolves_relative_paths(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1969,7 +1969,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             )
             self.assertFalse((root / "run" / "02_allocate" / "00_cropped_robot_domains.txt").exists())
 
-    def test_rag_is_disabled_by_default_for_decompose_prompt(self):
+    def test_decompose_rag_is_disabled_by_library_default_for_decompose_prompt(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             prompt_dir = root / "prompts" / "v1"
@@ -1993,12 +1993,13 @@ class PDDLRunConfigTests(unittest.TestCase):
                     "(define (domain allactionrobot))",
                     [{"name": "robot1", "skills": ["GoToObject", "OpenObject"]}],
                     "\n\nobjects = [{'name': 'Fridge', 'mass': 5.0}]",
-                )
+            )
 
             self.assertNotIn(RAG_PROMPT_TITLE, captured["prompt"])
-            self.assertNotIn("rag", manager.current_task_manifest)
+            self.assertIn("# decompose example", captured["prompt"])
+            self.assertNotIn("decompose_rag", manager.current_task_manifest)
 
-    def test_rag_prompt_block_serializes_concurrent_retrievals(self):
+    def test_decompose_rag_prompt_block_serializes_concurrent_retrievals(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             manager = TaskManager(str(root), "test-model", config=RunConfig(root))
@@ -2030,12 +2031,12 @@ class PDDLRunConfigTests(unittest.TestCase):
                     return f"block {stage} {len(examples)}"
 
             retriever = SlowRetriever(root / "rag" / "runtime.sqlite")
-            manager.rag_retriever = retriever
+            manager.decompose_rag_retriever = retriever
             start_barrier = threading.Barrier(4)
 
             def call_rag(index: int) -> str:
                 start_barrier.wait(timeout=5)
-                return manager._rag_prompt_block("decompose", f"query {index}", f"key_{index}")
+                return manager._decompose_rag_prompt_block(f"query {index}", f"key_{index}")
 
             with ThreadPoolExecutor(max_workers=4) as executor:
                 blocks = list(executor.map(call_rag, range(4)))
@@ -2043,11 +2044,11 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertEqual(retriever.max_active, 1)
             self.assertEqual(blocks, ["\nblock decompose 1\n"] * 4)
             self.assertEqual(
-                set(manager.current_task_manifest["rag"]["retrievals"]),
+                set(manager.current_task_manifest["decompose_rag"]["retrievals"]),
                 {"key_0", "key_1", "key_2", "key_3"},
             )
 
-    def test_rag_prompt_block_records_timeout_and_continues(self):
+    def test_decompose_rag_prompt_block_records_timeout_and_continues(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             manager = TaskManager(str(root), "test-model", config=RunConfig(root))
@@ -2062,12 +2063,12 @@ class PDDLRunConfigTests(unittest.TestCase):
                 def retrieve(self, stage: str, query_text: str):
                     raise PDDLRagTimeoutError("RAG query exceeded 5s")
 
-            manager.rag_retriever = TimeoutRetriever()
+            manager.decompose_rag_retriever = TimeoutRetriever()
 
-            block = manager._rag_prompt_block("decompose", "open fridge", "decompose")
+            block = manager._decompose_rag_prompt_block("open fridge", "decompose")
 
             self.assertEqual(block, "")
-            retrieval = manager.current_task_manifest["rag"]["retrievals"]["decompose"]
+            retrieval = manager.current_task_manifest["decompose_rag"]["retrievals"]["decompose"]
             self.assertEqual(retrieval["examples"], [])
             self.assertEqual(retrieval["query_tokens"], ["open", "fridge"])
             self.assertTrue(retrieval["timeout"])
@@ -2079,7 +2080,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             prompt_dir = root / "prompts" / "v1"
             prompt_dir.mkdir(parents=True)
             (prompt_dir / "pddl_train_task_decomposesep.txt").write_text(
-                "# decompose example\n",
+                "# static decompose example should be replaced\n",
                 encoding="utf-8",
             )
             config = RunConfig(
@@ -2118,12 +2119,13 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertIn("Do not copy object names, robot tokens, floor-plan facts", prompt)
             self.assertIn("doc_id: decompose:fridge", prompt)
             self.assertIn("# Historical decomposition for opening a fridge", prompt)
+            self.assertNotIn("# static decompose example should be replaced", prompt)
             self.assertEqual(
-                manager.current_task_manifest["rag"]["retrievals"]["decompose"]["examples"][0]["doc_id"],
+                manager.current_task_manifest["decompose_rag"]["retrievals"]["decompose"]["examples"][0]["doc_id"],
                 "decompose:fridge",
             )
 
-    def test_allocation_prompt_includes_enabled_rag_examples(self):
+    def test_allocation_prompt_does_not_include_decompose_rag_examples(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             prompt_dir = root / "prompts" / "v1"
@@ -2165,15 +2167,11 @@ class PDDLRunConfigTests(unittest.TestCase):
                 )
 
             prompt = captured["prompt"]
-            self.assertIn(RAG_PROMPT_TITLE, prompt)
-            self.assertIn("doc_id: allocate:microwave", prompt)
-            self.assertLess(prompt.index(RAG_PROMPT_TITLE), prompt.index("#SubTask 1"))
-            self.assertEqual(
-                manager.current_task_manifest["rag"]["retrievals"]["allocate"]["examples"][0]["doc_id"],
-                "allocate:microwave",
-            )
+            self.assertNotIn(RAG_PROMPT_TITLE, prompt)
+            self.assertNotIn("doc_id: allocate:microwave", prompt)
+            self.assertNotIn("decompose_rag", manager.current_task_manifest)
 
-    def test_problem_generation_prompt_includes_enabled_rag_examples(self):
+    def test_problem_generation_prompt_does_not_include_decompose_rag_examples(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             prompt_dir = root / "prompts" / "v1"
@@ -2236,13 +2234,9 @@ class PDDLRunConfigTests(unittest.TestCase):
             )
 
             prompt = captured["prompt"]
-            self.assertIn(RAG_PROMPT_TITLE, prompt)
-            self.assertIn("doc_id: problem_generation:drawer", prompt)
-            self.assertLess(prompt.index(RAG_PROMPT_TITLE), prompt.index("Subtask examination"))
-            self.assertEqual(
-                manager.current_task_manifest["rag"]["retrievals"]["problem_generation_subtask_01"]["examples"][0]["doc_id"],
-                "problem_generation:drawer",
-            )
+            self.assertNotIn(RAG_PROMPT_TITLE, prompt)
+            self.assertNotIn("doc_id: problem_generation:drawer", prompt)
+            self.assertNotIn("decompose_rag", manager.current_task_manifest)
 
     def test_problem_generation_fewshot_includes_key_object_pddl_states(self):
         prompt = (ROOT / "prompts" / "v1" / "pddl_train_task_allocationsep_problem.txt").read_text(

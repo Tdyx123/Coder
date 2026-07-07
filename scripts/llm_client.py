@@ -22,9 +22,7 @@ class ProviderConfigError(ValueError):
 
 
 class _ApiKeyRotationPool:
-    """Thread-safe hourly rotation cursor storage for provider API keys."""
-
-    _ROTATION_INTERVAL = 3600
+    """Thread-safe round-robin cursor storage for provider API keys."""
 
     def __init__(self) -> None:
         self._registry_lock = threading.Lock()
@@ -40,17 +38,14 @@ class _ApiKeyRotationPool:
                 state = {
                     "api_keys": api_keys,
                     "next_index": 0,
-                    "last_rotation": time.time(),
                     "lock": threading.Lock(),
                 }
                 self._states[provider_key] = state
 
         with state["lock"]:
-            current_time = time.time()
-            if current_time - state["last_rotation"] >= self._ROTATION_INTERVAL:
-                state["next_index"] = (state["next_index"] + 1) % len(api_keys)
-                state["last_rotation"] = current_time
-            return state["next_index"]
+            start_index = state["next_index"]
+            state["next_index"] = (start_index + 1) % len(api_keys)
+            return start_index
 
 
 _api_key_rotation_pool = _ApiKeyRotationPool()
@@ -296,16 +291,22 @@ def complete_with_provider(
     extra_body: Optional[Dict[str, Any]] = None,
 ) -> Any:
     messages = _normalize_messages(prompt)
+    model_key = model.lower()
+    is_qwen37_max = model_key == "qwen3.7-max"
+    is_deepseek_v4_pro = model_key == "deepseek-v4-pro"
     kwargs: Dict[str, Any] = {
         "model": model,
         "messages": messages,
         "api_base": provider["base_url"],
-        "max_tokens": max_tokens,
         "temperature": temperature,
         "custom_llm_provider": "openai",
         "stream": True,
         "stream_options": {"include_usage": True},
     }
+    if is_qwen37_max:
+        kwargs["max_completion_tokens"] = max_tokens
+    else:
+        kwargs["max_tokens"] = max_tokens
     if frequency_penalty is not None:
         kwargs["frequency_penalty"] = frequency_penalty
     if stop:
@@ -322,6 +323,14 @@ def complete_with_provider(
             kwargs[key] = value
     if extra_body is not None:
         kwargs["extra_body"] = extra_body
+    if is_qwen37_max:
+        qwen_extra_body = dict(kwargs.get("extra_body") or {})
+        qwen_extra_body["enable_thinking"] = False
+        kwargs["extra_body"] = qwen_extra_body
+    if is_deepseek_v4_pro:
+        deepseek_extra_body = dict(kwargs.get("extra_body") or {})
+        deepseek_extra_body["thinking"] = {"type": "disabled"}
+        kwargs["extra_body"] = deepseek_extra_body
 
     api_keys = provider["api_keys"]
     start_index = _api_key_rotation_pool.reserve_start_index(provider)

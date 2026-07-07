@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a lightweight RAG corpus from pddlrun_llmseparate intermediate logs."""
+"""Build a lightweight task-decomposition RAG corpus from intermediate logs."""
 
 from __future__ import annotations
 
@@ -15,13 +15,13 @@ from run_config import load_run_config
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_STAGES = ("decompose", "allocate", "problem_generation")
+DEFAULT_STAGES = ("decompose",)
 TOKEN_RE = re.compile(r"[A-Za-z0-9_]+")
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build RAG corpus JSONL and a simple lexical index from pddlrun intermediate logs."
+        description="Build task-decomposition RAG corpus JSONL and a simple lexical index from intermediate logs."
     )
     parser.add_argument(
         "--base-path",
@@ -39,20 +39,20 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--corpus-path",
-        help="Output JSONL corpus path. Defaults to output-dir/pddlrun_corpus.jsonl.",
+        help="Output JSONL corpus path. Defaults to output-dir/task_decompose_corpus.jsonl.",
     )
     parser.add_argument(
         "--index-path",
-        help="Output lexical index JSON path. Defaults to output-dir/pddlrun_index.json.",
+        help="Output lexical index JSON path. Defaults to output-dir/task_decompose_index.json.",
     )
     parser.add_argument(
         "--summary-path",
-        help="Output summary JSON path. Defaults to output-dir/pddlrun_summary.json.",
+        help="Output summary JSON path. Defaults to output-dir/task_decompose_summary.json.",
     )
     parser.add_argument(
         "--stages",
         default=",".join(DEFAULT_STAGES),
-        help="Comma-separated stages to emit. Defaults to decompose,allocate,problem_generation.",
+        help="Comma-separated stages to emit. Only decompose is supported.",
     )
     parser.add_argument(
         "--limit-runs",
@@ -410,33 +410,17 @@ def build_decompose_doc(
         return None
 
     task = str(manifest.get("task") or task_context.get("task") or "")
-    robots = robot_summary(task_context.get("robots"))
-    object_names = object_names_from_context(task_context)
-    query_text = "\n".join(
-        [
-            f"Task: {task}",
-            f"Robots: {compact_json(robots, 1200)}",
-            f"Objects: {', '.join(object_names)}",
-            f"Key objects: {compact_json(key_objects, 1200)}",
-        ]
-    )
+    query_text = f"Task: {task}"
     content = "\n".join(
         [
             "# Task",
             task,
-            "",
-            "# Robots",
-            compact_json(robots),
-            "",
-            "# Key Objects",
-            compact_json(key_objects),
             "",
             "# Decomposition Output",
             output,
         ]
     )
     metadata = base_metadata(manifest, run_dir, quality, [source_path(run_dir, output_path) or ""])
-    metadata["robot_count"] = len(robots)
     metadata["key_object_count"] = len(key_objects)
     return make_document(
         make_doc_id("decompose", run_dir),
@@ -806,9 +790,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     base_path = Path(args.base_path).expanduser().resolve()
     run_config = load_run_config(base_path)
     output_dir = resolve_path(base_path, args.output_dir, base_path / "data" / "rag")
-    corpus_path = resolve_path(base_path, args.corpus_path, output_dir / "pddlrun_corpus.jsonl")
-    index_path = resolve_path(base_path, args.index_path, output_dir / "pddlrun_index.json")
-    summary_path = resolve_path(base_path, args.summary_path, output_dir / "pddlrun_summary.json")
+    corpus_path = resolve_path(base_path, args.corpus_path, output_dir / "task_decompose_corpus.jsonl")
+    index_path = resolve_path(base_path, args.index_path, output_dir / "task_decompose_index.json")
+    summary_path = resolve_path(base_path, args.summary_path, output_dir / "task_decompose_summary.json")
     logs_root = resolve_path(base_path, args.logs_root, run_config.storage_base_dir)
     stages = parse_stages(args.stages)
 
