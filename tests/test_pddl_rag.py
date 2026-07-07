@@ -194,6 +194,49 @@ class PDDLRagRetrieverTest(unittest.TestCase):
             self.assertTrue(all(example.quality == "success" for example in examples))
             self.assertTrue(all(example.retrieval_eligible for example in examples))
 
+    def test_retrieve_can_select_allocate_stage_docs(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            corpus_path = root / "rag" / "clean.jsonl"
+            index_path = root / "rag" / "clean_index.json"
+            db_path = root / "rag" / "runtime.sqlite"
+            write_jsonl(
+                corpus_path,
+                [
+                    doc(
+                        "decompose:other-stage",
+                        "decompose",
+                        "Task: heat apple microwave",
+                        "heat apple microwave",
+                    ),
+                    doc(
+                        "allocate:rich",
+                        "allocate",
+                        "Task: heat apple microwave",
+                        "assign robot microwave apple microwave",
+                    ),
+                ],
+            )
+            index_path.write_text("{}", encoding="utf-8")
+            config = RunConfig(
+                root,
+                values={
+                    "allocate_rag": {
+                        "enabled": True,
+                        "corpus_path": str(corpus_path),
+                        "index_path": str(index_path),
+                        "runtime_db_path": str(db_path),
+                        "top_k": 5,
+                    }
+                },
+            )
+
+            retriever = PDDLRagRetriever.from_config(config, section="allocate_rag")
+            examples = retriever.retrieve("allocate", "heat the apple in microwave")
+
+            self.assertEqual([example.doc_id for example in examples], ["allocate:rich"])
+            self.assertTrue(all(example.stage == "allocate" for example in examples))
+
     def test_format_prompt_block_includes_top_three_full_contents_without_metadata(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)

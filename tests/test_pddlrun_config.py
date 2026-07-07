@@ -48,6 +48,7 @@ from migrate_intermediate_runs_layout import main as migrate_intermediate_runs_m
 from parsing_utils import ParsingUtils
 from run_config import DEFAULT_RUN_CONFIG as SHARED_DEFAULT_RUN_CONFIG
 from run_config import RunConfig as SharedRunConfig
+from run_config import apply_allocate_rag_cli_override
 from run_config import apply_decompose_rag_cli_override
 
 
@@ -134,18 +135,19 @@ def rag_doc(doc_id: str, stage: str, query_text: str, content: str):
     }
 
 
-def rag_config_values(root: Path, records):
+def rag_config_values(root: Path, records, section: str = "decompose_rag"):
     rag_dir = root / "data" / "rag"
-    corpus_path = rag_dir / "clean.jsonl"
-    index_path = rag_dir / "clean_index.json"
+    prefix = "clean" if section == "decompose_rag" else section
+    corpus_path = rag_dir / f"{prefix}.jsonl"
+    index_path = rag_dir / f"{prefix}_index.json"
     write_jsonl(corpus_path, records)
     index_path.write_text("{}", encoding="utf-8")
     return {
-        "decompose_rag": {
+        section: {
             "enabled": True,
             "corpus_path": str(corpus_path),
             "index_path": str(index_path),
-            "runtime_db_path": str(rag_dir / "runtime.sqlite"),
+            "runtime_db_path": str(rag_dir / f"{prefix}_runtime.sqlite"),
             "top_k": 1,
         }
     }
@@ -227,17 +229,36 @@ class PDDLRunConfigTests(unittest.TestCase):
             apply_decompose_rag_cli_override(config, False)
             self.assertFalse(config.get("decompose_rag", "enabled"))
 
+    def test_apply_allocate_rag_cli_override_sets_enabled_flag(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = RunConfig(tmp_dir)
+
+            self.assertFalse(config.get("allocate_rag", "enabled"))
+            self.assertIs(apply_allocate_rag_cli_override(config, True), config)
+            self.assertTrue(config.get("allocate_rag", "enabled"))
+            apply_allocate_rag_cli_override(config, False)
+            self.assertFalse(config.get("allocate_rag", "enabled"))
+
     def test_single_runner_cli_defaults_to_decompose_rag_enabled(self):
         with patch("pddlrun_llmseparate.get_available_models", return_value=["deepseek-chat"]):
             args = parse_arguments(["--floor-plan", "6"])
 
         self.assertTrue(args.decompose_rag)
+        self.assertFalse(args.allocate_rag)
 
     def test_single_runner_cli_no_decompose_rag_disables_decompose_rag(self):
         with patch("pddlrun_llmseparate.get_available_models", return_value=["deepseek-chat"]):
             args = parse_arguments(["--floor-plan", "6", "--no-decompose-rag"])
 
         self.assertFalse(args.decompose_rag)
+
+    def test_single_runner_cli_allocate_rag_can_be_enabled_and_disabled(self):
+        with patch("pddlrun_llmseparate.get_available_models", return_value=["deepseek-chat"]):
+            enabled_args = parse_arguments(["--floor-plan", "6", "--allocate-rag"])
+            disabled_args = parse_arguments(["--floor-plan", "6", "--no-allocate-rag"])
+
+        self.assertTrue(enabled_args.allocate_rag)
+        self.assertFalse(disabled_args.allocate_rag)
 
     def test_load_run_config_resolves_relative_paths(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -2212,13 +2233,13 @@ class PDDLRunConfigTests(unittest.TestCase):
                 "decompose:fridge",
             )
 
-    def test_allocation_prompt_does_not_include_decompose_rag_examples(self):
+    def test_allocation_prompt_uses_static_examples_when_allocate_rag_disabled(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             prompt_dir = root / "prompts" / "v1"
             prompt_dir.mkdir(parents=True)
             (prompt_dir / "pddl_train_task_allocationsep_solution.txt").write_text(
-                "# allocation example\n",
+                "# static allocation example\n",
                 encoding="utf-8",
             )
             config = RunConfig(
@@ -2256,7 +2277,108 @@ class PDDLRunConfigTests(unittest.TestCase):
             prompt = captured["prompt"]
             self.assertNotIn(RAG_PROMPT_TITLE, prompt)
             self.assertNotIn("doc_id: allocate:microwave", prompt)
+            self.assertIn("# static allocation example", prompt)
             self.assertNotIn("decompose_rag", manager.current_task_manifest)
+            self.assertNotIn("allocate_rag", manager.current_task_manifest)
+
+    def test_allocation_prompt_includes_enabled_allocate_rag_examples(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            prompt_dir = root / "prompts" / "v1"
+            prompt_dir.mkdir(parents=True)
+            (prompt_dir / "pddl_train_task_allocationsep_solution.txt").write_text(
+                "# static allocation example should be replaced\n",
+                encoding="utf-8",
+            )
+            config = RunConfig(
+                root,
+                values=rag_config_values(
+                    root,
+                    [
+                        rag_doc(
+                            "allocate:microwave",
+                            "allocate",
+                            "Task: heat apple microwave",
+                            "# Historical allocation for microwave heating",
+                        )
+                    ],
+                    section="allocate_rag",
+                ),
+            )
+            manager = TaskManager(str(root), "test-model", config=config)
+            manager.current_task_run_dir = str(root / "run")
+            manager.current_task_manifest = {"artifacts": {}, "task": "Heat the apple"}
+            captured = {}
+
+            def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
+                captured["prompt"] = messages[-1]["content"]
+                return {}, "# Sequence of Operations:\nSubtask 1: Robot 1;"
+
+            with patch.object(manager.llm, "query_model", side_effect=fake_query_model):
+                manager._generate_allocation_plan(
+                    "#SubTask 1: Heat the apple in the microwave",
+                    robots=[{"name": "robot1", "skills": ["GoToObject"], "mass_capacity": 100}],
+                    objects_ai="\n\nobjects = [{'name': 'Microwave', 'mass': 7.0}]",
+                    key_objects=[{"name": "Microwave", "mass": 7.0}],
+                    key_objects_by_subtask={1: [{"name": "Microwave", "mass": 7.0}]},
+                )
+
+            prompt = captured["prompt"]
+            self.assertNotIn(RAG_PROMPT_TITLE, prompt)
+            self.assertIn("Do not copy object names, robot tokens, floor-plan facts", prompt)
+            self.assertIn("# Example", prompt)
+            self.assertIn("# Historical allocation for microwave heating", prompt)
+            self.assertNotIn("doc_id: allocate:microwave", prompt)
+            self.assertNotIn("# static allocation example should be replaced", prompt)
+            self.assertEqual(
+                manager.current_task_manifest["allocate_rag"]["retrievals"]["allocate"]["examples"][0]["doc_id"],
+                "allocate:microwave",
+            )
+
+    def test_allocation_rag_timeout_records_and_uses_static_prompt(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            prompt_dir = root / "prompts" / "v1"
+            prompt_dir.mkdir(parents=True)
+            (prompt_dir / "pddl_train_task_allocationsep_solution.txt").write_text(
+                "# static allocation fallback\n",
+                encoding="utf-8",
+            )
+            manager = TaskManager(str(root), "test-model", config=RunConfig(root))
+            manager.current_task_run_dir = str(root / "run")
+            manager.current_task_manifest = {"artifacts": {}, "task": "Heat the apple"}
+            captured = {}
+
+            class TimeoutRetriever:
+                runtime_db_path = root / "rag" / "runtime.sqlite"
+
+                def query_tokens(self, query_text: str):
+                    return ["heat", "apple"]
+
+                def retrieve(self, stage: str, query_text: str):
+                    raise PDDLRagTimeoutError("RAG query exceeded 5s")
+
+            manager.allocate_rag_retriever = TimeoutRetriever()
+
+            def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
+                captured["prompt"] = messages[-1]["content"]
+                return {}, "# Sequence of Operations:\nSubtask 1: Robot 1;"
+
+            with patch.object(manager.llm, "query_model", side_effect=fake_query_model):
+                manager._generate_allocation_plan(
+                    "#SubTask 1: Heat the apple in the microwave",
+                    robots=[{"name": "robot1", "skills": ["GoToObject"], "mass_capacity": 100}],
+                    objects_ai="\n\nobjects = [{'name': 'Microwave', 'mass': 7.0}]",
+                    key_objects=[{"name": "Microwave", "mass": 7.0}],
+                    key_objects_by_subtask={1: [{"name": "Microwave", "mass": 7.0}]},
+                )
+
+            self.assertIn("# static allocation fallback", captured["prompt"])
+            retrieval = manager.current_task_manifest["allocate_rag"]["retrievals"]["allocate"]
+            self.assertEqual(retrieval["examples"], [])
+            self.assertEqual(retrieval["query_tokens"], ["heat", "apple"])
+            self.assertTrue(retrieval["timeout"])
+            self.assertIn("RAG query exceeded", retrieval["error"])
 
     def test_problem_generation_prompt_does_not_include_decompose_rag_examples(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

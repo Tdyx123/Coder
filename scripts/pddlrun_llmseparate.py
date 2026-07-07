@@ -30,6 +30,7 @@ from pddl_rag import PDDLRagError, PDDLRagRetriever, PDDLRagTimeoutError
 from parsing_utils import ParsingUtils
 from run_config import (
     RunConfig,
+    apply_allocate_rag_cli_override,
     apply_decompose_rag_cli_override,
     load_run_config as _load_run_config,
     normalize_floor_plan,
@@ -150,17 +151,17 @@ def _config_bool(value: Any, default: bool = False) -> bool:
     return bool(value)
 
 
-def prewarm_decompose_rag_runtime_db(config: RunConfig) -> bool:
-    """Build or validate the shared decomposition RAG runtime DB before workers start."""
-    if not _config_bool(config.get("decompose_rag", "enabled", False)):
+def _prewarm_rag_runtime_db(config: RunConfig, section: str, label: str) -> bool:
+    """Build or validate a shared RAG runtime DB before workers start."""
+    if not _config_bool(config.get(section, "enabled", False)):
         return False
-    if not _config_bool(config.get("decompose_rag", "prewarm_runtime_db", True), True):
+    if not _config_bool(config.get(section, "prewarm_runtime_db", True), True):
         return False
 
     try:
-        retriever = PDDLRagRetriever.from_config(config, section="decompose_rag")
+        retriever = PDDLRagRetriever.from_config(config, section=section)
     except PDDLRagError as exc:
-        raise PDDLError(f"Error loading task decomposition RAG configuration: {exc}") from exc
+        raise PDDLError(f"Error loading {label} RAG configuration: {exc}") from exc
     if retriever is None:
         return False
 
@@ -168,8 +169,18 @@ def prewarm_decompose_rag_runtime_db(config: RunConfig) -> bool:
         with _locked_rag_retrieval(retriever):
             retriever.ensure_runtime_db()
     except PDDLRagError as exc:
-        raise PDDLError(f"Error prewarming task decomposition RAG runtime DB: {exc}") from exc
+        raise PDDLError(f"Error prewarming {label} RAG runtime DB: {exc}") from exc
     return True
+
+
+def prewarm_decompose_rag_runtime_db(config: RunConfig) -> bool:
+    """Build or validate the shared decomposition RAG runtime DB before workers start."""
+    return _prewarm_rag_runtime_db(config, "decompose_rag", "task decomposition")
+
+
+def prewarm_allocate_rag_runtime_db(config: RunConfig) -> bool:
+    """Build or validate the shared allocation RAG runtime DB before workers start."""
+    return _prewarm_rag_runtime_db(config, "allocate_rag", "task allocation")
 
 
 LLM_TOKEN_USAGE_KEYS = ("prompt_tokens", "completion_tokens", "total_tokens")
@@ -421,6 +432,13 @@ class TaskManager:
             )
         except PDDLRagError as exc:
             raise PDDLError(f"Error loading task decomposition RAG configuration: {exc}") from exc
+        try:
+            self.allocate_rag_retriever = PDDLRagRetriever.from_config(
+                self.config,
+                section="allocate_rag",
+            )
+        except PDDLRagError as exc:
+            raise PDDLError(f"Error loading task allocation RAG configuration: {exc}") from exc
         
         # Initialize paths
         self.resources_path = str(self.config.resources_dir)
@@ -561,18 +579,19 @@ class TaskManager:
         except (TypeError, ValueError):
             return str(value)
 
-    def _record_decompose_rag_retrieval(
+    def _record_rag_retrieval(
         self,
+        manifest_section: str,
         key: str,
         stage: str,
         examples: List[Any],
         metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Record retrieved task-decomposition RAG examples in the current manifest."""
+        """Record retrieved RAG examples in the current manifest."""
         if not isinstance(self.current_task_manifest, dict):
             return
 
-        rag_section = self.current_task_manifest.setdefault("decompose_rag", {})
+        rag_section = self.current_task_manifest.setdefault(manifest_section, {})
         retrievals = rag_section.setdefault("retrievals", {})
         record = {
             "stage": stage,
@@ -582,25 +601,53 @@ class TaskManager:
             record.update(metadata)
         retrievals[key] = record
 
-    def _decompose_rag_prompt_block(self, query_text: str, manifest_key: str = "decompose") -> str:
-        """Return formatted decomposition RAG examples, or empty string when disabled."""
-        if not self.decompose_rag_retriever:
+    def _record_decompose_rag_retrieval(
+        self,
+        key: str,
+        stage: str,
+        examples: List[Any],
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Record retrieved task-decomposition RAG examples in the current manifest."""
+        self._record_rag_retrieval("decompose_rag", key, stage, examples, metadata)
+
+    def _record_allocate_rag_retrieval(
+        self,
+        key: str,
+        stage: str,
+        examples: List[Any],
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Record retrieved task-allocation RAG examples in the current manifest."""
+        self._record_rag_retrieval("allocate_rag", key, stage, examples, metadata)
+
+    def _rag_prompt_block(
+        self,
+        retriever: Any,
+        manifest_section: str,
+        stage: str,
+        query_text: str,
+        manifest_key: str,
+        error_label: str,
+    ) -> str:
+        """Return formatted RAG examples, or empty string when disabled/unavailable."""
+        if not retriever:
             return ""
 
-        stage = "decompose"
         started_at = time.monotonic()
         query_tokens = []
-        if hasattr(self.decompose_rag_retriever, "query_tokens"):
+        if hasattr(retriever, "query_tokens"):
             try:
-                query_tokens = list(self.decompose_rag_retriever.query_tokens(query_text))
+                query_tokens = list(retriever.query_tokens(query_text))
             except Exception:
                 query_tokens = []
 
         try:
-            with _locked_rag_retrieval(self.decompose_rag_retriever):
-                examples = self.decompose_rag_retriever.retrieve(stage, query_text)
+            with _locked_rag_retrieval(retriever):
+                examples = retriever.retrieve(stage, query_text)
         except PDDLRagTimeoutError as exc:
-            self._record_decompose_rag_retrieval(
+            self._record_rag_retrieval(
+                manifest_section,
                 manifest_key,
                 stage,
                 [],
@@ -613,7 +660,7 @@ class TaskManager:
             )
             return ""
         except PDDLRagError as exc:
-            raise PDDLError(f"Error retrieving task decomposition RAG examples: {exc}") from exc
+            raise PDDLError(f"Error retrieving {error_label} RAG examples: {exc}") from exc
 
         metadata = {
             "query_tokens": query_tokens,
@@ -621,11 +668,72 @@ class TaskManager:
             "timeout": False,
         }
         if not examples:
-            self._record_decompose_rag_retrieval(manifest_key, stage, [], metadata)
+            self._record_rag_retrieval(manifest_section, manifest_key, stage, [], metadata)
             return ""
 
-        self._record_decompose_rag_retrieval(manifest_key, stage, examples, metadata)
-        return "\n" + self.decompose_rag_retriever.format_prompt_block(stage, examples) + "\n"
+        self._record_rag_retrieval(manifest_section, manifest_key, stage, examples, metadata)
+        return "\n" + retriever.format_prompt_block(stage, examples) + "\n"
+
+    def _decompose_rag_prompt_block(self, query_text: str, manifest_key: str = "decompose") -> str:
+        """Return formatted decomposition RAG examples, or empty string when disabled."""
+        return self._rag_prompt_block(
+            self.decompose_rag_retriever,
+            "decompose_rag",
+            "decompose",
+            query_text,
+            manifest_key,
+            "task decomposition",
+        )
+
+    def _allocate_rag_prompt_block(self, query_text: str, manifest_key: str = "allocate") -> str:
+        """Return formatted allocation RAG examples, or empty string when disabled."""
+        return self._rag_prompt_block(
+            self.allocate_rag_retriever,
+            "allocate_rag",
+            "allocate",
+            query_text,
+            manifest_key,
+            "task allocation",
+        )
+
+    def _rag_retrieval_timed_out(self, manifest_section: str, manifest_key: str) -> bool:
+        if not isinstance(self.current_task_manifest, dict):
+            return False
+        retrievals = self.current_task_manifest.get(manifest_section, {}).get("retrievals", {})
+        record = retrievals.get(manifest_key, {})
+        return bool(record.get("timeout")) if isinstance(record, dict) else False
+
+    def _read_allocation_static_prompt(self) -> str:
+        prompt_file = self.config.prompt_file(f"{self.prompt_allocation_set}_solution.txt")
+        with open(prompt_file, "r", encoding="utf-8") as allocated_prompt_file:
+            return allocated_prompt_file.read()
+
+    def _allocation_rag_query(
+        self,
+        decomposed_plan: str,
+        robots: List[dict],
+        key_objects: List[Dict[str, Any]],
+        subtasks: Sequence[str],
+    ) -> str:
+        task = ""
+        if isinstance(self.current_task_manifest, dict):
+            task = str(self.current_task_manifest.get("task") or "")
+        subtask_text = "\n".join(
+            f"Subtask {index}: {str(subtask).strip()}"
+            for index, subtask in enumerate(subtasks, start=1)
+            if str(subtask).strip()
+        )
+        if not subtask_text:
+            subtask_text = decomposed_plan
+        return "\n".join(
+            [
+                f"Task: {task}",
+                "# Subtasks",
+                subtask_text,
+                f"Robots: {self._json_for_prompt(robots)}",
+                f"Key objects: {self._json_for_prompt(key_objects)}",
+            ]
+        )
 
     def _replace_domain_robot_name(self, domain_content: str, real_robot_name: str, normalized_robot_name: str) -> str:
         """Replace a real robot domain token with the task-local robot token."""
@@ -1950,8 +2058,8 @@ class TaskManager:
         
         """
         try:
+            subtasks = ParsingUtils.extract_subtasks(decomposed_plan)
             if key_objects_by_subtask is None:
-                subtasks = ParsingUtils.extract_subtasks(decomposed_plan)
                 if subtasks:
                     key_objects_by_subtask = self._extract_key_objects_by_subtask(subtasks, objects_ai)
                 else:
@@ -1965,14 +2073,17 @@ class TaskManager:
             if not key_objects_by_subtask and key_objects:
                 key_objects_by_subtask = {1: key_objects}
 
-            # Read allocation prompt file
-            prompt_file = self.config.prompt_file(f"{self.prompt_allocation_set}_solution.txt")
-            with open(prompt_file, "r", encoding="utf-8") as allocated_prompt_file:
-                allocated_prompt = allocated_prompt_file.read()
-            
             # Build prompt incrementally like the original
             prompt = "\n"
-            prompt += allocated_prompt
+            if self.allocate_rag_retriever:
+                rag_query = self._allocation_rag_query(decomposed_plan, robots, key_objects, subtasks)
+                rag_block = self._allocate_rag_prompt_block(rag_query)
+                if rag_block:
+                    prompt += rag_block
+                elif self._rag_retrieval_timed_out("allocate_rag", "allocate"):
+                    prompt += self._read_allocation_static_prompt()
+            else:
+                prompt += self._read_allocation_static_prompt()
             prompt += decomposed_plan
             prompt += f"\n# TASK ALLOCATION"
             prompt += f"\n# Scenario: There are {len(robots)} robots available. The task should be performed using the minimum number of robots necessary. Robot should be assigned to subtasks that match its skills, and mass capacity should only be considered when a subtask requires picking up the relevant object. Using your reasoning come up with a solution to satisfy all constraints."
@@ -2718,7 +2829,20 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="store_false",
         help="Disable task decomposition RAG and use the static decomposition prompt examples.",
     )
-    parser.set_defaults(decompose_rag=True)
+    allocate_rag_group = parser.add_mutually_exclusive_group()
+    allocate_rag_group.add_argument(
+        "--allocate-rag",
+        dest="allocate_rag",
+        action="store_true",
+        help="Enable task allocation RAG few-shot examples.",
+    )
+    allocate_rag_group.add_argument(
+        "--no-allocate-rag",
+        dest="allocate_rag",
+        action="store_false",
+        help="Disable task allocation RAG and use the static allocation prompt examples (default).",
+    )
+    parser.set_defaults(decompose_rag=True, allocate_rag=False)
 
     return parser.parse_args(argv)
 
@@ -2730,6 +2854,7 @@ def main():
         base_path = str(_repo_root())
         run_config = load_run_config(base_path)
         apply_decompose_rag_cli_override(run_config, args.decompose_rag)
+        apply_allocate_rag_cli_override(run_config, args.allocate_rag)
         
         # Initialize task manager
         task_manager = TaskManager(

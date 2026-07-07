@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a lightweight task-decomposition RAG corpus from intermediate logs."""
+"""Build a lightweight PDDL RAG corpus from intermediate logs."""
 
 from __future__ import annotations
 
@@ -16,12 +16,13 @@ from run_config import load_run_config
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_STAGES = ("decompose",)
+SUPPORTED_STAGES = ("decompose", "allocate")
 TOKEN_RE = re.compile(r"[A-Za-z0-9_]+")
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build task-decomposition RAG corpus JSONL and a simple lexical index from intermediate logs."
+        description="Build PDDL RAG corpus JSONL and a simple lexical index from intermediate logs."
     )
     parser.add_argument(
         "--base-path",
@@ -52,7 +53,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--stages",
         default=",".join(DEFAULT_STAGES),
-        help="Comma-separated stages to emit. Only decompose is supported.",
+        help="Comma-separated stages to emit. Supported values: decompose, allocate.",
     )
     parser.add_argument(
         "--limit-runs",
@@ -71,7 +72,7 @@ def resolve_path(base_path: Path, value: Optional[str], default: Path) -> Path:
 
 def parse_stages(value: str) -> Set[str]:
     stages = {stage.strip() for stage in value.split(",") if stage.strip()}
-    unknown = stages.difference(DEFAULT_STAGES)
+    unknown = stages.difference(SUPPORTED_STAGES)
     if unknown:
         raise ValueError(f"Unsupported stage(s): {', '.join(sorted(unknown))}")
     return stages

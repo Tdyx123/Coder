@@ -10,7 +10,7 @@ SCRIPTS_DIR = ROOT / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from build_pddl_rag_corpus import main
+from build_pddl_rag_corpus import main, parse_stages
 
 
 def write_text(path: Path, content: str) -> None:
@@ -156,6 +156,13 @@ def create_run(
 
 
 class BuildPDDLRagCorpusTest(unittest.TestCase):
+    def test_parse_stages_accepts_allocate_and_rejects_unknown_stage(self):
+        self.assertEqual(parse_stages("allocate"), {"allocate"})
+        self.assertEqual(parse_stages("decompose,allocate"), {"decompose", "allocate"})
+
+        with self.assertRaises(ValueError):
+            parse_stages("problem_generation")
+
     def test_builds_success_documents_and_lexical_index(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
@@ -270,7 +277,7 @@ class BuildPDDLRagCorpusTest(unittest.TestCase):
             decompose_doc = next(doc for doc in docs if doc["stage"] == "decompose")
             self.assertEqual(decompose_doc["metadata"]["key_object_count"], 0)
 
-    def test_rejects_non_decompose_stage(self):
+    def test_allocate_stage_is_supported_and_skips_missing_allocate_output(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             logs_root = root / "logs" / "intermediate_runs"
@@ -283,19 +290,24 @@ class BuildPDDLRagCorpusTest(unittest.TestCase):
                 include_allocate=False,
             )
 
-            with self.assertRaises(ValueError):
-                main(
-                    [
-                        "--base-path",
-                        str(root),
-                        "--logs-root",
-                        str(logs_root),
-                        "--output-dir",
-                        str(output_dir),
-                        "--stages",
-                        "allocate",
-                    ]
-                )
+            result = main(
+                [
+                    "--base-path",
+                    str(root),
+                    "--logs-root",
+                    str(logs_root),
+                    "--output-dir",
+                    str(output_dir),
+                    "--stages",
+                    "allocate",
+                ]
+            )
+
+            self.assertEqual(result, 0)
+            docs = read_jsonl(output_dir / "task_decompose_corpus.jsonl")
+            self.assertEqual(docs, [])
+            summary = read_json(output_dir / "task_decompose_summary.json")
+            self.assertEqual(summary["skip_reasons"]["missing_allocate_output"], 1)
 
 
 if __name__ == "__main__":
