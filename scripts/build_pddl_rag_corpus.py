@@ -11,11 +11,11 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
+from parsing_utils import ParsingUtils
 from run_config import load_run_config
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_STAGES = ("decompose",)
 SUPPORTED_STAGES = ("decompose", "allocate")
 TOKEN_RE = re.compile(r"[A-Za-z0-9_]+")
 
@@ -40,20 +40,21 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--corpus-path",
-        help="Output JSONL corpus path. Defaults to output-dir/task_decompose_corpus.jsonl.",
+        help="Output JSONL corpus path. Defaults to output-dir/task_<stage>_corpus.jsonl.",
     )
     parser.add_argument(
         "--index-path",
-        help="Output lexical index JSON path. Defaults to output-dir/task_decompose_index.json.",
+        help="Output lexical index JSON path. Defaults to output-dir/task_<stage>_index.json.",
     )
     parser.add_argument(
         "--summary-path",
-        help="Output summary JSON path. Defaults to output-dir/task_decompose_summary.json.",
+        help="Output summary JSON path. Defaults to output-dir/task_<stage>_summary.json.",
     )
     parser.add_argument(
-        "--stages",
-        default=",".join(DEFAULT_STAGES),
-        help="Comma-separated stages to emit. Supported values: decompose, allocate.",
+        "--stage",
+        choices=SUPPORTED_STAGES,
+        required=True,
+        help="Required stage to emit. Supported values: decompose, allocate.",
     )
     parser.add_argument(
         "--limit-runs",
@@ -68,14 +69,6 @@ def resolve_path(base_path: Path, value: Optional[str], default: Path) -> Path:
         return default
     path = Path(value).expanduser()
     return path if path.is_absolute() else base_path / path
-
-
-def parse_stages(value: str) -> Set[str]:
-    stages = {stage.strip() for stage in value.split(",") if stage.strip()}
-    unknown = stages.difference(SUPPORTED_STAGES)
-    if unknown:
-        raise ValueError(f"Unsupported stage(s): {', '.join(sorted(unknown))}")
-    return stages
 
 
 def read_text(path: Path) -> Optional[str]:
@@ -334,11 +327,105 @@ def classify_quality(manifest: Dict[str, Any], planner_records: List[Dict[str, A
 
 
 def extract_sequence_operations(allocate_output: str) -> str:
-    marker = "# Sequence of Operations"
-    index = allocate_output.lower().rfind(marker.lower())
-    if index == -1:
-        return ""
-    return allocate_output[index:].strip()
+    return "\n".join(ParsingUtils.extract_sequence_operations(allocate_output))
+
+
+def allocate_output_path(run_dir: Path, manifest: Dict[str, Any]) -> Path:
+    return artifact_path(
+        run_dir,
+        manifest,
+        "allocate",
+        "output",
+        "02_allocate/02_allocate_output.txt",
+    )
+
+
+def final_sequence_section_lines(allocate_output: str) -> List[str]:
+    lines = allocate_output.strip().splitlines()
+    final_header_index: Optional[int] = None
+    for index, line in enumerate(lines):
+        if ParsingUtils.is_sequence_header(line):
+            final_header_index = index
+
+    if final_header_index is None:
+        return []
+
+    sequence_lines: List[str] = []
+    header_line = lines[final_header_index].strip()
+    header_match = re.search(
+        r"\bSequence\s+of\s+Operations?\b\s*:?\s*(?P<trailing>.*)$",
+        header_line,
+        re.IGNORECASE,
+    )
+    if header_match:
+        trailing = header_match.group("trailing").strip()
+        if trailing:
+            sequence_lines.append(trailing)
+
+    sequence_lines.extend(
+        line.strip()
+        for line in lines[final_header_index + 1:]
+        if line.strip()
+    )
+    return sequence_lines
+
+
+def sequence_line_is_assignment_only(line: str) -> bool:
+    assignment_re = ParsingUtils.sequence_assignment_re()
+    stripped = re.sub(r"^\s*[-*]\s+", "", line.strip())
+    if not assignment_re.search(stripped):
+        return False
+
+    remainder = assignment_re.sub("", stripped)
+    remainder = re.sub(r"[;\s]+", "", remainder)
+    return not remainder
+
+
+def validate_allocate_candidate(
+    allocate_output: str,
+    subtasks: List[Dict[str, Any]],
+    robots: List[Dict[str, Any]],
+    quality: str,
+) -> Tuple[bool, str, List[str], Dict[int, int]]:
+    if quality != "success":
+        return False, "non_success_quality", [], {}
+    if not robots:
+        return False, "missing_robots", [], {}
+    if not subtasks:
+        return False, "missing_subtasks", [], {}
+    if not allocate_output.strip():
+        return False, "missing_allocate_output", [], {}
+
+    expected_subtask_ids: Set[int] = set()
+    for subtask in subtasks:
+        subtask_index = numeric_int(safe_dict(subtask).get("index"))
+        if subtask_index is None:
+            return False, "invalid_subtask_index", [], {}
+        expected_subtask_ids.add(subtask_index)
+
+    sequence_lines = final_sequence_section_lines(allocate_output)
+    if not sequence_lines:
+        return False, "missing_sequence", [], {}
+
+    merged_lines = ParsingUtils.merge_sequence_lines(sequence_lines)
+    if any(not sequence_line_is_assignment_only(line) for line in merged_lines):
+        return False, "unparseable_sequence_line", [], {}
+
+    sequence_operations, assignments = ParsingUtils.parse_sequence_section(sequence_lines)
+    if not assignments:
+        return False, "missing_sequence_assignment", [], {}
+
+    assigned_subtask_ids = set(assignments)
+    if not expected_subtask_ids.issubset(assigned_subtask_ids):
+        return False, "missing_subtask_assignment", sequence_operations, assignments
+    if not assigned_subtask_ids.issubset(expected_subtask_ids):
+        return False, "extra_subtask_assignment", sequence_operations, assignments
+
+    valid_robot_ids = set(range(1, len(robots) + 1))
+    if any(robot_id not in valid_robot_ids for robot_id in assignments.values()):
+        return False, "invalid_robot_id", sequence_operations, assignments
+
+    return True, "", sequence_operations, assignments
 
 
 def make_doc_id(stage: str, run_dir: Path, suffix: str = "") -> str:
@@ -440,14 +527,9 @@ def build_allocate_doc(
     key_objects: List[Any],
     subtasks: List[Dict[str, Any]],
     quality: str,
+    sequence_operations: Optional[List[str]] = None,
 ) -> Optional[Dict[str, Any]]:
-    output_path = artifact_path(
-        run_dir,
-        manifest,
-        "allocate",
-        "output",
-        "02_allocate/02_allocate_output.txt",
-    )
+    output_path = allocate_output_path(run_dir, manifest)
     output = read_text(output_path)
     if not output:
         return None
@@ -457,7 +539,11 @@ def build_allocate_doc(
     subtask_text = "\n".join(
         f"Subtask {entry.get('index')}: {entry.get('text', '').strip()}" for entry in subtasks
     )
-    sequence = extract_sequence_operations(output)
+    sequence = (
+        "\n".join(sequence_operations)
+        if sequence_operations is not None
+        else extract_sequence_operations(output)
+    )
     query_text = "\n".join(
         [
             f"Task: {task}",
@@ -699,11 +785,35 @@ def build_documents_for_manifest(
             skip_reasons["missing_decompose_output"] += 1
 
     if "allocate" in stages:
-        doc = build_allocate_doc(run_dir, manifest, task_context, key_objects, subtasks, quality)
+        output = read_text(allocate_output_path(run_dir, manifest))
+        if not output:
+            skip_reasons["missing_allocate_output"] += 1
+            doc = None
+        else:
+            robots = robot_summary(task_context.get("robots"))
+            valid, reason, sequence_operations, _ = validate_allocate_candidate(
+                output,
+                subtasks,
+                robots,
+                quality,
+            )
+            if valid:
+                doc = build_allocate_doc(
+                    run_dir,
+                    manifest,
+                    task_context,
+                    key_objects,
+                    subtasks,
+                    quality,
+                    sequence_operations=sequence_operations,
+                )
+                if not doc:
+                    skip_reasons["missing_allocate_output"] += 1
+            else:
+                skip_reasons[f"filtered_allocate_{reason}"] += 1
+                doc = None
         if doc:
             documents.append(doc)
-        else:
-            skip_reasons["missing_allocate_output"] += 1
 
     if "problem_generation" in stages:
         problem_docs = build_problem_generation_docs(
@@ -791,13 +901,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     base_path = Path(args.base_path).expanduser().resolve()
     run_config = load_run_config(base_path)
     output_dir = resolve_path(base_path, args.output_dir, base_path / "data" / "rag")
-    corpus_path = resolve_path(base_path, args.corpus_path, output_dir / "task_decompose_corpus.jsonl")
-    index_path = resolve_path(base_path, args.index_path, output_dir / "task_decompose_index.json")
-    summary_path = resolve_path(base_path, args.summary_path, output_dir / "task_decompose_summary.json")
+    stage = args.stage
+    default_prefix = f"task_{stage}"
+    corpus_path = resolve_path(base_path, args.corpus_path, output_dir / f"{default_prefix}_corpus.jsonl")
+    index_path = resolve_path(base_path, args.index_path, output_dir / f"{default_prefix}_index.json")
+    summary_path = resolve_path(base_path, args.summary_path, output_dir / f"{default_prefix}_summary.json")
     logs_root = resolve_path(base_path, args.logs_root, run_config.storage_base_dir)
-    stages = parse_stages(args.stages)
 
-    documents, stats = build_corpus(logs_root, stages, args.limit_runs)
+    documents, stats = build_corpus(logs_root, {stage}, args.limit_runs)
     index = build_index(documents)
     summary = summarize(
         documents,

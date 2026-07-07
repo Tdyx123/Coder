@@ -78,7 +78,7 @@ DEFAULT_RUN_CONFIG: Dict[str, Any] = {
         "top_k": 3,
         "max_example_chars": 3000,
         "max_block_chars": 8000,
-        "max_query_tokens": 12,
+        "max_query_tokens": 32,
         "query_timeout_seconds": 5,
         "prewarm_runtime_db": True,
     },

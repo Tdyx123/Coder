@@ -19,14 +19,21 @@ DEFAULT_MAX_QUERY_TOKENS = 12
 DEFAULT_QUERY_TIMEOUT_SECONDS = 5.0
 DEFAULT_CANDIDATE_LIMIT = 5000
 RAG_PROMPT_TITLE = "# Retrieved Task Decomposition Examples (RAG)"
-RAG_SAFETY_RULES = (
+DECOMPOSE_RAG_SAFETY_RULES = (
     "# Use these examples only as few-shot references for decomposition structure and reasoning style.\n"
     "# Do not copy object names, robot tokens, floor-plan facts, or PDDL facts "
     "unless they are present in the current task context."
 )
+ALLOCATE_RAG_SAFETY_RULES = (
+    "# Use these examples only as few-shot references for allocation reasoning style and output format.\n"
+    "# Do not copy object names, robot tokens, floor-plan facts, or PDDL facts "
+    "unless they are present in the current task context."
+)
+RAG_SAFETY_RULES = DECOMPOSE_RAG_SAFETY_RULES
 LOW_VALUE_QUERY_TOKENS = {
     "a",
     "an",
+    "analyze",
     "and",
     "are",
     "as",
@@ -37,10 +44,16 @@ LOW_VALUE_QUERY_TOKENS = {
     "content",
     "context",
     "current",
+    "condition",
+    "coverage",
+    "due",
+    "effects",
     "false",
     "for",
     "from",
+    "full",
     "in",
+    "initial",
     "is",
     "it",
     "json",
@@ -57,16 +70,25 @@ LOW_VALUE_QUERY_TOKENS = {
     "of",
     "on",
     "or",
+    "parameters",
     "pddl",
     "please",
+    "preconditions",
+    "previous",
     "problem",
     "quality",
     "query",
+    "required",
     "robot",
     "robots",
+    "skill",
     "skills",
     "stage",
     "states",
+    "subtask",
+    "subtasks",
+    "summaries",
+    "summary",
     "success",
     "task",
     "the",
@@ -162,22 +184,30 @@ def _quality_values(value: Any) -> Tuple[str, ...]:
     return tuple(item for item in values if item) or ("success",)
 
 
-def _is_low_value_query_token(token: str) -> bool:
+def _is_low_value_query_token(token: str, stage: Optional[str] = None) -> bool:
     if len(token) <= 1:
         return True
     if token.isdigit():
         return True
     if re.fullmatch(r"robot\d+", token):
         return True
-    return token in LOW_VALUE_QUERY_TOKENS or token in ROBOT_SKILL_QUERY_TOKENS
+    if token in LOW_VALUE_QUERY_TOKENS:
+        return True
+    if str(stage or "").lower() == "allocate":
+        return False
+    return token in ROBOT_SKILL_QUERY_TOKENS
 
 
-def _tokenize_query(text: str, limit: int = DEFAULT_MAX_QUERY_TOKENS) -> List[str]:
+def _tokenize_query(
+    text: str,
+    limit: int = DEFAULT_MAX_QUERY_TOKENS,
+    stage: Optional[str] = None,
+) -> List[str]:
     seen = set()
     tokens: List[str] = []
     for raw_token in TOKEN_RE.findall(text):
         token = raw_token.lower()
-        if token in seen or _is_low_value_query_token(token):
+        if token in seen or _is_low_value_query_token(token, stage=stage):
             continue
         seen.add(token)
         tokens.append(token)
@@ -208,6 +238,12 @@ def _truncate_text(text: str, max_chars: int) -> str:
     if len(text) <= max_chars:
         return text
     return text[:max_chars].rstrip() + "\n...[truncated]"
+
+
+def _rag_safety_rules(stage: str) -> str:
+    if str(stage).lower() == "allocate":
+        return ALLOCATE_RAG_SAFETY_RULES
+    return DECOMPOSE_RAG_SAFETY_RULES
 
 
 class PDDLRagRetriever:
@@ -269,12 +305,12 @@ class PDDLRagRetriever:
         retriever._validate_sources()
         return retriever
 
-    def query_tokens(self, query_text: str) -> List[str]:
-        return _tokenize_query(query_text, self.max_query_tokens)
+    def query_tokens(self, query_text: str, stage: Optional[str] = None) -> List[str]:
+        return _tokenize_query(query_text, self.max_query_tokens, stage=stage)
 
     def retrieve(self, stage: str, query_text: str, top_k: Optional[int] = None) -> List[PDDLRagExample]:
         self.ensure_runtime_db()
-        tokens = self.query_tokens(query_text)
+        tokens = self.query_tokens(query_text, stage=stage)
         if not tokens:
             return []
 
@@ -284,10 +320,9 @@ class PDDLRagRetriever:
         quality_placeholders = ",".join("?" for _ in self.quality)
         candidate_limit = max(DEFAULT_CANDIDATE_LIMIT, limit * 500)
         where_parts = [
-            "docs.stage = ?",
             f"docs.quality IN ({quality_placeholders})",
         ]
-        params: List[Any] = [match_query, candidate_limit, stage, *self.quality]
+        params: List[Any] = [match_query, candidate_limit, *self.quality]
         if self.retrieval_eligible_only:
             where_parts.append("docs.retrieval_eligible = 1")
 
@@ -361,7 +396,7 @@ class PDDLRagRetriever:
         if not examples:
             return ""
 
-        parts = [RAG_SAFETY_RULES]
+        parts = [_rag_safety_rules(stage)]
         for example in examples[:3]:
             parts.extend(
                 [

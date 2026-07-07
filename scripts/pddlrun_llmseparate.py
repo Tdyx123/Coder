@@ -13,7 +13,7 @@ import time
 import re
 import shutil
 import sys
-from typing import List, Dict, Tuple, Optional, Union, Any, Set, Sequence
+from typing import Callable, List, Dict, Tuple, Optional, Union, Any, Set, Sequence
 import uuid
 
 try:
@@ -638,7 +638,10 @@ class TaskManager:
         query_tokens = []
         if hasattr(retriever, "query_tokens"):
             try:
-                query_tokens = list(retriever.query_tokens(query_text))
+                try:
+                    query_tokens = list(retriever.query_tokens(query_text, stage=stage))
+                except TypeError:
+                    query_tokens = list(retriever.query_tokens(query_text))
             except Exception:
                 query_tokens = []
 
@@ -703,10 +706,27 @@ class TaskManager:
         record = retrievals.get(manifest_key, {})
         return bool(record.get("timeout")) if isinstance(record, dict) else False
 
+    def _read_decompose_static_prompt(self) -> str:
+        prompt_file = self.config.prompt_file(f"{self.prompt_decompse_set}.txt")
+        return self.file_processor.read_file(str(prompt_file))
+
     def _read_allocation_static_prompt(self) -> str:
         prompt_file = self.config.prompt_file(f"{self.prompt_allocation_set}_solution.txt")
         with open(prompt_file, "r", encoding="utf-8") as allocated_prompt_file:
             return allocated_prompt_file.read()
+
+    def _rag_or_static_prompt_block(
+        self,
+        retriever: Any,
+        rag_prompt_builder: Callable[[str], str],
+        static_prompt_reader: Callable[[], str],
+        query_text: str,
+    ) -> str:
+        if retriever:
+            rag_block = rag_prompt_builder(query_text)
+            if rag_block:
+                return rag_block
+        return static_prompt_reader()
 
     def _allocation_rag_query(
         self,
@@ -718,22 +738,90 @@ class TaskManager:
         task = ""
         if isinstance(self.current_task_manifest, dict):
             task = str(self.current_task_manifest.get("task") or "")
-        subtask_text = "\n".join(
-            f"Subtask {index}: {str(subtask).strip()}"
+        subtask_items = [
+            (index, str(subtask).strip())
             for index, subtask in enumerate(subtasks, start=1)
             if str(subtask).strip()
-        )
-        if not subtask_text:
-            subtask_text = decomposed_plan
+        ]
+        if not subtask_items and str(decomposed_plan).strip():
+            subtask_items = [(1, str(decomposed_plan).strip())]
+
+        subtask_summary_lines = []
+        required_skill_lines = []
+        for index, subtask in subtask_items:
+            first_line = next((line.strip("# ").strip() for line in subtask.splitlines() if line.strip()), "")
+            subtask_summary_lines.append(f"Subtask {index}: {first_line or subtask[:160]}")
+            skills = self._extract_required_skill_names(subtask)
+            if skills:
+                required_skill_lines.append(f"Subtask {index}: {', '.join(skills)}")
+
+        if not required_skill_lines:
+            skills = self._extract_required_skill_names(decomposed_plan)
+            if skills:
+                required_skill_lines.append(f"All subtasks: {', '.join(skills)}")
+
+        robot_skill_lines = []
+        for robot in robots:
+            if not isinstance(robot, dict):
+                continue
+            name = str(robot.get("name") or "")
+            skills = [str(skill) for skill in robot.get("skills", []) if str(skill).strip()]
+            mass_capacity = robot.get("mass_capacity")
+            robot_skill_lines.append(
+                f"{name}: skills {', '.join(skills)}; mass_capacity {mass_capacity}"
+            )
+
+        key_object_lines = []
+        for obj in key_objects:
+            if not isinstance(obj, dict):
+                continue
+            name = str(obj.get("name") or obj.get("objectId") or obj.get("objectType") or "")
+            mass = obj.get("mass")
+            key_object_lines.append(f"{name}: mass {mass}" if mass is not None else name)
+
+        subtask_text = "\n".join(f"Subtask {index}: {text}" for index, text in subtask_items)
         return "\n".join(
             [
                 f"Task: {task}",
+                "# Subtask summaries",
+                "\n".join(subtask_summary_lines),
+                "# Required skills",
+                "\n".join(required_skill_lines),
+                "# Robot skill coverage",
+                "\n".join(robot_skill_lines),
+                "# Key object summary",
+                "\n".join(key_object_lines),
                 "# Subtasks",
                 subtask_text,
-                f"Robots: {self._json_for_prompt(robots)}",
-                f"Key objects: {self._json_for_prompt(key_objects)}",
+                f"Full robots JSON: {self._json_for_prompt(robots)}",
+                f"Full key objects JSON: {self._json_for_prompt(key_objects)}",
             ]
         )
+
+    def _extract_required_skill_names(self, text: str) -> List[str]:
+        skills: List[str] = []
+        seen: Set[str] = set()
+
+        def add_skill(value: str) -> None:
+            skill = value.strip().strip(".:;()[]{}")
+            if not skill:
+                return
+            if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", skill):
+                return
+            key = skill.lower()
+            if key in seen:
+                return
+            seen.add(key)
+            skills.append(skill)
+
+        for match in re.finditer(r"Skills?\s+Required\s*:\s*([^\n#.)]+)", text, flags=re.IGNORECASE):
+            for item in re.split(r",|;|/|\band\b", match.group(1), flags=re.IGNORECASE):
+                add_skill(item)
+
+        for match in re.finditer(r"^\s*([A-Z][A-Za-z0-9_]+)\s*:", text, flags=re.MULTILINE):
+            add_skill(match.group(1))
+
+        return skills
 
     def _replace_domain_robot_name(self, domain_content: str, real_robot_name: str, normalized_robot_name: str) -> str:
         """Replace a real robot domain token with the task-local robot token."""
@@ -1176,13 +1264,15 @@ class TaskManager:
                 print(f"✓ Matched {len(key_objects)} key objects")
 
                 # Generate and store allocation plan
-                allocated_plan = self._generate_allocation_plan(
+                allocation_result = self._generate_allocation_plan(
                     decomposed_plan,
                     robots,
                     objects_ai,
                     key_objects=key_objects,
                     key_objects_by_subtask=key_objects_by_subtask,
                 )
+                self._write_allocation_generation_artifacts(allocation_result)
+                allocated_plan = allocation_result["text"]
                 self.allocated_plan.append(allocated_plan)
                 print("✓ Allocation plan generated")
                 #print("Allocation Plan:\n", allocated_plan)
@@ -1984,19 +2074,18 @@ class TaskManager:
     ) -> Dict[str, str]:
         """Build the decomposition prompt and run the LLM without writing artifacts."""
         try:
-            decompose_prompt = ""
-            if not self.decompose_rag_retriever:
-                decompose_prompt_path = self.config.prompt_file(f"{self.prompt_decompse_set}.txt")
-                decompose_prompt = self.file_processor.read_file(str(decompose_prompt_path))
+            decompose_prompt = self._rag_or_static_prompt_block(
+                self.decompose_rag_retriever,
+                self._decompose_rag_prompt_block,
+                self._read_decompose_static_prompt,
+                f"Task: {task}",
+            )
             
             # Construct the prompt incrementally like the original
             prompt = f"from pddl domain file with all possible actions: \n{domain_content}\n\n"
             prompt += self._format_decompose_objects_prompt(objects_ai)
             prompt += "\n\n"
             prompt += decompose_prompt
-            if self.decompose_rag_retriever:
-                rag_query = f"Task: {task}"
-                prompt += self._decompose_rag_prompt_block(rag_query)
             prompt += "# GENERAL TASK DECOMPOSITION \n"
             prompt += "Decompose and parallel subtasks where ever possible.\n"
             prompt += "Strictly follow the format in the examples above when examples are provided.\n"
@@ -2053,7 +2142,7 @@ class TaskManager:
         objects_ai: str,
         key_objects: Optional[List[Dict[str, Any]]] = None,
         key_objects_by_subtask: Optional[Dict[int, List[Dict[str, Any]]]] = None,
-    ) -> str:
+    ) -> Dict[str, str]:
         """Generate allocation plan for decomposed tasks.
         
         """
@@ -2075,15 +2164,15 @@ class TaskManager:
 
             # Build prompt incrementally like the original
             prompt = "\n"
+            rag_query = ""
             if self.allocate_rag_retriever:
                 rag_query = self._allocation_rag_query(decomposed_plan, robots, key_objects, subtasks)
-                rag_block = self._allocate_rag_prompt_block(rag_query)
-                if rag_block:
-                    prompt += rag_block
-                elif self._rag_retrieval_timed_out("allocate_rag", "allocate"):
-                    prompt += self._read_allocation_static_prompt()
-            else:
-                prompt += self._read_allocation_static_prompt()
+            prompt += self._rag_or_static_prompt_block(
+                self.allocate_rag_retriever,
+                self._allocate_rag_prompt_block,
+                self._read_allocation_static_prompt,
+                rag_query,
+            )
             prompt += decomposed_plan
             prompt += f"\n# TASK ALLOCATION"
             prompt += f"\n# Scenario: There are {len(robots)} robots available. The task should be performed using the minimum number of robots necessary. Robot should be assigned to subtasks that match its skills, and mass capacity should only be considered when a subtask requires picking up the relevant object. Using your reasoning come up with a solution to satisfy all constraints."
@@ -2107,11 +2196,6 @@ class TaskManager:
             prompt += f"\n# - Every assignment in that final block must use numeric subtask and robot ids, e.g. 'Subtask 1: Robot 2;'."
             prompt += f"\n# - Do not use placeholders or non-numeric assignments such as 'Subtask;Robot;', 'Subtask A', 'Robot ?', or 'Robot A'."
             prompt += f"\n# - Do not output self-corrections or extra explanation after the final '# Sequence of Operations:' block.\n"
-            allocate_prompt_artifact = self.config.artifact("allocate_prompt", "02_allocate/01_allocate_prompt.txt")
-            allocate_output_artifact = self.config.artifact("allocate_output", "02_allocate/02_allocate_output.txt")
-            self._write_text_artifact(allocate_prompt_artifact, prompt)
-            self._record_artifact("allocate", "prompt", allocate_prompt_artifact)
-            
             messages = [{"role": "user", "content": prompt}]
             call_config = self.config.llm_call("allocate")
             _, text = self.llm.query_model(
@@ -2119,14 +2203,20 @@ class TaskManager:
                 self.model,
                 frequency_penalty=call_config.get("frequency_penalty", 0.69),
             )
-            self._write_text_artifact(allocate_output_artifact, text)
-            self._record_artifact("allocate", "output", allocate_output_artifact)
-            self._persist_manifest()
-            
-            return text
+            return {"prompt": prompt, "text": text}
             
         except Exception as e:
             raise PDDLError(f"Error generating allocation plan: {str(e)}")
+
+    def _write_allocation_generation_artifacts(self, result: Dict[str, str]) -> None:
+        """Persist allocation prompt/output artifacts produced by allocation generation."""
+        allocate_prompt_artifact = self.config.artifact("allocate_prompt", "02_allocate/01_allocate_prompt.txt")
+        allocate_output_artifact = self.config.artifact("allocate_output", "02_allocate/02_allocate_output.txt")
+        self._write_text_artifact(allocate_prompt_artifact, result["prompt"])
+        self._record_artifact("allocate", "prompt", allocate_prompt_artifact)
+        self._write_text_artifact(allocate_output_artifact, result["text"])
+        self._record_artifact("allocate", "output", allocate_output_artifact)
+        self._persist_manifest()
 
     def _generate_problem_summary(self, decomposed_plans: Union[str, List[str]], allocated_plans: Union[str, List[str]], available_robots: Union[List[dict], List[List[dict]]]) -> List[str]:
         """Generate problem summaries from decomposed and allocated plans.
@@ -2821,13 +2911,13 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "--decompose-rag",
         dest="decompose_rag",
         action="store_true",
-        help="Enable task decomposition RAG few-shot examples (default).",
+        help="Enable task decomposition RAG few-shot examples.",
     )
     decompose_rag_group.add_argument(
         "--no-decompose-rag",
         dest="decompose_rag",
         action="store_false",
-        help="Disable task decomposition RAG and use the static decomposition prompt examples.",
+        help="Disable task decomposition RAG and use the static decomposition prompt examples (default).",
     )
     allocate_rag_group = parser.add_mutually_exclusive_group()
     allocate_rag_group.add_argument(
@@ -2842,7 +2932,7 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="store_false",
         help="Disable task allocation RAG and use the static allocation prompt examples (default).",
     )
-    parser.set_defaults(decompose_rag=True, allocate_rag=False)
+    parser.set_defaults(decompose_rag=False, allocate_rag=False)
 
     return parser.parse_args(argv)
 

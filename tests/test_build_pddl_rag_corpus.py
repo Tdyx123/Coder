@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import sys
 import tempfile
@@ -10,7 +12,7 @@ SCRIPTS_DIR = ROOT / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from build_pddl_rag_corpus import main, parse_stages
+from build_pddl_rag_corpus import main, parse_args
 
 
 def write_text(path: Path, content: str) -> None:
@@ -34,6 +36,21 @@ def read_jsonl(path: Path):
     ]
 
 
+def run_corpus_builder(root: Path, output_dir: Path, stage: str) -> int:
+    return main(
+        [
+            "--base-path",
+            str(root),
+            "--logs-root",
+            str(root / "logs" / "intermediate_runs"),
+            "--output-dir",
+            str(output_dir),
+            "--stage",
+            stage,
+        ]
+    )
+
+
 def create_run(
     root: Path,
     name: str,
@@ -42,9 +59,22 @@ def create_run(
     completion,
     include_key_artifacts=True,
     include_allocate=True,
+    allocate_output=None,
+    robots=None,
+    subtask_texts=None,
 ) -> Path:
     run_dir = root / "logs" / "intermediate_runs" / "dataset___1" / name / "20260630_001"
     task = f"{name} task"
+    if robots is None:
+        robots = [
+            {
+                "name": "robot1",
+                "skills": ["GoToObject", "OpenObject"],
+                "mass_capacity": 10,
+            }
+        ]
+    if subtask_texts is None:
+        subtask_texts = ["# SubTask 1: Open the book"]
     artifacts = {
         "inputs": {"task_context": "inputs/task_context.json"},
         "decompose": {"output": "01_decompose/02_decompose_output.txt"},
@@ -82,24 +112,24 @@ def create_run(
         run_dir / "inputs" / "task_context.json",
         {
             "task": task,
-            "robots": [
-                {
-                    "name": "robot1",
-                    "skills": ["GoToObject", "OpenObject"],
-                    "mass_capacity": 10,
-                }
-            ],
+            "robots": robots,
             "objects_ai": "\n\nobjects = [{'name': 'Book', 'mass': 1.0}]",
         },
     )
     write_text(
         run_dir / "01_decompose" / "02_decompose_output.txt",
-        "# SubTask 1: Open the book\nGoToObject then OpenObject",
+        "\n\n".join(subtask_texts),
     )
     if include_allocate:
+        if allocate_output is None:
+            sequence = "".join(
+                f"Subtask {index}: Robot 1;"
+                for index in range(1, len(subtask_texts) + 1)
+            )
+            allocate_output = f"# SOLUTION\nRobot 1 can do it.\n# Sequence of Operations:\n{sequence}"
         write_text(
             run_dir / "02_allocate" / "02_allocate_output.txt",
-            "# SOLUTION\nRobot 1 can do it.\n# Sequence of Operations:\nSubtask 1: Robot 1;",
+            allocate_output,
         )
     if include_key_artifacts:
         write_json(run_dir / "02_allocate" / "00_key_objects.json", [{"name": "Book", "mass": 1.0}])
@@ -109,34 +139,47 @@ def create_run(
         )
     write_json(
         run_dir / "04_problem_files" / "03_subtasks.json",
-        [{"index": 1, "path": "04_problem_files/subtasks/subtask_01.txt"}],
+        [
+            {
+                "index": index,
+                "path": f"04_problem_files/subtasks/subtask_{index:02d}.txt",
+            }
+            for index in range(1, len(subtask_texts) + 1)
+        ],
     )
-    write_text(
-        run_dir / "04_problem_files" / "subtasks" / "subtask_01.txt",
-        "# SubTask 1: Open the book",
-    )
+    for index, subtask_text in enumerate(subtask_texts, start=1):
+        write_text(
+            run_dir / "04_problem_files" / "subtasks" / f"subtask_{index:02d}.txt",
+            subtask_text,
+        )
     write_json(
         run_dir / "04_problem_files" / "04_generated_problem_files.json",
-        [{"index": 1, "content": "(define (problem generated-book))"}],
+        [
+            {"index": index, "content": f"(define (problem generated-book-{index}))"}
+            for index in range(1, len(subtask_texts) + 1)
+        ],
     )
-    write_text(
-        run_dir / "05_problem_generation" / "outputs" / "subtask_01_problem.pddl",
-        "(define (problem raw-book))",
-    )
+    for index in range(1, len(subtask_texts) + 1):
+        write_text(
+            run_dir / "05_problem_generation" / "outputs" / f"subtask_{index:02d}_problem.pddl",
+            f"(define (problem raw-book-{index}))",
+        )
     write_json(
         run_dir / "07_validate" / "validation_manifest.json",
         [
             {
-                "problem_file": "subtask_01_problem.pddl",
-                "validated_problem_path": "07_validate/outputs/subtask_01_problem_validated.pddl",
+                "problem_file": f"subtask_{index:02d}_problem.pddl",
+                "validated_problem_path": f"07_validate/outputs/subtask_{index:02d}_problem_validated.pddl",
                 "status": "fake_validated",
             }
+            for index in range(1, len(subtask_texts) + 1)
         ],
     )
-    write_text(
-        run_dir / "07_validate" / "outputs" / "subtask_01_problem_validated.pddl",
-        "(define (problem validated-book))",
-    )
+    for index in range(1, len(subtask_texts) + 1):
+        write_text(
+            run_dir / "07_validate" / "outputs" / f"subtask_{index:02d}_problem_validated.pddl",
+            f"(define (problem validated-book-{index}))",
+        )
 
     planner_records = []
     for idx, return_code in enumerate(return_codes, start=1):
@@ -156,12 +199,30 @@ def create_run(
 
 
 class BuildPDDLRagCorpusTest(unittest.TestCase):
-    def test_parse_stages_accepts_allocate_and_rejects_unknown_stage(self):
-        self.assertEqual(parse_stages("allocate"), {"allocate"})
-        self.assertEqual(parse_stages("decompose,allocate"), {"decompose", "allocate"})
+    def test_parse_args_accepts_supported_single_stage(self):
+        self.assertEqual(parse_args(["--stage", "decompose"]).stage, "decompose")
+        self.assertEqual(parse_args(["--stage", "allocate"]).stage, "allocate")
 
-        with self.assertRaises(ValueError):
-            parse_stages("problem_generation")
+    def test_parse_args_rejects_unknown_stage(self):
+        with contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as context:
+                parse_args(["--stage", "problem_generation"])
+
+        self.assertEqual(context.exception.code, 2)
+
+    def test_parse_args_requires_stage(self):
+        with contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as context:
+                parse_args(["--base-path", str(ROOT)])
+
+        self.assertEqual(context.exception.code, 2)
+
+    def test_parse_args_rejects_old_stages_argument(self):
+        with contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as context:
+                parse_args(["--stages", "decompose"])
+
+        self.assertEqual(context.exception.code, 2)
 
     def test_builds_success_documents_and_lexical_index(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -183,6 +244,8 @@ class BuildPDDLRagCorpusTest(unittest.TestCase):
                     str(logs_root),
                     "--output-dir",
                     str(output_dir),
+                    "--stage",
+                    "decompose",
                 ]
             )
 
@@ -236,6 +299,8 @@ class BuildPDDLRagCorpusTest(unittest.TestCase):
                     str(logs_root),
                     "--output-dir",
                     str(output_dir),
+                    "--stage",
+                    "decompose",
                 ]
             )
 
@@ -268,6 +333,8 @@ class BuildPDDLRagCorpusTest(unittest.TestCase):
                     str(logs_root),
                     "--output-dir",
                     str(output_dir),
+                    "--stage",
+                    "decompose",
                 ]
             )
 
@@ -298,16 +365,166 @@ class BuildPDDLRagCorpusTest(unittest.TestCase):
                     str(logs_root),
                     "--output-dir",
                     str(output_dir),
-                    "--stages",
+                    "--stage",
                     "allocate",
                 ]
             )
 
             self.assertEqual(result, 0)
-            docs = read_jsonl(output_dir / "task_decompose_corpus.jsonl")
+            docs = read_jsonl(output_dir / "task_allocate_corpus.jsonl")
             self.assertEqual(docs, [])
-            summary = read_json(output_dir / "task_decompose_summary.json")
+            index = read_json(output_dir / "task_allocate_index.json")
+            self.assertEqual(index["document_count"], 0)
+            summary = read_json(output_dir / "task_allocate_summary.json")
             self.assertEqual(summary["skip_reasons"]["missing_allocate_output"], 1)
+
+    def test_allocate_stage_keeps_valid_success_documents(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            output_dir = root / "rag"
+            create_run(
+                root,
+                "valid-allocate",
+                return_codes=[0],
+                completion={"successful_subtasks": 1, "total_subtasks": 1},
+            )
+
+            result = run_corpus_builder(root, output_dir, "allocate")
+
+            self.assertEqual(result, 0)
+            docs = read_jsonl(output_dir / "task_allocate_corpus.jsonl")
+            self.assertEqual(len(docs), 1)
+            self.assertEqual(docs[0]["stage"], "allocate")
+            self.assertEqual(docs[0]["quality"], "success")
+            self.assertTrue(docs[0]["retrieval_eligible"])
+            self.assertIn("Subtask 1: Robot 1;", docs[0]["content"])
+            summary = read_json(output_dir / "task_allocate_summary.json")
+            self.assertEqual(summary["document_count"], 1)
+            self.assertEqual(summary["retrieval_eligible_count"], 1)
+            self.assertEqual(summary["skip_reasons"], {})
+
+    def test_allocate_stage_filters_non_success_quality(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            output_dir = root / "rag"
+            create_run(
+                root,
+                "failed-allocate",
+                return_codes=[12],
+                completion={"successful_subtasks": 0, "total_subtasks": 1},
+            )
+
+            result = run_corpus_builder(root, output_dir, "allocate")
+
+            self.assertEqual(result, 0)
+            self.assertEqual(read_jsonl(output_dir / "task_allocate_corpus.jsonl"), [])
+            summary = read_json(output_dir / "task_allocate_summary.json")
+            self.assertEqual(summary["skip_reasons"]["filtered_allocate_non_success_quality"], 1)
+
+    def test_allocate_stage_filters_missing_sequence_block(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            output_dir = root / "rag"
+            create_run(
+                root,
+                "missing-sequence",
+                return_codes=[0],
+                completion={"successful_subtasks": 1, "total_subtasks": 1},
+                allocate_output="# SOLUTION\nRobot 1 can do it.",
+            )
+
+            result = run_corpus_builder(root, output_dir, "allocate")
+
+            self.assertEqual(result, 0)
+            self.assertEqual(read_jsonl(output_dir / "task_allocate_corpus.jsonl"), [])
+            summary = read_json(output_dir / "task_allocate_summary.json")
+            self.assertEqual(summary["skip_reasons"]["filtered_allocate_missing_sequence"], 1)
+
+    def test_allocate_stage_filters_missing_subtask_assignment(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            output_dir = root / "rag"
+            create_run(
+                root,
+                "missing-subtask-assignment",
+                return_codes=[0, 0],
+                completion={"successful_subtasks": 2, "total_subtasks": 2},
+                subtask_texts=[
+                    "# SubTask 1: Open the book",
+                    "# SubTask 2: Close the book",
+                ],
+                allocate_output="# SOLUTION\n# Sequence of Operations:\nSubtask 1: Robot 1;",
+            )
+
+            result = run_corpus_builder(root, output_dir, "allocate")
+
+            self.assertEqual(result, 0)
+            self.assertEqual(read_jsonl(output_dir / "task_allocate_corpus.jsonl"), [])
+            summary = read_json(output_dir / "task_allocate_summary.json")
+            self.assertEqual(summary["skip_reasons"]["filtered_allocate_missing_subtask_assignment"], 1)
+
+    def test_allocate_stage_filters_extra_subtask_assignment(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            output_dir = root / "rag"
+            create_run(
+                root,
+                "extra-subtask-assignment",
+                return_codes=[0],
+                completion={"successful_subtasks": 1, "total_subtasks": 1},
+                allocate_output=(
+                    "# SOLUTION\n# Sequence of Operations:\n"
+                    "Subtask 1: Robot 1;Subtask 2: Robot 1;"
+                ),
+            )
+
+            result = run_corpus_builder(root, output_dir, "allocate")
+
+            self.assertEqual(result, 0)
+            self.assertEqual(read_jsonl(output_dir / "task_allocate_corpus.jsonl"), [])
+            summary = read_json(output_dir / "task_allocate_summary.json")
+            self.assertEqual(summary["skip_reasons"]["filtered_allocate_extra_subtask_assignment"], 1)
+
+    def test_allocate_stage_filters_invalid_robot_id(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            output_dir = root / "rag"
+            create_run(
+                root,
+                "invalid-robot-id",
+                return_codes=[0],
+                completion={"successful_subtasks": 1, "total_subtasks": 1},
+                allocate_output="# SOLUTION\n# Sequence of Operations:\nSubtask 1: Robot 2;",
+            )
+
+            result = run_corpus_builder(root, output_dir, "allocate")
+
+            self.assertEqual(result, 0)
+            self.assertEqual(read_jsonl(output_dir / "task_allocate_corpus.jsonl"), [])
+            summary = read_json(output_dir / "task_allocate_summary.json")
+            self.assertEqual(summary["skip_reasons"]["filtered_allocate_invalid_robot_id"], 1)
+
+    def test_allocate_stage_filters_unparseable_sequence_lines(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            output_dir = root / "rag"
+            create_run(
+                root,
+                "unparseable-sequence",
+                return_codes=[0],
+                completion={"successful_subtasks": 1, "total_subtasks": 1},
+                allocate_output=(
+                    "# SOLUTION\n# Sequence of Operations:\n"
+                    "Subtask 1: Robot 1;\nSubtask;Robot;"
+                ),
+            )
+
+            result = run_corpus_builder(root, output_dir, "allocate")
+
+            self.assertEqual(result, 0)
+            self.assertEqual(read_jsonl(output_dir / "task_allocate_corpus.jsonl"), [])
+            summary = read_json(output_dir / "task_allocate_summary.json")
+            self.assertEqual(summary["skip_reasons"]["filtered_allocate_unparseable_sequence_line"], 1)
 
 
 if __name__ == "__main__":

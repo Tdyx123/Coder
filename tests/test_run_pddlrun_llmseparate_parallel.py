@@ -26,16 +26,18 @@ from run_pddlrun_llmseparate_parallel import (
 
 
 class ParallelRunnerTests(unittest.TestCase):
-    def test_cli_defaults_to_decompose_rag_enabled(self):
+    def test_cli_defaults_to_decompose_rag_disabled(self):
         args = parse_args(["--floor-plans", "6"])
 
-        self.assertTrue(args.decompose_rag)
+        self.assertFalse(args.decompose_rag)
         self.assertFalse(args.allocate_rag)
 
-    def test_cli_no_decompose_rag_disables_decompose_rag(self):
-        args = parse_args(["--floor-plans", "6", "--no-decompose-rag"])
+    def test_cli_decompose_rag_can_be_enabled_and_disabled(self):
+        enabled_args = parse_args(["--floor-plans", "6", "--decompose-rag"])
+        disabled_args = parse_args(["--floor-plans", "6", "--no-decompose-rag"])
 
-        self.assertFalse(args.decompose_rag)
+        self.assertTrue(enabled_args.decompose_rag)
+        self.assertFalse(disabled_args.decompose_rag)
 
     def test_cli_allocate_rag_can_be_enabled(self):
         args = parse_args(["--floor-plans", "6", "--allocate-rag"])

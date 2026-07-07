@@ -49,13 +49,13 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "--decompose-rag",
         dest="decompose_rag",
         action="store_true",
-        help="Enable task decomposition RAG few-shot examples (default).",
+        help="Enable task decomposition RAG few-shot examples.",
     )
     decompose_rag_group.add_argument(
         "--no-decompose-rag",
         dest="decompose_rag",
         action="store_false",
-        help="Disable task decomposition RAG and use the static decomposition prompt examples.",
+        help="Disable task decomposition RAG and use the static decomposition prompt examples (default).",
     )
     allocate_rag_group = parser.add_mutually_exclusive_group()
     allocate_rag_group.add_argument(
@@ -70,7 +70,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="store_false",
         help="Disable task allocation RAG and use the static allocation prompt examples (default).",
     )
-    parser.set_defaults(decompose_rag=True, allocate_rag=False)
+    parser.set_defaults(decompose_rag=False, allocate_rag=False)
     return parser.parse_args(argv)
 
 

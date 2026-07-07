@@ -93,6 +93,21 @@ class PDDLRagRetrieverTest(unittest.TestCase):
         for useful_token in ["break", "window", "cool", "pot", "bottle", "fridge"]:
             self.assertIn(useful_token, tokens)
 
+    def test_allocate_query_tokens_keep_robot_action_skills(self):
+        query = (
+            "Task: heat the apple in the microwave.\n"
+            "Required skills: GoToObject, PickupObject, RunMicrowave\n"
+            "Robot skill coverage: robot1 skills GoToObject, OpenObject, RunMicrowave"
+        )
+
+        decompose_tokens = _tokenize_query(query, limit=12)
+        allocate_tokens = _tokenize_query(query, limit=12, stage="allocate")
+
+        self.assertNotIn("gotoobject", decompose_tokens)
+        self.assertIn("gotoobject", allocate_tokens)
+        self.assertIn("runmicrowave", allocate_tokens)
+        self.assertIn("apple", allocate_tokens)
+
     def test_from_config_returns_none_when_disabled(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             self.assertIsNone(PDDLRagRetriever.from_config(RunConfig(tmp_dir)))
@@ -128,7 +143,7 @@ class PDDLRagRetrieverTest(unittest.TestCase):
 
             self.assertEqual(retriever.top_k, 3)
 
-    def test_retrieve_builds_cache_filters_stage_quality_and_eligible_docs(self):
+    def test_retrieve_builds_cache_filters_quality_and_eligible_docs_without_stage_filter(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             corpus_path = root / "rag" / "clean.jsonl"
@@ -189,12 +204,14 @@ class PDDLRagRetrieverTest(unittest.TestCase):
             examples = retriever.retrieve("decompose", "please open the fridge and move apple")
 
             self.assertTrue(db_path.exists())
-            self.assertEqual([example.doc_id for example in examples], ["decompose:rich", "decompose:weak"])
-            self.assertTrue(all(example.stage == "decompose" for example in examples))
+            self.assertEqual(
+                [example.doc_id for example in examples],
+                ["decompose:rich", "allocate:other-stage", "decompose:weak"],
+            )
             self.assertTrue(all(example.quality == "success" for example in examples))
             self.assertTrue(all(example.retrieval_eligible for example in examples))
 
-    def test_retrieve_can_select_allocate_stage_docs(self):
+    def test_retrieve_keeps_mixed_stage_docs_for_allocate_section(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             corpus_path = root / "rag" / "clean.jsonl"
@@ -234,8 +251,11 @@ class PDDLRagRetrieverTest(unittest.TestCase):
             retriever = PDDLRagRetriever.from_config(config, section="allocate_rag")
             examples = retriever.retrieve("allocate", "heat the apple in microwave")
 
-            self.assertEqual([example.doc_id for example in examples], ["allocate:rich"])
-            self.assertTrue(all(example.stage == "allocate" for example in examples))
+            self.assertCountEqual(
+                [example.doc_id for example in examples],
+                ["decompose:other-stage", "allocate:rich"],
+            )
+            self.assertCountEqual([example.stage for example in examples], ["decompose", "allocate"])
 
     def test_format_prompt_block_includes_top_three_full_contents_without_metadata(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -270,6 +290,22 @@ class PDDLRagRetrieverTest(unittest.TestCase):
             self.assertIn("C" * 80, block)
             self.assertNotIn("D" * 80, block)
             self.assertNotIn("...[truncated]", block)
+
+    def test_format_prompt_block_uses_allocation_safety_rules(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            retriever = PDDLRagRetriever(
+                root / "rag" / "clean.jsonl",
+                root / "rag" / "clean_index.json",
+                root / "rag" / "runtime.sqlite",
+            )
+
+            block = retriever.format_prompt_block("allocate", [rag_example("allocate:one", "allocation output")])
+
+            self.assertIn("allocation reasoning style and output format", block)
+            self.assertNotIn("decomposition structure and reasoning style", block)
+            self.assertIn("# Example", block)
+            self.assertIn("allocation output", block)
 
 
 if __name__ == "__main__":
