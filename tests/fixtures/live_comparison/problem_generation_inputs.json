@@ -67,15 +67,7 @@
         "object": "Box",
         "object_type": "object",
         "facts": [
-          "(at-location Box Floor)",
           "(object-open Box)"
-        ],
-        "related_objects": [
-          {
-            "object": "Floor",
-            "object_type": "object",
-            "role": "parentReceptacle"
-          }
         ]
       },
       {
@@ -105,16 +97,7 @@
       {
         "object": "Shelf_3",
         "object_type": "object",
-        "facts": [
-          "(at-location Shelf_3 Floor)"
-        ],
-        "related_objects": [
-          {
-            "object": "Floor",
-            "object_type": "object",
-            "role": "parentReceptacle"
-          }
-        ]
+        "facts": []
       },
       {
         "object": "Shelf_4",
@@ -164,16 +147,7 @@
       {
         "object": "Shelf_13",
         "object_type": "object",
-        "facts": [
-          "(at-location Shelf_13 Floor)"
-        ],
-        "related_objects": [
-          {
-            "object": "Floor",
-            "object_type": "object",
-            "role": "parentReceptacle"
-          }
-        ]
+        "facts": []
       }
     ],
     "key_object_pddl_states_by_subtask": {
@@ -182,15 +156,7 @@
           "object": "Box",
           "object_type": "object",
           "facts": [
-            "(at-location Box Floor)",
             "(object-open Box)"
-          ],
-          "related_objects": [
-            {
-              "object": "Floor",
-              "object_type": "object",
-              "role": "parentReceptacle"
-            }
           ]
         }
       ],
@@ -238,16 +204,7 @@
         {
           "object": "Shelf_3",
           "object_type": "object",
-          "facts": [
-            "(at-location Shelf_3 Floor)"
-          ],
-          "related_objects": [
-            {
-              "object": "Floor",
-              "object_type": "object",
-              "role": "parentReceptacle"
-            }
-          ]
+          "facts": []
         },
         {
           "object": "Shelf_4",
@@ -297,16 +254,7 @@
         {
           "object": "Shelf_13",
           "object_type": "object",
-          "facts": [
-            "(at-location Shelf_13 Floor)"
-          ],
-          "related_objects": [
-            {
-              "object": "Floor",
-              "object_type": "object",
-              "role": "parentReceptacle"
-            }
-          ]
+          "facts": []
         }
       ]
     },
@@ -320,17 +268,6 @@
         "multiple": false,
         "roles": [
           "key_object"
-        ]
-      },
-      {
-        "object": "Floor",
-        "object_type": "Floor",
-        "object_id": "Floor|+00.00|+00.00|+00.00",
-        "number": 1,
-        "count": 1,
-        "multiple": false,
-        "roles": [
-          "parentReceptacle"
         ]
       },
       {
@@ -511,17 +448,6 @@
           "roles": [
             "key_object"
           ]
-        },
-        {
-          "object": "Floor",
-          "object_type": "Floor",
-          "object_id": "Floor|+00.00|+00.00|+00.00",
-          "number": 1,
-          "count": 1,
-          "multiple": false,
-          "roles": [
-            "parentReceptacle"
-          ]
         }
       ],
       "2": [
@@ -602,17 +528,6 @@
           "multiple": true,
           "roles": [
             "key_object"
-          ]
-        },
-        {
-          "object": "Floor",
-          "object_type": "Floor",
-          "object_id": "Floor|+00.00|+00.00|+00.00",
-          "number": 1,
-          "count": 1,
-          "multiple": false,
-          "roles": [
-            "parentReceptacle"
           ]
         },
         {
@@ -876,16 +791,7 @@
       {
         "object": "Drawer_3",
         "object_type": "object",
-        "facts": [
-          "(at-location Drawer_3 Floor)"
-        ],
-        "related_objects": [
-          {
-            "object": "Floor",
-            "object_type": "object",
-            "role": "parentReceptacle"
-          }
-        ]
+        "facts": []
       },
       {
         "object": "Shelf_1",
@@ -1043,16 +949,7 @@
         {
           "object": "Drawer_3",
           "object_type": "object",
-          "facts": [
-            "(at-location Drawer_3 Floor)"
-          ],
-          "related_objects": [
-            {
-              "object": "Floor",
-              "object_type": "object",
-              "role": "parentReceptacle"
-            }
-          ]
+          "facts": []
         }
       ]
     },
@@ -1133,17 +1030,6 @@
         "multiple": true,
         "roles": [
           "key_object"
-        ]
-      },
-      {
-        "object": "Floor",
-        "object_type": "Floor",
-        "object_id": "Floor|+00.00|+00.00|+00.00",
-        "number": 1,
-        "count": 1,
-        "multiple": false,
-        "roles": [
-          "parentReceptacle"
         ]
       },
       {
@@ -1419,17 +1305,6 @@
           "roles": [
             "key_object"
           ]
-        },
-        {
-          "object": "Floor",
-          "object_type": "Floor",
-          "object_id": "Floor|+00.00|+00.00|+00.00",
-          "number": 1,
-          "count": 1,
-          "multiple": false,
-          "roles": [
-            "parentReceptacle"
-          ]
         }
       ]
     }
@@ -1539,16 +1414,7 @@
       {
         "object": "GarbageCan",
         "object_type": "object",
-        "facts": [
-          "(at-location GarbageCan Floor)"
-        ],
-        "related_objects": [
-          {
-            "object": "Floor",
-            "object_type": "object",
-            "role": "parentReceptacle"
-          }
-        ]
+        "facts": []
       },
       {
         "object": "LightSwitch",
@@ -1584,16 +1450,7 @@
       {
         "object": "Toilet",
         "object_type": "object",
-        "facts": [
-          "(at-location Toilet Floor)"
-        ],
-        "related_objects": [
-          {
-            "object": "Floor",
-            "object_type": "object",
-            "role": "parentReceptacle"
-          }
-        ]
+        "facts": []
       },
       {
         "object": "ToiletPaper_1",
@@ -1664,30 +1521,12 @@
         {
           "object": "GarbageCan",
           "object_type": "object",
-          "facts": [
-            "(at-location GarbageCan Floor)"
-          ],
-          "related_objects": [
-            {
-              "object": "Floor",
-              "object_type": "object",
-              "role": "parentReceptacle"
-            }
-          ]
+          "facts": []
         },
         {
           "object": "Toilet",
           "object_type": "object",
-          "facts": [
-            "(at-location Toilet Floor)"
-          ],
-          "related_objects": [
-            {
-              "object": "Floor",
-              "object_type": "object",
-              "role": "parentReceptacle"
-            }
-          ]
+          "facts": []
         },
         {
           "object": "ToiletPaper_1",
@@ -1747,17 +1586,6 @@
         "multiple": false,
         "roles": [
           "key_object"
-        ]
-      },
-      {
-        "object": "Floor",
-        "object_type": "Floor",
-        "object_id": "Floor|-01.15|+00.03|-03.98",
-        "number": 1,
-        "count": 1,
-        "multiple": false,
-        "roles": [
-          "parentReceptacle"
         ]
       },
       {
@@ -1921,17 +1749,6 @@
           "multiple": false,
           "roles": [
             "key_object"
-          ]
-        },
-        {
-          "object": "Floor",
-          "object_type": "Floor",
-          "object_id": "Floor|-01.15|+00.03|-03.98",
-          "number": 1,
-          "count": 1,
-          "multiple": false,
-          "roles": [
-            "parentReceptacle"
           ]
         },
         {
@@ -2120,16 +1937,7 @@
       {
         "object": "Sofa",
         "object_type": "object",
-        "facts": [
-          "(at-location Sofa Floor)"
-        ],
-        "related_objects": [
-          {
-            "object": "Floor",
-            "object_type": "object",
-            "role": "parentReceptacle"
-          }
-        ]
+        "facts": []
       }
     ],
     "key_object_pddl_states_by_subtask": {
@@ -2183,16 +1991,7 @@
         {
           "object": "Sofa",
           "object_type": "object",
-          "facts": [
-            "(at-location Sofa Floor)"
-          ],
-          "related_objects": [
-            {
-              "object": "Floor",
-              "object_type": "object",
-              "role": "parentReceptacle"
-            }
-          ]
+          "facts": []
         }
       ],
       "3": [
@@ -2317,17 +2116,6 @@
         "roles": [
           "key_object"
         ]
-      },
-      {
-        "object": "Floor",
-        "object_type": "Floor",
-        "object_id": "Floor|+00.38|+00.00|+00.00",
-        "number": 1,
-        "count": 1,
-        "multiple": false,
-        "roles": [
-          "parentReceptacle"
-        ]
       }
     ],
     "key_object_id_bindings_by_subtask": {
@@ -2409,17 +2197,6 @@
           "multiple": false,
           "roles": [
             "key_object"
-          ]
-        },
-        {
-          "object": "Floor",
-          "object_type": "Floor",
-          "object_id": "Floor|+00.38|+00.00|+00.00",
-          "number": 1,
-          "count": 1,
-          "multiple": false,
-          "roles": [
-            "parentReceptacle"
           ]
         }
       ],
@@ -4802,16 +4579,7 @@
       {
         "object": "GarbageCan",
         "object_type": "object",
-        "facts": [
-          "(at-location GarbageCan Floor)"
-        ],
-        "related_objects": [
-          {
-            "object": "Floor",
-            "object_type": "object",
-            "role": "parentReceptacle"
-          }
-        ]
+        "facts": []
       },
       {
         "object": "LightSwitch",
@@ -4865,16 +4633,7 @@
         {
           "object": "GarbageCan",
           "object_type": "object",
-          "facts": [
-            "(at-location GarbageCan Floor)"
-          ],
-          "related_objects": [
-            {
-              "object": "Floor",
-              "object_type": "object",
-              "role": "parentReceptacle"
-            }
-          ]
+          "facts": []
         },
         {
           "object": "SoapBottle",
@@ -4924,17 +4683,6 @@
         "multiple": false,
         "roles": [
           "key_object"
-        ]
-      },
-      {
-        "object": "Floor",
-        "object_type": "Floor",
-        "object_id": "Floor|-00.08|+00.01|+00.81",
-        "number": 1,
-        "count": 1,
-        "multiple": false,
-        "roles": [
-          "parentReceptacle"
         ]
       },
       {
@@ -5019,17 +4767,6 @@
           "multiple": false,
           "roles": [
             "key_object"
-          ]
-        },
-        {
-          "object": "Floor",
-          "object_type": "Floor",
-          "object_id": "Floor|-00.08|+00.01|+00.81",
-          "number": 1,
-          "count": 1,
-          "multiple": false,
-          "roles": [
-            "parentReceptacle"
           ]
         },
         {
@@ -5149,30 +4886,12 @@
       {
         "object": "Drawer_5",
         "object_type": "object",
-        "facts": [
-          "(at-location Drawer_5 Floor)"
-        ],
-        "related_objects": [
-          {
-            "object": "Floor",
-            "object_type": "object",
-            "role": "parentReceptacle"
-          }
-        ]
+        "facts": []
       },
       {
         "object": "Drawer_6",
         "object_type": "object",
-        "facts": [
-          "(at-location Drawer_6 Floor)"
-        ],
-        "related_objects": [
-          {
-            "object": "Floor",
-            "object_type": "object",
-            "role": "parentReceptacle"
-          }
-        ]
+        "facts": []
       },
       {
         "object": "Pillow",
@@ -5191,30 +4910,12 @@
       {
         "object": "Sofa_1",
         "object_type": "object",
-        "facts": [
-          "(at-location Sofa_1 Floor)"
-        ],
-        "related_objects": [
-          {
-            "object": "Floor",
-            "object_type": "object",
-            "role": "parentReceptacle"
-          }
-        ]
+        "facts": []
       },
       {
         "object": "Sofa_2",
         "object_type": "object",
-        "facts": [
-          "(at-location Sofa_2 Floor)"
-        ],
-        "related_objects": [
-          {
-            "object": "Floor",
-            "object_type": "object",
-            "role": "parentReceptacle"
-          }
-        ]
+        "facts": []
       },
       {
         "object": "Vase_1",
@@ -5350,30 +5051,12 @@
         {
           "object": "Sofa_1",
           "object_type": "object",
-          "facts": [
-            "(at-location Sofa_1 Floor)"
-          ],
-          "related_objects": [
-            {
-              "object": "Floor",
-              "object_type": "object",
-              "role": "parentReceptacle"
-            }
-          ]
+          "facts": []
         },
         {
           "object": "Sofa_2",
           "object_type": "object",
-          "facts": [
-            "(at-location Sofa_2 Floor)"
-          ],
-          "related_objects": [
-            {
-              "object": "Floor",
-              "object_type": "object",
-              "role": "parentReceptacle"
-            }
-          ]
+          "facts": []
         }
       ],
       "3": [
@@ -5400,30 +5083,12 @@
         {
           "object": "Drawer_5",
           "object_type": "object",
-          "facts": [
-            "(at-location Drawer_5 Floor)"
-          ],
-          "related_objects": [
-            {
-              "object": "Floor",
-              "object_type": "object",
-              "role": "parentReceptacle"
-            }
-          ]
+          "facts": []
         },
         {
           "object": "Drawer_6",
           "object_type": "object",
-          "facts": [
-            "(at-location Drawer_6 Floor)"
-          ],
-          "related_objects": [
-            {
-              "object": "Floor",
-              "object_type": "object",
-              "role": "parentReceptacle"
-            }
-          ]
+          "facts": []
         }
       ]
     },
@@ -5481,17 +5146,6 @@
         "multiple": true,
         "roles": [
           "key_object"
-        ]
-      },
-      {
-        "object": "Floor",
-        "object_type": "Floor",
-        "object_id": "Floor|-04.41|+00.38|+06.37",
-        "number": 1,
-        "count": 1,
-        "multiple": false,
-        "roles": [
-          "parentReceptacle"
         ]
       },
       {
@@ -5709,17 +5363,6 @@
           "roles": [
             "key_object"
           ]
-        },
-        {
-          "object": "Floor",
-          "object_type": "Floor",
-          "object_id": "Floor|-04.41|+00.38|+06.37",
-          "number": 1,
-          "count": 1,
-          "multiple": false,
-          "roles": [
-            "parentReceptacle"
-          ]
         }
       ],
       "3": [
@@ -5776,17 +5419,6 @@
           "multiple": true,
           "roles": [
             "key_object"
-          ]
-        },
-        {
-          "object": "Floor",
-          "object_type": "Floor",
-          "object_id": "Floor|-04.41|+00.38|+06.37",
-          "number": 1,
-          "count": 1,
-          "multiple": false,
-          "roles": [
-            "parentReceptacle"
           ]
         },
         {
