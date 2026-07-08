@@ -1737,6 +1737,61 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertIn("(switch-on LightSwitch)", captured_prompts[1])
             self.assertNotIn("(object-open Drawer)", captured_prompts[1])
 
+    def test_run_problem_generation_returns_in_memory_results_without_artifact_writes(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manager = TaskManager(str(root), "test-model", config=RunConfig(root))
+            manager.current_task_manifest = {"artifacts": {}, "task": "Open the drawer"}
+            captured = {}
+
+            class FakeLLM:
+                def query_model(self, messages, model, max_tokens=None, frequency_penalty=0):
+                    captured["prompt"] = messages[-1]["content"]
+                    return {}, (
+                        "(define (problem generated)\n"
+                        "  (:domain robot1)\n"
+                        "  (:objects robot1 Drawer - object)\n"
+                        "  (:init (object-open Drawer))\n"
+                        ")"
+                    )
+
+            domain_content = (
+                "(define (domain robot1)\n"
+                "  (:types robot object)\n"
+                "  (:predicates (object-open ?object - object))\n"
+                ")"
+            )
+            with patch.object(manager, "_write_text_artifact") as write_artifact:
+                results = manager._run_problem_generation(
+                    subtasks=["#SubTask 1: Open the drawer"],
+                    robot_assignments={1: 1},
+                    llm=FakeLLM(),
+                    model="test-model",
+                    objects_ai="\n\nobjects = []",
+                    domain_contents_by_robot={"robot1": domain_content},
+                    static_problem_prompt="# static problem example\n",
+                    key_object_pddl_states=[
+                        {
+                            "object": "Drawer",
+                            "object_type": "object",
+                            "facts": ["(object-open Drawer)", "(switch-on Drawer)"],
+                        }
+                    ],
+                )
+
+            write_artifact.assert_not_called()
+            self.assertEqual(1, len(results))
+            result = results[0]
+            self.assertEqual(1, result.subtask_index)
+            self.assertEqual("robot1", result.normalized_robot_name)
+            self.assertEqual("robot1", result.real_robot_name)
+            self.assertEqual(captured["prompt"], result.prompt)
+            self.assertIn("# static problem example", result.prompt)
+            self.assertIn("(object-open Drawer)", result.prompt)
+            self.assertNotIn("(switch-on Drawer)", result.prompt)
+            self.assertIn("(:domain robot1)", result.raw_output)
+            self.assertIn("(:domain robot1)", result.problem)
+
     def test_key_objects_match_floorplan_objects_in_decomposition(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             manager = TaskManager(tmp_dir, "test-model")

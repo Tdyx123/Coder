@@ -62,6 +62,7 @@ def create_run(
     allocate_output=None,
     robots=None,
     subtask_texts=None,
+    domain_file="resources/robot1.pddl",
 ) -> Path:
     run_dir = root / "logs" / "intermediate_runs" / "dataset___1" / name / "20260630_001"
     task = f"{name} task"
@@ -191,7 +192,7 @@ def create_run(
                 "problem_file": f"subtask_{idx:02d}_problem_validated.pddl",
                 "return_code": return_code,
                 "compatibility_output": str(plan_path),
-                "domain_file": "resources/robot1.pddl",
+                "domain_file": domain_file,
             }
         )
     write_json(run_dir / "08_planner" / "planner_manifest.json", planner_records)
@@ -354,6 +355,7 @@ class BuildPDDLRagCorpusTest(unittest.TestCase):
                 "problem-generation",
                 return_codes=[0],
                 completion={"successful_subtasks": 1, "total_subtasks": 1},
+                domain_file="resources/robot25.pddl",
             )
 
             result = run_corpus_builder(root, output_dir, "problem_generation")
@@ -366,16 +368,67 @@ class BuildPDDLRagCorpusTest(unittest.TestCase):
             self.assertEqual(doc["quality"], "success")
             self.assertTrue(doc["retrieval_eligible"])
             self.assertIn("Subtask 1: # SubTask 1: Open the book", doc["query_text"])
+            self.assertIn("Assigned Robot: robot25", doc["query_text"])
+            self.assertNotIn("Assigned robot: robot1", doc["query_text"])
+            self.assertNotIn("Assigned PDDL robot/domain", doc["query_text"])
+            self.assertIn("# Assigned Robot", doc["content"])
+            self.assertIn("# Assigned Robot\nrobot25\n\n# Generated Problem", doc["content"])
+            self.assertNotIn("Assigned robot number", doc["content"])
+            self.assertNotIn("Assigned robot: robot1", doc["content"])
+            self.assertNotIn("Assigned PDDL robot/domain", doc["content"])
             self.assertIn("# Generated Problem", doc["content"])
             self.assertIn("(define (problem raw-book-1))", doc["content"])
-            self.assertIn("# Validated Problem", doc["content"])
-            self.assertIn("(define (problem validated-book-1))", doc["content"])
+            self.assertNotIn("# Validated Problem", doc["content"])
+            self.assertNotIn("(define (problem validated-book-1))", doc["content"])
+            self.assertNotIn("# Planner Record", doc["content"])
+            self.assertNotIn("# Plan", doc["content"])
+            self.assertNotIn("(gotoobject robot1 book)", doc["content"])
+            self.assertNotIn("(openobject robot1 book)", doc["content"])
+            self.assertNotIn("assigned_robot_number", doc["metadata"])
+            self.assertNotIn("assigned_robot", doc["metadata"])
+            self.assertEqual(doc["metadata"]["assigned_pddl_robot"], "robot25")
+            self.assertEqual(
+                doc["metadata"]["plan_path"],
+                "08_planner/outputs/subtask_01_problem_validated_plan.txt",
+            )
             self.assertEqual(doc["metadata"]["planner_return_code"], 0)
-            self.assertEqual(doc["metadata"]["domain_file"], "resources/robot1.pddl")
+            self.assertEqual(doc["metadata"]["domain_file"], "resources/robot25.pddl")
             index = read_json(output_dir / "task_problem_generation_index.json")
             self.assertEqual(index["document_count"], 1)
             summary = read_json(output_dir / "task_problem_generation_summary.json")
             self.assertEqual(summary["by_stage_quality"]["problem_generation"]["success"], 1)
+
+    def test_problem_generation_stage_requires_nonempty_plan_file(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            output_dir = root / "rag"
+            run_dir = create_run(
+                root,
+                "missing-plan",
+                return_codes=[0, 0],
+                completion={"successful_subtasks": 2, "total_subtasks": 2},
+                subtask_texts=[
+                    "# SubTask 1: Open the book",
+                    "# SubTask 2: Open the drawer",
+                ],
+            )
+            write_text(
+                run_dir / "08_planner" / "outputs" / "subtask_01_problem_validated_plan.txt",
+                "",
+            )
+            (run_dir / "08_planner" / "outputs" / "subtask_02_problem_validated_plan.txt").unlink()
+
+            result = run_corpus_builder(root, output_dir, "problem_generation")
+
+            self.assertEqual(result, 0)
+            docs = read_jsonl(output_dir / "task_problem_generation_corpus.jsonl")
+            self.assertEqual(docs, [])
+            index = read_json(output_dir / "task_problem_generation_index.json")
+            self.assertEqual(index["document_count"], 0)
+            summary = read_json(output_dir / "task_problem_generation_summary.json")
+            self.assertEqual(summary["document_count"], 0)
+            self.assertEqual(summary["skip_reasons"]["filtered_problem_generation_missing_plan"], 2)
+            self.assertNotIn("missing_problem_generation_outputs", summary["skip_reasons"])
 
     def test_allocate_stage_is_supported_and_skips_missing_allocate_output(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

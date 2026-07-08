@@ -586,24 +586,6 @@ def build_allocate_doc(
     )
 
 
-def read_validated_problem(
-    run_dir: Path,
-    validation_record: Optional[Dict[str, Any]],
-    subtask_index: int,
-) -> Tuple[str, Optional[str]]:
-    if validation_record:
-        relpath = validation_record.get("validated_problem_path")
-        if isinstance(relpath, str):
-            path = run_dir / relpath
-            text = read_text(path)
-            if text is not None:
-                return text, source_path(run_dir, path)
-
-    path = run_dir / "07_validate" / "outputs" / f"subtask_{subtask_index:02d}_problem_validated.pddl"
-    text = read_text(path)
-    return (text or ""), source_path(run_dir, path) if text is not None else None
-
-
 def read_raw_problem(run_dir: Path, subtask_index: int, generated_problem: str) -> Tuple[str, Optional[str]]:
     path = run_dir / "05_problem_generation" / "outputs" / f"subtask_{subtask_index:02d}_problem.pddl"
     text = read_text(path)
@@ -625,6 +607,18 @@ def read_plan_text(run_dir: Path, planner_record: Optional[Dict[str, Any]]) -> T
     return (text or ""), source_path(run_dir, path) if text is not None else None
 
 
+def pddl_robot_from_domain_file(domain_file: Any) -> Optional[str]:
+    if not isinstance(domain_file, str) or not domain_file.strip():
+        return None
+    stem = Path(domain_file).stem.strip()
+    return stem or None
+
+
+def pddl_robot_from_problem(problem_text: str) -> Optional[str]:
+    match = re.search(r"\(:domain\s+([^\s)]+)", problem_text, flags=re.IGNORECASE)
+    return match.group(1) if match else None
+
+
 def build_problem_generation_docs(
     run_dir: Path,
     manifest: Dict[str, Any],
@@ -635,6 +629,7 @@ def build_problem_generation_docs(
     planner_record_map: Dict[int, Dict[str, Any]],
     key_object_states: Any,
     quality: str,
+    skip_reasons: Counter,
 ) -> List[Dict[str, Any]]:
     docs: List[Dict[str, Any]] = []
     task = str(manifest.get("task") or task_context.get("task") or "")
@@ -643,30 +638,36 @@ def build_problem_generation_docs(
     for subtask in subtasks:
         subtask_index = numeric_int(subtask.get("index"))
         if subtask_index is None:
+            skip_reasons["filtered_problem_generation_invalid_subtask_index"] += 1
             continue
         subtask_text = str(subtask.get("text") or "")
         generated_problem = generated_problem_map.get(subtask_index, "")
         raw_problem, raw_problem_path = read_raw_problem(run_dir, subtask_index, generated_problem)
         validation_record = validation_records.get(subtask_index)
-        validated_problem, validated_problem_path = read_validated_problem(
-            run_dir,
-            validation_record,
-            subtask_index,
-        )
         planner_record = planner_record_map.get(subtask_index)
         plan_text, plan_path = read_plan_text(run_dir, planner_record)
-        if not raw_problem and not validated_problem:
+        if not plan_text.strip():
+            skip_reasons["filtered_problem_generation_missing_plan"] += 1
+            continue
+        if not raw_problem:
+            skip_reasons["missing_problem_generation_problem"] += 1
             continue
 
+        assigned_pddl_robot = (
+            pddl_robot_from_domain_file((planner_record or {}).get("domain_file"))
+            or pddl_robot_from_problem(raw_problem)
+            or pddl_robot_from_problem(generated_problem)
+        )
         source_paths = [
             str(path)
-            for path in [subtask.get("path"), raw_problem_path, validated_problem_path, plan_path]
+            for path in [subtask.get("path"), raw_problem_path, plan_path]
             if path
         ]
         query_text = "\n".join(
             [
                 f"Task: {task}",
                 f"Subtask {subtask_index}: {subtask_text.strip()}",
+                f"Assigned Robot: {assigned_pddl_robot or ''}",
                 f"Robots: {compact_json(robots, 1200)}",
                 f"Key object PDDL states: {compact_json(key_object_states, 1200)}",
             ]
@@ -682,26 +683,22 @@ def build_problem_generation_docs(
                 "# Key Object PDDL States",
                 compact_json(key_object_states),
                 "",
+                "# Assigned Robot",
+                assigned_pddl_robot or "",
+                "",
                 "# Generated Problem",
                 raw_problem,
-                "",
-                "# Validated Problem",
-                validated_problem,
-                "",
-                "# Planner Record",
-                compact_json(planner_record or {}),
-                "",
-                "# Plan",
-                plan_text,
             ]
         )
         metadata = base_metadata(manifest, run_dir, quality, source_paths)
         metadata.update(
             {
                 "subtask_index": subtask_index,
+                "assigned_pddl_robot": assigned_pddl_robot,
                 "planner_return_code": (planner_record or {}).get("return_code"),
                 "planner_status": (planner_record or {}).get("status"),
                 "domain_file": (planner_record or {}).get("domain_file"),
+                "plan_path": plan_path,
                 "validation_status": (validation_record or {}).get("status"),
             }
         )
@@ -816,6 +813,7 @@ def build_documents_for_manifest(
             documents.append(doc)
 
     if "problem_generation" in stages:
+        previous_skip_count = sum(skip_reasons.values())
         problem_docs = build_problem_generation_docs(
             run_dir,
             manifest,
@@ -826,10 +824,11 @@ def build_documents_for_manifest(
             planner_record_map,
             key_object_states,
             quality,
+            skip_reasons,
         )
         if problem_docs:
             documents.extend(problem_docs)
-        else:
+        elif sum(skip_reasons.values()) == previous_skip_count:
             skip_reasons["missing_problem_generation_outputs"] += 1
 
     return documents

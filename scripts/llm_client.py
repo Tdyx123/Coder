@@ -293,7 +293,8 @@ def complete_with_provider(
     messages = _normalize_messages(prompt)
     model_key = model.lower()
     is_qwen37_max = model_key == "qwen3.7-max"
-    is_deepseek_v4_pro = model_key == "deepseek-v4-pro"
+    uses_max_completion_tokens = model_key in {"qwen3.7-max", "mimo-v2.5"}
+    disables_thinking = model_key in {"deepseek-v4-pro", "mimo-v2.5", "kimi-k2.6"}
     kwargs: Dict[str, Any] = {
         "model": model,
         "messages": messages,
@@ -303,7 +304,7 @@ def complete_with_provider(
         "stream": True,
         "stream_options": {"include_usage": True},
     }
-    if is_qwen37_max:
+    if uses_max_completion_tokens:
         kwargs["max_completion_tokens"] = max_tokens
     else:
         kwargs["max_tokens"] = max_tokens
@@ -327,10 +328,10 @@ def complete_with_provider(
         qwen_extra_body = dict(kwargs.get("extra_body") or {})
         qwen_extra_body["enable_thinking"] = False
         kwargs["extra_body"] = qwen_extra_body
-    if is_deepseek_v4_pro:
-        deepseek_extra_body = dict(kwargs.get("extra_body") or {})
-        deepseek_extra_body["thinking"] = {"type": "disabled"}
-        kwargs["extra_body"] = deepseek_extra_body
+    if disables_thinking:
+        thinking_extra_body = dict(kwargs.get("extra_body") or {})
+        thinking_extra_body["thinking"] = {"type": "disabled"}
+        kwargs["extra_body"] = thinking_extra_body
 
     api_keys = provider["api_keys"]
     start_index = _api_key_rotation_pool.reserve_start_index(provider)

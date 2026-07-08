@@ -1,6 +1,7 @@
 import copy
 import ast
 from contextlib import contextmanager
+from dataclasses import dataclass
 import json
 import os
 import argparse
@@ -248,6 +249,19 @@ class PlanningError(PDDLError):
 class TaskProcessingResult(Dict[str, Any]):
     """Typed dictionary-like container for per-task execution results."""
     pass
+
+
+@dataclass
+class ProblemGenerationResult:
+    """In-memory result for one problem-generation subtask."""
+
+    subtask_index: int
+    normalized_robot_name: str
+    real_robot_name: str
+    prompt: str
+    raw_output: str
+    problem: str
+
 
 class PDDLUtils:
     """Utility functions for PDDL operations."""
@@ -2447,50 +2461,49 @@ class TaskManager:
         return problem_pddl
     
 
-    def problemextracting(
+    def _run_problem_generation(
             self,
             subtasks: List[str],
             robot_assignments: Dict[int, int],
             llm: 'LLMHandler',
             model: str,
-            file_processor: 'FileProcessor',
             objects_ai: str,
-            prompt_allocation_set: str,
+            domain_contents_by_robot: Dict[str, str],
+            static_problem_prompt: str,
             key_object_pddl_states: Optional[List[Dict[str, Any]]] = None,
-            key_object_pddl_states_by_subtask: Optional[Dict[int, List[Dict[str, Any]]]] = None,
-        ) -> List[str]:
-        """Extract problem files from subtasks using precomputed robot assignments.
+            key_object_pddl_states_by_subtask: Optional[Dict[Union[int, str], List[Dict[str, Any]]]] = None,
+        ) -> List[ProblemGenerationResult]:
+        """Generate problem prompts and PDDL results without reading or writing artifacts.
 
         Args:
             subtasks: List of subtask text
             robot_assignments: Dict mapping subtask index to robot number
             llm: LLM handler
             model: Model name
-            file_processor: File processor instance
             objects_ai: AI objects description
-            prompt_allocation_set: Prompt template name
+            domain_contents_by_robot: Domain content keyed by real robot/domain name
+            static_problem_prompt: Static fallback few-shot prompt content
             key_object_pddl_states: PDDL-ready state facts for key objects
             key_object_pddl_states_by_subtask: PDDL-ready state facts keyed by subtask index
 
         Returns:
-            List[str]: Generated PDDL problem files
+            List[ProblemGenerationResult]: Generated in-memory problem artifacts
         """
-        problem_pddl: List[str] = []
+        results: List[ProblemGenerationResult] = []
 
         for subtask_idx, subtask in enumerate(subtasks, start=1):
             robot_num = robot_assignments.get(subtask_idx, 1)
             normalized_robot_name = f"robot{robot_num}"
             real_robot_name = self.current_robot_domain_names.get(normalized_robot_name, normalized_robot_name)
-            robotassignnumber = f"{real_robot_name}.pddl"
-            domain_path = str(self.config.robot_domain_path(robotassignnumber))
 
-            domain_content = file_processor.read_file(domain_path) or ""
+            domain_content = (
+                domain_contents_by_robot.get(real_robot_name)
+                or domain_contents_by_robot.get(normalized_robot_name, "")
+            )
             if not domain_content:
-                print(f"Domain file not found or empty: {domain_path}")
+                print(f"Domain content not provided or empty for robot/domain: {real_robot_name}")
                 continue
 
-            problem_fileexamplepath = self.config.prompt_file(f"{prompt_allocation_set}_problem.txt")
-            problem_examplecontent = file_processor.read_file(str(problem_fileexamplepath)) or ""
             subtask_key_object_states = key_object_pddl_states
             if key_object_pddl_states_by_subtask is not None:
                 if subtask_idx in key_object_pddl_states_by_subtask:
@@ -2506,7 +2519,7 @@ class TaskManager:
                 ensure_ascii=False,
                 indent=2,
             )
-            problem_prompt_examples = problem_examplecontent
+            problem_prompt_examples = static_problem_prompt
             if self.problem_rag_retriever:
                 rag_query = self._problem_rag_query(
                     subtask_idx,
@@ -2520,7 +2533,7 @@ class TaskManager:
                 problem_prompt_examples = self._rag_or_static_prompt_block(
                     self.problem_rag_retriever,
                     lambda query_text, key=manifest_key: self._problem_rag_prompt_block(query_text, key),
-                    lambda: problem_examplecontent,
+                    lambda: static_problem_prompt,
                     rag_query,
                 )
 
@@ -2545,10 +2558,6 @@ class TaskManager:
                 "(which includes location)\n"
                 "#IMPORTANT, strictly follow the structure, stop generating after the Problem file generation is done."
             )
-            prompt_path = f"05_problem_generation/prompts/subtask_{subtask_idx:02d}_prompt.txt"
-            output_path0 = f"05_problem_generation/outputs/subtask_{subtask_idx:02d}_problem.raw.txt"
-            output_path1 = f"05_problem_generation/outputs/subtask_{subtask_idx:02d}_problem.pddl"
-            self._write_text_artifact(prompt_path, prompt)
 
             messages = [
                 {"role": "system", "content": "You are a Robot PDDL problem Expert"},
@@ -2568,11 +2577,82 @@ class TaskManager:
                 real_robot_name,
             )
             extracted_problem = self._force_problem_domain(extracted_problem, real_robot_name)
-            self._write_text_artifact(output_path0, text)
-            self._write_text_artifact(output_path1, extracted_problem)
-            problem_pddl.append(extracted_problem)
+            results.append(
+                ProblemGenerationResult(
+                    subtask_index=subtask_idx,
+                    normalized_robot_name=normalized_robot_name,
+                    real_robot_name=real_robot_name,
+                    prompt=prompt,
+                    raw_output=text,
+                    problem=extracted_problem,
+                )
+            )
 
-        return problem_pddl
+        return results
+
+    def problemextracting(
+            self,
+            subtasks: List[str],
+            robot_assignments: Dict[int, int],
+            llm: 'LLMHandler',
+            model: str,
+            file_processor: 'FileProcessor',
+            objects_ai: str,
+            prompt_allocation_set: str,
+            key_object_pddl_states: Optional[List[Dict[str, Any]]] = None,
+            key_object_pddl_states_by_subtask: Optional[Dict[Union[int, str], List[Dict[str, Any]]]] = None,
+        ) -> List[str]:
+        """Extract problem files from subtasks using precomputed robot assignments.
+
+        Args:
+            subtasks: List of subtask text
+            robot_assignments: Dict mapping subtask index to robot number
+            llm: LLM handler
+            model: Model name
+            file_processor: File processor instance
+            objects_ai: AI objects description
+            prompt_allocation_set: Prompt template name
+            key_object_pddl_states: PDDL-ready state facts for key objects
+            key_object_pddl_states_by_subtask: PDDL-ready state facts keyed by subtask index
+
+        Returns:
+            List[str]: Generated PDDL problem files
+        """
+        domain_contents_by_robot: Dict[str, str] = {}
+        for subtask_idx, _ in enumerate(subtasks, start=1):
+            robot_num = robot_assignments.get(subtask_idx, 1)
+            normalized_robot_name = f"robot{robot_num}"
+            real_robot_name = self.current_robot_domain_names.get(normalized_robot_name, normalized_robot_name)
+            if real_robot_name in domain_contents_by_robot:
+                continue
+
+            robotassignnumber = f"{real_robot_name}.pddl"
+            domain_path = str(self.config.robot_domain_path(robotassignnumber))
+            domain_contents_by_robot[real_robot_name] = file_processor.read_file(domain_path) or ""
+
+        problem_fileexamplepath = self.config.prompt_file(f"{prompt_allocation_set}_problem.txt")
+        problem_examplecontent = file_processor.read_file(str(problem_fileexamplepath)) or ""
+        results = self._run_problem_generation(
+            subtasks=subtasks,
+            robot_assignments=robot_assignments,
+            llm=llm,
+            model=model,
+            objects_ai=objects_ai,
+            domain_contents_by_robot=domain_contents_by_robot,
+            static_problem_prompt=problem_examplecontent,
+            key_object_pddl_states=key_object_pddl_states,
+            key_object_pddl_states_by_subtask=key_object_pddl_states_by_subtask,
+        )
+
+        for result in results:
+            prompt_path = f"05_problem_generation/prompts/subtask_{result.subtask_index:02d}_prompt.txt"
+            output_path0 = f"05_problem_generation/outputs/subtask_{result.subtask_index:02d}_problem.raw.txt"
+            output_path1 = f"05_problem_generation/outputs/subtask_{result.subtask_index:02d}_problem.pddl"
+            self._write_text_artifact(prompt_path, result.prompt)
+            self._write_text_artifact(output_path0, result.raw_output)
+            self._write_text_artifact(output_path1, result.problem)
+
+        return [result.problem for result in results]
 
     def _extract_pddl_problem_block(self, text: str) -> str:
         """Extract clean PDDL problem block from text.

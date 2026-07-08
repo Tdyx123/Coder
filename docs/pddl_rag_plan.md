@@ -61,7 +61,7 @@ v1 采用阶段级 RAG，为以下阶段分别汇总历史样例：
 
 `allocate` 文档按 task run 生成一条，包含 task、subtasks、robot 能力摘要、key objects、allocation 输出，以及可用时的 final sequence of operations。
 
-`problem_generation` 文档按 generated subtask 生成一条，包含 subtask 文本、可用的 assigned robot/domain 证据、raw/validated PDDL problem 内容和 planner 结果元数据。
+`problem_generation` 文档按 generated subtask 生成一条，包含 subtask 文本、key-object PDDL 状态、generated/raw PDDL problem 内容，以及当前子任务的实际 PDDL robot/domain。validated problem、planner record 和 plan 正文不再写入 RAG 文档；对应 planner plan 文件必须存在且非空，才允许该 subtask 入库。
 
 ## Cluster Winner Judge
 
