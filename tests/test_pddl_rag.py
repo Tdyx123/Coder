@@ -14,6 +14,7 @@ from pddl_rag import (
     PDDLRagError,
     PDDLRagExample,
     PDDLRagRetriever,
+    PROBLEM_GENERATION_RAG_SAFETY_RULES,
     _tokenize_query,
 )
 from run_config import RunConfig
@@ -107,6 +108,20 @@ class PDDLRagRetrieverTest(unittest.TestCase):
         self.assertIn("gotoobject", allocate_tokens)
         self.assertIn("runmicrowave", allocate_tokens)
         self.assertIn("apple", allocate_tokens)
+
+    def test_problem_generation_query_tokens_keep_action_symbols(self):
+        query = (
+            "Subtask 1: heat the apple in the microwave.\n"
+            "Domain actions: GoToObject, PickupObject, RunMicrowave\n"
+            "Domain predicates: at-location, pickupable, heated"
+        )
+
+        tokens = _tokenize_query(query, limit=12, stage="problem_generation")
+
+        self.assertIn("gotoobject", tokens)
+        self.assertIn("pickupobject", tokens)
+        self.assertIn("runmicrowave", tokens)
+        self.assertIn("apple", tokens)
 
     def test_from_config_returns_none_when_disabled(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -275,7 +290,10 @@ class PDDLRagRetrieverTest(unittest.TestCase):
             ]
             block = retriever.format_prompt_block("problem_generation", examples)
 
-            self.assertIn("Do not copy object names, robot tokens, floor-plan facts", block)
+            self.assertIn(PROBLEM_GENERATION_RAG_SAFETY_RULES, block)
+            self.assertIn("PDDL problem structure", block)
+            self.assertNotIn("decomposition structure and reasoning style", block)
+            self.assertNotIn("allocation reasoning style and output format", block)
             self.assertEqual(block.count("# Example"), 3)
             self.assertNotIn("# Retrieved Task Decomposition Examples (RAG)", block)
             self.assertNotIn("# End Retrieved Task Decomposition Examples (RAG)", block)

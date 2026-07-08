@@ -16,7 +16,7 @@ from run_config import load_run_config
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SUPPORTED_STAGES = ("decompose", "allocate")
+SUPPORTED_STAGES = ("decompose", "allocate", "problem_generation")
 TOKEN_RE = re.compile(r"[A-Za-z0-9_]+")
 
 

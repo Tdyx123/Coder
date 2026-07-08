@@ -29,6 +29,12 @@ ALLOCATE_RAG_SAFETY_RULES = (
     "# Do not copy object names, robot tokens, floor-plan facts, or PDDL facts "
     "unless they are present in the current task context."
 )
+PROBLEM_GENERATION_RAG_SAFETY_RULES = (
+    "# Use these examples only as few-shot references for PDDL problem structure, "
+    "including (:objects), (:init), and (:goal) formatting.\n"
+    "# Do not copy object names, robot tokens, domain names, floor-plan facts, or PDDL facts "
+    "unless they are present in the current task context."
+)
 RAG_SAFETY_RULES = DECOMPOSE_RAG_SAFETY_RULES
 LOW_VALUE_QUERY_TOKENS = {
     "a",
@@ -193,7 +199,7 @@ def _is_low_value_query_token(token: str, stage: Optional[str] = None) -> bool:
         return True
     if token in LOW_VALUE_QUERY_TOKENS:
         return True
-    if str(stage or "").lower() == "allocate":
+    if str(stage or "").lower() in {"allocate", "problem_generation"}:
         return False
     return token in ROBOT_SKILL_QUERY_TOKENS
 
@@ -241,8 +247,11 @@ def _truncate_text(text: str, max_chars: int) -> str:
 
 
 def _rag_safety_rules(stage: str) -> str:
-    if str(stage).lower() == "allocate":
+    stage_name = str(stage).lower()
+    if stage_name == "allocate":
         return ALLOCATE_RAG_SAFETY_RULES
+    if stage_name == "problem_generation":
+        return PROBLEM_GENERATION_RAG_SAFETY_RULES
     return DECOMPOSE_RAG_SAFETY_RULES
 
 

@@ -50,6 +50,7 @@ from run_config import DEFAULT_RUN_CONFIG as SHARED_DEFAULT_RUN_CONFIG
 from run_config import RunConfig as SharedRunConfig
 from run_config import apply_allocate_rag_cli_override
 from run_config import apply_decompose_rag_cli_override
+from run_config import apply_problem_rag_cli_override
 
 
 class FixedDatetime:
@@ -158,6 +159,27 @@ class PDDLRunConfigTests(unittest.TestCase):
         if pddlrun_llmseparate_v2 is None and self._testMethodName.startswith("test_v2_"):
             self.skipTest("pddlrun_llmseparate_v2 source module is not present")
 
+    def write_problem_generation_fixture(
+        self,
+        root: Path,
+        static_prompt: str = "# problem example\n",
+        domain_content: str = (
+            "(define (domain robot1)\n"
+            "  (:predicates (object-open ?object - object) (at-location ?object - object ?loc - object))\n"
+            "  (:action OpenObject)\n"
+            ")"
+        ),
+    ) -> None:
+        prompt_dir = root / "prompts" / "v1"
+        resources_dir = root / "resources"
+        prompt_dir.mkdir(parents=True)
+        resources_dir.mkdir(parents=True)
+        (prompt_dir / "pddl_train_task_allocationsep_problem.txt").write_text(
+            static_prompt,
+            encoding="utf-8",
+        )
+        (resources_dir / "robot1.pddl").write_text(domain_content, encoding="utf-8")
+
     def test_summarize_llm_token_usage_sums_valid_usage_entries(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
@@ -239,12 +261,23 @@ class PDDLRunConfigTests(unittest.TestCase):
             apply_allocate_rag_cli_override(config, False)
             self.assertFalse(config.get("allocate_rag", "enabled"))
 
+    def test_apply_problem_rag_cli_override_sets_enabled_flag(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = RunConfig(tmp_dir)
+
+            self.assertFalse(config.get("problem_rag", "enabled"))
+            self.assertIs(apply_problem_rag_cli_override(config, True), config)
+            self.assertTrue(config.get("problem_rag", "enabled"))
+            apply_problem_rag_cli_override(config, False)
+            self.assertFalse(config.get("problem_rag", "enabled"))
+
     def test_single_runner_cli_defaults_to_decompose_rag_disabled(self):
         with patch("pddlrun_llmseparate.get_available_models", return_value=["deepseek-chat"]):
             args = parse_arguments(["--floor-plan", "6"])
 
         self.assertFalse(args.decompose_rag)
         self.assertFalse(args.allocate_rag)
+        self.assertFalse(args.problem_rag)
 
     def test_single_runner_cli_decompose_rag_can_be_enabled_and_disabled(self):
         with patch("pddlrun_llmseparate.get_available_models", return_value=["deepseek-chat"]):
@@ -261,6 +294,14 @@ class PDDLRunConfigTests(unittest.TestCase):
 
         self.assertTrue(enabled_args.allocate_rag)
         self.assertFalse(disabled_args.allocate_rag)
+
+    def test_single_runner_cli_problem_rag_can_be_enabled_and_disabled(self):
+        with patch("pddlrun_llmseparate.get_available_models", return_value=["deepseek-chat"]):
+            enabled_args = parse_arguments(["--floor-plan", "6", "--problem-rag"])
+            disabled_args = parse_arguments(["--floor-plan", "6", "--no-problem-rag"])
+
+        self.assertTrue(enabled_args.problem_rag)
+        self.assertFalse(disabled_args.problem_rag)
 
     def test_load_run_config_resolves_relative_paths(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -2544,18 +2585,7 @@ class PDDLRunConfigTests(unittest.TestCase):
     def test_problem_generation_prompt_does_not_include_decompose_rag_examples(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
-            prompt_dir = root / "prompts" / "v1"
-            resources_dir = root / "resources"
-            prompt_dir.mkdir(parents=True)
-            resources_dir.mkdir(parents=True)
-            (prompt_dir / "pddl_train_task_allocationsep_problem.txt").write_text(
-                "# problem example\n",
-                encoding="utf-8",
-            )
-            (resources_dir / "robot1.pddl").write_text(
-                "(define (domain robot1) (:predicates (object-open ?object - object)))",
-                encoding="utf-8",
-            )
+            self.write_problem_generation_fixture(root)
             config = RunConfig(
                 root,
                 values=rag_config_values(
@@ -2607,6 +2637,172 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertNotIn(RAG_PROMPT_TITLE, prompt)
             self.assertNotIn("doc_id: problem_generation:drawer", prompt)
             self.assertNotIn("decompose_rag", manager.current_task_manifest)
+            self.assertNotIn("problem_rag", manager.current_task_manifest)
+
+    def test_problem_generation_prompt_includes_enabled_problem_rag_examples(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self.write_problem_generation_fixture(
+                root,
+                static_prompt="# static problem example should be replaced\n",
+            )
+            config = RunConfig(
+                root,
+                values=rag_config_values(
+                    root,
+                    [
+                        rag_doc(
+                            "problem_generation:drawer",
+                            "problem_generation",
+                            "Task: open drawer",
+                            "# Historical PDDL problem for opening a drawer\n"
+                            "(define (problem historical_open_drawer))",
+                        )
+                    ],
+                    section="problem_rag",
+                ),
+            )
+            manager = TaskManager(str(root), "test-model", config=config)
+            manager.current_task_run_dir = str(root / "run")
+            manager.current_task_manifest = {"artifacts": {}, "task": "Open the drawer"}
+            captured = {}
+
+            class FakeLLM:
+                def query_model(self, messages, model, max_tokens=None, frequency_penalty=0.0):
+                    captured["prompt"] = messages[-1]["content"]
+                    return {}, (
+                        "(define (problem open_drawer)\n"
+                        "  (:domain robot1)\n"
+                        "  (:objects robot1 Drawer - object)\n"
+                        "  (:init)\n"
+                        ")"
+                    )
+
+            manager.problemextracting(
+                subtasks=["#SubTask 1: Open the drawer"],
+                robot_assignments={1: 1},
+                llm=FakeLLM(),
+                model="test-model",
+                file_processor=manager.file_processor,
+                objects_ai="\n\nobjects = [{'name': 'Drawer', 'mass': 5.0}]",
+                prompt_allocation_set="pddl_train_task_allocationsep",
+                key_object_pddl_states=[
+                    {
+                        "object": "Drawer",
+                        "object_type": "object",
+                        "facts": ["(object-open Drawer)"],
+                    }
+                ],
+            )
+
+            prompt = captured["prompt"]
+            self.assertIn("PDDL problem structure", prompt)
+            self.assertIn("# Example", prompt)
+            self.assertIn("# Historical PDDL problem for opening a drawer", prompt)
+            self.assertNotIn("# static problem example should be replaced", prompt)
+            self.assertNotIn("doc_id: problem_generation:drawer", prompt)
+            retrieval = manager.current_task_manifest["problem_rag"]["retrievals"]["subtask_01"]
+            self.assertEqual(retrieval["examples"][0]["doc_id"], "problem_generation:drawer")
+            self.assertIn("drawer", retrieval["query_tokens"])
+
+    def test_problem_generation_rag_zero_hit_records_and_uses_static_prompt(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self.write_problem_generation_fixture(root, static_prompt="# static problem fallback\n")
+            manager = TaskManager(str(root), "test-model", config=RunConfig(root))
+            manager.current_task_run_dir = str(root / "run")
+            manager.current_task_manifest = {"artifacts": {}, "task": "Open the drawer"}
+            captured = {}
+
+            class EmptyRetriever:
+                runtime_db_path = root / "rag" / "runtime.sqlite"
+
+                def query_tokens(self, query_text: str, stage=None):
+                    captured["query_stage"] = stage
+                    return ["open", "drawer"]
+
+                def retrieve(self, stage: str, query_text: str):
+                    captured["retrieve_stage"] = stage
+                    return []
+
+            class FakeLLM:
+                def query_model(self, messages, model, max_tokens=None, frequency_penalty=0.0):
+                    captured["prompt"] = messages[-1]["content"]
+                    return {}, (
+                        "(define (problem open_drawer)\n"
+                        "  (:domain robot1)\n"
+                        "  (:objects robot1 Drawer - object)\n"
+                        "  (:init)\n"
+                        ")"
+                    )
+
+            manager.problem_rag_retriever = EmptyRetriever()
+            manager.problemextracting(
+                subtasks=["#SubTask 1: Open the drawer"],
+                robot_assignments={1: 1},
+                llm=FakeLLM(),
+                model="test-model",
+                file_processor=manager.file_processor,
+                objects_ai="\n\nobjects = [{'name': 'Drawer', 'mass': 5.0}]",
+                prompt_allocation_set="pddl_train_task_allocationsep",
+                key_object_pddl_states=[{"object": "Drawer", "facts": ["(object-open Drawer)"]}],
+            )
+
+            self.assertIn("# static problem fallback", captured["prompt"])
+            self.assertEqual(captured["query_stage"], "problem_generation")
+            self.assertEqual(captured["retrieve_stage"], "problem_generation")
+            retrieval = manager.current_task_manifest["problem_rag"]["retrievals"]["subtask_01"]
+            self.assertEqual(retrieval["examples"], [])
+            self.assertEqual(retrieval["query_tokens"], ["open", "drawer"])
+            self.assertFalse(retrieval["timeout"])
+
+    def test_problem_generation_rag_timeout_records_and_uses_static_prompt(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self.write_problem_generation_fixture(root, static_prompt="# static problem timeout fallback\n")
+            manager = TaskManager(str(root), "test-model", config=RunConfig(root))
+            manager.current_task_run_dir = str(root / "run")
+            manager.current_task_manifest = {"artifacts": {}, "task": "Open the drawer"}
+            captured = {}
+
+            class TimeoutRetriever:
+                runtime_db_path = root / "rag" / "runtime.sqlite"
+
+                def query_tokens(self, query_text: str):
+                    return ["open", "drawer"]
+
+                def retrieve(self, stage: str, query_text: str):
+                    raise PDDLRagTimeoutError("RAG query exceeded 5s")
+
+            class FakeLLM:
+                def query_model(self, messages, model, max_tokens=None, frequency_penalty=0.0):
+                    captured["prompt"] = messages[-1]["content"]
+                    return {}, (
+                        "(define (problem open_drawer)\n"
+                        "  (:domain robot1)\n"
+                        "  (:objects robot1 Drawer - object)\n"
+                        "  (:init)\n"
+                        ")"
+                    )
+
+            manager.problem_rag_retriever = TimeoutRetriever()
+            manager.problemextracting(
+                subtasks=["#SubTask 1: Open the drawer"],
+                robot_assignments={1: 1},
+                llm=FakeLLM(),
+                model="test-model",
+                file_processor=manager.file_processor,
+                objects_ai="\n\nobjects = [{'name': 'Drawer', 'mass': 5.0}]",
+                prompt_allocation_set="pddl_train_task_allocationsep",
+                key_object_pddl_states=[{"object": "Drawer", "facts": ["(object-open Drawer)"]}],
+            )
+
+            self.assertIn("# static problem timeout fallback", captured["prompt"])
+            retrieval = manager.current_task_manifest["problem_rag"]["retrievals"]["subtask_01"]
+            self.assertEqual(retrieval["examples"], [])
+            self.assertEqual(retrieval["query_tokens"], ["open", "drawer"])
+            self.assertTrue(retrieval["timeout"])
+            self.assertIn("RAG query exceeded", retrieval["error"])
 
     def test_problem_generation_fewshot_includes_key_object_pddl_states(self):
         prompt = (ROOT / "prompts" / "v1" / "pddl_train_task_allocationsep_problem.txt").read_text(

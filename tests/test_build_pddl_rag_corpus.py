@@ -202,11 +202,12 @@ class BuildPDDLRagCorpusTest(unittest.TestCase):
     def test_parse_args_accepts_supported_single_stage(self):
         self.assertEqual(parse_args(["--stage", "decompose"]).stage, "decompose")
         self.assertEqual(parse_args(["--stage", "allocate"]).stage, "allocate")
+        self.assertEqual(parse_args(["--stage", "problem_generation"]).stage, "problem_generation")
 
     def test_parse_args_rejects_unknown_stage(self):
         with contextlib.redirect_stderr(io.StringIO()):
             with self.assertRaises(SystemExit) as context:
-                parse_args(["--stage", "problem_generation"])
+                parse_args(["--stage", "unknown"])
 
         self.assertEqual(context.exception.code, 2)
 
@@ -343,6 +344,38 @@ class BuildPDDLRagCorpusTest(unittest.TestCase):
             self.assertEqual(len(docs), 1)
             decompose_doc = next(doc for doc in docs if doc["stage"] == "decompose")
             self.assertEqual(decompose_doc["metadata"]["key_object_count"], 0)
+
+    def test_problem_generation_stage_keeps_problem_context_documents(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            output_dir = root / "rag"
+            create_run(
+                root,
+                "problem-generation",
+                return_codes=[0],
+                completion={"successful_subtasks": 1, "total_subtasks": 1},
+            )
+
+            result = run_corpus_builder(root, output_dir, "problem_generation")
+
+            self.assertEqual(result, 0)
+            docs = read_jsonl(output_dir / "task_problem_generation_corpus.jsonl")
+            self.assertEqual(len(docs), 1)
+            doc = docs[0]
+            self.assertEqual(doc["stage"], "problem_generation")
+            self.assertEqual(doc["quality"], "success")
+            self.assertTrue(doc["retrieval_eligible"])
+            self.assertIn("Subtask 1: # SubTask 1: Open the book", doc["query_text"])
+            self.assertIn("# Generated Problem", doc["content"])
+            self.assertIn("(define (problem raw-book-1))", doc["content"])
+            self.assertIn("# Validated Problem", doc["content"])
+            self.assertIn("(define (problem validated-book-1))", doc["content"])
+            self.assertEqual(doc["metadata"]["planner_return_code"], 0)
+            self.assertEqual(doc["metadata"]["domain_file"], "resources/robot1.pddl")
+            index = read_json(output_dir / "task_problem_generation_index.json")
+            self.assertEqual(index["document_count"], 1)
+            summary = read_json(output_dir / "task_problem_generation_summary.json")
+            self.assertEqual(summary["by_stage_quality"]["problem_generation"]["success"], 1)
 
     def test_allocate_stage_is_supported_and_skips_missing_allocate_output(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

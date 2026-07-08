@@ -32,6 +32,7 @@ from run_config import (
     RunConfig,
     apply_allocate_rag_cli_override,
     apply_decompose_rag_cli_override,
+    apply_problem_rag_cli_override,
     load_run_config as _load_run_config,
     normalize_floor_plan,
 )
@@ -181,6 +182,11 @@ def prewarm_decompose_rag_runtime_db(config: RunConfig) -> bool:
 def prewarm_allocate_rag_runtime_db(config: RunConfig) -> bool:
     """Build or validate the shared allocation RAG runtime DB before workers start."""
     return _prewarm_rag_runtime_db(config, "allocate_rag", "task allocation")
+
+
+def prewarm_problem_rag_runtime_db(config: RunConfig) -> bool:
+    """Build or validate the shared problem-generation RAG runtime DB before workers start."""
+    return _prewarm_rag_runtime_db(config, "problem_rag", "problem generation")
 
 
 LLM_TOKEN_USAGE_KEYS = ("prompt_tokens", "completion_tokens", "total_tokens")
@@ -439,6 +445,13 @@ class TaskManager:
             )
         except PDDLRagError as exc:
             raise PDDLError(f"Error loading task allocation RAG configuration: {exc}") from exc
+        try:
+            self.problem_rag_retriever = PDDLRagRetriever.from_config(
+                self.config,
+                section="problem_rag",
+            )
+        except PDDLRagError as exc:
+            raise PDDLError(f"Error loading problem generation RAG configuration: {exc}") from exc
         
         # Initialize paths
         self.resources_path = str(self.config.resources_dir)
@@ -699,6 +712,17 @@ class TaskManager:
             "task allocation",
         )
 
+    def _problem_rag_prompt_block(self, query_text: str, manifest_key: str = "problem_generation") -> str:
+        """Return formatted problem-generation RAG examples, or empty string when disabled."""
+        return self._rag_prompt_block(
+            self.problem_rag_retriever,
+            "problem_rag",
+            "problem_generation",
+            query_text,
+            manifest_key,
+            "problem generation",
+        )
+
     def _rag_retrieval_timed_out(self, manifest_section: str, manifest_key: str) -> bool:
         if not isinstance(self.current_task_manifest, dict):
             return False
@@ -795,6 +819,73 @@ class TaskManager:
                 subtask_text,
                 f"Full robots JSON: {self._json_for_prompt(robots)}",
                 f"Full key objects JSON: {self._json_for_prompt(key_objects)}",
+            ]
+        )
+
+    def _problem_rag_query(
+        self,
+        subtask_index: int,
+        subtask: str,
+        real_robot_name: str,
+        domain_content: str,
+        objects_ai: str,
+        key_object_pddl_states: Optional[List[Dict[str, Any]]],
+    ) -> str:
+        task = ""
+        if isinstance(self.current_task_manifest, dict):
+            task = str(self.current_task_manifest.get("task") or "")
+
+        domain_symbols = self._domain_symbol_summary(domain_content)
+        key_state_text = self._json_for_prompt(key_object_pddl_states or [])
+        if len(key_state_text) > 3000:
+            key_state_text = key_state_text[:3000].rstrip() + "\n...[truncated]"
+
+        object_names = []
+        for obj in self._parse_objects_ai(objects_ai):
+            name = obj.get("name")
+            if isinstance(name, str) and name.strip():
+                object_names.append(name.strip())
+            if len(object_names) >= 40:
+                break
+
+        return "\n".join(
+            [
+                f"Task: {task}",
+                f"Subtask {subtask_index}: {str(subtask).strip()}",
+                f"Robot/domain: {real_robot_name}",
+                domain_symbols,
+                f"Key object PDDL states: {key_state_text}",
+                f"Available object names: {', '.join(object_names)}",
+            ]
+        )
+
+    def _domain_symbol_summary(self, domain_content: str, max_items: int = 80) -> str:
+        actions = []
+        for match in re.finditer(r"\(:action\s+([A-Za-z0-9_-]+)", domain_content, flags=re.IGNORECASE):
+            action = match.group(1)
+            if action not in actions:
+                actions.append(action)
+            if len(actions) >= max_items:
+                break
+
+        predicates: List[str] = []
+        predicate_match = re.search(
+            r"\(:predicates(?P<body>.*?)(?=\n\s*\(:action|\Z)",
+            domain_content,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if predicate_match:
+            for match in re.finditer(r"\(\s*([A-Za-z][A-Za-z0-9_-]*)", predicate_match.group("body")):
+                predicate = match.group(1)
+                if predicate not in predicates:
+                    predicates.append(predicate)
+                if len(predicates) >= max_items:
+                    break
+
+        return "\n".join(
+            [
+                f"Domain actions: {', '.join(actions)}",
+                f"Domain predicates: {', '.join(predicates)}",
             ]
         )
 
@@ -2397,9 +2488,26 @@ class TaskManager:
                 ensure_ascii=False,
                 indent=2,
             )
+            problem_prompt_examples = problem_examplecontent
+            if self.problem_rag_retriever:
+                rag_query = self._problem_rag_query(
+                    subtask_idx,
+                    subtask,
+                    real_robot_name,
+                    domain_content,
+                    objects_ai,
+                    domain_key_object_states,
+                )
+                manifest_key = f"subtask_{subtask_idx:02d}"
+                problem_prompt_examples = self._rag_or_static_prompt_block(
+                    self.problem_rag_retriever,
+                    lambda query_text, key=manifest_key: self._problem_rag_prompt_block(query_text, key),
+                    lambda: problem_examplecontent,
+                    rag_query,
+                )
 
             prompt = (
-                "\n" + problem_examplecontent +
+                "\n" + problem_prompt_examples +
                 " Finish the tasks like example\n"
                 "Subtask examination from action perspective:" + subtask +
                 "\nDomain file content:" + domain_content +
@@ -2932,7 +3040,20 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="store_false",
         help="Disable task allocation RAG and use the static allocation prompt examples (default).",
     )
-    parser.set_defaults(decompose_rag=False, allocate_rag=False)
+    problem_rag_group = parser.add_mutually_exclusive_group()
+    problem_rag_group.add_argument(
+        "--problem-rag",
+        dest="problem_rag",
+        action="store_true",
+        help="Enable PDDL problem-generation RAG few-shot examples.",
+    )
+    problem_rag_group.add_argument(
+        "--no-problem-rag",
+        dest="problem_rag",
+        action="store_false",
+        help="Disable PDDL problem-generation RAG and use the static problem prompt examples (default).",
+    )
+    parser.set_defaults(decompose_rag=False, allocate_rag=False, problem_rag=False)
 
     return parser.parse_args(argv)
 
@@ -2945,6 +3066,7 @@ def main():
         run_config = load_run_config(base_path)
         apply_decompose_rag_cli_override(run_config, args.decompose_rag)
         apply_allocate_rag_cli_override(run_config, args.allocate_rag)
+        apply_problem_rag_cli_override(run_config, args.problem_rag)
         
         # Initialize task manager
         task_manager = TaskManager(

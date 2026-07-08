@@ -12,6 +12,7 @@ from run_config import (
     RunConfig,
     apply_allocate_rag_cli_override,
     apply_decompose_rag_cli_override,
+    apply_problem_rag_cli_override,
     load_run_config,
     normalize_floor_plan,
 )
@@ -70,7 +71,20 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="store_false",
         help="Disable task allocation RAG and use the static allocation prompt examples (default).",
     )
-    parser.set_defaults(decompose_rag=False, allocate_rag=False)
+    problem_rag_group = parser.add_mutually_exclusive_group()
+    problem_rag_group.add_argument(
+        "--problem-rag",
+        dest="problem_rag",
+        action="store_true",
+        help="Enable PDDL problem-generation RAG few-shot examples.",
+    )
+    problem_rag_group.add_argument(
+        "--no-problem-rag",
+        dest="problem_rag",
+        action="store_false",
+        help="Disable PDDL problem-generation RAG and use the static problem prompt examples (default).",
+    )
+    parser.set_defaults(decompose_rag=False, allocate_rag=False, problem_rag=False)
     return parser.parse_args(argv)
 
 
@@ -128,6 +142,17 @@ def prewarm_allocate_rag_if_configured(config: RunConfig) -> bool:
     from pddlrun_llmseparate import prewarm_allocate_rag_runtime_db
 
     return prewarm_allocate_rag_runtime_db(config)
+
+
+def prewarm_problem_rag_if_configured(config: RunConfig) -> bool:
+    if not config_bool(config.get("problem_rag", "enabled", False)):
+        return False
+    if not config_bool(config.get("problem_rag", "prewarm_runtime_db", True), True):
+        return False
+
+    from pddlrun_llmseparate import prewarm_problem_rag_runtime_db
+
+    return prewarm_problem_rag_runtime_db(config)
 
 
 def load_jobs(
@@ -256,6 +281,7 @@ def main() -> None:
     config = load_run_config(repo_root)
     apply_decompose_rag_cli_override(config, args.decompose_rag)
     apply_allocate_rag_cli_override(config, args.allocate_rag)
+    apply_problem_rag_cli_override(config, args.problem_rag)
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     output_root = (
         config.resolve_path(args.output_root)
@@ -268,6 +294,8 @@ def main() -> None:
         print(f"Prewarmed task decomposition RAG runtime DB: {config.path('decompose_rag', 'runtime_db_path')}")
     if prewarm_allocate_rag_if_configured(config):
         print(f"Prewarmed task allocation RAG runtime DB: {config.path('allocate_rag', 'runtime_db_path')}")
+    if prewarm_problem_rag_if_configured(config):
+        print(f"Prewarmed problem-generation RAG runtime DB: {config.path('problem_rag', 'runtime_db_path')}")
 
     floor_plans = [normalize_floor_plan(value) for value in args.floor_plans]
     summaries: List[Dict[str, Any]] = []
