@@ -2225,6 +2225,18 @@ class TaskManager:
             
         except Exception as e:
             raise PDDLError(f"Error generating decomposed plan: {str(e)}")
+
+    @staticmethod
+    def _strip_decomposition_completion_sentence(decomposed_plan: str) -> str:
+        """Remove decomposition completion lines before allocation prompting."""
+        completion_line_pattern = re.compile(
+            r'^\s*(?:\*\*)?\s*#?\s*Task\s+(?!Description\b).+\s+is done\.?\s*(?:\*\*)?\s*$',
+            re.IGNORECASE,
+        )
+        lines = str(decomposed_plan).splitlines()
+        return "\n".join(
+            line for line in lines if not completion_line_pattern.match(line)
+        ).strip()
     
     def _generate_allocation_plan(
         self,
@@ -2254,6 +2266,10 @@ class TaskManager:
                 key_objects_by_subtask = {1: key_objects}
 
             # Build prompt incrementally like the original
+            allocation_decomposed_plan = self._strip_decomposition_completion_sentence(decomposed_plan)
+            task_description = ""
+            if isinstance(self.current_task_manifest, dict):
+                task_description = str(self.current_task_manifest.get("task") or "").strip()
             prompt = "\n"
             rag_query = ""
             if self.allocate_rag_retriever:
@@ -2264,9 +2280,11 @@ class TaskManager:
                 self._read_allocation_static_prompt,
                 rag_query,
             )
-            prompt += decomposed_plan
+            if task_description:
+                prompt += f"\n# Task Description: {task_description}\n"
+            prompt += allocation_decomposed_plan
             prompt += f"\n# TASK ALLOCATION"
-            prompt += f"\n# Scenario: There are {len(robots)} robots available. The task should be performed using the minimum number of robots necessary. Robot should be assigned to subtasks that match its skills, and mass capacity should only be considered when a subtask requires picking up the relevant object. Using your reasoning come up with a solution to satisfy all constraints."
+            prompt += f"\n# Scenario: There are {len(robots)} robots available. Use available robots to execute independent subtasks in parallel whenever dependencies and robot capabilities allow. Robots should be assigned to subtasks that match their skills, and mass capacity should only be considered when a subtask requires picking up the relevant object. Using your reasoning come up with a solution to satisfy all constraints."
             prompt += f"\n\nrobots = {robots}"
             prompt += f"\nobjects = {key_objects}"
             prompt += f"\n\n# IMPORTANT: The AI should ensure that the robots assigned to the tasks have all the necessary skills to perform the tasks. IMPORTANT: Determine whether the subtasks must be performed sequentially or in parallel, or a combination of both and allocate robots based on availability. "

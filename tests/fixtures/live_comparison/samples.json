@@ -1,0 +1,112 @@
+[
+  {
+    "test_set": "final_test_new_0630_1",
+    "floor_plan": "303",
+    "task_index": 17,
+    "task": "open the box, then break the mug, then put the mug on the shelf.",
+    "robot_list": [
+      16,
+      15
+    ]
+  },
+  {
+    "test_set": "final_test_new_0630_1",
+    "floor_plan": "302",
+    "task_index": 3,
+    "task": "put the CD on the shelf, put the teddy bear and credit card on the desk, then open the drawer.",
+    "robot_list": [
+      18,
+      22
+    ]
+  },
+  {
+    "test_set": "final_test_new_0630_1",
+    "floor_plan": "415",
+    "task_index": 29,
+    "task": "put the soap bottle on the shelf, switch on the lightswitch, put the toilet paper in the garbage can, and switch on the faucet.",
+    "robot_list": [
+      24,
+      1,
+      5,
+      17
+    ]
+  },
+  {
+    "test_set": "final_test_new_0630_1",
+    "floor_plan": "217",
+    "task_index": 15,
+    "task": "open the box, then put the credit card on the sofa, then open the drawer.",
+    "robot_list": [
+      24,
+      17
+    ]
+  },
+  {
+    "test_set": "final_test_new_0630_1",
+    "floor_plan": "9",
+    "task_index": 13,
+    "task": "put the egg on the sinkbasin, then open the cabinet and the drawer.",
+    "robot_list": [
+      8,
+      19,
+      9,
+      20
+    ]
+  },
+  {
+    "test_set": "final_test_new_0630_1",
+    "floor_plan": "13",
+    "task_index": 18,
+    "task": "wash the cup, wash the pot, fill the pot with water, heat the pot on the stoveburner, then open the cabinet.",
+    "robot_list": [
+      25,
+      7
+    ]
+  },
+  {
+    "test_set": "final_test_new_0630_1",
+    "floor_plan": "420",
+    "task_index": 6,
+    "task": "switch on the candle, then break the window, then open the drawer.",
+    "robot_list": [
+      25,
+      9,
+      23,
+      28
+    ]
+  },
+  {
+    "test_set": "final_test_new_0630_1",
+    "floor_plan": "422",
+    "task_index": 10,
+    "task": "switch on the candle, then switch on the lightswitch, then put the soapbottle in the garbagecan.",
+    "robot_list": [
+      21,
+      3
+    ]
+  },
+  {
+    "test_set": "final_test_new_0630_1",
+    "floor_plan": "204",
+    "task_index": 0,
+    "task": "break the vase, then put the pillow on the sofa, then open the drawer.",
+    "robot_list": [
+      14,
+      3,
+      4,
+      6
+    ]
+  },
+  {
+    "test_set": "final_test_new_0630_1",
+    "floor_plan": "203",
+    "task_index": 6,
+    "task": "break the window, then open the laptop, break the laptop, and break the vase.",
+    "robot_list": [
+      8,
+      26,
+      25,
+      6
+    ]
+  }
+]

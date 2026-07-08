@@ -2006,6 +2006,11 @@ class PDDLRunConfigTests(unittest.TestCase):
                 )
 
             prompt = result["prompt"]
+            self.assertNotIn("minimum number of robots necessary", prompt)
+            self.assertIn(
+                "Use available robots to execute independent subtasks in parallel whenever dependencies and robot capabilities allow.",
+                prompt,
+            )
             self.assertIn("objects = [{'name': 'Microwave', 'mass': 7.0}]", prompt)
             self.assertNotIn("'Toaster'", prompt)
             self.assertNotIn("key_objects =", prompt)
@@ -2388,6 +2393,23 @@ class PDDLRunConfigTests(unittest.TestCase):
                 "decompose:fridge",
             )
 
+    def test_allocation_prompt_cleanup_removes_completion_lines_only(self):
+        decomposed_plan = (
+            "# Task Description: open drawer\n"
+            "#SubTask 1: Open the drawer\n"
+            "# Task open drawer is done.\n"
+            '# Task "open drawer" is done.\n'
+            "**Task open drawer is done.**"
+        )
+
+        cleaned = TaskManager._strip_decomposition_completion_sentence(decomposed_plan)
+
+        self.assertIn("# Task Description: open drawer", cleaned)
+        self.assertIn("#SubTask 1: Open the drawer", cleaned)
+        self.assertNotIn("# Task open drawer is done.", cleaned)
+        self.assertNotIn('# Task "open drawer" is done.', cleaned)
+        self.assertNotIn("**Task open drawer is done.**", cleaned)
+
     def test_allocation_prompt_uses_static_examples_when_allocate_rag_disabled(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
@@ -2420,7 +2442,7 @@ class PDDLRunConfigTests(unittest.TestCase):
 
             with patch.object(manager.llm, "query_model", side_effect=fake_query_model):
                 result = manager._generate_allocation_plan(
-                    "#SubTask 1: Heat the apple in the microwave",
+                    "#SubTask 1: Heat the apple in the microwave\n# Task Heat the apple is done.",
                     robots=[{"name": "robot1", "skills": ["GoToObject"], "mass_capacity": 100}],
                     objects_ai="\n\nobjects = [{'name': 'Microwave', 'mass': 7.0}]",
                     key_objects=[{"name": "Microwave", "mass": 7.0}],
@@ -2431,6 +2453,17 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertNotIn(RAG_PROMPT_TITLE, prompt)
             self.assertNotIn("doc_id: allocate:microwave", prompt)
             self.assertIn("# static allocation example", prompt)
+            self.assertIn("# Task Description: Heat the apple", prompt)
+            self.assertIn("#SubTask 1: Heat the apple in the microwave", prompt)
+            self.assertNotIn("# Task Heat the apple is done.", prompt)
+            self.assertLess(
+                prompt.index("# static allocation example"),
+                prompt.index("# Task Description: Heat the apple"),
+            )
+            self.assertLess(
+                prompt.index("# Task Description: Heat the apple"),
+                prompt.index("#SubTask 1: Heat the apple in the microwave"),
+            )
             self.assertNotIn("decompose_rag", manager.current_task_manifest)
             self.assertNotIn("allocate_rag", manager.current_task_manifest)
 
@@ -2467,7 +2500,7 @@ class PDDLRunConfigTests(unittest.TestCase):
 
             with patch.object(manager.llm, "query_model", side_effect=fake_query_model):
                 result = manager._generate_allocation_plan(
-                    "#SubTask 1: Heat the apple in the microwave",
+                    '#SubTask 1: Heat the apple in the microwave\n# Task "Heat the apple" is done.',
                     robots=[{"name": "robot1", "skills": ["GoToObject"], "mass_capacity": 100}],
                     objects_ai="\n\nobjects = [{'name': 'Microwave', 'mass': 7.0}]",
                     key_objects=[{"name": "Microwave", "mass": 7.0}],
@@ -2483,6 +2516,17 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertIn("# Historical allocation for microwave heating", prompt)
             self.assertNotIn("doc_id: allocate:microwave", prompt)
             self.assertNotIn("# static allocation example should be replaced", prompt)
+            self.assertIn("# Task Description: Heat the apple", prompt)
+            self.assertIn("#SubTask 1: Heat the apple in the microwave", prompt)
+            self.assertNotIn('# Task "Heat the apple" is done.', prompt)
+            self.assertLess(
+                prompt.index("# Historical allocation for microwave heating"),
+                prompt.index("# Task Description: Heat the apple"),
+            )
+            self.assertLess(
+                prompt.index("# Task Description: Heat the apple"),
+                prompt.index("#SubTask 1: Heat the apple in the microwave"),
+            )
             self.assertEqual(
                 manager.current_task_manifest["allocate_rag"]["retrievals"]["allocate"]["examples"][0]["doc_id"],
                 "allocate:microwave",

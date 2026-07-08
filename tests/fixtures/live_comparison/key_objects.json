@@ -1,0 +1,300 @@
+[
+  {
+    "test_set": "final_test_new_0630_1",
+    "floor_plan": "303",
+    "task_index": 17,
+    "task": "open the box, then break the mug, then put the mug on the shelf.",
+    "robot_list": [
+      16,
+      15
+    ],
+    "key_objects": [
+      {
+        "name": "Box",
+        "mass": 0.30000001192092896
+      },
+      {
+        "name": "Mug",
+        "mass": 1.0
+      },
+      {
+        "name": "Shelf",
+        "mass": 0.0
+      }
+    ]
+  },
+  {
+    "test_set": "final_test_new_0630_1",
+    "floor_plan": "302",
+    "task_index": 3,
+    "task": "put the CD on the shelf, put the teddy bear and credit card on the desk, then open the drawer.",
+    "robot_list": [
+      18,
+      22
+    ],
+    "key_objects": [
+      {
+        "name": "CD",
+        "mass": 0.014999998733401299
+      },
+      {
+        "name": "Shelf",
+        "mass": 0.0
+      },
+      {
+        "name": "Desk",
+        "mass": 34.0
+      },
+      {
+        "name": "TeddyBear",
+        "mass": 0.8999999761581421
+      },
+      {
+        "name": "CreditCard",
+        "mass": 0.005999999586492777
+      },
+      {
+        "name": "Drawer",
+        "mass": 0.0
+      }
+    ]
+  },
+  {
+    "test_set": "final_test_new_0630_1",
+    "floor_plan": "415",
+    "task_index": 29,
+    "task": "put the soap bottle on the shelf, switch on the lightswitch, put the toilet paper in the garbage can, and switch on the faucet.",
+    "robot_list": [
+      24,
+      1,
+      5,
+      17
+    ],
+    "key_objects": [
+      {
+        "name": "Shelf",
+        "mass": 0.0
+      },
+      {
+        "name": "SoapBottle",
+        "mass": 0.4000000059604645
+      },
+      {
+        "name": "LightSwitch",
+        "mass": 0.0
+      },
+      {
+        "name": "GarbageCan",
+        "mass": 0.699999988079071
+      },
+      {
+        "name": "Toilet",
+        "mass": 0.0
+      },
+      {
+        "name": "ToiletPaper",
+        "mass": 0.20000000298023224
+      },
+      {
+        "name": "Faucet",
+        "mass": 0.0
+      }
+    ]
+  },
+  {
+    "test_set": "final_test_new_0630_1",
+    "floor_plan": "217",
+    "task_index": 15,
+    "task": "open the box, then put the credit card on the sofa, then open the drawer.",
+    "robot_list": [
+      24,
+      17
+    ],
+    "key_objects": [
+      {
+        "name": "Box",
+        "mass": 0.30000001192092896
+      },
+      {
+        "name": "CreditCard",
+        "mass": 0.005999999586492777
+      },
+      {
+        "name": "Sofa",
+        "mass": 103.99999237060547
+      },
+      {
+        "name": "Drawer",
+        "mass": 0.0
+      }
+    ]
+  },
+  {
+    "test_set": "final_test_new_0630_1",
+    "floor_plan": "9",
+    "task_index": 13,
+    "task": "put the egg on the sinkbasin, then open the cabinet and the drawer.",
+    "robot_list": [
+      8,
+      19,
+      9,
+      20
+    ],
+    "key_objects": [
+      {
+        "name": "Egg",
+        "mass": 0.054999999701976776
+      },
+      {
+        "name": "SinkBasin",
+        "mass": 0.0
+      },
+      {
+        "name": "Cabinet",
+        "mass": 0.0
+      },
+      {
+        "name": "Drawer",
+        "mass": 0.0
+      }
+    ]
+  },
+  {
+    "test_set": "final_test_new_0630_1",
+    "floor_plan": "13",
+    "task_index": 18,
+    "task": "wash the cup, wash the pot, fill the pot with water, heat the pot on the stoveburner, then open the cabinet.",
+    "robot_list": [
+      25,
+      7
+    ],
+    "key_objects": [
+      {
+        "name": "Cup",
+        "mass": 0.4000000059604645
+      },
+      {
+        "name": "Sink",
+        "mass": 0.0
+      },
+      {
+        "name": "Pot",
+        "mass": 0.5699999928474426
+      },
+      {
+        "name": "StoveBurner",
+        "mass": 0.0
+      }
+    ]
+  },
+  {
+    "test_set": "final_test_new_0630_1",
+    "floor_plan": "420",
+    "task_index": 6,
+    "task": "switch on the candle, then break the window, then open the drawer.",
+    "robot_list": [
+      25,
+      9,
+      23,
+      28
+    ],
+    "key_objects": [
+      {
+        "name": "Candle",
+        "mass": 0.20000000298023224
+      },
+      {
+        "name": "Window",
+        "mass": 0.0
+      },
+      {
+        "name": "Drawer",
+        "mass": 0.0
+      }
+    ]
+  },
+  {
+    "test_set": "final_test_new_0630_1",
+    "floor_plan": "422",
+    "task_index": 10,
+    "task": "switch on the candle, then switch on the lightswitch, then put the soapbottle in the garbagecan.",
+    "robot_list": [
+      21,
+      3
+    ],
+    "key_objects": [
+      {
+        "name": "Candle",
+        "mass": 0.20000000298023224
+      },
+      {
+        "name": "LightSwitch",
+        "mass": 0.0
+      },
+      {
+        "name": "GarbageCan",
+        "mass": 0.699999988079071
+      },
+      {
+        "name": "SoapBottle",
+        "mass": 0.4000000059604645
+      }
+    ]
+  },
+  {
+    "test_set": "final_test_new_0630_1",
+    "floor_plan": "204",
+    "task_index": 0,
+    "task": "break the vase, then put the pillow on the sofa, then open the drawer.",
+    "robot_list": [
+      14,
+      3,
+      4,
+      6
+    ],
+    "key_objects": [
+      {
+        "name": "Vase",
+        "mass": 1.0
+      },
+      {
+        "name": "Pillow",
+        "mass": 0.699999988079071
+      },
+      {
+        "name": "Sofa",
+        "mass": 103.99999237060547
+      },
+      {
+        "name": "Drawer",
+        "mass": 0.0
+      }
+    ]
+  },
+  {
+    "test_set": "final_test_new_0630_1",
+    "floor_plan": "203",
+    "task_index": 6,
+    "task": "break the window, then open the laptop, break the laptop, and break the vase.",
+    "robot_list": [
+      8,
+      26,
+      25,
+      6
+    ],
+    "key_objects": [
+      {
+        "name": "Window",
+        "mass": 0.0
+      },
+      {
+        "name": "Laptop",
+        "mass": 2.299999952316284
+      },
+      {
+        "name": "Vase",
+        "mass": 1.0
+      }
+    ]
+  }
+]

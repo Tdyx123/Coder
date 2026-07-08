@@ -16,6 +16,7 @@ from pddlrun_llmseparate import (
     TaskManager,
     build_robot_domain_name_map,
     build_robot_team,
+    prewarm_allocate_rag_runtime_db,
 )
 from llm_logger import get_llm_logger
 from run_config import RunConfig
@@ -23,11 +24,9 @@ from run_config import RunConfig
 
 MODEL = "deepseek-v4-pro"
 LOG_DIR = Path(__file__).resolve().parent / "logs"
-FIXTURE_FILE = (
-    Path(__file__).resolve().parent
-    / "fixtures"
-    / "decompose_rag_live_comparison_decompositions.json"
-)
+FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "live_comparison"
+DECOMPOSITIONS_FILE = FIXTURE_DIR / "decompositions.json"
+KEY_OBJECTS_FILE = FIXTURE_DIR / "key_objects.json"
 WITH_RAG_LOG_FILE = LOG_DIR / "test_allocate_rag_live_comparison_withrag.txt"
 NO_RAG_LOG_FILE = LOG_DIR / "test_allocate_rag_live_comparison_norag.txt"
 
@@ -58,7 +57,8 @@ class LiveAllocateRagComparisonTest(unittest.TestCase):
         self._reset_logs()
         rag_config = make_config(allocate_rag_enabled=True)
         no_rag_config = make_config(allocate_rag_enabled=False)
-        self._assert_allocate_rag_files_exist(rag_config)
+        self._assert_allocate_rag_source_files_exist(rag_config)
+        self.assertTrue(prewarm_allocate_rag_runtime_db(rag_config))
 
         for sample_number, sample in enumerate(samples, start=1):
             with self.subTest(
@@ -78,14 +78,20 @@ class LiveAllocateRagComparisonTest(unittest.TestCase):
                     .get("retrievals", {})
                 )
                 self.assertIn("allocate", rag_retrievals)
+                rag_retrieval = rag_retrievals["allocate"]
+                self.assertEqual("allocate", rag_retrieval.get("stage"))
+                self.assertIn("query_tokens", rag_retrieval)
+                self.assertIn("timeout", rag_retrieval)
                 self.assertNotIn("allocate_rag", without_rag["manifest"])
                 self.assertNotIn(ALLOCATE_RAG_SAFETY_RULES, without_rag["prompt"])
-                self.assertNotIn("# Example\n", without_rag["prompt"])
 
-                rag_examples = rag_retrievals["allocate"].get("examples", [])
+                rag_examples = rag_retrieval.get("examples", [])
+                self.assertIsInstance(rag_examples, list)
                 if rag_examples:
                     self.assertIn(ALLOCATE_RAG_SAFETY_RULES, with_rag["prompt"])
                     self.assertIn("# Example\n", with_rag["prompt"])
+                else:
+                    self.assertNotIn(ALLOCATE_RAG_SAFETY_RULES, with_rag["prompt"])
 
                 self._append_allocation_log(
                     WITH_RAG_LOG_FILE,
@@ -105,20 +111,35 @@ class LiveAllocateRagComparisonTest(unittest.TestCase):
                 )
 
     def _load_samples(self) -> List[Dict[str, Any]]:
-        self.assertTrue(FIXTURE_FILE.exists(), f"Fixture file missing: {FIXTURE_FILE}")
-        with FIXTURE_FILE.open("r", encoding="utf-8") as handle:
+        self.assertTrue(
+            DECOMPOSITIONS_FILE.exists(),
+            f"Fixture file missing: {DECOMPOSITIONS_FILE}",
+        )
+        self.assertTrue(
+            KEY_OBJECTS_FILE.exists(),
+            f"Fixture file missing: {KEY_OBJECTS_FILE}",
+        )
+        with DECOMPOSITIONS_FILE.open("r", encoding="utf-8") as handle:
             samples = json.load(handle)
+        with KEY_OBJECTS_FILE.open("r", encoding="utf-8") as handle:
+            key_object_records = json.load(handle)
         self.assertIsInstance(samples, list)
+        self.assertIsInstance(key_object_records, list)
         self.assertEqual(10, len(samples))
-        for sample in samples:
+        self.assertEqual(len(samples), len(key_object_records))
+        for sample, key_object_record in zip(samples, key_object_records):
             self.assertTrue(str(sample.get("decomposition", "")).strip())
+            for key in ("test_set", "floor_plan", "task_index", "task", "robot_list"):
+                self.assertEqual(sample.get(key), key_object_record.get(key))
+            key_objects = key_object_record.get("key_objects")
+            self.assertIsInstance(key_objects, list)
+            sample["key_objects"] = key_objects
         return samples
 
-    def _assert_allocate_rag_files_exist(self, config: RunConfig) -> None:
+    def _assert_allocate_rag_source_files_exist(self, config: RunConfig) -> None:
         required_paths = [
             config.path("allocate_rag", "corpus_path"),
             config.path("allocate_rag", "index_path"),
-            config.path("allocate_rag", "runtime_db_path"),
         ]
         missing = [str(path) for path in required_paths if not path.exists()]
         self.assertEqual([], missing, f"Allocate RAG file(s) missing: {missing}")
@@ -182,6 +203,7 @@ class LiveAllocateRagComparisonTest(unittest.TestCase):
                 sample["decomposition"],
                 robot_team,
                 objects_ai,
+                key_objects=sample["key_objects"],
             )
         finally:
             get_llm_logger().clear_context()
@@ -214,6 +236,9 @@ class LiveAllocateRagComparisonTest(unittest.TestCase):
             f"floor_plan: {sample['floor_plan']}",
             f"task_index: {sample['task_index']}",
             f"task: {sample['task']}",
+            "",
+            "key_objects:",
+            json.dumps(sample.get("key_objects", []), ensure_ascii=False, indent=2),
             "",
             "prompt:",
             str(result["prompt"]),

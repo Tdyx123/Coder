@@ -217,7 +217,7 @@ if __name__ == "__main__":
         no_robot  = len(available_robots[i])
         curr_prompt = prompt + plan
         curr_prompt += f"\n# TASK ALLOCATION"
-        curr_prompt += f"\n# Scenario: There are {no_robot} robots available, The task should be performed using the minimum number of robots necessary. Robots should be assigned to subtasks that match its skills and mass capacity. Using your reasoning come up with a solution to satisfy all contraints."
+        curr_prompt += f"\n# Scenario: There are {no_robot} robots available. Use available robots to execute independent subtasks in parallel whenever dependencies and robot capabilities allow. Robots should be assigned to subtasks that match their skills and mass capacity. Using your reasoning come up with a solution to satisfy all constraints."
         curr_prompt += f"\n\nrobots = {available_robots[i]}"
         curr_prompt += f"\n{objects_ai}"
         curr_prompt += f"\n\n# IMPORTANT: The AI should ensure that the robots assigned to the tasks have all the necessary skills to perform the tasks. IMPORTANT: Determine whether the subtasks must be performed sequentially or in parallel, or a combination of both and allocate robots based on availablitiy. "

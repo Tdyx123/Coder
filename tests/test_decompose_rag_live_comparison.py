@@ -22,95 +22,11 @@ from run_config import RunConfig
 
 
 MODEL = "deepseek-v4-pro"
-TEST_SET = "final_test_new_0630_1"
 LOG_DIR = Path(__file__).resolve().parent / "logs"
+FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "live_comparison"
+SAMPLES_FILE = FIXTURE_DIR / "samples.json"
 WITH_RAG_LOG_FILE = LOG_DIR / "test_decompose_rag_live_comparison_withrag.txt"
 NO_RAG_LOG_FILE = LOG_DIR / "test_decompose_rag_live_comparison_norag.txt"
-
-SAMPLES: List[Dict[str, Any]] = [
-    {
-        "test_set": TEST_SET,
-        "floor_plan": "303",
-        "task_index": 17,
-        "task": "open the box, then break the mug, then put the mug on the shelf.",
-        "robot_list": [16, 15],
-    },
-    {
-        "test_set": TEST_SET,
-        "floor_plan": "302",
-        "task_index": 3,
-        "task": (
-            "put the CD on the shelf, put the teddy bear and credit card on the desk, "
-            "then open the drawer."
-        ),
-        "robot_list": [18, 22],
-    },
-    {
-        "test_set": TEST_SET,
-        "floor_plan": "415",
-        "task_index": 29,
-        "task": (
-            "put the soap bottle on the shelf, switch on the lightswitch, "
-            "put the toilet paper in the garbage can, and switch on the faucet."
-        ),
-        "robot_list": [24, 1, 5, 17],
-    },
-    {
-        "test_set": TEST_SET,
-        "floor_plan": "217",
-        "task_index": 15,
-        "task": "open the box, then put the credit card on the sofa, then open the drawer.",
-        "robot_list": [24, 17],
-    },
-    {
-        "test_set": TEST_SET,
-        "floor_plan": "9",
-        "task_index": 13,
-        "task": "put the egg on the sinkbasin, then open the cabinet and the drawer.",
-        "robot_list": [8, 19, 9, 20],
-    },
-    {
-        "test_set": TEST_SET,
-        "floor_plan": "13",
-        "task_index": 18,
-        "task": (
-            "wash the cup, wash the pot, fill the pot with water, "
-            "heat the pot on the stoveburner, then open the cabinet."
-        ),
-        "robot_list": [25, 7],
-    },
-    {
-        "test_set": TEST_SET,
-        "floor_plan": "420",
-        "task_index": 6,
-        "task": "switch on the candle, then break the window, then open the drawer.",
-        "robot_list": [25, 9, 23, 28],
-    },
-    {
-        "test_set": TEST_SET,
-        "floor_plan": "422",
-        "task_index": 10,
-        "task": (
-            "switch on the candle, then switch on the lightswitch, "
-            "then put the soapbottle in the garbagecan."
-        ),
-        "robot_list": [21, 3],
-    },
-    {
-        "test_set": TEST_SET,
-        "floor_plan": "204",
-        "task_index": 0,
-        "task": "break the vase, then put the pillow on the sofa, then open the drawer.",
-        "robot_list": [14, 3, 4, 6],
-    },
-    {
-        "test_set": TEST_SET,
-        "floor_plan": "203",
-        "task_index": 6,
-        "task": "break the window, then open the laptop, break the laptop, and break the vase.",
-        "robot_list": [8, 26, 25, 6],
-    },
-]
 
 
 def make_config(*, decompose_rag_enabled: bool) -> RunConfig:
@@ -135,11 +51,12 @@ class LiveDecomposeRagComparisonTest(unittest.TestCase):
     maxDiff = None
 
     def test_live_decomposition_with_and_without_rag(self):
+        samples = self._load_samples()
         self._reset_logs()
         rag_config = make_config(decompose_rag_enabled=True)
         no_rag_config = make_config(decompose_rag_enabled=False)
 
-        for sample_number, sample in enumerate(SAMPLES, start=1):
+        for sample_number, sample in enumerate(samples, start=1):
             with self.subTest(
                 floor_plan=sample["floor_plan"],
                 task_index=sample["task_index"],
@@ -163,6 +80,7 @@ class LiveDecomposeRagComparisonTest(unittest.TestCase):
                 self._append_decomposition_log(
                     WITH_RAG_LOG_FILE,
                     sample_number,
+                    len(samples),
                     sample,
                     "WITH RAG",
                     with_rag,
@@ -170,10 +88,23 @@ class LiveDecomposeRagComparisonTest(unittest.TestCase):
                 self._append_decomposition_log(
                     NO_RAG_LOG_FILE,
                     sample_number,
+                    len(samples),
                     sample,
                     "WITHOUT RAG",
                     without_rag,
                 )
+
+    def _load_samples(self) -> List[Dict[str, Any]]:
+        self.assertTrue(SAMPLES_FILE.exists(), f"Fixture file missing: {SAMPLES_FILE}")
+        with SAMPLES_FILE.open("r", encoding="utf-8") as handle:
+            samples = json.load(handle)
+        self.assertIsInstance(samples, list)
+        self.assertEqual(10, len(samples))
+        for sample in samples:
+            self.assertNotIn("decomposition", sample)
+            for key in ("test_set", "floor_plan", "task_index", "task", "robot_list"):
+                self.assertIn(key, sample)
+        return samples
 
     def _reset_logs(self) -> None:
         LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -249,6 +180,7 @@ class LiveDecomposeRagComparisonTest(unittest.TestCase):
         self,
         log_file: Path,
         sample_number: int,
+        sample_count: int,
         sample: Dict[str, Any],
         mode: str,
         result: Dict[str, Any],
@@ -256,7 +188,7 @@ class LiveDecomposeRagComparisonTest(unittest.TestCase):
         lines = [
             "",
             "=" * 88,
-            f"TASK {sample_number}/{len(SAMPLES)}",
+            f"TASK {sample_number}/{sample_count}",
             f"mode: {mode}",
             f"floor_plan: {sample['floor_plan']}",
             f"task_index: {sample['task_index']}",
