@@ -2464,6 +2464,22 @@ class TaskManager:
         self._persist_manifest()
 
         return problem_pddl
+
+    @staticmethod
+    def _format_problem_prompt_subtask(subtask: str) -> str:
+        """Remove numbered subtask headers before adding the problem prompt label."""
+        lines = str(subtask).strip().splitlines()
+        if not lines:
+            return ""
+
+        first_line = lines[0].strip()
+        match = _match_subtask_header_line(first_line, allow_bare=True)
+        if match:
+            first_line = match.group("title").strip()
+
+        formatted_lines = [first_line] if first_line else []
+        formatted_lines.extend(line.rstrip() for line in lines[1:])
+        return "\n".join(formatted_lines).strip()
     
 
     def _run_problem_generation(
@@ -2542,15 +2558,15 @@ class TaskManager:
                     rag_query,
                 )
 
+            subtask_prompt_text = self._format_problem_prompt_subtask(subtask)
             prompt = (
                 "\n" + problem_prompt_examples +
                 " Finish the tasks like example\n"
-                "Subtask examination from action perspective:" + subtask +
-                "\nDomain file content:" + domain_content +
-                "\n based on the objects available for potential usage below." + objects_ai +
+                "Subtask : " + subtask_prompt_text +
+                "\nDomain file content:\n" + domain_content +
                 "\nkey_object_pddl_states = " + key_object_pddl_states_text +
-                "\nTask description: generate the problem file. Based on the objects above, "
-                "the domain file preconditions, actions, and subtask examination. "
+                "\nTask description: generate the problem file. Based on "
+                "the domain file preconditions, actions, and subtask. "
                 "Use key_object_pddl_states as PDDL-ready context: declare every object token "
                 "referenced by those entries and copy applicable facts into (:init). "
                 "Do not emit raw AI2-THOR state fields such as isOpen or isToggled; emit only "
