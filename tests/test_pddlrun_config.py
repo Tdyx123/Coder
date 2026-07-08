@@ -1909,6 +1909,17 @@ class PDDLRunConfigTests(unittest.TestCase):
                     },
                     {
                         "scene": "FloorPlan1",
+                        "objectType": "Shelf",
+                        "objectId": "Shelf|+02.00|+00.00|+00.00",
+                        "parentReceptacles": ["Floor|+00.00|+00.00|+00.00"],
+                    },
+                    {
+                        "scene": "FloorPlan1",
+                        "objectType": "Floor",
+                        "objectId": "Floor|+00.00|+00.00|+00.00",
+                    },
+                    {
+                        "scene": "FloorPlan1",
                         "objectType": "Mug",
                         "objectId": "Mug|+00.20|+01.15|+00.30",
                     },
@@ -1960,6 +1971,7 @@ class PDDLRunConfigTests(unittest.TestCase):
                 {"name": "Drawer"},
                 {"name": "LightSwitch"},
                 {"name": "Apple"},
+                {"name": "Shelf"},
                 {"name": "Mug"},
                 {"name": "Pot"},
                 {"name": "Potato"},
@@ -2003,18 +2015,28 @@ class PDDLRunConfigTests(unittest.TestCase):
             )
             self.assertEqual(bindings_by_object["CounterTop"]["roles"], ["parentReceptacle"])
             self.assertNotIn("Bread", bindings_by_object)
+            self.assertNotIn("Floor", bindings_by_object)
 
             facts_by_object = {
                 item["object"]: "\n".join(item["facts"])
                 for item in states
             }
             types_by_object = {item["object"]: item["object_type"] for item in states}
+            related_objects_by_object = {
+                item["object"]: item.get("related_objects", [])
+                for item in states
+            }
 
             self.assertEqual(types_by_object["Mug"], "mug")
             self.assertEqual(types_by_object["Apple"], "object")
             self.assertEqual(types_by_object["Drawer_1"], "object")
             self.assertIn("(switch-on LightSwitch)", facts_by_object["LightSwitch"])
             self.assertIn("(at-location Apple CounterTop)", facts_by_object["Apple"])
+            self.assertNotRegex(
+                "\n".join(facts_by_object.values()),
+                r"\(at-location [^)]* Floor\)",
+            )
+            self.assertEqual(related_objects_by_object["Shelf"], [])
             self.assertIn("(cookable-by-microwave Apple)", facts_by_object["Apple"])
             self.assertIn("(placable_on_stove_burner Pot)", facts_by_object["Pot"])
             self.assertIn("(cookable-by-stove_burner Potato)", facts_by_object["Potato"])

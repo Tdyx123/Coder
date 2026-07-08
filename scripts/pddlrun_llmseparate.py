@@ -2080,6 +2080,11 @@ class TaskManager:
                 if parent_id
                 else None
             )
+            if (
+                parent_entry
+                and self._object_match_key(str(parent_entry.get("object_type", ""))) == "floor"
+            ):
+                parent_entry = None
             parent_token = (
                 str(parent_entry["object"])
                 if parent_entry

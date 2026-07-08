@@ -1,5 +1,8 @@
 import json
+import re
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from typing import Any, Dict, List
@@ -114,6 +117,8 @@ class LiveProblemRagComparisonTest(unittest.TestCase):
                     "WITHOUT RAG",
                     without_rag,
                 )
+                self._assert_fast_downward_plans(with_rag, "WITH RAG")
+                self._assert_fast_downward_plans(without_rag, "WITHOUT RAG")
 
     def _load_samples(self) -> List[Dict[str, Any]]:
         self.assertTrue(
@@ -246,11 +251,146 @@ class LiveProblemRagComparisonTest(unittest.TestCase):
         finally:
             get_llm_logger().clear_context()
 
+        problems = [result.problem for result in results]
+        planner = self._run_fast_downward_plans(config, problems)
+
         return {
             "prompts": [result.prompt for result in results],
-            "problems": [result.problem for result in results],
+            "problems": problems,
+            "planner": planner,
             "manifest": manager.current_task_manifest,
         }
+
+    def _run_fast_downward_plans(
+        self,
+        config: RunConfig,
+        problems: List[str],
+    ) -> List[Dict[str, Any]]:
+        planner_path = config.planner_executable
+        planner_missing = not planner_path.exists()
+        alias = str(config.get("planner", "alias", "seq-opt-lmcut"))
+        timeout = int(config.get("planner", "timeout_seconds", 300))
+        records: List[Dict[str, Any]] = []
+
+        with tempfile.TemporaryDirectory(prefix="problem_rag_live_planner_") as tmp_dir:
+            planner_dir = Path(tmp_dir)
+            for subtask_index, problem in enumerate(problems, start=1):
+                problem_file = planner_dir / f"subtask_{subtask_index:02d}_problem.pddl"
+                plan_file = planner_dir / f"subtask_{subtask_index:02d}_plan.txt"
+                problem_file.write_text(problem, encoding="utf-8")
+
+                domain_name = self._extract_problem_domain(problem)
+                domain_file = config.robot_domain_path(f"{domain_name}.pddl") if domain_name else None
+                command: List[str] = []
+                return_code = None
+                stdout = ""
+                stderr = ""
+                status = "completed"
+
+                if planner_missing:
+                    status = "error"
+                    stderr = f"FastDownward executable missing: {planner_path}"
+                elif not domain_name:
+                    status = "error"
+                    stderr = "Generated problem has no (:domain ...)"
+                elif domain_file is None or not domain_file.is_file():
+                    status = "error"
+                    stderr = f"Domain file missing for domain {domain_name}: {domain_file}"
+                else:
+                    command = [
+                        str(planner_path),
+                        "--plan-file",
+                        str(plan_file),
+                        "--alias",
+                        alias,
+                        str(domain_file),
+                        str(problem_file),
+                    ]
+                    try:
+                        result = subprocess.run(
+                            command,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            text=True,
+                            timeout=timeout,
+                        )
+                        return_code = result.returncode
+                        stdout = result.stdout
+                        stderr = result.stderr
+                    except subprocess.TimeoutExpired as exc:
+                        status = "timeout"
+                        stdout = self._decode_subprocess_text(exc.stdout)
+                        stderr = self._decode_subprocess_text(exc.stderr)
+                    except OSError as exc:
+                        status = "error"
+                        stderr = str(exc)
+
+                if status == "timeout":
+                    return_code = None
+
+                plan_text = plan_file.read_text(encoding="utf-8") if plan_file.exists() else ""
+                records.append(
+                    {
+                        "subtask_index": subtask_index,
+                        "status": status,
+                        "command": command,
+                        "return_code": return_code,
+                        "stdout": stdout,
+                        "stderr": stderr,
+                        "domain_file": str(domain_file) if domain_file is not None else "",
+                        "problem_file": str(problem_file),
+                        "plan_file": str(plan_file),
+                        "plan_text": plan_text,
+                    }
+                )
+
+        return records
+
+    def _extract_problem_domain(self, problem: str) -> str:
+        match = re.search(r"\(\s*:domain\s+([^\s\)]+)\s*\)", problem)
+        return match.group(1) if match else ""
+
+    def _decode_subprocess_text(self, value: Any) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="replace")
+        return str(value)
+
+    def _assert_fast_downward_plans(self, result: Dict[str, Any], mode: str) -> None:
+        planner_records = result.get("planner", [])
+        self.assertEqual(
+            len(result["problems"]),
+            len(planner_records),
+            f"{mode} planner record count mismatch",
+        )
+        for record in planner_records:
+            subtask_index = record.get("subtask_index")
+            command = " ".join(record.get("command", []))
+            stderr = self._text_excerpt(record.get("stderr", ""))
+            stdout = self._text_excerpt(record.get("stdout", ""))
+            self.assertEqual(
+                0,
+                record.get("return_code"),
+                (
+                    f"{mode} FastDownward failed for subtask {subtask_index}; "
+                    f"status={record.get('status')}; command={command}; "
+                    f"stderr={stderr}; stdout={stdout}"
+                ),
+            )
+            self.assertTrue(
+                str(record.get("plan_text", "")).strip(),
+                (
+                    f"{mode} FastDownward produced an empty plan for subtask {subtask_index}; "
+                    f"command={command}; stderr={stderr}; stdout={stdout}"
+                ),
+            )
+
+    def _text_excerpt(self, value: Any, limit: int = 1200) -> str:
+        text = self._decode_subprocess_text(value)
+        if len(text) <= limit:
+            return text
+        return text[:limit] + "...<truncated>"
 
     def _int_key_map(self, value: Dict[str, Any]) -> Dict[int, int]:
         return {int(key): int(item) for key, item in value.items()}
@@ -289,6 +429,11 @@ class LiveProblemRagComparisonTest(unittest.TestCase):
             .get("problem_rag", {})
             .get("retrievals", {})
         )
+        planner_by_subtask = {
+            int(record.get("subtask_index")): record
+            for record in result.get("planner", [])
+            if isinstance(record, dict) and record.get("subtask_index") is not None
+        }
         lines = [
             "",
             "=" * 88,
@@ -312,6 +457,8 @@ class LiveProblemRagComparisonTest(unittest.TestCase):
             start=1,
         ):
             retrieval_key = f"subtask_{subtask_index:02d}"
+            planner_record = dict(planner_by_subtask.get(subtask_index, {}))
+            planner_plan = planner_record.pop("plan_text", "")
             lines.extend(
                 [
                     "",
@@ -334,13 +481,24 @@ class LiveProblemRagComparisonTest(unittest.TestCase):
                         indent=2,
                         sort_keys=True,
                     ),
+                    "",
+                    "planner_record:",
+                    json.dumps(
+                        planner_record,
+                        ensure_ascii=False,
+                        indent=2,
+                        sort_keys=True,
+                    ),
+                    "",
+                    "planner_plan:",
+                    str(planner_plan),
                 ]
             )
         lines.extend(
             [
                 "",
                 "artifacts:",
-                "temporary run directory removed after core method result was captured",
+                "temporary planner files removed after FastDownward result was captured",
                 "=" * 88,
             ]
         )
