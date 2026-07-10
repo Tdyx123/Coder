@@ -73,7 +73,7 @@ decompose_rag:
   max_block_chars: 8000
   max_query_tokens: 12
   query_timeout_seconds: 5
-  prewarm_runtime_db: true
+  prewarm_runtime_db: false
 
 allocate_rag:
   enabled: false
@@ -88,7 +88,7 @@ allocate_rag:
   max_block_chars: 8000
   max_query_tokens: 32
   query_timeout_seconds: 5
-  prewarm_runtime_db: true
+  prewarm_runtime_db: false
 
 problem_rag:
   enabled: false
@@ -103,7 +103,7 @@ problem_rag:
   max_block_chars: 8000
   max_query_tokens: 32
   query_timeout_seconds: 5
-  prewarm_runtime_db: true
+  prewarm_runtime_db: false
 
 artifacts:
   manifest: run_manifest.json

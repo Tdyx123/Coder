@@ -127,12 +127,14 @@ class PDDLRagRetrieverTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             self.assertIsNone(PDDLRagRetriever.from_config(RunConfig(tmp_dir)))
 
-    def test_enabled_config_requires_clean_sources(self):
+    def test_enabled_config_defers_source_validation_until_manual_build(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             config = RunConfig(tmp_dir, values={"decompose_rag": {"enabled": True}})
 
+            retriever = PDDLRagRetriever.from_config(config)
+
             with self.assertRaises(PDDLRagError):
-                PDDLRagRetriever.from_config(config)
+                retriever.build_runtime_db()
 
     def test_from_config_defaults_to_top_three(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -158,7 +160,7 @@ class PDDLRagRetrieverTest(unittest.TestCase):
 
             self.assertEqual(retriever.top_k, 3)
 
-    def test_retrieve_builds_cache_filters_quality_and_eligible_docs_without_stage_filter(self):
+    def test_build_runtime_db_then_retrieve_filters_quality_and_eligible_docs_without_stage_filter(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             corpus_path = root / "rag" / "clean.jsonl"
@@ -216,6 +218,7 @@ class PDDLRagRetrieverTest(unittest.TestCase):
             )
 
             retriever = PDDLRagRetriever.from_config(config)
+            retriever.build_runtime_db()
             examples = retriever.retrieve("decompose", "please open the fridge and move apple")
 
             self.assertTrue(db_path.exists())
@@ -225,6 +228,28 @@ class PDDLRagRetrieverTest(unittest.TestCase):
             )
             self.assertTrue(all(example.quality == "success" for example in examples))
             self.assertTrue(all(example.retrieval_eligible for example in examples))
+
+    def test_retrieve_missing_runtime_db_fails_without_creating_it(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            db_path = root / "rag" / "runtime.sqlite"
+            config = RunConfig(
+                root,
+                values={
+                    "decompose_rag": {
+                        "enabled": True,
+                        "corpus_path": str(root / "missing_corpus.jsonl"),
+                        "index_path": str(root / "missing_index.json"),
+                        "runtime_db_path": str(db_path),
+                    }
+                },
+            )
+
+            retriever = PDDLRagRetriever.from_config(config)
+
+            with self.assertRaises(PDDLRagError):
+                retriever.retrieve("decompose", "open fridge")
+            self.assertFalse(db_path.exists())
 
     def test_retrieve_keeps_mixed_stage_docs_for_allocate_section(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -264,6 +289,7 @@ class PDDLRagRetrieverTest(unittest.TestCase):
             )
 
             retriever = PDDLRagRetriever.from_config(config, section="allocate_rag")
+            retriever.build_runtime_db()
             examples = retriever.retrieve("allocate", "heat the apple in microwave")
 
             self.assertCountEqual(

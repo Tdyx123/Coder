@@ -53,7 +53,7 @@ DEFAULT_TIMEOUT_SECONDS = 30.0
 MAX_TIMEOUT_RETRIES = 2
 GPU_CLEANUP_PROCESS_SUFFIX = "0d69f666c7f282e54abfe58f1e917"
 IGNORED_FAILURE_ACTION_TYPES = {"Teleport", "TeleportObjectToHand"}
-BASE_LINE_CHOICES = ("LaMMA-P", "SMART-LLM", "Scale-Plan")
+BASE_LINE_CHOICES = ("LaMMA-P", "SMART-LLM", "Scale-Plan", "KGLAMP")
 
 
 def failure_ignored_for_ratio(action: Action, exc: BaseException) -> bool:
@@ -459,7 +459,7 @@ def default_baseline_root(base_line: str) -> Path:
 
 
 def baseline_summary_paths(base_line: str, root: Path) -> List[Path]:
-    if base_line in {"LaMMA-P", "Scale-Plan"}:
+    if base_line in {"LaMMA-P", "Scale-Plan", "KGLAMP"}:
         return [root / "plan_to_code_results" / "plan_to_code_results.json"]
     if base_line == "SMART-LLM":
         return [root / "plan_to_code_results.json"]
@@ -467,7 +467,7 @@ def baseline_summary_paths(base_line: str, root: Path) -> List[Path]:
 
 
 def baseline_fallback_search_root(base_line: str, root: Path) -> Path:
-    if base_line in {"LaMMA-P", "Scale-Plan"}:
+    if base_line in {"LaMMA-P", "Scale-Plan", "KGLAMP"}:
         preferred = root / "logs" / "intermediate_runs"
     elif base_line == "SMART-LLM":
         preferred = root / "logs"

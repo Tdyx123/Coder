@@ -38,7 +38,7 @@ from pddlrun_llmseparate import (
     parse_arguments,
     summarize_llm_token_usage,
 )
-from pddl_rag import PDDLRagTimeoutError, RAG_PROMPT_TITLE
+from pddl_rag import PDDLRagRetriever, PDDLRagTimeoutError, RAG_PROMPT_TITLE
 from sft_generator import (
     check_allocate_assignment_count,
     check_decompose_subtask_count,
@@ -143,7 +143,7 @@ def rag_config_values(root: Path, records, section: str = "decompose_rag"):
     index_path = rag_dir / f"{prefix}_index.json"
     write_jsonl(corpus_path, records)
     index_path.write_text("{}", encoding="utf-8")
-    return {
+    values = {
         section: {
             "enabled": True,
             "corpus_path": str(corpus_path),
@@ -152,6 +152,9 @@ def rag_config_values(root: Path, records, section: str = "decompose_rag"):
             "top_k": 1,
         }
     }
+    retriever = PDDLRagRetriever.from_config(RunConfig(root, values=values), section=section)
+    retriever.build_runtime_db()
+    return values
 
 
 class PDDLRunConfigTests(unittest.TestCase):
@@ -625,6 +628,13 @@ class PDDLRunConfigTests(unittest.TestCase):
                 SHARED_DEFAULT_RUN_CONFIG["artifacts"]["allocate_subtasks"],
                 "02_allocate/subtasks.json",
             )
+
+    def test_rag_runtime_db_prewarm_defaults_to_explicit_opt_in(self):
+        config = load_run_config(ROOT)
+
+        for section in ("decompose_rag", "allocate_rag", "problem_rag"):
+            self.assertFalse(SHARED_DEFAULT_RUN_CONFIG[section]["prewarm_runtime_db"])
+            self.assertFalse(config.get(section, "prewarm_runtime_db"))
 
     def test_file_processor_is_shared_and_raises_shared_pddl_error(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

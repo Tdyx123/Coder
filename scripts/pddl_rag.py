@@ -9,6 +9,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
+from urllib.parse import quote
 
 from run_config import RunConfig
 
@@ -222,24 +223,6 @@ def _tokenize_query(
     return tokens
 
 
-def _source_signature(corpus_path: Path, index_path: Path) -> str:
-    def stat_record(path: Path) -> Dict[str, Any]:
-        stat = path.stat()
-        return {
-            "path": str(path.resolve()),
-            "size": stat.st_size,
-            "mtime_ns": stat.st_mtime_ns,
-        }
-
-    return json.dumps(
-        {
-            "corpus": stat_record(corpus_path),
-            "index": stat_record(index_path),
-        },
-        sort_keys=True,
-    )
-
-
 def _truncate_text(text: str, max_chars: int) -> str:
     if len(text) <= max_chars:
         return text
@@ -282,7 +265,6 @@ class PDDLRagRetriever:
         self.max_block_chars = max_block_chars
         self.max_query_tokens = max_query_tokens
         self.query_timeout_seconds = query_timeout_seconds
-        self._validated = False
 
     @classmethod
     def from_config(
@@ -311,14 +293,12 @@ class PDDLRagRetriever:
                 DEFAULT_QUERY_TIMEOUT_SECONDS,
             ),
         )
-        retriever._validate_sources()
         return retriever
 
     def query_tokens(self, query_text: str, stage: Optional[str] = None) -> List[str]:
         return _tokenize_query(query_text, self.max_query_tokens, stage=stage)
 
     def retrieve(self, stage: str, query_text: str, top_k: Optional[int] = None) -> List[PDDLRagExample]:
-        self.ensure_runtime_db()
         tokens = self.query_tokens(query_text, stage=stage)
         if not tokens:
             return []
@@ -347,7 +327,7 @@ class PDDLRagRetriever:
         )
 
         try:
-            with sqlite3.connect(self.runtime_db_path) as connection:
+            with sqlite3.connect(self._runtime_db_uri(), uri=True) as connection:
                 rows = self._execute_query_with_timeout(connection, sql, params)
         except PDDLRagTimeoutError:
             raise
@@ -416,8 +396,6 @@ class PDDLRagRetriever:
         return "\n".join(parts).strip() + "\n"
 
     def _validate_sources(self) -> None:
-        if self._validated:
-            return
         missing = [
             str(path)
             for path in (self.corpus_path, self.index_path)
@@ -425,31 +403,20 @@ class PDDLRagRetriever:
         ]
         if missing:
             raise PDDLRagError("Missing PDDL RAG source file(s): " + ", ".join(missing))
-        self._validated = True
+
+    def _runtime_db_uri(self) -> str:
+        return f"file:{quote(str(self.runtime_db_path.resolve()), safe='/')}?mode=ro"
+
+    def build_runtime_db(self) -> None:
+        """Rebuild the SQLite runtime DB from the configured RAG corpus."""
+        self._validate_sources()
+        self._build_runtime_db()
 
     def ensure_runtime_db(self) -> None:
-        self._validate_sources()
-        signature = _source_signature(self.corpus_path, self.index_path)
-        if self._db_is_current(signature):
-            return
-        self._build_runtime_db(signature)
+        """Backward-compatible alias for manually rebuilding the runtime DB."""
+        self.build_runtime_db()
 
-    def _db_is_current(self, signature: str) -> bool:
-        if not self.runtime_db_path.exists():
-            return False
-
-        try:
-            with sqlite3.connect(self.runtime_db_path) as connection:
-                rows = dict(connection.execute("SELECT key, value FROM rag_metadata").fetchall())
-        except sqlite3.Error:
-            return False
-
-        return (
-            rows.get("schema_version") == str(SCHEMA_VERSION)
-            and rows.get("source_signature") == signature
-        )
-
-    def _build_runtime_db(self, signature: str) -> None:
+    def _build_runtime_db(self) -> None:
         self.runtime_db_path.parent.mkdir(parents=True, exist_ok=True)
         temp_db_path = self.runtime_db_path.with_name(self.runtime_db_path.name + ".tmp")
         if temp_db_path.exists():
@@ -462,10 +429,6 @@ class PDDLRagRetriever:
                 connection.execute(
                     "INSERT INTO rag_metadata(key, value) VALUES (?, ?)",
                     ("schema_version", str(SCHEMA_VERSION)),
-                )
-                connection.execute(
-                    "INSERT INTO rag_metadata(key, value) VALUES (?, ?)",
-                    ("source_signature", signature),
                 )
                 connection.commit()
         except Exception:

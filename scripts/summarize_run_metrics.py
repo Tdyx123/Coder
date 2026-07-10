@@ -7,10 +7,10 @@ import argparse
 import json
 import math
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 
-BASELINES = ("LaMMA-P", "SMART-LLM")
+BASELINES = ("LaMMA-P", "SMART-LLM", "Scale-Plan", "KGLAMP")
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -122,58 +122,71 @@ def mean_and_population_stddev(values: Iterable[Any]) -> str:
     return f"{format_number(mean)} +- {format_number(math.sqrt(variance))}"
 
 
-def safe_token_count(value: Any) -> int:
+def token_count_value(value: Any) -> Optional[int]:
     if value is None or isinstance(value, bool):
-        return 0
+        return None
     if isinstance(value, float) and not math.isfinite(value):
-        return 0
+        return None
     try:
         return int(value)
     except (TypeError, ValueError, OverflowError):
-        return 0
+        return None
 
 
-def total_planner_tokens(task_results: Sequence[Dict[str, Any]]) -> str:
-    saw_total_tokens = False
-    total_tokens = 0
+def planner_token_values(task_results: Sequence[Dict[str, Any]]) -> List[float]:
+    tokens: List[float] = []
     for result in task_results:
         llm_token_usage = result.get("llm_token_usage")
         if not isinstance(llm_token_usage, dict) or "total_tokens" not in llm_token_usage:
             continue
-        saw_total_tokens = True
-        total_tokens += safe_token_count(llm_token_usage.get("total_tokens"))
-    if not saw_total_tokens:
-        return ""
-    return str(total_tokens)
+        token_count = token_count_value(llm_token_usage.get("total_tokens"))
+        if token_count is not None:
+            tokens.append(float(token_count))
+    return tokens
 
 
-def total_planner_run_time(task_results: Sequence[Dict[str, Any]]) -> str:
-    durations = numeric_values(result.get("duration_seconds") for result in task_results)
-    if not durations:
-        return ""
-    return format_number(sum(durations))
-
-
-def planner_total_metric_columns(task_results: Sequence[Dict[str, Any]]) -> List[str]:
-    return [
-        total_planner_tokens(task_results),
-        total_planner_run_time(task_results),
-    ]
+def planner_token_mean_stddev(task_results: Sequence[Dict[str, Any]]) -> str:
+    return mean_and_population_stddev(planner_token_values(task_results))
 
 
 def format_number(value: float) -> str:
     return f"{value:.4g}"
 
 
-def parallel_task_results(summary: Dict[str, Any]) -> List[Dict[str, Any]]:
+def task_results_from_summary(
+    summary: Dict[str, Any],
+    *,
+    include_top_level_results: bool = False,
+) -> List[Dict[str, Any]]:
     task_results: List[Dict[str, Any]] = []
+    if include_top_level_results:
+        for result in summary.get("results", []):
+            if isinstance(result, dict):
+                task_results.append(dict(result))
+
     for floor_summary in summary.get("summaries", []):
         if not isinstance(floor_summary, dict):
             continue
-        for result in floor_summary.get("results", []):
-            if isinstance(result, dict):
-                task_results.append(result)
+        results = [
+            result
+            for result in floor_summary.get("results", [])
+            if isinstance(result, dict)
+        ]
+        inherited_token_usage = floor_summary.get("llm_token_usage")
+        for result in results:
+            result_data = dict(result)
+            if (
+                len(results) == 1
+                and "llm_token_usage" not in result_data
+                and isinstance(inherited_token_usage, dict)
+            ):
+                result_data["llm_token_usage"] = inherited_token_usage
+            task_results.append(result_data)
     return task_results
+
+
+def parallel_task_results(summary: Dict[str, Any]) -> List[Dict[str, Any]]:
+    return task_results_from_summary(summary, include_top_level_results=False)
 
 
 def count_plan_actions(plan_file: Path) -> int:
@@ -189,16 +202,20 @@ def count_plan_actions(plan_file: Path) -> int:
     return action_count
 
 
-def plan_length_for_task(task_result: Dict[str, Any]) -> int:
+def plan_length_for_task(task_result: Dict[str, Any]) -> Optional[int]:
     task_run_dir = task_result.get("task_run_dir")
     if not isinstance(task_run_dir, str) or not task_run_dir:
-        return 0
+        return None
 
     output_dir = Path(task_run_dir).expanduser() / "08_planner" / "outputs"
     if not output_dir.is_dir():
-        return 0
+        return None
 
-    return sum(count_plan_actions(plan_file) for plan_file in sorted(output_dir.glob("*_plan.txt")))
+    plan_files = sorted(output_dir.glob("*_plan.txt"))
+    if not plan_files:
+        return None
+
+    return sum(count_plan_actions(plan_file) for plan_file in plan_files)
 
 
 def total_results_count(coderun_summary: Dict[str, Any], results: Sequence[Dict[str, Any]]) -> Optional[float]:
@@ -240,21 +257,16 @@ def coderun_timeout_count(
 def coderun_metric_values(
     results: Sequence[Dict[str, Any]],
     metric_name: str,
-    timeout_count: int,
 ) -> List[float]:
     values: List[float] = []
-    result_timeout_count = 0
     for result in results:
         if is_timeout_result(result):
-            result_timeout_count += 1
             values.append(0.0)
             continue
         number = numeric_value(result.get(metric_name))
         if number is not None:
             values.append(number)
 
-    missing_timeout_count = max(0, timeout_count - result_timeout_count)
-    values.extend(0.0 for _ in range(missing_timeout_count))
     return values
 
 
@@ -263,15 +275,15 @@ def coderun_metric_columns(
     generate_code_denominator: Any,
 ) -> List[str]:
     results = coderun_results(coderun_summary)
-    timeout_count = coderun_timeout_count(coderun_summary, results)
     total_results = total_results_count(coderun_summary, results)
-    gcr_values = coderun_metric_values(results, "gcr", timeout_count)
-    action_sr_values = coderun_metric_values(results, "action_sr", timeout_count)
+    result_count = len(results)
+    gcr_values = coderun_metric_values(results, "gcr")
+    action_sr_values = coderun_metric_values(results, "action_sr")
     gcr_one_count = sum(1 for value in gcr_values if value == 1.0)
 
     return [
         safe_ratio(total_results, generate_code_denominator),
-        safe_ratio(gcr_one_count, total_results),
+        safe_ratio(gcr_one_count, result_count),
         mean_and_population_stddev(gcr_values),
         mean_and_population_stddev(action_sr_values),
     ]
@@ -287,8 +299,30 @@ def resolve_lammap_planner_summary(baseline_root: Path) -> Path:
     return candidates[0]
 
 
+def resolve_scale_plan_planner_summary(baseline_root: Path) -> Path:
+    summary_root = baseline_root / "logs" / "scale_plan_parallel"
+    candidates = sorted(summary_root.glob("pddlrun_*/summary.json"))
+    if len(candidates) != 1:
+        raise RuntimeError(
+            f"Expected exactly one Scale-Plan pddlrun summary under {summary_root}, "
+            f"found {len(candidates)}"
+        )
+    return candidates[0]
+
+
+def resolve_kglamp_planner_summary(baseline_root: Path) -> Path:
+    summary_root = baseline_root / "parallel_runs"
+    candidates = sorted(summary_root.glob("*/summary.json"))
+    if len(candidates) != 1:
+        raise RuntimeError(
+            f"Expected exactly one KGLAMP top-level parallel_runs summary under "
+            f"{summary_root}, found {len(candidates)}"
+        )
+    return candidates[0]
+
+
 def resolve_baseline_results_path(baseline: str, baseline_root: Path) -> Path:
-    if baseline == "LaMMA-P":
+    if baseline in {"LaMMA-P", "Scale-Plan", "KGLAMP"}:
         path = baseline_root / "plan_to_code_results" / "plan_to_code_results.json"
     elif baseline == "SMART-LLM":
         path = baseline_root / "plan_to_code_results.json"
@@ -312,28 +346,80 @@ def default_baseline_root(baseline: str) -> Path:
     return REPO_ROOT / "baselines" / baseline
 
 
+def planner_summary_denominator(summary: Dict[str, Any]) -> float:
+    return (
+        (numeric_value(summary.get("success_count")) or 0.0)
+        + (numeric_value(summary.get("failure_count")) or 0.0)
+    )
+
+
+def is_successful_plan_to_code_record(result: Dict[str, Any]) -> bool:
+    status = result.get("status")
+    return result.get("success") is True or (
+        isinstance(status, str) and status.lower() == "success"
+    )
+
+
+def baseline_action_count_values(results: Sequence[Dict[str, Any]]) -> List[float]:
+    values: List[float] = []
+    for result in results:
+        if not is_successful_plan_to_code_record(result):
+            continue
+        action_count = numeric_value(result.get("action_count"))
+        if action_count is not None:
+            values.append(action_count)
+    return values
+
+
+def baseline_planner_metrics(
+    summary_paths: Sequence[Path],
+) -> Tuple[List[Dict[str, Any]], float]:
+    task_results: List[Dict[str, Any]] = []
+    generate_code_denominator = 0.0
+
+    for summary_path in summary_paths:
+        planner_summary = read_json(summary_path)
+        summary_task_results = task_results_from_summary(
+            planner_summary,
+            include_top_level_results=True,
+        )
+
+        task_results.extend(summary_task_results)
+        generate_code_denominator += planner_summary_denominator(planner_summary)
+
+    return task_results, generate_code_denominator
+
+
+def build_planner_baseline_row(
+    baseline: str,
+    baseline_root: Path,
+    coderun_summary: Dict[str, Any],
+    summary_paths: Sequence[Path],
+) -> List[str]:
+    baseline_results = read_json_list(resolve_baseline_results_path(baseline, baseline_root))
+    task_results, generate_code_denominator = baseline_planner_metrics(summary_paths)
+
+    return [
+        baseline,
+        planner_token_mean_stddev(task_results),
+        mean_and_population_stddev(result.get("duration_seconds") for result in task_results),
+        "",
+        "",
+        mean_and_population_stddev(baseline_action_count_values(baseline_results)),
+        *coderun_metric_columns(coderun_summary, generate_code_denominator),
+    ]
+
+
 def build_lammap_row(
     baseline_root: Path,
     coderun_summary: Dict[str, Any],
 ) -> List[str]:
-    planner_summary = read_json(resolve_lammap_planner_summary(baseline_root))
-    baseline_results = read_json_list(resolve_baseline_results_path("LaMMA-P", baseline_root))
-    task_results = parallel_task_results(planner_summary)
-    generate_code_denominator = (
-        (numeric_value(planner_summary.get("success_count")) or 0.0)
-        + (numeric_value(planner_summary.get("failure_count")) or 0.0)
-    )
-
-    return [
+    return build_planner_baseline_row(
         "LaMMA-P",
-        "",
-        mean_and_population_stddev(result.get("duration_seconds") for result in task_results),
-        "",
-        "",
-        mean_and_population_stddev(result.get("action_count") for result in baseline_results),
-        *coderun_metric_columns(coderun_summary, generate_code_denominator),
-        *planner_total_metric_columns(task_results),
-    ]
+        baseline_root,
+        coderun_summary,
+        [resolve_lammap_planner_summary(baseline_root)],
+    )
 
 
 def build_smart_llm_row(
@@ -349,11 +435,33 @@ def build_smart_llm_row(
         "",
         "",
         "",
-        mean_and_population_stddev(result.get("action_count") for result in baseline_results),
+        mean_and_population_stddev(baseline_action_count_values(baseline_results)),
         *coderun_metric_columns(coderun_summary, generate_code_denominator),
-        "",
-        "",
     ]
+
+
+def build_scale_plan_row(
+    baseline_root: Path,
+    coderun_summary: Dict[str, Any],
+) -> List[str]:
+    return build_planner_baseline_row(
+        "Scale-Plan",
+        baseline_root,
+        coderun_summary,
+        [resolve_scale_plan_planner_summary(baseline_root)],
+    )
+
+
+def build_kglamp_row(
+    baseline_root: Path,
+    coderun_summary: Dict[str, Any],
+) -> List[str]:
+    return build_planner_baseline_row(
+        "KGLAMP",
+        baseline_root,
+        coderun_summary,
+        [resolve_kglamp_planner_summary(baseline_root)],
+    )
 
 
 def build_baseline_row(
@@ -372,6 +480,10 @@ def build_baseline_row(
         return build_lammap_row(baseline_root, coderun_summary)
     if baseline == "SMART-LLM":
         return build_smart_llm_row(baseline_root, coderun_summary)
+    if baseline == "Scale-Plan":
+        return build_scale_plan_row(baseline_root, coderun_summary)
+    if baseline == "KGLAMP":
+        return build_kglamp_row(baseline_root, coderun_summary)
     raise RuntimeError(f"Unsupported baseline: {baseline}")
 
 
@@ -388,13 +500,12 @@ def build_row(
     )
     return [
         method,
-        "",
+        planner_token_mean_stddev(task_results),
         mean_and_population_stddev(result.get("duration_seconds") for result in task_results),
         safe_ratio(parallel_summary.get("all_pass_count"), plan_denominator),
         safe_ratio(parallel_summary.get("pass_one_count"), plan_denominator),
         mean_and_population_stddev(plan_length_for_task(result) for result in task_results),
         *coderun_metric_columns(coderun_summary, plan_denominator),
-        *planner_total_metric_columns(task_results),
     ]
 
 

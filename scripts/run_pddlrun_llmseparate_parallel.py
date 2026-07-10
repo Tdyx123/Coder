@@ -125,7 +125,7 @@ def config_bool(value: Any, default: bool = False) -> bool:
 def prewarm_decompose_rag_if_configured(config: RunConfig) -> bool:
     if not config_bool(config.get("decompose_rag", "enabled", False)):
         return False
-    if not config_bool(config.get("decompose_rag", "prewarm_runtime_db", True), True):
+    if not config_bool(config.get("decompose_rag", "prewarm_runtime_db", False), False):
         return False
 
     from pddlrun_llmseparate import prewarm_decompose_rag_runtime_db
@@ -136,7 +136,7 @@ def prewarm_decompose_rag_if_configured(config: RunConfig) -> bool:
 def prewarm_allocate_rag_if_configured(config: RunConfig) -> bool:
     if not config_bool(config.get("allocate_rag", "enabled", False)):
         return False
-    if not config_bool(config.get("allocate_rag", "prewarm_runtime_db", True), True):
+    if not config_bool(config.get("allocate_rag", "prewarm_runtime_db", False), False):
         return False
 
     from pddlrun_llmseparate import prewarm_allocate_rag_runtime_db
@@ -147,7 +147,7 @@ def prewarm_allocate_rag_if_configured(config: RunConfig) -> bool:
 def prewarm_problem_rag_if_configured(config: RunConfig) -> bool:
     if not config_bool(config.get("problem_rag", "enabled", False)):
         return False
-    if not config_bool(config.get("problem_rag", "prewarm_runtime_db", True), True):
+    if not config_bool(config.get("problem_rag", "prewarm_runtime_db", False), False):
         return False
 
     from pddlrun_llmseparate import prewarm_problem_rag_runtime_db

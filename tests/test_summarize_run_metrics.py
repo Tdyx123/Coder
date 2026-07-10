@@ -137,17 +137,15 @@ class SummarizeRunMetricsTest(unittest.TestCase):
                 output,
                 [
                     "METHOD",
-                    "",
+                    "20 +- 9",
                     "15 +- 5",
                     "0.3333",
                     "0.6667",
-                    "1 +- 1.414",
+                    "3 +- 0",
                     "1.333",
                     "0.25",
                     "0.75 +- 0.25",
                     "0.75 +- 0.25",
-                    "40",
-                    "30",
                 ],
             )
 
@@ -191,6 +189,9 @@ class SummarizeRunMetricsTest(unittest.TestCase):
             self.assertEqual(result_code, 0)
             row = output.rstrip("\n").split(",")
             self.assertEqual(row[6], "0.9")
+            self.assertEqual(row[7], "1")
+            self.assertEqual(row[8], "1 +- 0")
+            self.assertEqual(row[9], "1 +- 0")
 
     def test_timeout_results_count_as_zero_for_coderun_metrics(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -267,7 +268,7 @@ class SummarizeRunMetricsTest(unittest.TestCase):
                     "total_results": 0,
                     "success_count": 0,
                     "failure_count": 0,
-                    "results": [{"gcr": "bad", "action_sr": "bad"}],
+                    "results": [],
                 },
             )
 
@@ -289,7 +290,7 @@ class SummarizeRunMetricsTest(unittest.TestCase):
             assert_row(
                 self,
                 output_path.read_text(encoding="utf-8"),
-                ["zero", "", "", "", "", "0 +- 0", "", "", "", "", "", ""],
+                ["zero", "", "", "", "", "", "", "", "", ""],
             )
 
     def test_lammap_baseline_uses_planner_summary_and_baseline_action_counts(self):
@@ -329,9 +330,11 @@ class SummarizeRunMetricsTest(unittest.TestCase):
                 / "plan_to_code_results"
                 / "plan_to_code_results.json",
                 [
-                    {"action_count": 2},
-                    {"action_count": 4},
-                    {"action_count": "bad"},
+                    {"success": True, "action_count": 2},
+                    {"status": "success", "action_count": 4},
+                    {"success": True, "action_count": "bad"},
+                    {"status": "failed", "action_count": 0},
+                    {"status": "skipped", "action_count": 0},
                 ],
             )
             coderun_result = root / "coderun_results" / "lammap.json"
@@ -365,7 +368,7 @@ class SummarizeRunMetricsTest(unittest.TestCase):
                 output,
                 [
                     "LaMMA-P",
-                    "",
+                    "21 +- 4",
                     "15 +- 5",
                     "",
                     "",
@@ -374,8 +377,6 @@ class SummarizeRunMetricsTest(unittest.TestCase):
                     "0.5",
                     "0.5 +- 0.5",
                     "0.75 +- 0.25",
-                    "42",
-                    "30",
                 ],
             )
 
@@ -398,7 +399,7 @@ class SummarizeRunMetricsTest(unittest.TestCase):
                 baseline_root
                 / "plan_to_code_results"
                 / "plan_to_code_results.json",
-                [{"action_count": 5}],
+                [{"success": True, "action_count": 5}],
             )
             coderun_result = root / "coderun_results" / "lammap.json"
             write_json(
@@ -434,8 +435,6 @@ class SummarizeRunMetricsTest(unittest.TestCase):
                     "1",
                     "1 +- 0",
                     "1 +- 0",
-                    "",
-                    "8",
                 ],
             )
 
@@ -446,9 +445,11 @@ class SummarizeRunMetricsTest(unittest.TestCase):
             write_json(
                 baseline_root / "plan_to_code_results.json",
                 [
-                    {"action_count": 2},
-                    {"action_count": 6},
-                    {"action_count": None},
+                    {"status": "success", "action_count": 2},
+                    {"success": True, "action_count": 6},
+                    {"success": True, "action_count": None},
+                    {"status": "failed", "action_count": 0},
+                    {"status": "skipped", "action_count": 0},
                 ],
             )
             (baseline_root / "logs" / "1" / "task_a").mkdir(parents=True)
@@ -498,8 +499,6 @@ class SummarizeRunMetricsTest(unittest.TestCase):
                     "1",
                     "1 +- 0",
                     "0.25 +- 0",
-                    "",
-                    "",
                 ],
             )
 
@@ -509,7 +508,7 @@ class SummarizeRunMetricsTest(unittest.TestCase):
             baseline_root = root / "baselines" / "SMART-LLM"
             write_json(
                 baseline_root / "plan_to_code_results.json",
-                [{"action_count": 3}],
+                [{"status": "success", "action_count": 3}],
             )
             (baseline_root / "logs" / "1" / "task").mkdir(parents=True)
             (baseline_root / "logs" / "1" / "task" / "decomposed_plan.py").write_text(
@@ -550,10 +549,389 @@ class SummarizeRunMetricsTest(unittest.TestCase):
                     "0",
                     "0 +- 0",
                     "0.5 +- 0",
-                    "",
-                    "",
                 ],
             )
+
+    def test_scale_plan_baseline_uses_planner_summary_and_baseline_action_counts(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            baseline_root = root / "baselines" / "Scale-Plan"
+            write_json(
+                baseline_root
+                / "logs"
+                / "scale_plan_parallel"
+                / "pddlrun_scale_plan_sample"
+                / "summary.json",
+                {
+                    "success_count": 2,
+                    "failure_count": 1,
+                    "summaries": [
+                        {
+                            "results": [
+                                {
+                                    "duration_seconds": 2,
+                                    "task_run_dir": str(root / "task_a"),
+                                    "llm_token_usage": {"total_tokens": 10},
+                                },
+                                {
+                                    "duration_seconds": 4,
+                                    "task_run_dir": str(root / "task_b"),
+                                    "llm_token_usage": {"total_tokens": 20},
+                                },
+                                {
+                                    "duration_seconds": "bad",
+                                    "task_run_dir": str(root / "task_c"),
+                                },
+                            ]
+                        }
+                    ],
+                },
+            )
+            write_json(
+                baseline_root
+                / "plan_to_code_results"
+                / "plan_to_code_results.json",
+                [
+                    {"success": True, "action_count": 3},
+                    {"status": "success", "action_count": 7},
+                    {"success": True, "action_count": "bad"},
+                    {"status": "failed", "action_count": 0},
+                    {"status": "skipped", "action_count": 0},
+                ],
+            )
+            coderun_result = root / "coderun_results" / "scale_plan.json"
+            write_json(
+                coderun_result,
+                {
+                    "total_results": 2,
+                    "results": [
+                        {"gcr": 1.0, "action_sr": 1.0},
+                        {"gcr": 0.5, "action_sr": 0.5},
+                    ],
+                },
+            )
+
+            result_code, output = run_main(
+                [
+                    "--baseline",
+                    "Scale-Plan",
+                    "--parallel-run",
+                    str(baseline_root),
+                    "--coderun-result",
+                    str(coderun_result),
+                ]
+            )
+
+            self.assertEqual(result_code, 0)
+            assert_row(
+                self,
+                output,
+                [
+                    "Scale-Plan",
+                    "15 +- 5",
+                    "3 +- 1",
+                    "",
+                    "",
+                    "5 +- 2",
+                    "0.6667",
+                    "0.5",
+                    "0.75 +- 0.25",
+                    "0.75 +- 0.25",
+                ],
+            )
+
+    def test_scale_plan_baseline_uses_default_root_when_parallel_run_is_omitted(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            baseline_root = root / "baselines" / "Scale-Plan"
+            write_json(
+                baseline_root
+                / "logs"
+                / "scale_plan_parallel"
+                / "pddlrun_scale_plan_sample"
+                / "summary.json",
+                {
+                    "success_count": 1,
+                    "failure_count": 0,
+                    "summaries": [
+                        {
+                            "results": [
+                                {
+                                    "duration_seconds": 9,
+                                    "task_run_dir": str(root / "task"),
+                                }
+                            ]
+                        }
+                    ],
+                },
+            )
+            write_json(
+                baseline_root
+                / "plan_to_code_results"
+                / "plan_to_code_results.json",
+                [{"success": True, "action_count": 4}],
+            )
+            coderun_result = root / "coderun_results" / "scale_plan.json"
+            write_json(
+                coderun_result,
+                {
+                    "total_results": 1,
+                    "results": [{"gcr": 1.0, "action_sr": 1.0}],
+                },
+            )
+
+            with patch.object(summarize_run_metrics, "REPO_ROOT", root):
+                result_code, output = run_main(
+                    [
+                        "--baseline",
+                        "Scale-Plan",
+                        "--coderun-result",
+                        str(coderun_result),
+                    ]
+                )
+
+            self.assertEqual(result_code, 0)
+            assert_row(
+                self,
+                output,
+                [
+                    "Scale-Plan",
+                    "",
+                    "9 +- 0",
+                    "",
+                    "",
+                    "4 +- 0",
+                    "1",
+                    "1",
+                    "1 +- 0",
+                    "1 +- 0",
+                ],
+            )
+
+    def test_kglamp_baseline_uses_result_token_mean_and_ignores_floor_summaries(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            baseline_root = root / "baselines" / "KGLAMP"
+            write_json(
+                baseline_root / "parallel_runs" / "run" / "summary.json",
+                {
+                    "success_count": 2,
+                    "failure_count": 1,
+                    "llm_token_usage": {"total_tokens": 999},
+                    "summaries": [
+                        {
+                            "results": [
+                                {
+                                    "duration_seconds": 10,
+                                    "task_run_dir": str(root / "task_a"),
+                                    "llm_token_usage": {"total_tokens": 10},
+                                },
+                                {
+                                    "duration_seconds": 20,
+                                    "task_run_dir": str(root / "task_b"),
+                                    "llm_token_usage": {"total_tokens": 20},
+                                },
+                                {
+                                    "duration_seconds": "bad",
+                                    "task_run_dir": str(root / "task_c"),
+                                    "llm_token_usage": {"total_tokens": 30},
+                                },
+                            ]
+                        }
+                    ],
+                },
+            )
+            write_json(
+                baseline_root / "parallel_runs" / "run" / "FloorPlan1" / "summary.json",
+                {
+                    "success_count": 1,
+                    "failure_count": 0,
+                    "llm_token_usage": {"total_tokens": 999999},
+                    "results": [
+                        {
+                            "duration_seconds": 999,
+                            "task_run_dir": str(root / "ignored_task"),
+                            "llm_token_usage": {"total_tokens": 999999},
+                        }
+                    ],
+                },
+            )
+            write_json(
+                baseline_root
+                / "plan_to_code_results"
+                / "plan_to_code_results.json",
+                [
+                    {"success": True, "action_count": 1},
+                    {"status": "success", "action_count": 5},
+                    {"success": True, "action_count": 9},
+                    {"status": "failed", "action_count": 0},
+                    {"status": "skipped", "action_count": 0},
+                ],
+            )
+            coderun_result = root / "coderun_results" / "kglamp.json"
+            write_json(
+                coderun_result,
+                {
+                    "total_results": 2,
+                    "results": [
+                        {"gcr": 1.0, "action_sr": 1.0},
+                        {"gcr": 0.0, "action_sr": 0.0},
+                    ],
+                },
+            )
+
+            result_code, output = run_main(
+                [
+                    "--baseline",
+                    "KGLAMP",
+                    "--parallel-run",
+                    str(baseline_root),
+                    "--coderun-result",
+                    str(coderun_result),
+                ]
+            )
+
+            self.assertEqual(result_code, 0)
+            assert_row(
+                self,
+                output,
+                [
+                    "KGLAMP",
+                    "20 +- 8.165",
+                    "15 +- 5",
+                    "",
+                    "",
+                    "5 +- 3.266",
+                    "0.6667",
+                    "0.5",
+                    "0.5 +- 0.5",
+                    "0.5 +- 0.5",
+                ],
+            )
+
+    def test_kglamp_baseline_uses_result_token_mean(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            baseline_root = root / "baselines" / "KGLAMP"
+            write_json(
+                baseline_root / "parallel_runs" / "run" / "summary.json",
+                {
+                    "success_count": 2,
+                    "failure_count": 0,
+                    "summaries": [
+                        {
+                            "results": [
+                                {
+                                    "duration_seconds": 5,
+                                    "task_run_dir": str(root / "task_a"),
+                                    "llm_token_usage": {"total_tokens": 11},
+                                },
+                                {
+                                    "duration_seconds": 15,
+                                    "task_run_dir": str(root / "task_b"),
+                                    "llm_token_usage": {"total_tokens": 19},
+                                },
+                            ]
+                        }
+                    ],
+                },
+            )
+            write_json(
+                baseline_root
+                / "plan_to_code_results"
+                / "plan_to_code_results.json",
+                [
+                    {"success": True, "action_count": 2},
+                    {"status": "success", "action_count": 4},
+                    {"status": "failed", "action_count": 0},
+                ],
+            )
+            coderun_result = root / "coderun_results" / "kglamp.json"
+            write_json(
+                coderun_result,
+                {
+                    "total_results": 2,
+                    "results": [
+                        {"gcr": 1.0, "action_sr": 1.0},
+                        {"gcr": 1.0, "action_sr": 0.5},
+                    ],
+                },
+            )
+
+            result_code, output = run_main(
+                [
+                    "--baseline",
+                    "KGLAMP",
+                    "--parallel-run",
+                    str(baseline_root),
+                    "--coderun-result",
+                    str(coderun_result),
+                ]
+            )
+
+            self.assertEqual(result_code, 0)
+            assert_row(
+                self,
+                output,
+                [
+                    "KGLAMP",
+                    "15 +- 4",
+                    "10 +- 5",
+                    "",
+                    "",
+                    "3 +- 1",
+                    "1",
+                    "1",
+                    "1 +- 0",
+                    "0.75 +- 0.25",
+                ],
+            )
+
+    def test_kglamp_baseline_requires_unique_top_level_parallel_summary(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            baseline_root = root / "baselines" / "KGLAMP"
+            write_json(
+                baseline_root
+                / "plan_to_code_results"
+                / "plan_to_code_results.json",
+                [],
+            )
+            coderun_result = root / "coderun_results" / "kglamp.json"
+            write_json(coderun_result, {"total_results": 0, "results": []})
+
+            with self.assertRaisesRegex(RuntimeError, "Expected exactly one KGLAMP"):
+                main(
+                    [
+                        "--baseline",
+                        "KGLAMP",
+                        "--parallel-run",
+                        str(baseline_root),
+                        "--coderun-result",
+                        str(coderun_result),
+                    ]
+                )
+
+            write_json(
+                baseline_root / "parallel_runs" / "run_a" / "summary.json",
+                {"success_count": 0, "failure_count": 0, "summaries": []},
+            )
+            write_json(
+                baseline_root / "parallel_runs" / "run_b" / "summary.json",
+                {"success_count": 0, "failure_count": 0, "summaries": []},
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "Expected exactly one KGLAMP"):
+                main(
+                    [
+                        "--baseline",
+                        "KGLAMP",
+                        "--parallel-run",
+                        str(baseline_root),
+                        "--coderun-result",
+                        str(coderun_result),
+                    ]
+                )
 
     def test_method_and_baseline_are_mutually_exclusive(self):
         with contextlib.redirect_stderr(io.StringIO()):

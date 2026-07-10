@@ -66,7 +66,7 @@ DEFAULT_RUN_CONFIG: Dict[str, Any] = {
         "max_block_chars": 8000,
         "max_query_tokens": 12,
         "query_timeout_seconds": 5,
-        "prewarm_runtime_db": True,
+        "prewarm_runtime_db": False,
     },
     "allocate_rag": {
         "enabled": False,
@@ -80,7 +80,7 @@ DEFAULT_RUN_CONFIG: Dict[str, Any] = {
         "max_block_chars": 8000,
         "max_query_tokens": 32,
         "query_timeout_seconds": 5,
-        "prewarm_runtime_db": True,
+        "prewarm_runtime_db": False,
     },
     "problem_rag": {
         "enabled": False,
@@ -94,7 +94,7 @@ DEFAULT_RUN_CONFIG: Dict[str, Any] = {
         "max_block_chars": 8000,
         "max_query_tokens": 32,
         "query_timeout_seconds": 5,
-        "prewarm_runtime_db": True,
+        "prewarm_runtime_db": False,
     },
     "artifacts": {
         "manifest": "run_manifest.json",

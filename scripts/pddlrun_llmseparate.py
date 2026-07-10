@@ -125,7 +125,7 @@ _RAG_RETRIEVAL_LOCK = threading.RLock()
 
 @contextmanager
 def _locked_rag_retrieval(retriever: Any):
-    """Serialize RAG retrieval because the shared runtime DB is built lazily."""
+    """Serialize RAG retrieval and explicit runtime DB builds across workers."""
     with _RAG_RETRIEVAL_LOCK:
         runtime_db_path = getattr(retriever, "runtime_db_path", None)
         if fcntl is None or runtime_db_path is None:
@@ -154,10 +154,10 @@ def _config_bool(value: Any, default: bool = False) -> bool:
 
 
 def _prewarm_rag_runtime_db(config: RunConfig, section: str, label: str) -> bool:
-    """Build or validate a shared RAG runtime DB before workers start."""
+    """Explicitly rebuild a shared RAG runtime DB before workers start."""
     if not _config_bool(config.get(section, "enabled", False)):
         return False
-    if not _config_bool(config.get(section, "prewarm_runtime_db", True), True):
+    if not _config_bool(config.get(section, "prewarm_runtime_db", False), False):
         return False
 
     try:
@@ -169,24 +169,24 @@ def _prewarm_rag_runtime_db(config: RunConfig, section: str, label: str) -> bool
 
     try:
         with _locked_rag_retrieval(retriever):
-            retriever.ensure_runtime_db()
+            retriever.build_runtime_db()
     except PDDLRagError as exc:
-        raise PDDLError(f"Error prewarming {label} RAG runtime DB: {exc}") from exc
+        raise PDDLError(f"Error building {label} RAG runtime DB: {exc}") from exc
     return True
 
 
 def prewarm_decompose_rag_runtime_db(config: RunConfig) -> bool:
-    """Build or validate the shared decomposition RAG runtime DB before workers start."""
+    """Explicitly rebuild the shared decomposition RAG runtime DB before workers start."""
     return _prewarm_rag_runtime_db(config, "decompose_rag", "task decomposition")
 
 
 def prewarm_allocate_rag_runtime_db(config: RunConfig) -> bool:
-    """Build or validate the shared allocation RAG runtime DB before workers start."""
+    """Explicitly rebuild the shared allocation RAG runtime DB before workers start."""
     return _prewarm_rag_runtime_db(config, "allocate_rag", "task allocation")
 
 
 def prewarm_problem_rag_runtime_db(config: RunConfig) -> bool:
-    """Build or validate the shared problem-generation RAG runtime DB before workers start."""
+    """Explicitly rebuild the shared problem-generation RAG runtime DB before workers start."""
     return _prewarm_rag_runtime_db(config, "problem_rag", "problem generation")
 
 

@@ -21,6 +21,7 @@ from run_pddlrun_llmseparate_parallel import (
     parse_args,
     prewarm_allocate_rag_if_configured,
     prewarm_decompose_rag_if_configured,
+    prewarm_problem_rag_if_configured,
     run_single_job,
 )
 
@@ -31,6 +32,7 @@ class ParallelRunnerTests(unittest.TestCase):
 
         self.assertFalse(args.decompose_rag)
         self.assertFalse(args.allocate_rag)
+        self.assertFalse(args.problem_rag)
 
     def test_cli_decompose_rag_can_be_enabled_and_disabled(self):
         enabled_args = parse_args(["--floor-plans", "6", "--decompose-rag"])
@@ -44,6 +46,13 @@ class ParallelRunnerTests(unittest.TestCase):
 
         self.assertTrue(args.allocate_rag)
 
+    def test_cli_problem_rag_can_be_enabled_and_disabled(self):
+        enabled_args = parse_args(["--floor-plans", "6", "--problem-rag"])
+        disabled_args = parse_args(["--floor-plans", "6", "--no-problem-rag"])
+
+        self.assertTrue(enabled_args.problem_rag)
+        self.assertFalse(disabled_args.problem_rag)
+
     def test_prewarm_decompose_rag_if_configured_calls_single_runner_prewarm(self):
         config = RunConfig(ROOT, values={"decompose_rag": {"enabled": True, "prewarm_runtime_db": True}})
 
@@ -51,6 +60,14 @@ class ParallelRunnerTests(unittest.TestCase):
             self.assertTrue(prewarm_decompose_rag_if_configured(config))
 
         mock_prewarm.assert_called_once_with(config)
+
+    def test_prewarm_decompose_rag_if_configured_skips_by_default(self):
+        config = RunConfig(ROOT, values={"decompose_rag": {"enabled": True}})
+
+        with patch("pddlrun_llmseparate.prewarm_decompose_rag_runtime_db") as mock_prewarm:
+            self.assertFalse(prewarm_decompose_rag_if_configured(config))
+
+        mock_prewarm.assert_not_called()
 
     def test_prewarm_allocate_rag_if_configured_calls_single_runner_prewarm(self):
         config = RunConfig(ROOT, values={"allocate_rag": {"enabled": True, "prewarm_runtime_db": True}})
@@ -60,10 +77,38 @@ class ParallelRunnerTests(unittest.TestCase):
 
         mock_prewarm.assert_called_once_with(config)
 
+    def test_prewarm_allocate_rag_if_configured_skips_by_default(self):
+        config = RunConfig(ROOT, values={"allocate_rag": {"enabled": True}})
+
+        with patch("pddlrun_llmseparate.prewarm_allocate_rag_runtime_db") as mock_prewarm:
+            self.assertFalse(prewarm_allocate_rag_if_configured(config))
+
+        mock_prewarm.assert_not_called()
+
+    def test_prewarm_problem_rag_if_configured_calls_single_runner_prewarm(self):
+        config = RunConfig(ROOT, values={"problem_rag": {"enabled": True, "prewarm_runtime_db": True}})
+
+        with patch("pddlrun_llmseparate.prewarm_problem_rag_runtime_db", return_value=True) as mock_prewarm:
+            self.assertTrue(prewarm_problem_rag_if_configured(config))
+
+        mock_prewarm.assert_called_once_with(config)
+
+    def test_prewarm_problem_rag_if_configured_skips_by_default(self):
+        config = RunConfig(ROOT, values={"problem_rag": {"enabled": True}})
+
+        with patch("pddlrun_llmseparate.prewarm_problem_rag_runtime_db") as mock_prewarm:
+            self.assertFalse(prewarm_problem_rag_if_configured(config))
+
+        mock_prewarm.assert_not_called()
+
     def test_main_prewarms_rag_before_submitting_floor_jobs(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
-            prewarm_state = {"decompose_called": False, "allocate_called": False}
+            prewarm_state = {
+                "decompose_called": False,
+                "allocate_called": False,
+                "problem_called": False,
+            }
 
             class FakeExecutor:
                 def __init__(self, max_workers):
@@ -78,6 +123,7 @@ class ParallelRunnerTests(unittest.TestCase):
                 def submit(self, fn, *args, **kwargs):
                     self_case.assertTrue(prewarm_state["decompose_called"])
                     self_case.assertTrue(prewarm_state["allocate_called"])
+                    self_case.assertTrue(prewarm_state["problem_called"])
                     future = Future()
                     future.set_result(
                         {
@@ -104,9 +150,17 @@ class ParallelRunnerTests(unittest.TestCase):
                 prompt_allocation_set="pddl_train_task_allocationsep",
                 decompose_rag=True,
                 allocate_rag=True,
+                problem_rag=True,
                 disable_log_results=False,
             )
-            config = RunConfig(root, values={"decompose_rag": {"enabled": False, "prewarm_runtime_db": True}})
+            config = RunConfig(
+                root,
+                values={
+                    "decompose_rag": {"enabled": False, "prewarm_runtime_db": True},
+                    "allocate_rag": {"enabled": False, "prewarm_runtime_db": True},
+                    "problem_rag": {"enabled": False, "prewarm_runtime_db": True},
+                },
+            )
 
             def fake_decompose_prewarm(config_arg):
                 prewarm_state["decompose_called"] = True
@@ -116,15 +170,21 @@ class ParallelRunnerTests(unittest.TestCase):
                 prewarm_state["allocate_called"] = True
                 return True
 
+            def fake_problem_prewarm(config_arg):
+                prewarm_state["problem_called"] = True
+                return True
+
             with patch("run_pddlrun_llmseparate_parallel.parse_args", return_value=args), \
                 patch("run_pddlrun_llmseparate_parallel.load_run_config", return_value=config), \
                 patch("run_pddlrun_llmseparate_parallel.prewarm_decompose_rag_if_configured", side_effect=fake_decompose_prewarm), \
                 patch("run_pddlrun_llmseparate_parallel.prewarm_allocate_rag_if_configured", side_effect=fake_allocate_prewarm), \
+                patch("run_pddlrun_llmseparate_parallel.prewarm_problem_rag_if_configured", side_effect=fake_problem_prewarm), \
                 patch("run_pddlrun_llmseparate_parallel.ThreadPoolExecutor", FakeExecutor):
                 parallel_main()
 
             self.assertTrue(prewarm_state["decompose_called"])
             self.assertTrue(prewarm_state["allocate_called"])
+            self.assertTrue(prewarm_state["problem_called"])
 
     def test_load_jobs_skips_truthy_invalid_records(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
