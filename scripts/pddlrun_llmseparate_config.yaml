@@ -22,6 +22,11 @@ planner:
   alias: seq-opt-lmcut
   timeout_seconds: 300
 
+feedback:
+  enabled: false
+  max_retries: 2
+  max_prompt_chars: 4000
+
 llm:
   providers_file: scripts/providers.yaml
   default_max_tokens: 128

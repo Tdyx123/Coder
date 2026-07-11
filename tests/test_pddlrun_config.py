@@ -50,6 +50,7 @@ from run_config import DEFAULT_RUN_CONFIG as SHARED_DEFAULT_RUN_CONFIG
 from run_config import RunConfig as SharedRunConfig
 from run_config import apply_allocate_rag_cli_override
 from run_config import apply_decompose_rag_cli_override
+from run_config import apply_feedback_cli_override
 from run_config import apply_problem_rag_cli_override
 
 
@@ -274,6 +275,18 @@ class PDDLRunConfigTests(unittest.TestCase):
             apply_problem_rag_cli_override(config, False)
             self.assertFalse(config.get("problem_rag", "enabled"))
 
+    def test_apply_feedback_cli_override_preserves_config_when_cli_omitted(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = RunConfig(tmp_dir, values={"feedback": {"enabled": True, "max_retries": 3}})
+
+            self.assertIs(apply_feedback_cli_override(config, None, None), config)
+            self.assertTrue(config.get("feedback", "enabled"))
+            self.assertEqual(config.get("feedback", "max_retries"), 3)
+
+            apply_feedback_cli_override(config, False, 1)
+            self.assertFalse(config.get("feedback", "enabled"))
+            self.assertEqual(config.get("feedback", "max_retries"), 1)
+
     def test_single_runner_cli_defaults_to_decompose_rag_disabled(self):
         with patch("pddlrun_llmseparate.get_available_models", return_value=["deepseek-chat"]):
             args = parse_arguments(["--floor-plan", "6"])
@@ -281,6 +294,8 @@ class PDDLRunConfigTests(unittest.TestCase):
         self.assertFalse(args.decompose_rag)
         self.assertFalse(args.allocate_rag)
         self.assertFalse(args.problem_rag)
+        self.assertIsNone(args.feedback)
+        self.assertIsNone(args.feedback_max_retries)
 
     def test_single_runner_cli_decompose_rag_can_be_enabled_and_disabled(self):
         with patch("pddlrun_llmseparate.get_available_models", return_value=["deepseek-chat"]):
@@ -305,6 +320,15 @@ class PDDLRunConfigTests(unittest.TestCase):
 
         self.assertTrue(enabled_args.problem_rag)
         self.assertFalse(disabled_args.problem_rag)
+
+    def test_single_runner_cli_feedback_can_be_enabled_disabled_and_bounded(self):
+        with patch("pddlrun_llmseparate.get_available_models", return_value=["deepseek-chat"]):
+            enabled_args = parse_arguments(["--floor-plan", "6", "--feedback", "--feedback-max-retries", "3"])
+            disabled_args = parse_arguments(["--floor-plan", "6", "--no-feedback"])
+
+        self.assertTrue(enabled_args.feedback)
+        self.assertEqual(enabled_args.feedback_max_retries, 3)
+        self.assertFalse(disabled_args.feedback)
 
     def test_load_run_config_resolves_relative_paths(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -753,6 +777,155 @@ class PDDLRunConfigTests(unittest.TestCase):
                     for call in write_file.call_args_list)
             )
 
+    def test_planner_feedback_treats_nonempty_plan_with_warning_as_success(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manager = TaskManager(str(root), "test-model", config=RunConfig(root))
+            plan_path = root / "subtask_01_problem_validated_plan.txt"
+            plan_path.write_text("(gotoobject robot1 apple)\n", encoding="utf-8")
+
+            record = {
+                "problem_file": "subtask_01_problem_validated.pddl",
+                "domain_file": str(root / "resources" / "robot1.pddl"),
+                "return_code": 0,
+                "compatibility_output": str(plan_path),
+                **manager._build_planner_status_fields(
+                    str(plan_path),
+                    stdout_text="Solution found.",
+                    stderr_text="WARNING: planner emitted a harmless warning",
+                    return_code=0,
+                    status="completed",
+                ),
+            }
+            feedback = manager._build_planner_feedback([record], expected_subtask_count=1, robot_assignments={1: 1})
+
+            self.assertFalse(record["has_planner_error"])
+            self.assertTrue(feedback["succeeded"])
+            self.assertEqual(feedback["feedback_text"], "")
+
+    def test_planner_feedback_reports_missing_plan_reason(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manager = TaskManager(str(root), "test-model", config=RunConfig(root))
+            missing_plan = root / "missing_plan.txt"
+
+            record = {
+                "problem_file": "subtask_01_problem_validated.pddl",
+                "domain_file": str(root / "resources" / "robot1.pddl"),
+                "return_code": 31,
+                "compatibility_output": str(missing_plan),
+                **manager._build_planner_status_fields(
+                    str(missing_plan),
+                    stdout_text="translate exit code: 31",
+                    stderr_text="Could not parse task file",
+                    return_code=31,
+                    status="completed",
+                ),
+            }
+            feedback = manager._build_planner_feedback([record], expected_subtask_count=1, robot_assignments={1: 1})
+
+            self.assertFalse(record["plan_generated"])
+            self.assertEqual(record["feedback_reason"], "No planner plan was generated.")
+            self.assertFalse(feedback["succeeded"])
+            self.assertEqual(feedback["failed_subtask_ids"], [1])
+            self.assertIn("# PLANNER FEEDBACK FROM PREVIOUS ATTEMPT", feedback["feedback_text"])
+            self.assertIn("The previously assigned robot was Robot 1", feedback["feedback_text"])
+            self.assertNotIn("return_code", feedback["feedback_text"])
+            self.assertNotIn("domain_file", feedback["feedback_text"])
+            self.assertNotIn("planner_output_excerpt", feedback["feedback_text"])
+            self.assertNotIn("Could not parse task file", feedback["feedback_text"])
+            self.assertEqual(
+                feedback["planner_feedback_by_subtask"][1],
+                "The previously assigned robot was Robot 1. This robot may be unable to complete this subtask.",
+            )
+
+    def test_planner_feedback_reports_plan_with_error(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manager = TaskManager(str(root), "test-model", config=RunConfig(root))
+            plan_path = root / "subtask_01_problem_validated_plan.txt"
+            plan_path.write_text("(gotoobject robot1 apple)\n", encoding="utf-8")
+
+            record = {
+                "problem_file": "subtask_01_problem_validated.pddl",
+                "domain_file": str(root / "resources" / "robot1.pddl"),
+                "return_code": 0,
+                "compatibility_output": str(plan_path),
+                **manager._build_planner_status_fields(
+                    str(plan_path),
+                    stdout_text="Solution found.",
+                    stderr_text="Planner Error: goal has invalid object",
+                    return_code=0,
+                    status="completed",
+                ),
+            }
+            feedback = manager._build_planner_feedback([record], expected_subtask_count=1, robot_assignments={1: 1})
+
+            self.assertTrue(record["plan_generated"])
+            self.assertTrue(record["has_planner_error"])
+            self.assertEqual(record["feedback_reason"], "Planner produced a plan but reported an error.")
+            self.assertFalse(feedback["succeeded"])
+            self.assertIn("The previously assigned robot was Robot 1", feedback["feedback_text"])
+            self.assertNotIn("Planner produced a plan but reported an error", feedback["feedback_text"])
+            self.assertNotIn("Planner Error: goal has invalid object", feedback["feedback_text"])
+
+    def test_planner_feedback_reports_multiple_failed_local_robot_assignments(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manager = TaskManager(str(root), "test-model", config=RunConfig(root))
+            plan_path = root / "subtask_01_problem_validated_plan.txt"
+            plan_path.write_text("(gotoobject robot1 apple)\n", encoding="utf-8")
+            missing_plan_2 = root / "subtask_02_problem_validated_plan.txt"
+            missing_plan_3 = root / "subtask_03_problem_validated_plan.txt"
+
+            success_record = {
+                "problem_file": "subtask_01_problem_validated.pddl",
+                "return_code": 0,
+                "compatibility_output": str(plan_path),
+                **manager._build_planner_status_fields(str(plan_path), return_code=0, status="completed"),
+            }
+            failed_record_2 = {
+                "problem_file": "subtask_02_problem_validated.pddl",
+                "return_code": 31,
+                "compatibility_output": str(missing_plan_2),
+                **manager._build_planner_status_fields(str(missing_plan_2), return_code=31, status="completed"),
+            }
+            failed_record_3 = {
+                "problem_file": "subtask_03_problem_validated.pddl",
+                "return_code": 12,
+                "compatibility_output": str(missing_plan_3),
+                **manager._build_planner_status_fields(str(missing_plan_3), return_code=12, status="completed"),
+            }
+
+            feedback = manager._build_planner_feedback(
+                [success_record, failed_record_2, failed_record_3],
+                expected_subtask_count=3,
+                robot_assignments={2: 2, 3: 1},
+            )
+
+            self.assertEqual(feedback["failed_subtask_ids"], [2, 3])
+            self.assertIn("- Subtask 2: The previously assigned robot was Robot 2", feedback["feedback_text"])
+            self.assertIn("- Subtask 3: The previously assigned robot was Robot 1", feedback["feedback_text"])
+
+    def test_planner_feedback_uses_assignment_fallback_when_missing(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manager = TaskManager(str(root), "test-model", config=RunConfig(root))
+            missing_plan = root / "subtask_01_problem_validated_plan.txt"
+            record = {
+                "problem_file": "subtask_01_problem_validated.pddl",
+                "return_code": 31,
+                "compatibility_output": str(missing_plan),
+                **manager._build_planner_status_fields(str(missing_plan), return_code=31, status="completed"),
+            }
+
+            feedback = manager._build_planner_feedback([record], expected_subtask_count=1, robot_assignments={})
+
+            self.assertIn(
+                "No valid previous robot assignment was found. Please assign a capable robot for this subtask.",
+                feedback["feedback_text"],
+            )
+
     def test_run_fake_validator_copies_raw_problem_without_llm_call(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
@@ -820,6 +993,110 @@ class PDDLRunConfigTests(unittest.TestCase):
             run_fake_validator.assert_called_once_with()
             run_llmvalidator.assert_not_called()
             run_planners.assert_called_once_with()
+
+    def test_process_tasks_feedback_disabled_runs_one_attempt(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            resources_dir = root / "resources"
+            resources_dir.mkdir(parents=True)
+            (resources_dir / "allactionrobot.pddl").write_text("(define (domain allactionrobot))", encoding="utf-8")
+            manager = TaskManager(
+                str(root),
+                "test-model",
+                config=RunConfig(root, values={"feedback": {"enabled": False, "max_retries": 2}}),
+            )
+
+            with patch.object(manager, "_generate_decomposed_plan", return_value="#SubTask 1: Open the drawer"), \
+                    patch.object(manager, "_extract_key_objects_by_subtask", return_value={}), \
+                    patch.object(manager, "_combine_key_objects_by_subtask", return_value=[]), \
+                    patch.object(manager, "_build_key_object_pddl_context", return_value={"states": [], "object_id_bindings": {}}), \
+                    patch.object(
+                        manager,
+                        "_run_feedback_attempt",
+                        return_value={
+                            "allocated_plan": "# Sequence of Operations:\nSubtask 1: Robot 1;",
+                            "succeeded": False,
+                            "feedback_text": (
+                                "# PLANNER FEEDBACK FROM PREVIOUS ATTEMPT\n\n"
+                                "Failed subtasks:\n"
+                                "- Subtask 1: The previously assigned robot was Robot 1. "
+                                "This robot may be unable to complete this subtask.\n\n"
+                                "Please reconsider the robot assignment for the failed subtasks."
+                            ),
+                            "failed_subtask_ids": [1],
+                            "planner_feedback_by_subtask": {
+                                1: "The previously assigned robot was Robot 1. This robot may be unable to complete this subtask."
+                            },
+                            "planner_records": [],
+                        },
+                    ) as run_attempt:
+                manager.process_tasks(
+                    test_tasks=["Open the drawer"],
+                    available_robots=[[{"name": "robot1", "skills": ["GoToObject"]}]],
+                    objects_ai="\n\nobjects = []",
+                )
+
+            run_attempt.assert_called_once()
+            self.assertNotIn("feedback", manager.current_task_manifest)
+
+    def test_process_tasks_feedback_enabled_retries_from_allocation(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            resources_dir = root / "resources"
+            resources_dir.mkdir(parents=True)
+            (resources_dir / "allactionrobot.pddl").write_text("(define (domain allactionrobot))", encoding="utf-8")
+            manager = TaskManager(
+                str(root),
+                "test-model",
+                config=RunConfig(root, values={"feedback": {"enabled": True, "max_retries": 1}}),
+            )
+            first_result = {
+                "attempt_index": 1,
+                "allocated_plan": "# Sequence of Operations:\nSubtask 1: Robot 1;",
+                "succeeded": False,
+                "feedback_text": (
+                    "# PLANNER FEEDBACK FROM PREVIOUS ATTEMPT\n\n"
+                    "Failed subtasks:\n"
+                    "- Subtask 1: The previously assigned robot was Robot 1. "
+                    "This robot may be unable to complete this subtask.\n\n"
+                    "Please reconsider the robot assignment for the failed subtasks."
+                ),
+                "failed_subtask_ids": [1],
+                "planner_feedback_by_subtask": {
+                    1: "The previously assigned robot was Robot 1. This robot may be unable to complete this subtask."
+                },
+                "planner_records": [],
+            }
+            second_result = {
+                "attempt_index": 2,
+                "allocated_plan": "# Sequence of Operations:\nSubtask 1: Robot 1;",
+                "succeeded": True,
+                "feedback_text": "",
+                "failed_subtask_ids": [],
+                "planner_feedback_by_subtask": {},
+                "planner_records": [],
+            }
+
+            with patch.object(manager, "_generate_decomposed_plan", return_value="#SubTask 1: Open the drawer"), \
+                    patch.object(manager, "_extract_key_objects_by_subtask", return_value={}), \
+                    patch.object(manager, "_combine_key_objects_by_subtask", return_value=[]), \
+                    patch.object(manager, "_build_key_object_pddl_context", return_value={"states": [], "object_id_bindings": {}}), \
+                    patch.object(manager, "_clean_feedback_attempt_outputs", wraps=manager._clean_feedback_attempt_outputs) as clean_outputs, \
+                    patch.object(manager, "_run_feedback_attempt", side_effect=[first_result, second_result]) as run_attempt:
+                manager.process_tasks(
+                    test_tasks=["Open the drawer"],
+                    available_robots=[[{"name": "robot1", "skills": ["GoToObject"]}]],
+                    objects_ai="\n\nobjects = []",
+                )
+
+            self.assertEqual(run_attempt.call_count, 2)
+            clean_outputs.assert_called_once_with()
+            second_kwargs = run_attempt.call_args_list[1].kwargs
+            self.assertIn("The previously assigned robot was Robot 1", second_kwargs["feedback_text"])
+            self.assertIn(1, second_kwargs["planner_feedback_by_subtask"])
+            attempts = manager.current_task_manifest["feedback"]["attempts"]
+            self.assertTrue(attempts[0]["will_retry"])
+            self.assertFalse(attempts[1]["will_retry"])
 
     def test_v2_validate_and_plan_uses_validated_allaction_problem(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -2559,6 +2836,45 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertNotIn("decompose_rag", manager.current_task_manifest)
             self.assertNotIn("allocate_rag", manager.current_task_manifest)
 
+    def test_allocation_prompt_includes_planner_feedback_when_provided(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            prompt_dir = root / "prompts" / "v1"
+            prompt_dir.mkdir(parents=True)
+            (prompt_dir / "pddl_train_task_allocationsep_solution.txt").write_text(
+                "# static allocation example\n",
+                encoding="utf-8",
+            )
+            manager = TaskManager(str(root), "test-model", config=RunConfig(root))
+            manager.current_task_manifest = {"artifacts": {}, "task": "Open the drawer"}
+            captured = {}
+
+            def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
+                captured["prompt"] = messages[-1]["content"]
+                return {}, "# Sequence of Operations:\nSubtask 1: Robot 1;"
+
+            with patch.object(manager.llm, "query_model", side_effect=fake_query_model):
+                manager._generate_allocation_plan(
+                    "#SubTask 1: Open the drawer",
+                    robots=[{"name": "robot1", "skills": ["GoToObject"], "mass_capacity": 100}],
+                    objects_ai="\n\nobjects = [{'name': 'Drawer', 'mass': 5.0}]",
+                    key_objects=[{"name": "Drawer", "mass": 5.0}],
+                    key_objects_by_subtask={1: [{"name": "Drawer", "mass": 5.0}]},
+                    feedback_text=(
+                        "# PLANNER FEEDBACK FROM PREVIOUS ATTEMPT\n\n"
+                        "Failed subtasks:\n"
+                        "- Subtask 1: The previously assigned robot was Robot 1. "
+                        "This robot may be unable to complete this subtask.\n\n"
+                        "Please reconsider the robot assignment for the failed subtasks."
+                    ),
+                )
+
+            self.assertIn("# PLANNER FEEDBACK FROM PREVIOUS ATTEMPT", captured["prompt"])
+            self.assertEqual(captured["prompt"].count("# PLANNER FEEDBACK FROM PREVIOUS ATTEMPT"), 1)
+            self.assertIn("The previously assigned robot was Robot 1", captured["prompt"])
+            self.assertNotIn("previous allocation/problem/planner attempt failed", captured["prompt"])
+            self.assertNotIn("PDDL/domain/init/goal", captured["prompt"])
+
     def test_allocation_prompt_includes_enabled_allocate_rag_examples(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
@@ -2774,6 +3090,44 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertNotIn("doc_id: problem_generation:drawer", prompt)
             self.assertNotIn("decompose_rag", manager.current_task_manifest)
             self.assertNotIn("problem_rag", manager.current_task_manifest)
+
+    def test_problem_generation_prompt_includes_subtask_planner_feedback(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self.write_problem_generation_fixture(root)
+            manager = TaskManager(str(root), "test-model", config=RunConfig(root))
+            manager.current_task_manifest = {"artifacts": {}, "task": "Open the drawer"}
+            captured = {}
+
+            class FakeLLM:
+                def query_model(self, messages, model, max_tokens=None, frequency_penalty=0.0):
+                    captured["prompt"] = messages[-1]["content"]
+                    return {}, (
+                        "(define (problem open_drawer)\n"
+                        "  (:domain robot1)\n"
+                        "  (:objects robot1 Drawer - object)\n"
+                        "  (:init)\n"
+                        ")"
+                    )
+
+            manager.problemextracting(
+                subtasks=["#SubTask 1: Open the drawer"],
+                robot_assignments={1: 1},
+                llm=FakeLLM(),
+                model="test-model",
+                file_processor=manager.file_processor,
+                objects_ai="\n\nobjects = [{'name': 'Drawer', 'mass': 5.0}]",
+                prompt_allocation_set="pddl_train_task_allocationsep",
+                key_object_pddl_states=[{"object": "Drawer", "facts": ["(object-open Drawer)"]}],
+                planner_feedback_by_subtask={
+                    1: "The previously assigned robot was Robot 1. This robot may be unable to complete this subtask."
+                },
+            )
+
+            self.assertIn("# PLANNER FEEDBACK FOR THIS SUBTASK", captured["prompt"])
+            self.assertIn("The previously assigned robot was Robot 1", captured["prompt"])
+            self.assertNotIn("invalid goal object", captured["prompt"])
+            self.assertNotIn("Planner produced a plan", captured["prompt"])
 
     def test_problem_generation_prompt_includes_enabled_problem_rag_examples(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

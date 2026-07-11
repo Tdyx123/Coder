@@ -35,6 +35,11 @@ DEFAULT_RUN_CONFIG: Dict[str, Any] = {
         "alias": "seq-opt-lmcut",
         "timeout_seconds": 300,
     },
+    "feedback": {
+        "enabled": False,
+        "max_retries": 2,
+        "max_prompt_chars": 4000,
+    },
     "llm": {
         "providers_file": "scripts/providers.yaml",
         "default_max_tokens": 128,
@@ -171,6 +176,23 @@ def apply_problem_rag_cli_override(config: "RunConfig", enabled: bool) -> "RunCo
         rag_config = {}
         config.values["problem_rag"] = rag_config
     rag_config["enabled"] = bool(enabled)
+    return config
+
+
+def apply_feedback_cli_override(
+    config: "RunConfig",
+    enabled: Optional[bool] = None,
+    max_retries: Optional[int] = None,
+) -> "RunConfig":
+    """Apply CLI-level feedback retry settings when explicitly provided."""
+    feedback_config = config.values.setdefault("feedback", {})
+    if not isinstance(feedback_config, dict):
+        feedback_config = {}
+        config.values["feedback"] = feedback_config
+    if enabled is not None:
+        feedback_config["enabled"] = bool(enabled)
+    if max_retries is not None:
+        feedback_config["max_retries"] = max(0, int(max_retries))
     return config
 
 

@@ -12,6 +12,7 @@ from run_config import (
     RunConfig,
     apply_allocate_rag_cli_override,
     apply_decompose_rag_cli_override,
+    apply_feedback_cli_override,
     apply_problem_rag_cli_override,
     load_run_config,
     normalize_floor_plan,
@@ -84,7 +85,26 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="store_false",
         help="Disable PDDL problem-generation RAG and use the static problem prompt examples (default).",
     )
-    parser.set_defaults(decompose_rag=False, allocate_rag=False, problem_rag=False)
+    feedback_group = parser.add_mutually_exclusive_group()
+    feedback_group.add_argument(
+        "--feedback",
+        dest="feedback",
+        action="store_true",
+        help="Enable planner-feedback retries from allocation onward.",
+    )
+    feedback_group.add_argument(
+        "--no-feedback",
+        dest="feedback",
+        action="store_false",
+        help="Disable planner-feedback retries.",
+    )
+    parser.add_argument(
+        "--feedback-max-retries",
+        type=int,
+        default=None,
+        help="Maximum feedback retry rounds after the first allocation attempt.",
+    )
+    parser.set_defaults(decompose_rag=False, allocate_rag=False, problem_rag=False, feedback=None)
     return parser.parse_args(argv)
 
 
@@ -282,6 +302,7 @@ def main() -> None:
     apply_decompose_rag_cli_override(config, args.decompose_rag)
     apply_allocate_rag_cli_override(config, args.allocate_rag)
     apply_problem_rag_cli_override(config, args.problem_rag)
+    apply_feedback_cli_override(config, args.feedback, args.feedback_max_retries)
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     output_root = (
         config.resolve_path(args.output_root)

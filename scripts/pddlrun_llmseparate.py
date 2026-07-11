@@ -33,6 +33,7 @@ from run_config import (
     RunConfig,
     apply_allocate_rag_cli_override,
     apply_decompose_rag_cli_override,
+    apply_feedback_cli_override,
     apply_problem_rag_cli_override,
     load_run_config as _load_run_config,
     normalize_floor_plan,
@@ -437,6 +438,9 @@ class TaskManager:
         self.config = config or load_run_config(base_path)
         self.test_set = test_set
         self.floor_plan = normalize_floor_plan(str(floor_plan)) if floor_plan is not None else None
+        self.feedback_enabled = _config_bool(self.config.get("feedback", "enabled", False), False)
+        self.feedback_max_retries = max(0, int(self.config.get("feedback", "max_retries", 2)))
+        self.feedback_max_prompt_chars = max(500, int(self.config.get("feedback", "max_prompt_chars", 4000)))
         self.runtime_config = {"storage": {"base_dir": str(self.config.storage_base_dir)}}
         self.instance_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_{uuid.uuid4().hex[:8]}"
         
@@ -1067,6 +1071,297 @@ class TaskManager:
                         print(f"Error cleaning {file_path}: {str(e)}")
         except Exception as e:
             print(f"Error accessing directory {directory}: {str(e)}")
+
+    def _clean_feedback_attempt_outputs(self) -> None:
+        """Remove downstream artifacts that must not leak across feedback attempts."""
+        if not self.current_task_run_dir:
+            return
+
+        cleanup_paths = [
+            os.path.join(self.current_task_run_dir, "05_problem_generation", "prompts"),
+            os.path.join(self.current_task_run_dir, "05_problem_generation", "outputs"),
+            os.path.join(self.current_task_run_dir, "07_validate"),
+            os.path.join(self.current_task_run_dir, "08_planner"),
+        ]
+        for path in cleanup_paths:
+            if os.path.isdir(path):
+                shutil.rmtree(path)
+            elif os.path.isfile(path):
+                os.unlink(path)
+
+    @staticmethod
+    def _subtask_id_from_filename(filename: str) -> Optional[int]:
+        match = re.search(r"subtask[_-]?0*(\d+)", str(filename), re.IGNORECASE)
+        return int(match.group(1)) if match else None
+
+    @staticmethod
+    def _planner_error_keywords() -> Tuple[str, ...]:
+        return (
+            "could not parse task file",
+            "error in initial state specification",
+            "tokens remaining after parsing",
+            "duplicate object",
+            "trivially false goal",
+            "no relaxed solution",
+            "completely explored state space -- no solution",
+            "no solution",
+            "unsolvable",
+            "driver aborting",
+            "translate exit code: 31",
+            "traceback",
+            "filenotfounderror",
+            "failed to match magic word",
+            "keyerror",
+            "error:",
+            "planner error",
+            "syntax error",
+            "parse error",
+            "invalid",
+        )
+
+    def _planner_output_has_error(
+        self,
+        stdout_text: str,
+        stderr_text: str,
+        return_code: Optional[int],
+        status: str = "completed",
+    ) -> bool:
+        if status not in {"completed", "ok"}:
+            return True
+        if return_code not in (None, 0):
+            return True
+
+        combined = "\n".join(part for part in (stdout_text or "", stderr_text or "") if part).lower()
+        return any(keyword in combined for keyword in self._planner_error_keywords())
+
+    def _summarize_planner_output(
+        self,
+        stdout_text: str,
+        stderr_text: str,
+        max_chars: int = 1200,
+    ) -> str:
+        combined_lines = []
+        for label, text in (("stdout", stdout_text or ""), ("stderr", stderr_text or "")):
+            for line in text.splitlines():
+                stripped = line.strip()
+                if stripped:
+                    combined_lines.append(f"{label}: {stripped}")
+
+        if not combined_lines:
+            return ""
+
+        keywords = self._planner_error_keywords()
+        selected = [
+            line
+            for line in combined_lines
+            if any(keyword in line.lower() for keyword in keywords)
+        ]
+        if not selected:
+            selected = combined_lines[-12:]
+
+        summary = "\n".join(selected)
+        if len(summary) > max_chars:
+            summary = summary[:max_chars].rstrip() + "\n...[truncated]"
+        return summary
+
+    def _planner_record_success(self, record: Dict[str, Any]) -> bool:
+        return (
+            record.get("status") == "completed"
+            and bool(record.get("plan_generated"))
+            and not bool(record.get("has_planner_error"))
+            and record.get("return_code") in (None, 0)
+        )
+
+    def _build_planner_status_fields(
+        self,
+        output_file: Optional[str],
+        stdout_text: str = "",
+        stderr_text: str = "",
+        return_code: Optional[int] = None,
+        status: str = "completed",
+    ) -> Dict[str, Any]:
+        plan_exists = bool(output_file and os.path.isfile(output_file))
+        plan_size_bytes = os.path.getsize(output_file) if plan_exists and output_file else 0
+        plan_generated = plan_exists and plan_size_bytes > 0
+        has_planner_error = self._planner_output_has_error(stdout_text, stderr_text, return_code, status)
+
+        if not plan_generated:
+            feedback_reason = "No planner plan was generated."
+        elif has_planner_error:
+            feedback_reason = "Planner produced a plan but reported an error."
+        else:
+            feedback_reason = ""
+
+        return {
+            "status": status,
+            "plan_exists": plan_exists,
+            "plan_size_bytes": plan_size_bytes,
+            "plan_generated": plan_generated,
+            "has_planner_error": has_planner_error,
+            "feedback_reason": feedback_reason,
+            "planner_output_excerpt": self._summarize_planner_output(stdout_text, stderr_text),
+        }
+
+    def _build_planner_feedback(
+        self,
+        planner_records: Sequence[Dict[str, Any]],
+        expected_subtask_count: int,
+        robot_assignments: Optional[Dict[int, int]] = None,
+    ) -> Dict[str, Any]:
+        records_by_subtask: Dict[int, Dict[str, Any]] = {}
+        for record in planner_records:
+            subtask_id = self._subtask_id_from_filename(str(record.get("problem_file", "")))
+            if subtask_id is not None:
+                records_by_subtask[subtask_id] = record
+
+        failed_sections: Dict[int, str] = {}
+        subtask_feedback: Dict[int, str] = {}
+        for subtask_id in range(1, expected_subtask_count + 1):
+            record = records_by_subtask.get(subtask_id)
+            if record and self._planner_record_success(record):
+                continue
+
+            robot_num = robot_assignments.get(subtask_id) if robot_assignments else None
+            if robot_num is None:
+                feedback_line = "No valid previous robot assignment was found. Please assign a capable robot for this subtask."
+            else:
+                feedback_line = (
+                    f"The previously assigned robot was Robot {robot_num}. "
+                    "This robot may be unable to complete this subtask."
+                )
+            subtask_feedback[subtask_id] = feedback_line
+            failed_sections[subtask_id] = f"- Subtask {subtask_id}: {feedback_line}"
+
+        succeeded = not failed_sections
+        if succeeded:
+            return {
+                "succeeded": True,
+                "feedback_text": "",
+                "failed_subtask_ids": [],
+                "planner_feedback_by_subtask": {},
+            }
+
+        parts = [
+            "# PLANNER FEEDBACK FROM PREVIOUS ATTEMPT",
+            "",
+            "Failed subtasks:",
+        ]
+        parts.extend(failed_sections[subtask_id] for subtask_id in sorted(failed_sections))
+        parts.extend([
+            "",
+            "Please reconsider the robot assignment for the failed subtasks.",
+        ])
+        feedback_text = "\n".join(parts).strip()
+        if len(feedback_text) > self.feedback_max_prompt_chars:
+            feedback_text = feedback_text[:self.feedback_max_prompt_chars].rstrip() + "\n...[truncated]"
+
+        return {
+            "succeeded": False,
+            "feedback_text": feedback_text,
+            "failed_subtask_ids": sorted(failed_sections),
+            "planner_feedback_by_subtask": subtask_feedback,
+        }
+
+    def _record_feedback_attempt(
+        self,
+        attempt_result: Dict[str, Any],
+        will_retry: bool,
+    ) -> None:
+        if not self.feedback_enabled or not isinstance(self.current_task_manifest, dict):
+            return
+
+        feedback_manifest = self.current_task_manifest.setdefault("feedback", {})
+        attempts = feedback_manifest.setdefault("attempts", [])
+        attempts.append({
+            "attempt": attempt_result.get("attempt_index"),
+            "succeeded": bool(attempt_result.get("succeeded")),
+            "will_retry": bool(will_retry),
+            "failed_subtask_ids": attempt_result.get("failed_subtask_ids", []),
+            "feedback_path": attempt_result.get("feedback_path"),
+            "planner_summary": [
+                {
+                    "problem_file": record.get("problem_file"),
+                    "status": record.get("status"),
+                    "return_code": record.get("return_code"),
+                    "plan_generated": record.get("plan_generated"),
+                    "has_planner_error": record.get("has_planner_error"),
+                    "feedback_reason": record.get("feedback_reason"),
+                }
+                for record in attempt_result.get("planner_records", [])
+            ],
+        })
+        feedback_manifest["enabled"] = True
+        feedback_manifest["max_retries"] = self.feedback_max_retries
+        self._persist_manifest()
+
+    def _run_feedback_attempt(
+        self,
+        decomposed_plan: str,
+        subtasks: List[str],
+        robots: List[dict],
+        objects_ai: str,
+        key_objects: List[Dict[str, Any]],
+        key_objects_by_subtask: Dict[int, List[Dict[str, Any]]],
+        key_object_pddl_states: Optional[List[Dict[str, Any]]] = None,
+        key_object_pddl_states_by_subtask: Optional[Dict[int, List[Dict[str, Any]]]] = None,
+        attempt_index: int = 1,
+        feedback_text: Optional[str] = None,
+        planner_feedback_by_subtask: Optional[Dict[int, str]] = None,
+    ) -> Dict[str, Any]:
+        allocation_result = self._generate_allocation_plan(
+            decomposed_plan,
+            robots,
+            objects_ai,
+            key_objects=key_objects,
+            key_objects_by_subtask=key_objects_by_subtask,
+            feedback_text=feedback_text,
+        )
+        self._write_allocation_generation_artifacts(
+            allocation_result,
+            attempt_index=attempt_index if self.feedback_enabled else None,
+        )
+        allocated_plan = allocation_result["text"]
+        print(f"✓ Allocation plan generated (attempt {attempt_index})")
+
+        sequence_operations = self._extract_sequence_operations(allocated_plan)
+        robot_assignments = self._extract_robot_assignments(sequence_operations)
+        print(f"✓ Extracted {len(subtasks)} subtasks with robot assignments")
+
+        _ = self._generate_problem_files(
+            subtasks,
+            robot_assignments,
+            objects_ai,
+            key_object_pddl_states=key_object_pddl_states,
+            key_object_pddl_states_by_subtask=key_object_pddl_states_by_subtask,
+            planner_feedback_by_subtask=planner_feedback_by_subtask,
+        )
+        print("✓ Problem files generated")
+
+        planner_records = self._validate_and_plan()
+        print("✓ Validation and planning complete")
+
+        feedback_result = self._build_planner_feedback(
+            planner_records,
+            len(subtasks),
+            robot_assignments,
+        )
+        feedback_path = None
+        if self.feedback_enabled and feedback_result["feedback_text"]:
+            feedback_path = f"02_allocate/feedback/attempt_{attempt_index:02d}_feedback.txt"
+            self._write_text_artifact(feedback_path, feedback_result["feedback_text"])
+            self._record_artifact("allocate", f"attempt_{attempt_index:02d}_feedback", feedback_path)
+            self._persist_manifest()
+
+        return {
+            "attempt_index": attempt_index,
+            "allocation_result": allocation_result,
+            "allocated_plan": allocated_plan,
+            "sequence_operations": sequence_operations,
+            "robot_assignments": robot_assignments,
+            "planner_records": planner_records,
+            "feedback_path": feedback_path,
+            **feedback_result,
+        }
     
     def calculate_completion_rate(self) -> Tuple[int, int]:
         """
@@ -1368,43 +1663,45 @@ class TaskManager:
                 self._persist_manifest()
                 print(f"✓ Matched {len(key_objects)} key objects")
 
-                # Generate and store allocation plan
-                allocation_result = self._generate_allocation_plan(
-                    decomposed_plan,
-                    robots,
-                    objects_ai,
-                    key_objects=key_objects,
-                    key_objects_by_subtask=key_objects_by_subtask,
-                )
-                self._write_allocation_generation_artifacts(allocation_result)
-                allocated_plan = allocation_result["text"]
+                max_attempts = 1 + (self.feedback_max_retries if self.feedback_enabled else 0)
+                attempt_feedback_text = None
+                planner_feedback_by_subtask = None
+                attempt_result: Dict[str, Any] = {}
+                for attempt_index in range(1, max_attempts + 1):
+                    if attempt_index > 1:
+                        print(f"Retrying from allocation with planner feedback (attempt {attempt_index}/{max_attempts})")
+                        self._clean_feedback_attempt_outputs()
+
+                    attempt_result = self._run_feedback_attempt(
+                        decomposed_plan=decomposed_plan,
+                        subtasks=subtasks,
+                        robots=robots,
+                        objects_ai=objects_ai,
+                        key_objects=key_objects,
+                        key_objects_by_subtask=key_objects_by_subtask,
+                        key_object_pddl_states=key_object_pddl_states,
+                        key_object_pddl_states_by_subtask=key_object_pddl_states_by_subtask,
+                        attempt_index=attempt_index,
+                        feedback_text=attempt_feedback_text,
+                        planner_feedback_by_subtask=planner_feedback_by_subtask,
+                    )
+
+                    will_retry = (
+                        self.feedback_enabled
+                        and not attempt_result.get("succeeded", False)
+                        and attempt_index < max_attempts
+                    )
+                    self._record_feedback_attempt(attempt_result, will_retry)
+                    if not will_retry:
+                        break
+
+                    attempt_feedback_text = attempt_result.get("feedback_text") or ""
+                    planner_feedback_by_subtask = attempt_result.get("planner_feedback_by_subtask") or {}
+
+                allocated_plan = attempt_result.get("allocated_plan", "")
                 self.allocated_plan.append(allocated_plan)
-                print("✓ Allocation plan generated")
                 #print("Allocation Plan:\n", allocated_plan)
                 #print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-                
-                # Extract subtasks and robot assignments
-                sequence_operations = self._extract_sequence_operations(allocated_plan)
-                robot_assignments = self._extract_robot_assignments(sequence_operations)
-                print(f"✓ Extracted {len(subtasks)} subtasks with robot assignments")
-
-                # Generate and store problem files
-                _ = self._generate_problem_files(
-                    subtasks,
-                    robot_assignments,
-                    objects_ai,
-                    key_object_pddl_states=key_object_pddl_states,
-                    key_object_pddl_states_by_subtask=key_object_pddl_states_by_subtask,
-                )
-                print("✓ Problem files generated")
-                
-                #input("Press Enter to continue")
-                #print("Waiting for files to be processed...")
-                #time.sleep(50)
-                
-                # Validate and plan
-                self._validate_and_plan()
-                print("✓ Validation and planning complete")
                 
                 # currently don't combine the plans
                 # # Combine and process plans
@@ -2264,6 +2561,7 @@ class TaskManager:
         objects_ai: str,
         key_objects: Optional[List[Dict[str, Any]]] = None,
         key_objects_by_subtask: Optional[Dict[int, List[Dict[str, Any]]]] = None,
+        feedback_text: Optional[str] = None,
     ) -> Dict[str, str]:
         """Generate allocation plan for decomposed tasks.
         
@@ -2324,6 +2622,11 @@ class TaskManager:
             prompt += f"\n# - Every assignment in that final block must use numeric subtask and robot ids, e.g. 'Subtask 1: Robot 2;'."
             prompt += f"\n# - Do not use placeholders or non-numeric assignments such as 'Subtask;Robot;', 'Subtask A', 'Robot ?', or 'Robot A'."
             prompt += f"\n# - Do not output self-corrections or extra explanation after the final '# Sequence of Operations:' block.\n"
+            if feedback_text:
+                feedback_block = str(feedback_text).strip()
+                if not feedback_block.startswith("# PLANNER FEEDBACK FROM PREVIOUS ATTEMPT"):
+                    feedback_block = "# PLANNER FEEDBACK FROM PREVIOUS ATTEMPT\n\n" + feedback_block
+                prompt += "\n" + feedback_block + "\n"
             messages = [{"role": "user", "content": prompt}]
             call_config = self.config.llm_call("allocate")
             _, text = self.llm.query_model(
@@ -2336,7 +2639,11 @@ class TaskManager:
         except Exception as e:
             raise PDDLError(f"Error generating allocation plan: {str(e)}")
 
-    def _write_allocation_generation_artifacts(self, result: Dict[str, str]) -> None:
+    def _write_allocation_generation_artifacts(
+        self,
+        result: Dict[str, str],
+        attempt_index: Optional[int] = None,
+    ) -> None:
         """Persist allocation prompt/output artifacts produced by allocation generation."""
         allocate_prompt_artifact = self.config.artifact("allocate_prompt", "02_allocate/01_allocate_prompt.txt")
         allocate_output_artifact = self.config.artifact("allocate_output", "02_allocate/02_allocate_output.txt")
@@ -2344,6 +2651,13 @@ class TaskManager:
         self._record_artifact("allocate", "prompt", allocate_prompt_artifact)
         self._write_text_artifact(allocate_output_artifact, result["text"])
         self._record_artifact("allocate", "output", allocate_output_artifact)
+        if attempt_index is not None:
+            attempt_prompt_artifact = f"02_allocate/attempt_{attempt_index:02d}/01_allocate_prompt.txt"
+            attempt_output_artifact = f"02_allocate/attempt_{attempt_index:02d}/02_allocate_output.txt"
+            self._write_text_artifact(attempt_prompt_artifact, result["prompt"])
+            self._write_text_artifact(attempt_output_artifact, result["text"])
+            self._record_artifact("allocate", f"attempt_{attempt_index:02d}_prompt", attempt_prompt_artifact)
+            self._record_artifact("allocate", f"attempt_{attempt_index:02d}_output", attempt_output_artifact)
         self._persist_manifest()
 
     def _generate_problem_summary(self, decomposed_plans: Union[str, List[str]], allocated_plans: Union[str, List[str]], available_robots: Union[List[dict], List[List[dict]]]) -> List[str]:
@@ -2416,6 +2730,7 @@ class TaskManager:
         objects_ai: str,
         key_object_pddl_states: Optional[List[Dict[str, Any]]] = None,
         key_object_pddl_states_by_subtask: Optional[Dict[int, List[Dict[str, Any]]]] = None,
+        planner_feedback_by_subtask: Optional[Dict[int, str]] = None,
     ) -> List[str]:
         """Generate PDDL problem files from subtasks and robot assignments.
 
@@ -2455,6 +2770,7 @@ class TaskManager:
             prompt_allocation_set=self.prompt_allocation_set,
             key_object_pddl_states=key_object_pddl_states,
             key_object_pddl_states_by_subtask=key_object_pddl_states_by_subtask,
+            planner_feedback_by_subtask=planner_feedback_by_subtask,
         )
         self._write_json_artifact(
             generated_problem_files_artifact,
@@ -2493,6 +2809,7 @@ class TaskManager:
             static_problem_prompt: str,
             key_object_pddl_states: Optional[List[Dict[str, Any]]] = None,
             key_object_pddl_states_by_subtask: Optional[Dict[Union[int, str], List[Dict[str, Any]]]] = None,
+            planner_feedback_by_subtask: Optional[Dict[int, str]] = None,
         ) -> List[ProblemGenerationResult]:
         """Generate problem prompts and PDDL results without reading or writing artifacts.
 
@@ -2540,6 +2857,9 @@ class TaskManager:
                 ensure_ascii=False,
                 indent=2,
             )
+            subtask_feedback = ""
+            if planner_feedback_by_subtask:
+                subtask_feedback = str(planner_feedback_by_subtask.get(subtask_idx) or "").strip()
             problem_prompt_examples = static_problem_prompt
             if self.problem_rag_retriever:
                 rag_query = self._problem_rag_query(
@@ -2579,6 +2899,13 @@ class TaskManager:
                 "(which includes location)\n"
                 "#IMPORTANT, strictly follow the structure, stop generating after the Problem file generation is done."
             )
+            if subtask_feedback:
+                prompt += (
+                    "\n# PLANNER FEEDBACK FOR THIS SUBTASK\n"
+                    "The previous attempt may not have completed this subtask with the assigned robot. "
+                    "Use the feedback below while generating the next problem for this subtask.\n"
+                    + subtask_feedback
+                )
 
             messages = [
                 {"role": "system", "content": "You are a Robot PDDL problem Expert"},
@@ -2622,6 +2949,7 @@ class TaskManager:
             prompt_allocation_set: str,
             key_object_pddl_states: Optional[List[Dict[str, Any]]] = None,
             key_object_pddl_states_by_subtask: Optional[Dict[Union[int, str], List[Dict[str, Any]]]] = None,
+            planner_feedback_by_subtask: Optional[Dict[int, str]] = None,
         ) -> List[str]:
         """Extract problem files from subtasks using precomputed robot assignments.
 
@@ -2663,6 +2991,7 @@ class TaskManager:
             static_problem_prompt=problem_examplecontent,
             key_object_pddl_states=key_object_pddl_states,
             key_object_pddl_states_by_subtask=key_object_pddl_states_by_subtask,
+            planner_feedback_by_subtask=planner_feedback_by_subtask,
         )
 
         for result in results:
@@ -2703,7 +3032,7 @@ class TaskManager:
 
         return text
 
-    def _validate_and_plan(self):
+    def _validate_and_plan(self) -> List[Dict[str, Any]]:
         """Validate and plan all problem files."""
         try:
             # First run fake validator
@@ -2716,7 +3045,7 @@ class TaskManager:
             
             # Then run planners
             #print("Running planners...")
-            self.run_planners()
+            return self.run_planners()
             #input("Press Enter to continue")
             
         except Exception as e:
@@ -2830,33 +3159,55 @@ class TaskManager:
             print(f"Error in run_llmvalidator: {str(e)}")
             raise
 
-    def run_planners(self) -> None:
+    def run_planners(self) -> List[Dict[str, Any]]:
         """Run PDDL planners on problem files."""
         try:
             planner_path = str(self.config.planner_executable)
             validated_problem_file_path = self._get_validated_problem_file_path()
-            if not os.path.exists(validated_problem_file_path):
+            if not validated_problem_file_path or not os.path.exists(validated_problem_file_path):
                 print("no problem_file")
-                return
+                return []
             plan_file_path = self._get_plan_file_path()
             os.makedirs(plan_file_path, exist_ok=True)
             problem_files = [f for f in os.listdir(validated_problem_file_path) if f.endswith('.pddl')]  #PG: Changed to validated_subtask_path
             planner_records = []
             for problem_file in problem_files:
+                domain_file = None
+                output_file = None
                 try:
                     problem_file_full = os.path.join(validated_problem_file_path, problem_file) #PG: Changed to validated_subtask_path
+                    safe_name = self._sanitize_filename(problem_file.replace(".pddl", ""))
+                    output_file = os.path.join(plan_file_path, f"{safe_name}_plan.txt")
                     domain_name = self.file_processor.extract_domain_name(problem_file_full)
                     if not domain_name:
                         print(f"No domain specified in {problem_file}")
+                        planner_records.append({
+                            "problem_file": problem_file,
+                            "domain_file": None,
+                            "compatibility_output": output_file,
+                            **self._build_planner_status_fields(
+                                output_file,
+                                stderr_text=f"No domain specified in {problem_file}",
+                                status="error",
+                            ),
+                        })
                         continue
 
                     domain_file = self.file_processor.find_domain_file(domain_name)
                     if not domain_file:
                         print(f"No domain file found for domain {domain_name}")
+                        planner_records.append({
+                            "problem_file": problem_file,
+                            "domain_file": None,
+                            "compatibility_output": output_file,
+                            **self._build_planner_status_fields(
+                                output_file,
+                                stderr_text=f"No domain file found for domain {domain_name}",
+                                status="error",
+                            ),
+                        })
                         continue
                     
-                    safe_name = self._sanitize_filename(problem_file.replace(".pddl", ""))
-                    output_file = os.path.join(plan_file_path, f"{safe_name}_plan.txt")
                     command = [
                         planner_path,
                         "--plan-file",
@@ -2891,23 +3242,43 @@ class TaskManager:
                         "return_code": result.returncode,
                         "duration_seconds": round(time.time() - started_at, 3),
                         "compatibility_output": output_file,
+                        **self._build_planner_status_fields(
+                            output_file,
+                            stdout_text=result.stdout,
+                            stderr_text=result.stderr,
+                            return_code=result.returncode,
+                            status="completed",
+                        ),
                     })
 
                     if result.stderr:
                         print(f"Warnings/Errors for {problem_file}:", result.stderr)
                         
-                except subprocess.TimeoutExpired:
+                except subprocess.TimeoutExpired as e:
                     print(f"Planner timed out for {problem_file}")
                     planner_records.append({
                         "problem_file": problem_file,
-                        "status": "timeout"
+                        "domain_file": domain_file,
+                        "compatibility_output": output_file,
+                        "error": str(e),
+                        **self._build_planner_status_fields(
+                            output_file,
+                            stderr_text=str(e),
+                            status="timeout",
+                        ),
                     })
                 except Exception as e:
                     print(f"Error processing file {problem_file}: {str(e)}")
                     planner_records.append({
                         "problem_file": problem_file,
-                        "status": "error",
-                        "error": str(e)
+                        "domain_file": domain_file,
+                        "compatibility_output": output_file,
+                        "error": str(e),
+                        **self._build_planner_status_fields(
+                            output_file,
+                            stderr_text=str(e),
+                            status="error",
+                        ),
                     })
                     continue
 
@@ -2915,6 +3286,7 @@ class TaskManager:
             self._write_json_artifact(planner_manifest_path, planner_records)
             self._record_artifact("planner", "manifest", planner_manifest_path)
             self._persist_manifest()
+            return planner_records
                     
         except Exception as e:
             print(f"Error in run_planners: {str(e)}")
@@ -3172,7 +3544,26 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="store_false",
         help="Disable PDDL problem-generation RAG and use the static problem prompt examples (default).",
     )
-    parser.set_defaults(decompose_rag=False, allocate_rag=False, problem_rag=False)
+    feedback_group = parser.add_mutually_exclusive_group()
+    feedback_group.add_argument(
+        "--feedback",
+        dest="feedback",
+        action="store_true",
+        help="Enable planner-feedback retries from allocation onward.",
+    )
+    feedback_group.add_argument(
+        "--no-feedback",
+        dest="feedback",
+        action="store_false",
+        help="Disable planner-feedback retries.",
+    )
+    parser.add_argument(
+        "--feedback-max-retries",
+        type=int,
+        default=None,
+        help="Maximum feedback retry rounds after the first allocation attempt.",
+    )
+    parser.set_defaults(decompose_rag=False, allocate_rag=False, problem_rag=False, feedback=None)
 
     return parser.parse_args(argv)
 
@@ -3186,6 +3577,7 @@ def main():
         apply_decompose_rag_cli_override(run_config, args.decompose_rag)
         apply_allocate_rag_cli_override(run_config, args.allocate_rag)
         apply_problem_rag_cli_override(run_config, args.problem_rag)
+        apply_feedback_cli_override(run_config, args.feedback, args.feedback_max_retries)
         
         # Initialize task manager
         task_manager = TaskManager(
