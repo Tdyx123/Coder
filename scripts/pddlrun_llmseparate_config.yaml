@@ -22,7 +22,19 @@ planner:
   alias: seq-opt-lmcut
   timeout_seconds: 300
 
+val:
+  executable: Validate
+  arguments:
+    - -v
+    - -e
+  timeout_seconds: 60
+
 feedback:
+  enabled: false
+  max_retries: 2
+  max_prompt_chars: 4000
+
+val_feedback:
   enabled: false
   max_retries: 2
   max_prompt_chars: 4000
@@ -121,6 +133,7 @@ artifacts:
   generated_subtask_manifest: 06_split/generated_subtask_manifest.json
   validation_manifest: 07_validate/validation_manifest.json
   planner_manifest: 08_planner/planner_manifest.json
+  val_manifest: 08_val/val_manifest.json
   decompose_prompt: 01_decompose/01_decompose_prompt.txt
   decompose_output: 01_decompose/02_decompose_output.txt
   precedence_output: 02_precedence/predecessors.json

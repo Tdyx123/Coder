@@ -1,4 +1,5 @@
 import json
+import subprocess
 import sys
 import tempfile
 import threading
@@ -52,6 +53,7 @@ from run_config import apply_allocate_rag_cli_override
 from run_config import apply_decompose_rag_cli_override
 from run_config import apply_feedback_cli_override
 from run_config import apply_problem_rag_cli_override
+from run_config import apply_val_feedback_cli_override
 
 
 class FixedDatetime:
@@ -184,6 +186,51 @@ class PDDLRunConfigTests(unittest.TestCase):
         )
         (resources_dir / "robot1.pddl").write_text(domain_content, encoding="utf-8")
 
+    def make_val_manager(self, root: Path, subtask_count: int = 1, max_retries: int = 1):
+        config = RunConfig(
+            root,
+            values={
+                "val": {
+                    "executable": "Validate",
+                    "arguments": ["-v", "-e"],
+                    "timeout_seconds": 5,
+                },
+                "val_feedback": {
+                    "enabled": True,
+                    "max_retries": max_retries,
+                    "max_prompt_chars": 4000,
+                },
+            },
+        )
+        manager = TaskManager(str(root), "test-model", config=config)
+        manager.current_task_run_dir = str(root / "run")
+        manager.current_task_manifest = {"artifacts": {}, "task": "VAL fixture"}
+        domain_file = root / "domain.pddl"
+        domain_file.write_text("(define (domain fixture))", encoding="utf-8")
+        problem_dir = Path(manager.current_task_run_dir) / "07_validate" / "outputs"
+        plan_dir = Path(manager.current_task_run_dir) / "08_planner" / "outputs"
+        problem_dir.mkdir(parents=True)
+        plan_dir.mkdir(parents=True)
+        planner_records = []
+        for subtask_id in range(1, subtask_count + 1):
+            problem_file = f"subtask_{subtask_id:02d}_problem_validated.pddl"
+            problem_dir.joinpath(problem_file).write_text(
+                "(define (problem fixture))",
+                encoding="utf-8",
+            )
+            plan_file = plan_dir / f"subtask_{subtask_id:02d}_problem_validated_plan.txt"
+            plan_file.write_text("(noop)", encoding="utf-8")
+            planner_records.append({
+                "problem_file": problem_file,
+                "domain_file": str(domain_file),
+                "compatibility_output": str(plan_file),
+                "status": "completed",
+                "return_code": 0,
+                "plan_generated": True,
+                "has_planner_error": False,
+            })
+        return manager, planner_records
+
     def test_summarize_llm_token_usage_sums_valid_usage_entries(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
@@ -287,6 +334,26 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertFalse(config.get("feedback", "enabled"))
             self.assertEqual(config.get("feedback", "max_retries"), 1)
 
+    def test_apply_val_feedback_cli_override_is_independent(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = RunConfig(
+                tmp_dir,
+                values={
+                    "feedback": {"enabled": True, "max_retries": 5},
+                    "val_feedback": {"enabled": True, "max_retries": 3},
+                },
+            )
+
+            self.assertIs(apply_val_feedback_cli_override(config, None, None), config)
+            self.assertTrue(config.get("val_feedback", "enabled"))
+            self.assertEqual(config.get("val_feedback", "max_retries"), 3)
+
+            apply_val_feedback_cli_override(config, False, 1)
+            self.assertFalse(config.get("val_feedback", "enabled"))
+            self.assertEqual(config.get("val_feedback", "max_retries"), 1)
+            self.assertTrue(config.get("feedback", "enabled"))
+            self.assertEqual(config.get("feedback", "max_retries"), 5)
+
     def test_single_runner_cli_defaults_to_decompose_rag_disabled(self):
         with patch("pddlrun_llmseparate.get_available_models", return_value=["deepseek-chat"]):
             args = parse_arguments(["--floor-plan", "6"])
@@ -296,6 +363,8 @@ class PDDLRunConfigTests(unittest.TestCase):
         self.assertFalse(args.problem_rag)
         self.assertIsNone(args.feedback)
         self.assertIsNone(args.feedback_max_retries)
+        self.assertIsNone(args.val_feedback)
+        self.assertIsNone(args.val_feedback_max_retries)
 
     def test_single_runner_cli_decompose_rag_can_be_enabled_and_disabled(self):
         with patch("pddlrun_llmseparate.get_available_models", return_value=["deepseek-chat"]):
@@ -329,6 +398,17 @@ class PDDLRunConfigTests(unittest.TestCase):
         self.assertTrue(enabled_args.feedback)
         self.assertEqual(enabled_args.feedback_max_retries, 3)
         self.assertFalse(disabled_args.feedback)
+
+    def test_single_runner_cli_val_feedback_can_be_enabled_disabled_and_bounded(self):
+        with patch("pddlrun_llmseparate.get_available_models", return_value=["deepseek-chat"]):
+            enabled_args = parse_arguments(
+                ["--floor-plan", "6", "--val-feedback", "--val-feedback-max-retries", "4"]
+            )
+            disabled_args = parse_arguments(["--floor-plan", "6", "--no-val-feedback"])
+
+        self.assertTrue(enabled_args.val_feedback)
+        self.assertEqual(enabled_args.val_feedback_max_retries, 4)
+        self.assertFalse(disabled_args.val_feedback)
 
     def test_load_run_config_resolves_relative_paths(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -652,6 +732,12 @@ class PDDLRunConfigTests(unittest.TestCase):
                 SHARED_DEFAULT_RUN_CONFIG["artifacts"]["allocate_subtasks"],
                 "02_allocate/subtasks.json",
             )
+            self.assertEqual(config.get("val", "executable"), "Validate")
+            self.assertEqual(config.get("val", "arguments"), ["-v", "-e"])
+            self.assertEqual(config.get("val", "timeout_seconds"), 60)
+            self.assertFalse(config.get("val_feedback", "enabled"))
+            self.assertEqual(config.get("val_feedback", "max_retries"), 2)
+            self.assertEqual(config.artifact("val_manifest", "missing"), "08_val/val_manifest.json")
 
     def test_rag_runtime_db_prewarm_defaults_to_explicit_opt_in(self):
         config = load_run_config(ROOT)
@@ -925,6 +1011,197 @@ class PDDLRunConfigTests(unittest.TestCase):
                 "No valid previous robot assignment was found. Please assign a capable robot for this subtask.",
                 feedback["feedback_text"],
             )
+
+    def test_val_runner_classifies_results_and_persists_manifest(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manager, planner_records = self.make_val_manager(root)
+            completed_results = [
+                subprocess.CompletedProcess([], 0, "Plan executed successfully\nPlan valid\n", ""),
+                subprocess.CompletedProcess([], 1, "Goal not satisfied\nPlan invalid\n", ""),
+                subprocess.CompletedProcess([], 255, "Problem in domain definition!\n", ""),
+                subprocess.CompletedProcess([], 0, "Validation finished without a verdict\n", ""),
+                subprocess.CompletedProcess([], -11, "", ""),
+            ]
+
+            with patch.object(manager, "_resolve_val_executable", return_value="/fake/Validate"), \
+                    patch("pddlrun_llmseparate.subprocess.run", side_effect=completed_results) as run:
+                valid = manager.run_val_validations(planner_records, val_attempt=1)[0]
+                invalid = manager.run_val_validations(planner_records, val_attempt=2)[0]
+                domain_error = manager.run_val_validations(planner_records, val_attempt=3)[0]
+                inconclusive = manager.run_val_validations(planner_records, val_attempt=4)[0]
+                crashed = manager.run_val_validations(planner_records, val_attempt=5)[0]
+
+            self.assertTrue(valid["valid"])
+            self.assertEqual(valid["status"], "valid")
+            self.assertEqual(invalid["status"], "validation_error")
+            self.assertEqual(domain_error["status"], "domain_error")
+            self.assertEqual(inconclusive["status"], "infrastructure_error")
+            self.assertEqual(crashed["status"], "infrastructure_error")
+            command = run.call_args_list[0].args[0]
+            self.assertEqual(command[:3], ["/fake/Validate", "-v", "-e"])
+            self.assertEqual(command[-3], planner_records[0]["domain_file"])
+            val_manifest = json.loads(
+                (Path(manager.current_task_run_dir) / "08_val/val_manifest.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(len(val_manifest["attempts"]), 5)
+            self.assertEqual(val_manifest["latest_by_subtask"]["1"]["status"], "infrastructure_error")
+            self.assertIn("val", manager.current_task_manifest["artifacts"])
+
+    def test_val_runner_handles_missing_executable_and_timeout(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manager, planner_records = self.make_val_manager(root)
+            manager.config.values["val"]["executable"] = str(root / "missing-Validate")
+
+            missing = manager.run_val_validations(planner_records, val_attempt=1)[0]
+            self.assertEqual(missing["status"], "infrastructure_error")
+            self.assertIn("not found", missing["infrastructure_error"])
+
+            timeout = subprocess.TimeoutExpired(
+                cmd=["/fake/Validate"],
+                timeout=5,
+                output="partial stdout",
+                stderr="partial stderr",
+            )
+            with patch.object(manager, "_resolve_val_executable", return_value="/fake/Validate"), \
+                    patch("pddlrun_llmseparate.subprocess.run", side_effect=timeout):
+                timed_out = manager.run_val_validations(planner_records, val_attempt=2)[0]
+
+            self.assertEqual(timed_out["status"], "infrastructure_error")
+            self.assertIn("timed out", timed_out["infrastructure_error"])
+            self.assertIn("partial stdout", timed_out["stdout"])
+
+    def test_val_feedback_loop_regenerates_only_failed_subtask(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manager, planner_records = self.make_val_manager(root, subtask_count=2, max_retries=1)
+            first_val_records = [
+                {"subtask_id": 1, "valid": True, "status": "valid", "feedback": ""},
+                {
+                    "subtask_id": 2,
+                    "valid": False,
+                    "status": "validation_error",
+                    "feedback": "VAL output:\nGoal not satisfied",
+                },
+            ]
+            second_val_records = [
+                {"subtask_id": 2, "valid": True, "status": "valid", "feedback": ""},
+            ]
+
+            with patch.object(
+                manager,
+                "run_val_validations",
+                side_effect=[first_val_records, second_val_records],
+            ) as run_val, patch.object(manager, "_clean_subtask_attempt_outputs") as clean, \
+                    patch.object(manager, "_generate_problem_files") as generate, \
+                    patch.object(manager, "_validate_and_plan", return_value=[planner_records[1]]) as plan:
+                result = manager._run_val_feedback_loop(
+                    subtasks=["first", "second"],
+                    robot_assignments={1: 1, 2: 2},
+                    objects_ai="objects = []",
+                    key_object_pddl_states=[],
+                    key_object_pddl_states_by_subtask={1: [], 2: []},
+                    planner_records=planner_records,
+                    allocation_attempt=1,
+                )
+
+            self.assertTrue(result["succeeded"])
+            self.assertEqual(run_val.call_count, 2)
+            clean.assert_called_once_with({2})
+            generate.assert_called_once()
+            generate_kwargs = generate.call_args.kwargs
+            self.assertEqual(generate_kwargs["subtask_ids"], {2})
+            self.assertEqual(
+                generate_kwargs["val_feedback_by_subtask"],
+                {2: "VAL output:\nGoal not satisfied"},
+            )
+            plan.assert_called_once_with(subtask_ids={2})
+            self.assertEqual(
+                [record["problem_file"] for record in run_val.call_args_list[1].args[0]],
+                ["subtask_02_problem_validated.pddl"],
+            )
+
+    def test_val_domain_error_does_not_regenerate_problem(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manager, planner_records = self.make_val_manager(root)
+            with patch.object(
+                manager,
+                "run_val_validations",
+                return_value=[{
+                    "subtask_id": 1,
+                    "valid": False,
+                    "status": "domain_error",
+                    "feedback": "Problem in domain definition!",
+                }],
+            ), patch.object(manager, "_generate_problem_files") as generate:
+                result = manager._run_val_feedback_loop(
+                    subtasks=["first"],
+                    robot_assignments={1: 1},
+                    objects_ai="objects = []",
+                    key_object_pddl_states=[],
+                    key_object_pddl_states_by_subtask={1: []},
+                    planner_records=planner_records,
+                    allocation_attempt=1,
+                )
+
+            self.assertFalse(result["succeeded"])
+            self.assertEqual(result["failure_source"], "val_domain")
+            generate.assert_not_called()
+            self.assertEqual(manager.current_task_manifest["val_feedback"]["status"], "domain_error")
+
+    def test_val_retry_planner_failure_returns_to_planner_feedback(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manager, planner_records = self.make_val_manager(root, max_retries=1)
+            failed_planner_record = {
+                **planner_records[0],
+                "plan_generated": False,
+                "has_planner_error": True,
+                "feedback_reason": "No planner plan was generated.",
+            }
+            with patch.object(
+                manager,
+                "run_val_validations",
+                return_value=[{
+                    "subtask_id": 1,
+                    "valid": False,
+                    "status": "validation_error",
+                    "feedback": "Goal not satisfied",
+                }],
+            ), patch.object(manager, "_clean_subtask_attempt_outputs"), \
+                    patch.object(manager, "_generate_problem_files"), \
+                    patch.object(manager, "_validate_and_plan", return_value=[failed_planner_record]):
+                result = manager._run_val_feedback_loop(
+                    subtasks=["first"],
+                    robot_assignments={1: 1},
+                    objects_ai="objects = []",
+                    key_object_pddl_states=[],
+                    key_object_pddl_states_by_subtask={1: []},
+                    planner_records=planner_records,
+                    allocation_attempt=1,
+                )
+
+            self.assertFalse(result["succeeded"])
+            self.assertEqual(result["failure_source"], "planner")
+            self.assertIn(1, result["planner_feedback_by_subtask"])
+
+    def test_val_enabled_completion_rate_counts_latest_valid_records(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manager, _ = self.make_val_manager(root, subtask_count=2)
+            manager._write_json_artifact(
+                "08_val/val_manifest.json",
+                {
+                    "latest_by_subtask": {
+                        "1": {"subtask_id": 1, "valid": True},
+                        "2": {"subtask_id": 2, "valid": False},
+                    }
+                },
+            )
+
+            self.assertEqual(manager.calculate_completion_rate(), (1, 2))
 
     def test_run_fake_validator_copies_raw_problem_without_llm_call(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -3128,6 +3405,44 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertIn("The previously assigned robot was Robot 1", captured["prompt"])
             self.assertNotIn("invalid goal object", captured["prompt"])
             self.assertNotIn("Planner produced a plan", captured["prompt"])
+
+    def test_problem_generation_prompt_includes_subtask_val_feedback(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self.write_problem_generation_fixture(root)
+            manager = TaskManager(str(root), "test-model", config=RunConfig(root))
+            manager.current_task_run_dir = str(root / "run")
+            manager.current_task_manifest = {"artifacts": {}, "task": "Open the drawer"}
+            captured = {}
+
+            class FakeLLM:
+                def query_model(self, messages, model, max_tokens=None, frequency_penalty=0.0):
+                    captured["prompt"] = messages[-1]["content"]
+                    return {}, (
+                        "(define (problem open_drawer)\n"
+                        "  (:domain robot1)\n"
+                        "  (:objects robot1 Drawer - object)\n"
+                        "  (:init)\n"
+                        ")"
+                    )
+
+            manager.problemextracting(
+                subtasks=["#SubTask 1: Open the drawer"],
+                robot_assignments={1: 1},
+                llm=FakeLLM(),
+                model="test-model",
+                file_processor=manager.file_processor,
+                objects_ai="\n\nobjects = [{'name': 'Drawer', 'mass': 5.0}]",
+                prompt_allocation_set="pddl_train_task_allocationsep",
+                key_object_pddl_states=[{"object": "Drawer", "facts": []}],
+                val_feedback_by_subtask={
+                    1: "VAL status: validation_error\nVAL output:\nGoal not satisfied"
+                },
+            )
+
+            self.assertIn("# VAL FEEDBACK FROM PREVIOUS ATTEMPT", captured["prompt"])
+            self.assertIn("Goal not satisfied", captured["prompt"])
+            self.assertIn("Do not change the assigned robot", captured["prompt"])
 
     def test_problem_generation_prompt_includes_enabled_problem_rag_examples(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

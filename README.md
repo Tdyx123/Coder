@@ -122,6 +122,8 @@ Common options:
 - `--prompt-decompse-set`: prompt set for decomposition (default: `pddl_train_task_decomposesep`)
 - `--prompt-allocation-set`: prompt set for allocation (default: `pddl_train_task_allocationsep`)
 - `--test-set`: dataset split to use (default: `final_test`)
+- `--val-feedback`: run VAL after planning and retry failed PDDL Problem generation
+- `--val-feedback-max-retries`: maximum VAL-driven Problem regeneration rounds
 - `--no-log-results`: disable per-task result logging
 - `--bddl-file`: run from a BDDL file instead of a dataset floor plan
 
@@ -148,6 +150,8 @@ Useful options:
 - `--max-floor-plan-workers`
 - `--max-task-workers`
 - `--output-root`
+- `--val-feedback` / `--no-val-feedback`
+- `--val-feedback-max-retries`
 - `--disable-log-results`
 
 If `--output-root` is not provided, summaries are written to:

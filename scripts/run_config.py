@@ -35,7 +35,17 @@ DEFAULT_RUN_CONFIG: Dict[str, Any] = {
         "alias": "seq-opt-lmcut",
         "timeout_seconds": 300,
     },
+    "val": {
+        "executable": "Validate",
+        "arguments": ["-v", "-e"],
+        "timeout_seconds": 60,
+    },
     "feedback": {
+        "enabled": False,
+        "max_retries": 2,
+        "max_prompt_chars": 4000,
+    },
+    "val_feedback": {
         "enabled": False,
         "max_retries": 2,
         "max_prompt_chars": 4000,
@@ -112,6 +122,7 @@ DEFAULT_RUN_CONFIG: Dict[str, Any] = {
         "generated_subtask_manifest": "06_split/generated_subtask_manifest.json",
         "validation_manifest": "07_validate/validation_manifest.json",
         "planner_manifest": "08_planner/planner_manifest.json",
+        "val_manifest": "08_val/val_manifest.json",
         "decompose_prompt": "01_decompose/01_decompose_prompt.txt",
         "decompose_output": "01_decompose/02_decompose_output.txt",
         "precedence_output": "02_precedence/predecessors.json",
@@ -189,6 +200,23 @@ def apply_feedback_cli_override(
     if not isinstance(feedback_config, dict):
         feedback_config = {}
         config.values["feedback"] = feedback_config
+    if enabled is not None:
+        feedback_config["enabled"] = bool(enabled)
+    if max_retries is not None:
+        feedback_config["max_retries"] = max(0, int(max_retries))
+    return config
+
+
+def apply_val_feedback_cli_override(
+    config: "RunConfig",
+    enabled: Optional[bool] = None,
+    max_retries: Optional[int] = None,
+) -> "RunConfig":
+    """Apply CLI-level VAL feedback retry settings when explicitly provided."""
+    feedback_config = config.values.setdefault("val_feedback", {})
+    if not isinstance(feedback_config, dict):
+        feedback_config = {}
+        config.values["val_feedback"] = feedback_config
     if enabled is not None:
         feedback_config["enabled"] = bool(enabled)
     if max_retries is not None:

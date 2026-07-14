@@ -35,6 +35,7 @@ from run_config import (
     apply_decompose_rag_cli_override,
     apply_feedback_cli_override,
     apply_problem_rag_cli_override,
+    apply_val_feedback_cli_override,
     load_run_config as _load_run_config,
     normalize_floor_plan,
 )
@@ -441,6 +442,12 @@ class TaskManager:
         self.feedback_enabled = _config_bool(self.config.get("feedback", "enabled", False), False)
         self.feedback_max_retries = max(0, int(self.config.get("feedback", "max_retries", 2)))
         self.feedback_max_prompt_chars = max(500, int(self.config.get("feedback", "max_prompt_chars", 4000)))
+        self.val_feedback_enabled = _config_bool(self.config.get("val_feedback", "enabled", False), False)
+        self.val_feedback_max_retries = max(0, int(self.config.get("val_feedback", "max_retries", 2)))
+        self.val_feedback_max_prompt_chars = max(
+            500,
+            int(self.config.get("val_feedback", "max_prompt_chars", 4000)),
+        )
         self.runtime_config = {"storage": {"base_dir": str(self.config.storage_base_dir)}}
         self.instance_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_{uuid.uuid4().hex[:8]}"
         
@@ -591,6 +598,35 @@ class TaskManager:
         os.makedirs(os.path.dirname(artifact_path), exist_ok=True)
         self.file_processor.write_json(artifact_path, content)
         return artifact_path
+
+    def _read_json_artifact(self, relative_path: str, default: Any) -> Any:
+        """Read a JSON artifact from the current task run, returning a fallback on failure."""
+        if not self.current_task_run_dir:
+            return copy.deepcopy(default)
+
+        artifact_path = os.path.join(self.current_task_run_dir, relative_path)
+        try:
+            with open(artifact_path, "r", encoding="utf-8") as handle:
+                return json.load(handle)
+        except (OSError, json.JSONDecodeError, TypeError):
+            return copy.deepcopy(default)
+
+    def _merge_subtask_records(
+        self,
+        existing: Sequence[Dict[str, Any]],
+        updates: Sequence[Dict[str, Any]],
+        filename_key: str = "problem_file",
+    ) -> List[Dict[str, Any]]:
+        """Merge records by their subtask id while preserving deterministic order."""
+        merged: Dict[int, Dict[str, Any]] = {}
+        unkeyed: List[Dict[str, Any]] = []
+        for record in list(existing) + list(updates):
+            subtask_id = self._subtask_id_from_filename(str(record.get(filename_key, "")))
+            if subtask_id is None:
+                unkeyed.append(dict(record))
+            else:
+                merged[subtask_id] = dict(record)
+        return [merged[key] for key in sorted(merged)] + unkeyed
 
     def _record_artifact(self, section: str, key: str, relative_path: str) -> None:
         """Record an artifact in the current task manifest."""
@@ -1089,6 +1125,42 @@ class TaskManager:
             elif os.path.isfile(path):
                 os.unlink(path)
 
+    def _clean_subtask_attempt_outputs(self, subtask_ids: Set[int]) -> None:
+        """Remove stale canonical artifacts for selected VAL-feedback subtasks."""
+        if not self.current_task_run_dir:
+            return
+
+        roots = (
+            "05_problem_generation/prompts",
+            "05_problem_generation/outputs",
+            "07_validate/inputs",
+            "07_validate/prompts",
+            "07_validate/outputs",
+            "08_planner/commands",
+            "08_planner/stdout",
+            "08_planner/stderr",
+            "08_planner/outputs",
+        )
+        prefixes = tuple(f"subtask_{subtask_id:02d}_" for subtask_id in sorted(subtask_ids))
+        for relative_root in roots:
+            root = Path(self.current_task_run_dir) / relative_root
+            if not root.is_dir():
+                continue
+            for path in root.iterdir():
+                if path.is_file() and path.name.startswith(prefixes):
+                    path.unlink()
+
+    def _reset_val_latest_records(self) -> None:
+        """Clear completion-facing VAL state before a full allocation retry."""
+        val_manifest_path = self.config.artifact("val_manifest", "08_val/val_manifest.json")
+        manifest = self._read_json_artifact(val_manifest_path, {})
+        if isinstance(manifest, dict):
+            manifest["latest_by_subtask"] = {}
+            self._write_json_artifact(val_manifest_path, manifest)
+        if isinstance(self.current_task_manifest, dict) and "val_feedback" in self.current_task_manifest:
+            self.current_task_manifest["val_feedback"]["status"] = "pending"
+            self._persist_manifest()
+
     @staticmethod
     def _subtask_id_from_filename(filename: str) -> Optional[int]:
         match = re.search(r"subtask[_-]?0*(\d+)", str(filename), re.IGNORECASE)
@@ -1262,12 +1334,414 @@ class TaskManager:
             "planner_feedback_by_subtask": subtask_feedback,
         }
 
+    @staticmethod
+    def _val_output_text(value: Any) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="replace")
+        return str(value)
+
+    @staticmethod
+    def _val_output_has_domain_error(output_text: str) -> bool:
+        lowered = output_text.lower()
+        return any(
+            marker in lowered
+            for marker in (
+                "problem in domain definition",
+                "error in domain definition",
+                "errors in domain definition",
+                "failed to parse domain",
+                "cannot parse domain",
+            )
+        )
+
+    def _resolve_val_executable(self) -> Optional[str]:
+        configured = str(self.config.get("val", "executable", "Validate") or "Validate").strip()
+        candidate = Path(configured).expanduser()
+        if candidate.is_absolute():
+            return str(candidate) if candidate.is_file() else None
+        if candidate.parent != Path("."):
+            resolved = self.config.resolve_path(candidate)
+            return str(resolved) if resolved.is_file() else None
+        return shutil.which(configured)
+
+    def _val_arguments(self) -> List[str]:
+        configured = self.config.get("val", "arguments", ["-v", "-e"])
+        if not isinstance(configured, list):
+            return ["-v", "-e"]
+        return [str(argument) for argument in configured]
+
+    def _classify_val_result(
+        self,
+        return_code: Optional[int],
+        stdout_text: str,
+        stderr_text: str,
+        infrastructure_error: Optional[str] = None,
+    ) -> Tuple[str, bool]:
+        combined = "\n".join(part for part in (stdout_text, stderr_text) if part)
+        if infrastructure_error:
+            return "infrastructure_error", False
+        if self._val_output_has_domain_error(combined):
+            return "domain_error", False
+        if return_code == 0 and re.search(r"\bPlan\s+valid\b", combined, re.IGNORECASE):
+            return "valid", True
+        if return_code is None or return_code == 0 or return_code < 0 or not combined.strip():
+            return "infrastructure_error", False
+        return "validation_error", False
+
+    def _format_val_feedback(self, record: Dict[str, Any]) -> str:
+        output_parts = []
+        if record.get("stdout"):
+            output_parts.append(f"stdout:\n{record['stdout']}")
+        if record.get("stderr"):
+            output_parts.append(f"stderr:\n{record['stderr']}")
+        if record.get("infrastructure_error") and not output_parts:
+            output_parts.append(str(record["infrastructure_error"]))
+        output_text = "\n\n".join(output_parts).strip() or "VAL returned no diagnostic output."
+        feedback = (
+            f"VAL status: {record.get('status', 'unknown')}\n"
+            f"VAL exit code: {record.get('return_code')}\n"
+            f"VAL output:\n{output_text}"
+        )
+        if len(feedback) > self.val_feedback_max_prompt_chars:
+            feedback = feedback[:self.val_feedback_max_prompt_chars].rstrip() + "\n...[truncated]"
+        return feedback
+
+    def _record_val_attempt(
+        self,
+        allocation_attempt: int,
+        val_attempt: int,
+        records: Sequence[Dict[str, Any]],
+    ) -> None:
+        val_manifest_path = self.config.artifact("val_manifest", "08_val/val_manifest.json")
+        manifest = self._read_json_artifact(
+            val_manifest_path,
+            {"enabled": True, "attempts": [], "latest_by_subtask": {}},
+        )
+        if not isinstance(manifest, dict):
+            manifest = {"enabled": True, "attempts": [], "latest_by_subtask": {}}
+        attempts = manifest.setdefault("attempts", [])
+        if not isinstance(attempts, list):
+            attempts = []
+            manifest["attempts"] = attempts
+        attempts.append({
+            "allocation_attempt": allocation_attempt,
+            "val_attempt": val_attempt,
+            "targeted_subtask_ids": sorted(
+                int(record["subtask_id"])
+                for record in records
+                if record.get("subtask_id") is not None
+            ),
+            "records": list(records),
+        })
+        latest = manifest.setdefault("latest_by_subtask", {})
+        if not isinstance(latest, dict):
+            latest = {}
+            manifest["latest_by_subtask"] = latest
+        for record in records:
+            if record.get("subtask_id") is not None:
+                latest[str(record["subtask_id"])] = dict(record)
+        manifest["enabled"] = True
+        self._write_json_artifact(val_manifest_path, manifest)
+        self._record_artifact("val", "manifest", val_manifest_path)
+
+        feedback_manifest = self.current_task_manifest.setdefault("val_feedback", {})
+        feedback_manifest["enabled"] = True
+        feedback_manifest["max_retries"] = self.val_feedback_max_retries
+        feedback_attempts = feedback_manifest.setdefault("attempts", [])
+        feedback_attempts.append({
+            "allocation_attempt": allocation_attempt,
+            "val_attempt": val_attempt,
+            "targeted_subtask_ids": sorted(
+                int(record["subtask_id"])
+                for record in records
+                if record.get("subtask_id") is not None
+            ),
+            "valid_subtask_ids": sorted(
+                int(record["subtask_id"])
+                for record in records
+                if record.get("valid") and record.get("subtask_id") is not None
+            ),
+            "failed_subtask_ids": sorted(
+                int(record["subtask_id"])
+                for record in records
+                if not record.get("valid") and record.get("subtask_id") is not None
+            ),
+            "statuses": {
+                str(record["subtask_id"]): record.get("status")
+                for record in records
+                if record.get("subtask_id") is not None
+            },
+        })
+        self._persist_manifest()
+
+    def _set_val_feedback_status(self, status: str) -> None:
+        if not isinstance(self.current_task_manifest, dict):
+            return
+        feedback_manifest = self.current_task_manifest.setdefault("val_feedback", {})
+        feedback_manifest["enabled"] = True
+        feedback_manifest["max_retries"] = self.val_feedback_max_retries
+        feedback_manifest["status"] = status
+        self._persist_manifest()
+
+    def run_val_validations(
+        self,
+        planner_records: Sequence[Dict[str, Any]],
+        allocation_attempt: int = 1,
+        val_attempt: int = 1,
+    ) -> List[Dict[str, Any]]:
+        """Run VAL for planner records and persist full per-attempt diagnostics."""
+        executable = self._resolve_val_executable()
+        arguments = self._val_arguments()
+        timeout_seconds = max(1, int(self.config.get("val", "timeout_seconds", 60)))
+        validated_problem_dir = self._get_validated_problem_file_path()
+        records: List[Dict[str, Any]] = []
+
+        for planner_record in planner_records:
+            problem_file = str(planner_record.get("problem_file") or "")
+            subtask_id = self._subtask_id_from_filename(problem_file)
+            safe_name = self._sanitize_filename(problem_file.replace(".pddl", "") or "problem")
+            domain_file = str(planner_record.get("domain_file") or "")
+            problem_path = (
+                os.path.join(validated_problem_dir, problem_file)
+                if validated_problem_dir and problem_file
+                else ""
+            )
+            plan_file = str(planner_record.get("compatibility_output") or "")
+            base_artifact = (
+                f"08_val/allocation_attempt_{allocation_attempt:02d}/"
+                f"val_attempt_{val_attempt:02d}"
+            )
+            command_path = f"{base_artifact}/commands/{safe_name}_command.txt"
+            stdout_path = f"{base_artifact}/stdout/{safe_name}_stdout.txt"
+            stderr_path = f"{base_artifact}/stderr/{safe_name}_stderr.txt"
+            command: List[str] = []
+            stdout_text = ""
+            stderr_text = ""
+            return_code: Optional[int] = None
+            infrastructure_error: Optional[str] = None
+            started_at = time.time()
+
+            missing_inputs = [
+                label
+                for label, path in (
+                    ("domain", domain_file),
+                    ("problem", problem_path),
+                    ("plan", plan_file),
+                )
+                if not path or not os.path.isfile(path)
+            ]
+            if executable is None:
+                infrastructure_error = "VAL executable was not found. Configure val.executable or PATH."
+            elif missing_inputs:
+                infrastructure_error = "Missing VAL input file(s): " + ", ".join(missing_inputs)
+            else:
+                command = [executable, *arguments, domain_file, problem_path, plan_file]
+                try:
+                    result = subprocess.run(
+                        command,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        timeout=timeout_seconds,
+                    )
+                    return_code = result.returncode
+                    stdout_text = result.stdout or ""
+                    stderr_text = result.stderr or ""
+                except subprocess.TimeoutExpired as exc:
+                    stdout_text = self._val_output_text(exc.stdout)
+                    stderr_text = self._val_output_text(exc.stderr)
+                    infrastructure_error = f"VAL timed out after {timeout_seconds} seconds."
+                except OSError as exc:
+                    infrastructure_error = f"Unable to execute VAL: {exc}"
+
+            if infrastructure_error:
+                stderr_text = "\n".join(
+                    part for part in (stderr_text, infrastructure_error) if part
+                )
+            status, valid = self._classify_val_result(
+                return_code,
+                stdout_text,
+                stderr_text,
+                infrastructure_error=infrastructure_error,
+            )
+            self._write_text_artifact(command_path, " ".join(command))
+            self._write_text_artifact(stdout_path, stdout_text)
+            self._write_text_artifact(stderr_path, stderr_text)
+            record = {
+                "subtask_id": subtask_id,
+                "problem_file": problem_file,
+                "domain_file": domain_file or None,
+                "problem_path": problem_path or None,
+                "plan_file": plan_file or None,
+                "command_path": command_path,
+                "stdout_path": stdout_path,
+                "stderr_path": stderr_path,
+                "return_code": return_code,
+                "duration_seconds": round(time.time() - started_at, 3),
+                "status": status,
+                "valid": valid,
+                "infrastructure_error": infrastructure_error,
+                "stdout": stdout_text,
+                "stderr": stderr_text,
+            }
+            record["feedback"] = self._format_val_feedback(record)
+            records.append(record)
+
+        self._record_val_attempt(allocation_attempt, val_attempt, records)
+        return records
+
+    def _run_val_feedback_loop(
+        self,
+        subtasks: List[str],
+        robot_assignments: Dict[int, int],
+        objects_ai: str,
+        key_object_pddl_states: Optional[List[Dict[str, Any]]],
+        key_object_pddl_states_by_subtask: Optional[Dict[int, List[Dict[str, Any]]]],
+        planner_records: Sequence[Dict[str, Any]],
+        allocation_attempt: int,
+    ) -> Dict[str, Any]:
+        """Validate plans with VAL and regenerate only repairable failed subtasks."""
+        planner_by_subtask = {
+            subtask_id: dict(record)
+            for record in planner_records
+            for subtask_id in [self._subtask_id_from_filename(str(record.get("problem_file", "")))]
+            if subtask_id is not None
+        }
+        target_ids = set(planner_by_subtask)
+        val_attempt = 1
+
+        while True:
+            target_planner_records = [
+                planner_by_subtask[subtask_id]
+                for subtask_id in sorted(target_ids)
+                if subtask_id in planner_by_subtask
+            ]
+            val_records = self.run_val_validations(
+                target_planner_records,
+                allocation_attempt=allocation_attempt,
+                val_attempt=val_attempt,
+            )
+            failed_records = [record for record in val_records if not record.get("valid")]
+            if not failed_records:
+                self._set_val_feedback_status("passed")
+                return {
+                    "succeeded": True,
+                    "failure_source": None,
+                    "feedback_text": "",
+                    "failed_subtask_ids": [],
+                    "planner_feedback_by_subtask": {},
+                    "planner_records": [planner_by_subtask[key] for key in sorted(planner_by_subtask)],
+                    "val_records": val_records,
+                }
+
+            if any(record.get("status") == "domain_error" for record in failed_records):
+                self._set_val_feedback_status("domain_error")
+                return {
+                    "succeeded": False,
+                    "failure_source": "val_domain",
+                    "feedback_text": "",
+                    "failed_subtask_ids": sorted(
+                        record["subtask_id"]
+                        for record in failed_records
+                        if record.get("subtask_id") is not None
+                    ),
+                    "planner_feedback_by_subtask": {},
+                    "planner_records": [planner_by_subtask[key] for key in sorted(planner_by_subtask)],
+                    "val_records": val_records,
+                }
+
+            if any(record.get("status") == "infrastructure_error" for record in failed_records):
+                self._set_val_feedback_status("infrastructure_error")
+                return {
+                    "succeeded": False,
+                    "failure_source": "val_infrastructure",
+                    "feedback_text": "",
+                    "failed_subtask_ids": sorted(
+                        record["subtask_id"]
+                        for record in failed_records
+                        if record.get("subtask_id") is not None
+                    ),
+                    "planner_feedback_by_subtask": {},
+                    "planner_records": [planner_by_subtask[key] for key in sorted(planner_by_subtask)],
+                    "val_records": val_records,
+                }
+
+            retry_ids = {
+                int(record["subtask_id"])
+                for record in failed_records
+                if record.get("subtask_id") is not None
+            }
+            if val_attempt > self.val_feedback_max_retries:
+                self._set_val_feedback_status("retry_exhausted")
+                return {
+                    "succeeded": False,
+                    "failure_source": "val_validation",
+                    "feedback_text": "",
+                    "failed_subtask_ids": sorted(retry_ids),
+                    "planner_feedback_by_subtask": {},
+                    "planner_records": [planner_by_subtask[key] for key in sorted(planner_by_subtask)],
+                    "val_records": val_records,
+                }
+
+            val_feedback_by_subtask = {
+                int(record["subtask_id"]): str(record.get("feedback") or "")
+                for record in failed_records
+                if record.get("subtask_id") is not None
+            }
+            print(
+                "Retrying PDDL problem generation with VAL feedback for subtasks "
+                f"{sorted(retry_ids)} (VAL attempt {val_attempt + 1}/"
+                f"{self.val_feedback_max_retries + 1})"
+            )
+            self._clean_subtask_attempt_outputs(retry_ids)
+            self._generate_problem_files(
+                subtasks,
+                robot_assignments,
+                objects_ai,
+                key_object_pddl_states=key_object_pddl_states,
+                key_object_pddl_states_by_subtask=key_object_pddl_states_by_subtask,
+                val_feedback_by_subtask=val_feedback_by_subtask,
+                subtask_ids=retry_ids,
+            )
+            updated_planner_records = self._validate_and_plan(subtask_ids=retry_ids)
+            for record in updated_planner_records:
+                subtask_id = self._subtask_id_from_filename(str(record.get("problem_file", "")))
+                if subtask_id is not None:
+                    planner_by_subtask[subtask_id] = dict(record)
+
+            merged_planner_records = [
+                planner_by_subtask[key]
+                for key in sorted(planner_by_subtask)
+            ]
+            planner_feedback = self._build_planner_feedback(
+                merged_planner_records,
+                len(subtasks),
+                robot_assignments,
+            )
+            if not planner_feedback["succeeded"]:
+                self._set_val_feedback_status("planner_failed")
+                return {
+                    **planner_feedback,
+                    "failure_source": "planner",
+                    "planner_records": merged_planner_records,
+                    "val_records": val_records,
+                }
+
+            target_ids = retry_ids
+            val_attempt += 1
+
     def _record_feedback_attempt(
         self,
         attempt_result: Dict[str, Any],
         will_retry: bool,
     ) -> None:
-        if not self.feedback_enabled or not isinstance(self.current_task_manifest, dict):
+        if (
+            not self.feedback_enabled
+            or not isinstance(self.current_task_manifest, dict)
+            or str(attempt_result.get("failure_source") or "").startswith("val_")
+        ):
             return
 
         feedback_manifest = self.current_task_manifest.setdefault("feedback", {})
@@ -1345,8 +1819,29 @@ class TaskManager:
             len(subtasks),
             robot_assignments,
         )
+        if feedback_result["succeeded"] and self.val_feedback_enabled:
+            feedback_result = self._run_val_feedback_loop(
+                subtasks=subtasks,
+                robot_assignments=robot_assignments,
+                objects_ai=objects_ai,
+                key_object_pddl_states=key_object_pddl_states,
+                key_object_pddl_states_by_subtask=key_object_pddl_states_by_subtask,
+                planner_records=planner_records,
+                allocation_attempt=attempt_index,
+            )
+            planner_records = feedback_result.get("planner_records", planner_records)
+            print("✓ VAL validation complete")
+        else:
+            feedback_result["failure_source"] = (
+                None if feedback_result["succeeded"] else "planner"
+            )
+
         feedback_path = None
-        if self.feedback_enabled and feedback_result["feedback_text"]:
+        if (
+            self.feedback_enabled
+            and feedback_result.get("failure_source") == "planner"
+            and feedback_result["feedback_text"]
+        ):
             feedback_path = f"02_allocate/feedback/attempt_{attempt_index:02d}_feedback.txt"
             self._write_text_artifact(feedback_path, feedback_result["feedback_text"])
             self._record_artifact("allocate", f"attempt_{attempt_index:02d}_feedback", feedback_path)
@@ -1369,16 +1864,29 @@ class TaskManager:
         Returns:
             Tuple[int, int]: (number of completed tasks, total number of tasks)
         """
-        TC = 0
-        plan_file_path = self._get_plan_file_path()
-        if os.path.exists(plan_file_path):
-            TC = len([f for f in os.listdir(plan_file_path) if f.endswith('_validated_plan.txt')])
-        
         total_subtasks = 0
         validated_problem_file_path = self._get_validated_problem_file_path()
-        if os.path.exists(validated_problem_file_path):
+        if validated_problem_file_path and os.path.exists(validated_problem_file_path):
             total_subtasks = len([f for f in os.listdir(validated_problem_file_path) if f.endswith('_validated.pddl')])
-        
+
+        if self.val_feedback_enabled:
+            val_manifest_path = self.config.artifact("val_manifest", "08_val/val_manifest.json")
+            val_manifest = self._read_json_artifact(val_manifest_path, {})
+            latest = val_manifest.get("latest_by_subtask", {}) if isinstance(val_manifest, dict) else {}
+            if not isinstance(latest, dict):
+                latest = {}
+            TC = sum(
+                1
+                for record in latest.values()
+                if isinstance(record, dict) and bool(record.get("valid"))
+            )
+            return TC, total_subtasks
+
+        TC = 0
+        plan_file_path = self._get_plan_file_path()
+        if plan_file_path and os.path.exists(plan_file_path):
+            TC = len([f for f in os.listdir(plan_file_path) if f.endswith('_validated_plan.txt')])
+
         return TC, total_subtasks
 
     def load_dataset(self, test_file: str) -> Tuple[List[str], List[List[dict]], List[str], List[int], List[int]]:
@@ -1671,6 +2179,8 @@ class TaskManager:
                     if attempt_index > 1:
                         print(f"Retrying from allocation with planner feedback (attempt {attempt_index}/{max_attempts})")
                         self._clean_feedback_attempt_outputs()
+                        if self.val_feedback_enabled:
+                            self._reset_val_latest_records()
 
                     attempt_result = self._run_feedback_attempt(
                         decomposed_plan=decomposed_plan,
@@ -1689,6 +2199,7 @@ class TaskManager:
                     will_retry = (
                         self.feedback_enabled
                         and not attempt_result.get("succeeded", False)
+                        and (attempt_result.get("failure_source") or "planner") == "planner"
                         and attempt_index < max_attempts
                     )
                     self._record_feedback_attempt(attempt_result, will_retry)
@@ -2731,6 +3242,8 @@ class TaskManager:
         key_object_pddl_states: Optional[List[Dict[str, Any]]] = None,
         key_object_pddl_states_by_subtask: Optional[Dict[int, List[Dict[str, Any]]]] = None,
         planner_feedback_by_subtask: Optional[Dict[int, str]] = None,
+        val_feedback_by_subtask: Optional[Dict[int, str]] = None,
+        subtask_ids: Optional[Set[int]] = None,
     ) -> List[str]:
         """Generate PDDL problem files from subtasks and robot assignments.
 
@@ -2771,10 +3284,40 @@ class TaskManager:
             key_object_pddl_states=key_object_pddl_states,
             key_object_pddl_states_by_subtask=key_object_pddl_states_by_subtask,
             planner_feedback_by_subtask=planner_feedback_by_subtask,
+            val_feedback_by_subtask=val_feedback_by_subtask,
+            subtask_ids=subtask_ids,
         )
+        selected_ids = (
+            sorted(subtask_ids)
+            if subtask_ids is not None
+            else list(range(1, len(subtasks) + 1))
+        )
+        generated_updates = []
+        raw_problem_dir = self._get_raw_problem_file_path()
+        for subtask_id in selected_ids:
+            generated_path = (
+                os.path.join(raw_problem_dir, f"subtask_{subtask_id:02d}_problem.pddl")
+                if raw_problem_dir
+                else ""
+            )
+            if generated_path and os.path.isfile(generated_path):
+                generated_updates.append({
+                    "index": subtask_id,
+                    "content": self.file_processor.read_file(generated_path),
+                })
+        existing_generated = self._read_json_artifact(generated_problem_files_artifact, [])
+        if not isinstance(existing_generated, list) or subtask_ids is None:
+            existing_generated = []
+        generated_by_index = {
+            int(entry["index"]): entry
+            for entry in existing_generated
+            if isinstance(entry, dict) and str(entry.get("index", "")).isdigit()
+        }
+        for entry in generated_updates:
+            generated_by_index[int(entry["index"])] = entry
         self._write_json_artifact(
             generated_problem_files_artifact,
-            [{"index": idx + 1, "content": content} for idx, content in enumerate(problem_pddl)]
+            [generated_by_index[index] for index in sorted(generated_by_index)],
         )
         self._record_artifact("problem_files", "generated_problem_files", generated_problem_files_artifact)
         self._persist_manifest()
@@ -2810,6 +3353,8 @@ class TaskManager:
             key_object_pddl_states: Optional[List[Dict[str, Any]]] = None,
             key_object_pddl_states_by_subtask: Optional[Dict[Union[int, str], List[Dict[str, Any]]]] = None,
             planner_feedback_by_subtask: Optional[Dict[int, str]] = None,
+            val_feedback_by_subtask: Optional[Dict[int, str]] = None,
+            subtask_ids: Optional[Set[int]] = None,
         ) -> List[ProblemGenerationResult]:
         """Generate problem prompts and PDDL results without reading or writing artifacts.
 
@@ -2830,6 +3375,8 @@ class TaskManager:
         results: List[ProblemGenerationResult] = []
 
         for subtask_idx, subtask in enumerate(subtasks, start=1):
+            if subtask_ids is not None and subtask_idx not in subtask_ids:
+                continue
             robot_num = robot_assignments.get(subtask_idx, 1)
             normalized_robot_name = f"robot{robot_num}"
             real_robot_name = self.current_robot_domain_names.get(normalized_robot_name, normalized_robot_name)
@@ -2860,6 +3407,9 @@ class TaskManager:
             subtask_feedback = ""
             if planner_feedback_by_subtask:
                 subtask_feedback = str(planner_feedback_by_subtask.get(subtask_idx) or "").strip()
+            val_feedback = ""
+            if val_feedback_by_subtask:
+                val_feedback = str(val_feedback_by_subtask.get(subtask_idx) or "").strip()
             problem_prompt_examples = static_problem_prompt
             if self.problem_rag_retriever:
                 rag_query = self._problem_rag_query(
@@ -2906,6 +3456,14 @@ class TaskManager:
                     "Use the feedback below while generating the next problem for this subtask.\n"
                     + subtask_feedback
                 )
+            if val_feedback:
+                prompt += (
+                    "\n# VAL FEEDBACK FROM PREVIOUS ATTEMPT\n"
+                    "The previous problem and its newly generated plan failed VAL validation. "
+                    "Regenerate the PDDL problem so that a new plan satisfies the domain semantics "
+                    "and passes VAL. Do not change the assigned robot.\n"
+                    + val_feedback
+                )
 
             messages = [
                 {"role": "system", "content": "You are a Robot PDDL problem Expert"},
@@ -2950,6 +3508,8 @@ class TaskManager:
             key_object_pddl_states: Optional[List[Dict[str, Any]]] = None,
             key_object_pddl_states_by_subtask: Optional[Dict[Union[int, str], List[Dict[str, Any]]]] = None,
             planner_feedback_by_subtask: Optional[Dict[int, str]] = None,
+            val_feedback_by_subtask: Optional[Dict[int, str]] = None,
+            subtask_ids: Optional[Set[int]] = None,
         ) -> List[str]:
         """Extract problem files from subtasks using precomputed robot assignments.
 
@@ -2992,6 +3552,8 @@ class TaskManager:
             key_object_pddl_states=key_object_pddl_states,
             key_object_pddl_states_by_subtask=key_object_pddl_states_by_subtask,
             planner_feedback_by_subtask=planner_feedback_by_subtask,
+            val_feedback_by_subtask=val_feedback_by_subtask,
+            subtask_ids=subtask_ids,
         )
 
         for result in results:
@@ -3032,12 +3594,15 @@ class TaskManager:
 
         return text
 
-    def _validate_and_plan(self) -> List[Dict[str, Any]]:
+    def _validate_and_plan(self, subtask_ids: Optional[Set[int]] = None) -> List[Dict[str, Any]]:
         """Validate and plan all problem files."""
         try:
             # First run fake validator
             #print("Running fake validator...")
-            self.run_fake_validator()
+            if subtask_ids is None:
+                self.run_fake_validator()
+            else:
+                self.run_fake_validator(subtask_ids=subtask_ids)
             #input("Press Enter to continue")
             # Wait for validation to complete
             #print("Waiting 50 seconds for validation to complete...")
@@ -3045,13 +3610,15 @@ class TaskManager:
             
             # Then run planners
             #print("Running planners...")
-            return self.run_planners()
+            if subtask_ids is None:
+                return self.run_planners()
+            return self.run_planners(subtask_ids=subtask_ids)
             #input("Press Enter to continue")
             
         except Exception as e:
             raise PDDLError(f"Error in validation and planning: {str(e)}")
 
-    def run_fake_validator(self) -> None:
+    def run_fake_validator(self, subtask_ids: Optional[Set[int]] = None) -> None:
         """Copy generated problem files into the validation output directory."""
         try:
             raw_problem_file_path = self._get_raw_problem_file_path()
@@ -3059,7 +3626,15 @@ class TaskManager:
                 print("no raw problem_file")
                 return
 
-            problem_files = sorted(f for f in os.listdir(raw_problem_file_path) if f.endswith('.pddl'))
+            problem_files = sorted(
+                f
+                for f in os.listdir(raw_problem_file_path)
+                if f.endswith('.pddl')
+                and (
+                    subtask_ids is None
+                    or self._subtask_id_from_filename(f) in subtask_ids
+                )
+            )
             validation_records = []
             for problem_file in problem_files:
                 try:
@@ -3091,7 +3666,11 @@ class TaskManager:
                     continue
 
             validation_manifest_path = self.config.artifact("validation_manifest", "07_validate/validation_manifest.json")
-            self._write_json_artifact(validation_manifest_path, validation_records)
+            existing_records = self._read_json_artifact(validation_manifest_path, [])
+            if not isinstance(existing_records, list) or subtask_ids is None:
+                existing_records = []
+            merged_records = self._merge_subtask_records(existing_records, validation_records)
+            self._write_json_artifact(validation_manifest_path, merged_records)
             self._record_artifact("validate", "manifest", validation_manifest_path)
             self._persist_manifest()
 
@@ -3159,7 +3738,7 @@ class TaskManager:
             print(f"Error in run_llmvalidator: {str(e)}")
             raise
 
-    def run_planners(self) -> List[Dict[str, Any]]:
+    def run_planners(self, subtask_ids: Optional[Set[int]] = None) -> List[Dict[str, Any]]:
         """Run PDDL planners on problem files."""
         try:
             planner_path = str(self.config.planner_executable)
@@ -3169,7 +3748,15 @@ class TaskManager:
                 return []
             plan_file_path = self._get_plan_file_path()
             os.makedirs(plan_file_path, exist_ok=True)
-            problem_files = [f for f in os.listdir(validated_problem_file_path) if f.endswith('.pddl')]  #PG: Changed to validated_subtask_path
+            problem_files = [
+                f
+                for f in os.listdir(validated_problem_file_path)
+                if f.endswith('.pddl')
+                and (
+                    subtask_ids is None
+                    or self._subtask_id_from_filename(f) in subtask_ids
+                )
+            ]  #PG: Changed to validated_subtask_path
             planner_records = []
             for problem_file in problem_files:
                 domain_file = None
@@ -3178,6 +3765,8 @@ class TaskManager:
                     problem_file_full = os.path.join(validated_problem_file_path, problem_file) #PG: Changed to validated_subtask_path
                     safe_name = self._sanitize_filename(problem_file.replace(".pddl", ""))
                     output_file = os.path.join(plan_file_path, f"{safe_name}_plan.txt")
+                    if os.path.isfile(output_file):
+                        os.unlink(output_file)
                     domain_name = self.file_processor.extract_domain_name(problem_file_full)
                     if not domain_name:
                         print(f"No domain specified in {problem_file}")
@@ -3283,7 +3872,11 @@ class TaskManager:
                     continue
 
             planner_manifest_path = self.config.artifact("planner_manifest", "08_planner/planner_manifest.json")
-            self._write_json_artifact(planner_manifest_path, planner_records)
+            existing_records = self._read_json_artifact(planner_manifest_path, [])
+            if not isinstance(existing_records, list) or subtask_ids is None:
+                existing_records = []
+            merged_records = self._merge_subtask_records(existing_records, planner_records)
+            self._write_json_artifact(planner_manifest_path, merged_records)
             self._record_artifact("planner", "manifest", planner_manifest_path)
             self._persist_manifest()
             return planner_records
@@ -3563,7 +4156,32 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         default=None,
         help="Maximum feedback retry rounds after the first allocation attempt.",
     )
-    parser.set_defaults(decompose_rag=False, allocate_rag=False, problem_rag=False, feedback=None)
+    val_feedback_group = parser.add_mutually_exclusive_group()
+    val_feedback_group.add_argument(
+        "--val-feedback",
+        dest="val_feedback",
+        action="store_true",
+        help="Enable VAL validation and failed-subtask problem-generation retries.",
+    )
+    val_feedback_group.add_argument(
+        "--no-val-feedback",
+        dest="val_feedback",
+        action="store_false",
+        help="Disable VAL validation and feedback retries.",
+    )
+    parser.add_argument(
+        "--val-feedback-max-retries",
+        type=int,
+        default=None,
+        help="Maximum VAL feedback retry rounds after the first validation attempt.",
+    )
+    parser.set_defaults(
+        decompose_rag=False,
+        allocate_rag=False,
+        problem_rag=False,
+        feedback=None,
+        val_feedback=None,
+    )
 
     return parser.parse_args(argv)
 
@@ -3578,6 +4196,11 @@ def main():
         apply_allocate_rag_cli_override(run_config, args.allocate_rag)
         apply_problem_rag_cli_override(run_config, args.problem_rag)
         apply_feedback_cli_override(run_config, args.feedback, args.feedback_max_retries)
+        apply_val_feedback_cli_override(
+            run_config,
+            getattr(args, "val_feedback", None),
+            getattr(args, "val_feedback_max_retries", None),
+        )
         
         # Initialize task manager
         task_manager = TaskManager(

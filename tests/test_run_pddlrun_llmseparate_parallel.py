@@ -35,6 +35,8 @@ class ParallelRunnerTests(unittest.TestCase):
         self.assertFalse(args.problem_rag)
         self.assertIsNone(args.feedback)
         self.assertIsNone(args.feedback_max_retries)
+        self.assertIsNone(args.val_feedback)
+        self.assertIsNone(args.val_feedback_max_retries)
 
     def test_cli_decompose_rag_can_be_enabled_and_disabled(self):
         enabled_args = parse_args(["--floor-plans", "6", "--decompose-rag"])
@@ -62,6 +64,16 @@ class ParallelRunnerTests(unittest.TestCase):
         self.assertTrue(enabled_args.feedback)
         self.assertEqual(enabled_args.feedback_max_retries, 3)
         self.assertFalse(disabled_args.feedback)
+
+    def test_cli_val_feedback_can_be_enabled_disabled_and_bounded(self):
+        enabled_args = parse_args(
+            ["--floor-plans", "6", "--val-feedback", "--val-feedback-max-retries", "3"]
+        )
+        disabled_args = parse_args(["--floor-plans", "6", "--no-val-feedback"])
+
+        self.assertTrue(enabled_args.val_feedback)
+        self.assertEqual(enabled_args.val_feedback_max_retries, 3)
+        self.assertFalse(disabled_args.val_feedback)
 
     def test_prewarm_decompose_rag_if_configured_calls_single_runner_prewarm(self):
         config = RunConfig(ROOT, values={"decompose_rag": {"enabled": True, "prewarm_runtime_db": True}})
@@ -163,6 +175,8 @@ class ParallelRunnerTests(unittest.TestCase):
                 problem_rag=True,
                 feedback=True,
                 feedback_max_retries=4,
+                val_feedback=True,
+                val_feedback_max_retries=3,
                 disable_log_results=False,
             )
             config = RunConfig(
@@ -172,6 +186,7 @@ class ParallelRunnerTests(unittest.TestCase):
                     "allocate_rag": {"enabled": False, "prewarm_runtime_db": True},
                     "problem_rag": {"enabled": False, "prewarm_runtime_db": True},
                     "feedback": {"enabled": False, "max_retries": 2},
+                    "val_feedback": {"enabled": False, "max_retries": 2},
                 },
             )
 
@@ -200,6 +215,8 @@ class ParallelRunnerTests(unittest.TestCase):
             self.assertTrue(prewarm_state["problem_called"])
             self.assertTrue(config.get("feedback", "enabled"))
             self.assertEqual(config.get("feedback", "max_retries"), 4)
+            self.assertTrue(config.get("val_feedback", "enabled"))
+            self.assertEqual(config.get("val_feedback", "max_retries"), 3)
 
     def test_main_preserves_feedback_config_when_cli_omits_feedback(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -244,9 +261,17 @@ class ParallelRunnerTests(unittest.TestCase):
                 problem_rag=False,
                 feedback=None,
                 feedback_max_retries=None,
+                val_feedback=None,
+                val_feedback_max_retries=None,
                 disable_log_results=False,
             )
-            config = RunConfig(root, values={"feedback": {"enabled": True, "max_retries": 5}})
+            config = RunConfig(
+                root,
+                values={
+                    "feedback": {"enabled": True, "max_retries": 5},
+                    "val_feedback": {"enabled": True, "max_retries": 4},
+                },
+            )
 
             with patch("run_pddlrun_llmseparate_parallel.parse_args", return_value=args), \
                 patch("run_pddlrun_llmseparate_parallel.load_run_config", return_value=config), \
@@ -258,6 +283,8 @@ class ParallelRunnerTests(unittest.TestCase):
 
             self.assertTrue(config.get("feedback", "enabled"))
             self.assertEqual(config.get("feedback", "max_retries"), 5)
+            self.assertTrue(config.get("val_feedback", "enabled"))
+            self.assertEqual(config.get("val_feedback", "max_retries"), 4)
 
     def test_load_jobs_skips_truthy_invalid_records(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
