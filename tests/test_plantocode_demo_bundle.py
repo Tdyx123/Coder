@@ -185,9 +185,9 @@ def write_lammap_native_fixture(root: Path) -> Path:
     write_json(
         task_run_dir / "run_manifest.json",
         {
-            "repo_root": str(root),
+            "repo_root": "/home/dwb/thor/LaMMA-P",
             "task": "open the drawer.",
-            "test_set": "unit_set",
+            "test_set": "manifest_decoy",
             "floor_plan": "2",
             "task_index": 0,
         },
@@ -215,6 +215,33 @@ def write_lammap_native_fixture(root: Path) -> Path:
         )
         + "\n",
         encoding="utf-8",
+    )
+    external_task_run_dir = (
+        Path("/home/dwb/thor/LaMMA-P/logs/intermediate_runs")
+        / task_run_dir.relative_to(baseline_root / "logs" / "intermediate_runs")
+    )
+    write_json(
+        baseline_root / "parallel_runs" / "pddlrun_lammap_fixture" / "summary.json",
+        {
+            "repo_root": "/home/dwb/thor/LaMMA-P",
+            "test_set": "unit_set",
+            "summaries": [
+                {
+                    "floor_plan": "2",
+                    "test_set": "floor_summary_decoy",
+                    "results": [
+                        {
+                            "floor_plan": "2",
+                            "task_index": 0,
+                            "task": "open the drawer.",
+                            "test_set": "result_decoy",
+                            "status": "success",
+                            "task_run_dir": str(external_task_run_dir),
+                        }
+                    ],
+                }
+            ],
+        },
     )
     return task_run_dir
 
@@ -290,7 +317,7 @@ def write_scale_plan_fixture(root: Path) -> Path:
         json.dumps(
             {
                 "task": task,
-                "robot list": [1, 2],
+                "robot list": [18, 1],
                 "object_states": [
                     {"name": "Drawer", "contains": [], "states": ["OPENED"]},
                     {"name": "Cabinet", "contains": [], "states": ["OPENED"]},
@@ -303,18 +330,38 @@ def write_scale_plan_fixture(root: Path) -> Path:
         + "\n",
         encoding="utf-8",
     )
+    decoy_dataset_dir = root / "data" / "decoy_set"
+    decoy_dataset_file = decoy_dataset_dir / "FloorPlan6.jsonl"
+    decoy_dataset_dir.mkdir(parents=True, exist_ok=True)
+    decoy_dataset_file.write_text(
+        json.dumps(
+            {
+                "task": "decoy task",
+                "robot list": [1],
+                "object_states": [
+                    {"name": "DecoyObject", "contains": [], "states": ["OPENED"]},
+                ],
+                "trans": 1,
+                "min_trans": 1,
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     write_json(
         task_run_dir / "inputs" / "task_context.json",
         {
             "task": task,
             "task_index": 0,
-            "test_set": "unit_set",
-            "test_set_path": str(dataset_dir),
-            "dataset_file": str(dataset_file),
+            "test_set": "task_context_decoy",
+            "test_set_path": str(decoy_dataset_dir),
+            "dataset_file": str(decoy_dataset_file),
             "floor_plan": "6",
             "robots": [
                 {"name": "robot1", "skills": ["GoToObject", "OpenObject"]},
                 {"name": "robot2", "skills": ["GoToObject", "OpenObject"]},
+                {"name": "robot18", "skills": ["GoToObject", "OpenObject"]},
             ],
             "objects_ai": "objects = [{'name': 'Drawer'}, {'name': 'Cabinet'}]",
         },
@@ -324,9 +371,9 @@ def write_scale_plan_fixture(root: Path) -> Path:
         {
             "repo_root": str(root),
             "task": task,
-            "test_set": "unit_set",
-            "test_set_path": str(dataset_dir),
-            "dataset_file": str(dataset_file),
+            "test_set": "manifest_decoy",
+            "test_set_path": str(decoy_dataset_dir),
+            "dataset_file": str(decoy_dataset_file),
             "floor_plan": "6",
             "task_index": 0,
         },
@@ -342,16 +389,28 @@ def write_scale_plan_fixture(root: Path) -> Path:
                     "plans": [
                         {
                             "subtask_id": "subtask-1",
-                            "robot": "robot1",
-                            "plan": "(GoToObject robot1 Drawer)\n(OpenObject robot1 Drawer)",
+                            "robot": "robot18",
+                            "plan": "(GoToObject robot18 Drawer)\n(OpenObject robot18 Drawer)",
                         },
                         {
                             "subtask_id": "subtask-2",
-                            "robot": "robot2",
-                            "plan": "(GoToObject robot2 Cabinet)\n(OpenObject robot2 Cabinet)",
+                            "robot": "robot1",
+                            "plan": "(GoToObject robot1 Cabinet)\n(OpenObject robot1 Cabinet)",
                         },
                     ],
-                }
+                },
+                {
+                    "stage_id": "sequential-2",
+                    "parallel_group_id": "sequential-2",
+                    "subtask_ids": ["subtask-3"],
+                    "plans": [
+                        {
+                            "subtask_id": "subtask-3",
+                            "robot": "robot18",
+                            "plan": "(GoToObject robot18 Drawer)",
+                        },
+                    ],
+                },
             ]
         },
     )
@@ -366,17 +425,23 @@ def write_scale_plan_fixture(root: Path) -> Path:
         {
             "repo_root": "/home/dwb/thor/Scale-Plan",
             "test_set": "unit_set",
-            "test_set_path": str(dataset_dir),
+            "test_set_path": str(decoy_dataset_dir),
+            "dataset_file": str(decoy_dataset_file),
             "summaries": [
                 {
                     "floor_plan": "6",
-                    "dataset_file": str(dataset_file),
+                    "test_set": "floor_summary_decoy",
+                    "test_set_path": str(decoy_dataset_dir),
+                    "dataset_file": str(decoy_dataset_file),
                     "task_count": 1,
                     "success_count": 1,
                     "failure_count": 0,
                     "results": [
                         {
                             "floor_plan": "6",
+                            "test_set": "result_decoy",
+                            "test_set_path": str(decoy_dataset_dir),
+                            "dataset_file": str(decoy_dataset_file),
                             "task_index": 0,
                             "task": task,
                             "status": "success",
@@ -1314,12 +1379,46 @@ class PlanToCodeDemoBundleTest(unittest.TestCase):
             executable_plan = task_run_dir / "plan_to_code" / "executable_plan.py"
             output_dir = baseline_root / "plan_to_code_results"
             details = json.loads((output_dir / "plan_to_code_results.json").read_text(encoding="utf-8"))
+            bundle_data = load_bundle_data_from_executable(executable_plan)
 
             self.assertTrue(executable_plan.exists())
             self.assertEqual(details[0]["status"], "success")
             self.assertEqual(details[0]["category"], "timed_direct_actions")
+            self.assertEqual(details[0]["test_set"], "unit_set")
             self.assertEqual(details[0]["generated"]["executable_plan"], str(executable_plan))
             self.assertTrue(is_runner_compatible_executable(executable_plan))
+            self.assertEqual([item["name"] for item in bundle_data["gcr"]], ["Drawer"])
+
+    def test_lammap_baseline_requires_top_level_summary_test_set(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            baseline_root = root / "baselines" / "LaMMA-P"
+            task_run_dir = write_lammap_native_fixture(root)
+            source_summary = (
+                baseline_root
+                / "parallel_runs"
+                / "pddlrun_lammap_fixture"
+                / "summary.json"
+            )
+            summary_data = json.loads(source_summary.read_text(encoding="utf-8"))
+            summary_data.pop("test_set")
+            write_json(source_summary, summary_data)
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                result_code = lammap_baseline.main(
+                    [
+                        "--root",
+                        str(baseline_root),
+                    ]
+                )
+
+            self.assertEqual(result_code, 1)
+            self.assertIn(
+                "missing required non-empty top-level 'test_set'",
+                stdout.getvalue(),
+            )
+            self.assertFalse((task_run_dir / "plan_to_code" / "executable_plan.py").exists())
 
     def test_smart_llm_baseline_mode_writes_parallel_runner_summary_path(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1417,12 +1516,17 @@ class PlanToCodeDemoBundleTest(unittest.TestCase):
 
             self.assertEqual(summary["successful_generations"], 1)
             self.assertEqual(details[0]["status"], "success")
+            self.assertEqual(details[0]["test_set"], "unit_set")
             self.assertNotIn("source_task_run_dir", details[0])
             self.assertEqual(details[0]["generated"]["executable_plan"], str(executable_plan))
             self.assertTrue(is_runner_compatible_executable(executable_plan))
+            self.assertEqual(
+                [item["name"] for item in bundle_data["gcr"]],
+                ["Drawer", "Cabinet"],
+            )
 
             stages = bundle_data["task_plan"]["stages"]
-            self.assertEqual(len(stages), 1)
+            self.assertEqual(len(stages), 2)
             queues = stages[0]["robot_action_queues"]
             self.assertEqual(set(queues), {"robot1", "robot2"})
             self.assertEqual([action["action_type"] for action in queues["robot1"]], [
@@ -1433,6 +1537,105 @@ class PlanToCodeDemoBundleTest(unittest.TestCase):
                 "GoToObject",
                 "OpenObject",
             ])
+            self.assertEqual(
+                [action["parameters"]["args"] for action in queues["robot1"]],
+                [["Drawer"], ["Drawer"]],
+            )
+            self.assertEqual(
+                [action["parameters"]["args"] for action in queues["robot2"]],
+                [["Cabinet"], ["Cabinet"]],
+            )
+            self.assertTrue(
+                all(action["robot_id"] == "robot1" for action in queues["robot1"])
+            )
+            self.assertTrue(
+                all(action["robot_id"] == "robot2" for action in queues["robot2"])
+            )
+
+            repeated_robot_queue = stages[1]["robot_action_queues"]
+            self.assertEqual(set(repeated_robot_queue), {"robot1"})
+            self.assertEqual(repeated_robot_queue["robot1"][0]["robot_id"], "robot1")
+
+    def test_scale_plan_baseline_rejects_robot_outside_dataset_team(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            baseline_root = root / "baselines" / "Scale-Plan"
+            task_run_dir = write_scale_plan_fixture(root)
+            final_plan_path = task_run_dir / "05_plan" / "03_final_plan.json"
+            final_plan = json.loads(final_plan_path.read_text(encoding="utf-8"))
+            outside_plan = final_plan["stages"][0]["plans"][1]
+            outside_plan["robot"] = "robot2"
+            outside_plan["plan"] = (
+                "(GoToObject robot2 Cabinet)\n(OpenObject robot2 Cabinet)"
+            )
+            write_json(final_plan_path, final_plan)
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                result_code = scale_plan_baseline.main(
+                    [
+                        "--root",
+                        str(baseline_root),
+                    ]
+                )
+
+            self.assertEqual(result_code, 1)
+            details = json.loads(
+                (baseline_root / "plan_to_code_results" / "plan_to_code_results.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertIn("robot2", details[0]["error"])
+            self.assertIn("'robot list'", details[0]["error"])
+            self.assertFalse((task_run_dir / "plan_to_code" / "executable_plan.py").exists())
+
+    def test_scale_plan_robot_id_map_rejects_invalid_dataset_teams(self):
+        cases = (
+            (None, "missing a non-empty list"),
+            ([], "missing a non-empty list"),
+            ([18, 18], "Duplicate robot id"),
+            (["not-a-robot"], "Invalid robot id"),
+            ([0], "Invalid robot id"),
+        )
+        for robot_ids, expected_error in cases:
+            with self.subTest(robot_ids=robot_ids):
+                with self.assertRaisesRegex(
+                    scale_plan_baseline.ScalePlanConversionError,
+                    expected_error,
+                ):
+                    scale_plan_baseline.build_robot_id_map(robot_ids)
+
+    def test_scale_plan_baseline_requires_top_level_summary_test_set(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            baseline_root = root / "baselines" / "Scale-Plan"
+            task_run_dir = write_scale_plan_fixture(root)
+            source_summary = (
+                baseline_root
+                / "logs"
+                / "scale_plan_parallel"
+                / "pddlrun_scale_plan_fixture"
+                / "summary.json"
+            )
+            summary_data = json.loads(source_summary.read_text(encoding="utf-8"))
+            summary_data.pop("test_set")
+            write_json(source_summary, summary_data)
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                result_code = scale_plan_baseline.main(
+                    [
+                        "--root",
+                        str(baseline_root),
+                    ]
+                )
+
+            self.assertEqual(result_code, 1)
+            self.assertIn(
+                "missing required non-empty top-level 'test_set'",
+                stdout.getvalue(),
+            )
+            self.assertFalse((task_run_dir / "plan_to_code" / "executable_plan.py").exists())
 
     def test_baseline_mode_explicit_logs_and_output_dirs_override_defaults(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

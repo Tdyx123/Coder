@@ -122,6 +122,8 @@ Common options:
 - `--prompt-decompse-set`: prompt set for decomposition (default: `pddl_train_task_decomposesep`)
 - `--prompt-allocation-set`: prompt set for allocation (default: `pddl_train_task_allocationsep`)
 - `--test-set`: dataset split to use (default: `final_test`)
+- `--plan-feedback` / `--no-plan-feedback`: enable or disable allocation and planner retries
+- `--plan-feedback-max-retries`: maximum plan-feedback retry rounds after the first allocation attempt
 - `--val-feedback`: run VAL after planning and retry failed PDDL Problem generation
 - `--val-feedback-max-retries`: maximum VAL-driven Problem regeneration rounds
 - `--no-log-results`: disable per-task result logging
@@ -134,6 +136,12 @@ What the script does:
 3. Run Fast Downward on each subtask
 4. Merge the subtask plans into a final combined plan
 5. Save logs and artifacts for later plan-to-code conversion
+
+When both plan feedback and VAL feedback are enabled, all plan-feedback attempts
+finish before VAL starts. VAL validates only the subtasks that have a usable plan
+from the final allocation attempt, so missing plans and non-contiguous subtask IDs
+do not prevent the available subset from being validated. After VAL starts, a VAL
+retry never returns to allocation feedback.
 
 ### 2. Run Multiple Floor Plans in Parallel
 
@@ -150,6 +158,8 @@ Useful options:
 - `--max-floor-plan-workers`
 - `--max-task-workers`
 - `--output-root`
+- `--plan-feedback` / `--no-plan-feedback`
+- `--plan-feedback-max-retries`
 - `--val-feedback` / `--no-val-feedback`
 - `--val-feedback-max-retries`
 - `--disable-log-results`

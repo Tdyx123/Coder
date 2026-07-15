@@ -33,8 +33,8 @@ class ParallelRunnerTests(unittest.TestCase):
         self.assertFalse(args.decompose_rag)
         self.assertFalse(args.allocate_rag)
         self.assertFalse(args.problem_rag)
-        self.assertIsNone(args.feedback)
-        self.assertIsNone(args.feedback_max_retries)
+        self.assertIsNone(args.plan_feedback)
+        self.assertIsNone(args.plan_feedback_max_retries)
         self.assertIsNone(args.val_feedback)
         self.assertIsNone(args.val_feedback_max_retries)
 
@@ -57,13 +57,27 @@ class ParallelRunnerTests(unittest.TestCase):
         self.assertTrue(enabled_args.problem_rag)
         self.assertFalse(disabled_args.problem_rag)
 
-    def test_cli_feedback_can_be_enabled_disabled_and_bounded(self):
-        enabled_args = parse_args(["--floor-plans", "6", "--feedback", "--feedback-max-retries", "3"])
-        disabled_args = parse_args(["--floor-plans", "6", "--no-feedback"])
+    def test_cli_plan_feedback_can_be_enabled_disabled_and_bounded(self):
+        enabled_args = parse_args([
+            "--floor-plans",
+            "6",
+            "--plan-feedback",
+            "--plan-feedback-max-retries",
+            "3",
+        ])
+        disabled_args = parse_args(["--floor-plans", "6", "--no-plan-feedback"])
 
-        self.assertTrue(enabled_args.feedback)
-        self.assertEqual(enabled_args.feedback_max_retries, 3)
-        self.assertFalse(disabled_args.feedback)
+        self.assertTrue(enabled_args.plan_feedback)
+        self.assertEqual(enabled_args.plan_feedback_max_retries, 3)
+        self.assertFalse(disabled_args.plan_feedback)
+
+    def test_cli_rejects_removed_feedback_flags(self):
+        for removed_flag in ("--feedback", "--no-feedback", "--feedback-max-retries"):
+            argv = ["--floor-plans", "6", removed_flag]
+            if removed_flag.endswith("max-retries"):
+                argv.append("1")
+            with self.subTest(flag=removed_flag), self.assertRaises(SystemExit):
+                parse_args(argv)
 
     def test_cli_val_feedback_can_be_enabled_disabled_and_bounded(self):
         enabled_args = parse_args(
@@ -173,8 +187,8 @@ class ParallelRunnerTests(unittest.TestCase):
                 decompose_rag=True,
                 allocate_rag=True,
                 problem_rag=True,
-                feedback=True,
-                feedback_max_retries=4,
+                plan_feedback=True,
+                plan_feedback_max_retries=4,
                 val_feedback=True,
                 val_feedback_max_retries=3,
                 disable_log_results=False,
@@ -259,8 +273,8 @@ class ParallelRunnerTests(unittest.TestCase):
                 decompose_rag=False,
                 allocate_rag=False,
                 problem_rag=False,
-                feedback=None,
-                feedback_max_retries=None,
+                plan_feedback=None,
+                plan_feedback_max_retries=None,
                 val_feedback=None,
                 val_feedback_max_retries=None,
                 disable_log_results=False,

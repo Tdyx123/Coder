@@ -35,6 +35,7 @@
 
   (:action GoToObject
     :parameters (?r - robot ?o - object)
+    :precondition ()
     :effect (and
       (forall (?x - object)
         (when (at ?r ?x)

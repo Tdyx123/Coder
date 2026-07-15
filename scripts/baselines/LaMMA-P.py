@@ -40,7 +40,7 @@ def baseline_output_dir(root: Path) -> Path:
 
 
 def baseline_data_repo_root(baseline_root: Path) -> Path:
-    root = baseline_root.expanduser()
+    root = baseline_root.expanduser().resolve()
     if root.parent.name == "baselines":
         return root.parent.parent
     return root
@@ -55,11 +55,12 @@ def _sync_globals(repo_root: Optional[Path] = None) -> None:
 
 
 def resolve_baseline_paths(args: argparse.Namespace) -> Tuple[Path, Path, Path, Path]:
-    baseline_root = (
-        Path(args.root).expanduser()
-        if args.root
-        else default_baseline_root()
-    )
+    if args.root:
+        baseline_root = Path(args.root).expanduser()
+    elif args.logs_dir:
+        baseline_root = _impl.infer_baseline_root(Path(args.logs_dir).expanduser())
+    else:
+        baseline_root = default_baseline_root()
     logs_dir = (
         Path(args.logs_dir).expanduser()
         if args.logs_dir
@@ -75,6 +76,15 @@ def resolve_baseline_paths(args: argparse.Namespace) -> Tuple[Path, Path, Path, 
 
 def has_native_artifacts(logs_dir: Path) -> bool:
     return bool(_impl.discover_task_runs(logs_dir))
+
+
+def summary_selected_logs_dir(baseline_root: Path, logs_dir: Path) -> Path:
+    try:
+        _, summary_data = _impl.load_top_level_summary(baseline_root)
+    except (OSError, ValueError, _impl.FinalPlanEncodingError):
+        return logs_dir
+    test_set = str(summary_data["test_set"]).strip()
+    return _impl.logs_dir_for_test_set(logs_dir, test_set)
 
 
 def run_pddlrun_conversion(
@@ -120,8 +130,9 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "--logs-dir",
         default="",
         help=(
-            "Path to LaMMA-P logs. Defaults to "
-            "<root>/logs/intermediate_runs."
+            "Path to LaMMA-P intermediate_runs or the current test_set log directory. "
+            "Defaults to <root>/logs/intermediate_runs; the top-level summary test_set "
+            "selects its current dataset subdirectory."
         ),
     )
     parser.add_argument(
@@ -167,13 +178,14 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_arguments(argv)
-    _, logs_dir, output_root, data_repo_root = resolve_baseline_paths(args)
+    baseline_root, logs_dir, output_root, data_repo_root = resolve_baseline_paths(args)
     _sync_globals(data_repo_root)
 
     if args.parallel_run:
         return run_pddlrun_conversion(logs_dir=logs_dir, output_root=output_root, args=args)
 
-    if has_native_artifacts(logs_dir):
+    selected_logs_dir = summary_selected_logs_dir(baseline_root, logs_dir)
+    if has_native_artifacts(selected_logs_dir):
         return _impl.convert(
             logs_dir=logs_dir,
             output_root=output_root,
@@ -185,10 +197,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
 
     print(
-        f"No native LaMMA-P plan-to-code artifacts found under {logs_dir}; "
+        f"No native LaMMA-P plan-to-code artifacts found under {selected_logs_dir}; "
         "falling back to pddlrun task-run scan."
     )
-    return run_pddlrun_conversion(logs_dir=logs_dir, output_root=output_root, args=args)
+    return run_pddlrun_conversion(logs_dir=selected_logs_dir, output_root=output_root, args=args)
 
 
 if __name__ == "__main__":

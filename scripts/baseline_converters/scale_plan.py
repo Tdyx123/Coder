@@ -44,6 +44,7 @@ class ScalePlanConversionError(RuntimeError):
 
 @dataclass(frozen=True)
 class IndexedRun:
+    test_set: str
     metadata: Dict[str, Any]
     raw_task_run_dir: str
     task_run_dir: Path
@@ -105,9 +106,15 @@ def local_task_run_dir(raw_task_run_dir: Any, logs_dir: Path) -> Path:
 
 
 def collect_summary_runs(summary_data: Dict[str, Any], logs_dir: Path) -> List[IndexedRun]:
+    test_set = str(summary_data.get("test_set") or "").strip()
+    if not test_set:
+        raise ScalePlanConversionError(
+            "Scale-Plan summary is missing required non-empty top-level 'test_set'."
+        )
+
     root_defaults = {
         key: summary_data[key]
-        for key in ("repo_root", "test_set", "test_set_path", "dataset_file", "model")
+        for key in ("repo_root", "model")
         if summary_data.get(key) not in (None, "")
     }
 
@@ -118,9 +125,6 @@ def collect_summary_runs(summary_data: Dict[str, Any], logs_dir: Path) -> List[I
         floor_defaults = dict(root_defaults)
         for key in (
             "floor_plan",
-            "dataset_file",
-            "test_set",
-            "test_set_path",
             "model",
             "llm_token_usage",
         ):
@@ -136,6 +140,7 @@ def collect_summary_runs(summary_data: Dict[str, Any], logs_dir: Path) -> List[I
             metadata = {**floor_defaults, **result}
             indexed_runs.append(
                 IndexedRun(
+                    test_set=test_set,
                     metadata=metadata,
                     raw_task_run_dir=str(raw_task_run_dir),
                     task_run_dir=local_task_run_dir(raw_task_run_dir, logs_dir),
@@ -145,79 +150,25 @@ def collect_summary_runs(summary_data: Dict[str, Any], logs_dir: Path) -> List[I
     return indexed_runs
 
 
-def remap_data_path(raw_path: Any) -> Optional[Path]:
-    if raw_path in (None, ""):
-        return None
-    path = Path(str(raw_path)).expanduser()
-    if not path.is_absolute():
-        path = REPO_ROOT / path
-    if path.exists():
-        return path
-
-    relative = path_after_marker(raw_path, ("data",))
-    if relative is not None:
-        candidate = REPO_ROOT / "data" / relative
-        if candidate.exists():
-            return candidate
-    return None
-
-
-def add_dataset_file_candidates(
-    candidates: List[Path],
-    raw_path: Any,
-) -> None:
-    mapped = remap_data_path(raw_path)
-    if mapped is not None and mapped.is_file():
-        candidates.append(mapped)
-
-
-def add_test_set_path_candidates(
-    candidates: List[Path],
-    raw_path: Any,
-    floor_plan: Optional[str],
-) -> None:
-    if not floor_plan:
-        return
-    mapped = remap_data_path(raw_path)
-    if mapped is not None and mapped.is_dir():
-        candidates.append(mapped / f"FloorPlan{normalize_floor_plan(str(floor_plan))}.jsonl")
-
-
 def dataset_path_for_run(
-    metadata: Dict[str, Any],
-    manifest: Dict[str, Any],
-    task_context: Dict[str, Any],
     floor_plan: Optional[str],
-    test_set: Optional[str],
+    test_set: str,
 ) -> Path:
-    candidates: List[Path] = []
-    for source in (metadata, manifest, task_context):
-        add_dataset_file_candidates(candidates, source.get("dataset_file"))
+    if not floor_plan:
+        raise ScalePlanConversionError("Could not determine floor_plan for Scale-Plan run.")
 
-    for source in (metadata, manifest, task_context):
-        add_test_set_path_candidates(candidates, source.get("test_set_path"), floor_plan)
-
-    if test_set and floor_plan:
-        candidates.append(
-            REPO_ROOT
-            / "data"
-            / str(test_set)
-            / f"FloorPlan{normalize_floor_plan(str(floor_plan))}.jsonl"
-        )
-
-    seen = set()
-    for candidate in candidates:
-        key = str(candidate)
-        if key in seen:
-            continue
-        seen.add(key)
-        if candidate.is_file():
-            return candidate
-
-    raise ScalePlanConversionError("Dataset task file not found for Scale-Plan run.")
+    task_file = (
+        REPO_ROOT
+        / "data"
+        / test_set
+        / f"FloorPlan{normalize_floor_plan(str(floor_plan))}.jsonl"
+    )
+    if task_file.is_file():
+        return task_file
+    raise ScalePlanConversionError(f"Dataset task file not found: {task_file}")
 
 
-def load_task_record_gcr(task_file: Path, task_index: int) -> List[Any]:
+def load_task_record(task_file: Path, task_index: int) -> Dict[str, Any]:
     if task_index < 0:
         raise ScalePlanConversionError("task_index must be 0-based and non-negative.")
     with task_file.open("r", encoding="utf-8") as handle:
@@ -228,13 +179,54 @@ def load_task_record_gcr(task_file: Path, task_index: int) -> List[Any]:
             if not line:
                 raise ScalePlanConversionError(f"Dataset line {task_index} is empty: {task_file}")
             record = json.loads(line)
-            gcr = record.get("object_states")
-            if not isinstance(gcr, list):
+            if not isinstance(record, dict):
                 raise ScalePlanConversionError(
-                    "Dataset task record is missing list object_states for BUNDLE_DATA['gcr']."
+                    f"Dataset line {task_index} must contain a JSON object: {task_file}"
                 )
-            return gcr
+            return record
     raise ScalePlanConversionError(f"task_index {task_index} is out of range for {task_file}")
+
+
+def task_record_gcr(task_record: Dict[str, Any]) -> List[Any]:
+    gcr = task_record.get("object_states")
+    if not isinstance(gcr, list):
+        raise ScalePlanConversionError(
+            "Dataset task record is missing list object_states for BUNDLE_DATA['gcr']."
+        )
+    return gcr
+
+
+def load_task_record_gcr(task_file: Path, task_index: int) -> List[Any]:
+    return task_record_gcr(load_task_record(task_file, task_index))
+
+
+def build_robot_id_map(robot_ids: Any) -> Dict[str, str]:
+    if not isinstance(robot_ids, list) or not robot_ids:
+        raise ScalePlanConversionError(
+            "Dataset task record is missing a non-empty list 'robot list'."
+        )
+
+    robot_id_map: Dict[str, str] = {}
+    for index, raw_robot_id in enumerate(robot_ids, start=1):
+        try:
+            robot_number = int(str(raw_robot_id).strip())
+        except (TypeError, ValueError) as exc:
+            raise ScalePlanConversionError(
+                f"Invalid robot id in dataset 'robot list': {raw_robot_id!r}"
+            ) from exc
+        if robot_number < 1:
+            raise ScalePlanConversionError(
+                f"Invalid robot id in dataset 'robot list': {raw_robot_id!r}"
+            )
+
+        real_robot_id = f"robot{robot_number}"
+        if real_robot_id in robot_id_map:
+            raise ScalePlanConversionError(
+                f"Duplicate robot id in dataset 'robot list': {raw_robot_id!r}"
+            )
+        robot_id_map[real_robot_id] = f"robot{index}"
+
+    return robot_id_map
 
 
 def object_names_from_gcr(gcr: Sequence[Any]) -> List[str]:
@@ -251,11 +243,15 @@ def object_names_from_gcr(gcr: Sequence[Any]) -> List[str]:
     return names
 
 
-def encoded_action_data(action: lammap.EncodedAction) -> Dict[str, Any]:
+def encoded_action_data(
+    action: lammap.EncodedAction,
+    *,
+    robot_id: Optional[str] = None,
+) -> Dict[str, Any]:
     return {
         "action_type": action.action_type,
         "parameters": {"args": list(action.args)},
-        "robot_id": action.robot_id,
+        "robot_id": robot_id or action.robot_id,
     }
 
 
@@ -276,6 +272,7 @@ def build_task_plan_data(
     final_plan: Dict[str, Any],
     resolver: ObjectNameResolver,
     robots: Sequence[Dict[str, Any]],
+    robot_id_map: Dict[str, str],
 ) -> Tuple[Dict[str, Any], int]:
     raw_stages = final_plan.get("stages")
     if not isinstance(raw_stages, list):
@@ -304,7 +301,15 @@ def build_task_plan_data(
                     raise ScalePlanConversionError(
                         f"Plan declared {declared_robot}, but action uses {action.robot_id}: {action.raw}"
                     )
-                queues.setdefault(action.robot_id, []).append(encoded_action_data(action))
+                local_robot_id = robot_id_map.get(action.robot_id)
+                if local_robot_id is None:
+                    raise ScalePlanConversionError(
+                        f"Plan references {action.robot_id}, but it is not present in the "
+                        "dataset task record's 'robot list'."
+                    )
+                queues.setdefault(local_robot_id, []).append(
+                    encoded_action_data(action, robot_id=local_robot_id)
+                )
                 action_count += 1
 
         if not queues:
@@ -400,7 +405,7 @@ def process_indexed_run(
         task = str(value_from_sources("task", metadata, manifest, task_context) or task_run_dir.parent.name)
         floor_plan = value_from_sources("floor_plan", metadata, manifest, task_context)
         task_index = parse_int(value_from_sources("task_index", metadata, manifest, task_context))
-        test_set = value_from_sources("test_set", metadata, manifest, task_context)
+        test_set = indexed_run.test_set
         if task_index is None:
             raise ScalePlanConversionError("Could not determine task_index for Scale-Plan run.")
 
@@ -409,13 +414,12 @@ def process_indexed_run(
             raise ScalePlanConversionError("inputs/task_context.json is missing a robot list.")
 
         task_file = dataset_path_for_run(
-            metadata,
-            manifest,
-            task_context,
             str(floor_plan) if floor_plan is not None else None,
-            str(test_set) if test_set is not None else None,
+            test_set,
         )
-        gcr = load_task_record_gcr(task_file, task_index)
+        task_record = load_task_record(task_file, task_index)
+        gcr = task_record_gcr(task_record)
+        robot_id_map = build_robot_id_map(task_record.get("robot list"))
 
         object_names = load_object_names(REPO_ROOT, str(floor_plan or ""), task_context)
         object_names.extend(object_names_from_gcr(gcr))
@@ -430,6 +434,7 @@ def process_indexed_run(
             final_plan=final_plan,
             resolver=resolver,
             robots=robots,
+            robot_id_map=robot_id_map,
         )
 
         bundle_data = common_build_bundle_data(
@@ -460,7 +465,7 @@ def process_indexed_run(
                 "task": task,
                 "floor_plan": str(floor_plan) if floor_plan is not None else None,
                 "task_index": task_index,
-                "test_set": str(test_set) if test_set is not None else None,
+                "test_set": test_set,
                 "status": "success",
                 "success": True,
                 "action_count": action_count,
@@ -499,7 +504,11 @@ def convert(
         print(f"ERROR: {exc}")
         return 1
 
-    indexed_runs = collect_summary_runs(summary_data, logs_dir.expanduser())
+    try:
+        indexed_runs = collect_summary_runs(summary_data, logs_dir.expanduser())
+    except ScalePlanConversionError as exc:
+        print(f"ERROR: {exc}")
+        return 1
     if floor_plan:
         indexed_runs = [
             indexed_run

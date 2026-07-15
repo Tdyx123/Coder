@@ -25,7 +25,6 @@
 
   (:predicates
     (at ?robot - robot ?object - object)
-    (inaction ?robot - robot) 
     (holding ?robot - robot ?object - object)
     (at-location  ?object - object ?location - object)
     (switch-on ?object - object)
@@ -46,6 +45,7 @@
 
   (:action GoToObject
     :parameters (?r - robot ?o - object)
+    :precondition ()
     :effect (and
       (forall (?x - object)
         (when (at ?r ?x)

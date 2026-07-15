@@ -113,6 +113,33 @@ def write_run(
     final_path = run_dir / "08_final_match" / "02_final_plan.txt"
     final_path.parent.mkdir(parents=True, exist_ok=True)
     final_path.write_text(final_plan, encoding="utf-8")
+    write_json(
+        root
+        / "baselines"
+        / "LaMMA-P"
+        / "parallel_runs"
+        / "pddlrun_fixture"
+        / "summary.json",
+        {
+            "repo_root": "/home/dwb/thor/LaMMA-P",
+            "test_set": "final_test_new_0609_1",
+            "summaries": [
+                {
+                    "floor_plan": "1",
+                    "test_set": "floor_summary_decoy",
+                    "results": [
+                        {
+                            "task_run_dir": str(run_dir),
+                            "task_index": 0,
+                            "task": task,
+                            "test_set": "result_decoy",
+                            "status": "success",
+                        }
+                    ],
+                }
+            ],
+        },
+    )
     return run_dir
 
 

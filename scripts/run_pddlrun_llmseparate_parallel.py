@@ -86,21 +86,22 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="store_false",
         help="Disable PDDL problem-generation RAG and use the static problem prompt examples (default).",
     )
-    feedback_group = parser.add_mutually_exclusive_group()
-    feedback_group.add_argument(
-        "--feedback",
-        dest="feedback",
+    plan_feedback_group = parser.add_mutually_exclusive_group()
+    plan_feedback_group.add_argument(
+        "--plan-feedback",
+        dest="plan_feedback",
         action="store_true",
         help="Enable planner-feedback retries from allocation onward.",
     )
-    feedback_group.add_argument(
-        "--no-feedback",
-        dest="feedback",
+    plan_feedback_group.add_argument(
+        "--no-plan-feedback",
+        dest="plan_feedback",
         action="store_false",
         help="Disable planner-feedback retries.",
     )
     parser.add_argument(
-        "--feedback-max-retries",
+        "--plan-feedback-max-retries",
+        dest="plan_feedback_max_retries",
         type=int,
         default=None,
         help="Maximum feedback retry rounds after the first allocation attempt.",
@@ -128,7 +129,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         decompose_rag=False,
         allocate_rag=False,
         problem_rag=False,
-        feedback=None,
+        plan_feedback=None,
         val_feedback=None,
     )
     return parser.parse_args(argv)
@@ -328,7 +329,11 @@ def main() -> None:
     apply_decompose_rag_cli_override(config, args.decompose_rag)
     apply_allocate_rag_cli_override(config, args.allocate_rag)
     apply_problem_rag_cli_override(config, args.problem_rag)
-    apply_feedback_cli_override(config, args.feedback, args.feedback_max_retries)
+    apply_feedback_cli_override(
+        config,
+        args.plan_feedback,
+        args.plan_feedback_max_retries,
+    )
     apply_val_feedback_cli_override(
         config,
         getattr(args, "val_feedback", None),

@@ -664,8 +664,35 @@ def task_run_key(path: Path) -> str:
     return str(path.resolve())
 
 
-def load_parallel_metadata(baseline_root: Path) -> Dict[str, Dict[str, Any]]:
+def top_level_summary_path(baseline_root: Path) -> Path:
+    summary_root = baseline_root.expanduser() / "parallel_runs"
+    candidates = sorted(summary_root.glob("*/summary.json"))
+    if len(candidates) != 1:
+        raise FinalPlanEncodingError(
+            "Expected exactly one LaMMA-P top-level parallel_runs summary under "
+            f"{summary_root}; found {len(candidates)}."
+        )
+    return candidates[0]
+
+
+def load_top_level_summary(baseline_root: Path) -> Tuple[Path, Dict[str, Any]]:
+    summary_path = top_level_summary_path(baseline_root)
+    data = read_json(summary_path, default={})
+    if not isinstance(data, dict):
+        raise FinalPlanEncodingError(f"Expected JSON object: {summary_path}")
+    test_set = str(data.get("test_set") or "").strip()
+    if not test_set:
+        raise FinalPlanEncodingError(
+            "LaMMA-P summary is missing required non-empty top-level 'test_set'."
+        )
+    return summary_path, data
+
+
+def parallel_metadata_from_summary(
+    summary_data: Dict[str, Any],
+) -> Dict[str, Dict[str, Any]]:
     metadata: Dict[str, Dict[str, Any]] = {}
+    test_set = str(summary_data["test_set"]).strip()
 
     def add_records(
         records: Iterable[Any],
@@ -678,39 +705,37 @@ def load_parallel_metadata(baseline_root: Path) -> Dict[str, Dict[str, Any]]:
             raw_run_dir = result.get("task_run_dir")
             if not raw_run_dir:
                 continue
-            record = {**summary_defaults, **result}
+            record = {**summary_defaults, **result, "test_set": test_set}
             metadata[task_run_key(Path(str(raw_run_dir)))] = record
 
-    for summary_path in sorted((baseline_root / "parallel_runs").rglob("summary.json")):
-        data = read_json(summary_path, default={})
-        if not isinstance(data, dict):
+    root_defaults = {
+        key: summary_data[key]
+        for key in ("floor_plan", "model")
+        if summary_data.get(key) not in (None, "")
+    }
+    add_records(summary_data.get("results") or (), summary_defaults=root_defaults)
+    for summary in summary_data.get("summaries") or ():
+        if not isinstance(summary, dict):
             continue
-        root_defaults = {
-            key: data[key]
-            for key in ("floor_plan", "repo_root", "test_set")
-            if data.get(key) not in (None, "")
+        summary_defaults = {
+            key: summary.get(key, root_defaults.get(key))
+            for key in ("floor_plan", "model")
+            if summary.get(key, root_defaults.get(key)) not in (None, "")
         }
-        add_records(data.get("results") or (), summary_defaults=root_defaults)
-        for summary in data.get("summaries") or ():
-            if not isinstance(summary, dict):
-                continue
-            summary_defaults = {
-                key: summary.get(key, root_defaults.get(key))
-                for key in ("floor_plan", "repo_root", "test_set")
-                if summary.get(key, root_defaults.get(key)) not in (None, "")
-            }
-            add_records(summary.get("results") or (), summary_defaults=summary_defaults)
+        add_records(summary.get("results") or (), summary_defaults=summary_defaults)
     return metadata
 
 
-def infer_test_set(task_run_dir: Path, manifest: Dict[str, Any]) -> Optional[str]:
-    if manifest.get("test_set"):
-        return str(manifest["test_set"])
-    parts = task_run_dir.parts
-    for index, part in enumerate(parts):
-        if part == "intermediate_runs" and index + 1 < len(parts):
-            return parts[index + 1]
-    return None
+def load_parallel_metadata(baseline_root: Path) -> Dict[str, Dict[str, Any]]:
+    _, summary_data = load_top_level_summary(baseline_root)
+    return parallel_metadata_from_summary(summary_data)
+
+
+def logs_dir_for_test_set(logs_dir: Path, test_set: str) -> Path:
+    root = logs_dir.expanduser()
+    if root.name == test_set:
+        return root
+    return root / test_set
 
 
 def task_run_matches_floor_plan(
@@ -858,10 +883,8 @@ def process_task_run(
         task_index = int(raw_task_index) if raw_task_index is not None else None
     except (TypeError, ValueError):
         task_index = None
-    test_set = str(metadata.get("test_set") or infer_test_set(task_run_dir, manifest) or "")
-    data_repo_root = Path(
-        str(metadata.get("repo_root") or manifest.get("repo_root") or REPO_ROOT)
-    ).expanduser()
+    test_set = str(metadata.get("test_set") or "").strip()
+    data_repo_root = REPO_ROOT
 
     result: Dict[str, Any] = {
         "task": task,
@@ -958,7 +981,14 @@ def process_task_run(
         result["generation_time"] = time.time() - started_at
 
 
-def write_global_summary(results: Sequence[Dict[str, Any]], output_root: Path, dry_run: bool) -> None:
+def write_global_summary(
+    results: Sequence[Dict[str, Any]],
+    output_root: Path,
+    dry_run: bool,
+    *,
+    source_summary: Optional[Path] = None,
+    test_set: Optional[str] = None,
+) -> None:
     total = len(results)
     successful = sum(1 for result in results if result.get("success"))
     summary = {
@@ -968,6 +998,10 @@ def write_global_summary(results: Sequence[Dict[str, Any]], output_root: Path, d
         "success_rate": successful / total * 100 if total else 0,
         "total_generation_time": sum(float(result.get("generation_time", 0)) for result in results),
     }
+    if source_summary is not None:
+        summary["source_summary"] = str(source_summary)
+    if test_set:
+        summary["test_set"] = test_set
     if not dry_run:
         output_root.mkdir(parents=True, exist_ok=True)
         write_json(output_root / "plan_to_code_summary.json", summary)
@@ -984,13 +1018,25 @@ def convert(
     dry_run: bool = False,
     validate_code: bool = True,
 ) -> int:
-    if not logs_dir.is_dir():
-        print(f"ERROR: logs directory not found: {logs_dir}")
+    baseline_root = infer_baseline_root(logs_dir)
+    try:
+        source_summary, summary_data = load_top_level_summary(baseline_root)
+    except (OSError, json.JSONDecodeError, FinalPlanEncodingError) as exc:
+        print(f"ERROR: {exc}")
         return 1
 
-    baseline_root = infer_baseline_root(logs_dir)
-    metadata = load_parallel_metadata(baseline_root)
-    task_run_dirs = discover_task_runs(logs_dir)
+    test_set = str(summary_data["test_set"]).strip()
+    current_logs_dir = logs_dir_for_test_set(logs_dir, test_set)
+    if not current_logs_dir.is_dir():
+        print(f"ERROR: logs directory not found for test_set {test_set!r}: {current_logs_dir}")
+        return 1
+
+    metadata = parallel_metadata_from_summary(summary_data)
+    task_run_dirs = [
+        task_run_dir
+        for task_run_dir in discover_task_runs(current_logs_dir)
+        if task_run_key(task_run_dir) in metadata
+    ]
     results: List[Dict[str, Any]] = []
     selected_categories = set(categories or [])
 
@@ -1020,7 +1066,13 @@ def convert(
         marker = "OK" if result.get("status") == "success" else "SKIP"
         print(f"[{marker}] {result.get('category')}: {task_run_dir}")
 
-    write_global_summary(results, output_root, dry_run)
+    write_global_summary(
+        results,
+        output_root,
+        dry_run,
+        source_summary=source_summary,
+        test_set=test_set,
+    )
     success_count = sum(1 for result in results if result.get("status") == "success")
     print(f"Processed {len(results)} run(s); generated {success_count} code bundle(s).")
     return 0

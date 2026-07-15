@@ -14,7 +14,7 @@ import time
 import re
 import shutil
 import sys
-from typing import Callable, List, Dict, Tuple, Optional, Union, Any, Set, Sequence
+from typing import Callable, Iterable, List, Dict, Tuple, Optional, Union, Any, Set, Sequence
 import uuid
 
 try:
@@ -1150,17 +1150,6 @@ class TaskManager:
                 if path.is_file() and path.name.startswith(prefixes):
                     path.unlink()
 
-    def _reset_val_latest_records(self) -> None:
-        """Clear completion-facing VAL state before a full allocation retry."""
-        val_manifest_path = self.config.artifact("val_manifest", "08_val/val_manifest.json")
-        manifest = self._read_json_artifact(val_manifest_path, {})
-        if isinstance(manifest, dict):
-            manifest["latest_by_subtask"] = {}
-            self._write_json_artifact(val_manifest_path, manifest)
-        if isinstance(self.current_task_manifest, dict) and "val_feedback" in self.current_task_manifest:
-            self.current_task_manifest["val_feedback"]["status"] = "pending"
-            self._persist_manifest()
-
     @staticmethod
     def _subtask_id_from_filename(filename: str) -> Optional[int]:
         match = re.search(r"subtask[_-]?0*(\d+)", str(filename), re.IGNORECASE)
@@ -1279,6 +1268,7 @@ class TaskManager:
         planner_records: Sequence[Dict[str, Any]],
         expected_subtask_count: int,
         robot_assignments: Optional[Dict[int, int]] = None,
+        expected_subtask_ids: Optional[Iterable[int]] = None,
     ) -> Dict[str, Any]:
         records_by_subtask: Dict[int, Dict[str, Any]] = {}
         for record in planner_records:
@@ -1288,7 +1278,12 @@ class TaskManager:
 
         failed_sections: Dict[int, str] = {}
         subtask_feedback: Dict[int, str] = {}
-        for subtask_id in range(1, expected_subtask_count + 1):
+        subtask_ids = (
+            sorted({int(subtask_id) for subtask_id in expected_subtask_ids})
+            if expected_subtask_ids is not None
+            else range(1, expected_subtask_count + 1)
+        )
+        for subtask_id in subtask_ids:
             record = records_by_subtask.get(subtask_id)
             if record and self._planner_record_success(record):
                 continue
@@ -1425,14 +1420,15 @@ class TaskManager:
         if not isinstance(attempts, list):
             attempts = []
             manifest["attempts"] = attempts
+        attempt_target_ids = sorted(
+            int(record["subtask_id"])
+            for record in records
+            if record.get("subtask_id") is not None
+        )
         attempts.append({
             "allocation_attempt": allocation_attempt,
             "val_attempt": val_attempt,
-            "targeted_subtask_ids": sorted(
-                int(record["subtask_id"])
-                for record in records
-                if record.get("subtask_id") is not None
-            ),
+            "targeted_subtask_ids": attempt_target_ids,
             "records": list(records),
         })
         latest = manifest.setdefault("latest_by_subtask", {})
@@ -1442,6 +1438,19 @@ class TaskManager:
         for record in records:
             if record.get("subtask_id") is not None:
                 latest[str(record["subtask_id"])] = dict(record)
+        existing_target_ids = manifest.get("targeted_subtask_ids", [])
+        if not isinstance(existing_target_ids, list):
+            existing_target_ids = []
+        targeted_subtask_ids = sorted({
+            *(int(subtask_id) for subtask_id in existing_target_ids),
+            *attempt_target_ids,
+        })
+        manifest["targeted_subtask_ids"] = targeted_subtask_ids
+        manifest["passed"] = bool(targeted_subtask_ids) and all(
+            isinstance(latest.get(str(subtask_id)), dict)
+            and bool(latest[str(subtask_id)].get("valid"))
+            for subtask_id in targeted_subtask_ids
+        )
         manifest["enabled"] = True
         self._write_json_artifact(val_manifest_path, manifest)
         self._record_artifact("val", "manifest", val_manifest_path)
@@ -1716,9 +1725,10 @@ class TaskManager:
                 for key in sorted(planner_by_subtask)
             ]
             planner_feedback = self._build_planner_feedback(
-                merged_planner_records,
+                updated_planner_records,
                 len(subtasks),
                 robot_assignments,
+                expected_subtask_ids=retry_ids,
             )
             if not planner_feedback["succeeded"]:
                 self._set_val_feedback_status("planner_failed")
@@ -1819,22 +1829,9 @@ class TaskManager:
             len(subtasks),
             robot_assignments,
         )
-        if feedback_result["succeeded"] and self.val_feedback_enabled:
-            feedback_result = self._run_val_feedback_loop(
-                subtasks=subtasks,
-                robot_assignments=robot_assignments,
-                objects_ai=objects_ai,
-                key_object_pddl_states=key_object_pddl_states,
-                key_object_pddl_states_by_subtask=key_object_pddl_states_by_subtask,
-                planner_records=planner_records,
-                allocation_attempt=attempt_index,
-            )
-            planner_records = feedback_result.get("planner_records", planner_records)
-            print("✓ VAL validation complete")
-        else:
-            feedback_result["failure_source"] = (
-                None if feedback_result["succeeded"] else "planner"
-            )
+        feedback_result["failure_source"] = (
+            None if feedback_result["succeeded"] else "planner"
+        )
 
         feedback_path = None
         if (
@@ -1857,6 +1854,34 @@ class TaskManager:
             "feedback_path": feedback_path,
             **feedback_result,
         }
+
+    def _merge_planner_records(
+        self,
+        planner_records: Sequence[Dict[str, Any]],
+        updated_records: Sequence[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Merge updated VAL records without dropping allocation diagnostics."""
+        updated_by_subtask = {
+            subtask_id: dict(record)
+            for record in updated_records
+            for subtask_id in [
+                self._subtask_id_from_filename(str(record.get("problem_file", "")))
+            ]
+            if subtask_id is not None
+        }
+        merged_records: List[Dict[str, Any]] = []
+        merged_subtask_ids: Set[int] = set()
+        for record in planner_records:
+            subtask_id = self._subtask_id_from_filename(str(record.get("problem_file", "")))
+            if subtask_id is not None and subtask_id in updated_by_subtask:
+                merged_records.append(updated_by_subtask[subtask_id])
+                merged_subtask_ids.add(subtask_id)
+            else:
+                merged_records.append(dict(record))
+
+        for subtask_id in sorted(set(updated_by_subtask) - merged_subtask_ids):
+            merged_records.append(updated_by_subtask[subtask_id])
+        return merged_records
     
     def calculate_completion_rate(self) -> Tuple[int, int]:
         """
@@ -2179,8 +2204,6 @@ class TaskManager:
                     if attempt_index > 1:
                         print(f"Retrying from allocation with planner feedback (attempt {attempt_index}/{max_attempts})")
                         self._clean_feedback_attempt_outputs()
-                        if self.val_feedback_enabled:
-                            self._reset_val_latest_records()
 
                     attempt_result = self._run_feedback_attempt(
                         decomposed_plan=decomposed_plan,
@@ -2208,6 +2231,30 @@ class TaskManager:
 
                     attempt_feedback_text = attempt_result.get("feedback_text") or ""
                     planner_feedback_by_subtask = attempt_result.get("planner_feedback_by_subtask") or {}
+
+                if self.val_feedback_enabled:
+                    final_planner_records = attempt_result.get("planner_records", [])
+                    available_planner_records = [
+                        record
+                        for record in final_planner_records
+                        if self._planner_record_success(record)
+                    ]
+                    if available_planner_records:
+                        val_result = self._run_val_feedback_loop(
+                            subtasks=subtasks,
+                            robot_assignments=attempt_result.get("robot_assignments", {}),
+                            objects_ai=objects_ai,
+                            key_object_pddl_states=key_object_pddl_states,
+                            key_object_pddl_states_by_subtask=key_object_pddl_states_by_subtask,
+                            planner_records=available_planner_records,
+                            allocation_attempt=int(attempt_result.get("attempt_index") or attempt_index),
+                        )
+                        attempt_result["planner_records"] = self._merge_planner_records(
+                            final_planner_records,
+                            val_result.get("planner_records", available_planner_records),
+                        )
+                        attempt_result["val_result"] = val_result
+                        print("✓ VAL validation complete")
 
                 allocated_plan = attempt_result.get("allocated_plan", "")
                 self.allocated_plan.append(allocated_plan)
@@ -4137,21 +4184,22 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="store_false",
         help="Disable PDDL problem-generation RAG and use the static problem prompt examples (default).",
     )
-    feedback_group = parser.add_mutually_exclusive_group()
-    feedback_group.add_argument(
-        "--feedback",
-        dest="feedback",
+    plan_feedback_group = parser.add_mutually_exclusive_group()
+    plan_feedback_group.add_argument(
+        "--plan-feedback",
+        dest="plan_feedback",
         action="store_true",
         help="Enable planner-feedback retries from allocation onward.",
     )
-    feedback_group.add_argument(
-        "--no-feedback",
-        dest="feedback",
+    plan_feedback_group.add_argument(
+        "--no-plan-feedback",
+        dest="plan_feedback",
         action="store_false",
         help="Disable planner-feedback retries.",
     )
     parser.add_argument(
-        "--feedback-max-retries",
+        "--plan-feedback-max-retries",
+        dest="plan_feedback_max_retries",
         type=int,
         default=None,
         help="Maximum feedback retry rounds after the first allocation attempt.",
@@ -4179,7 +4227,7 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         decompose_rag=False,
         allocate_rag=False,
         problem_rag=False,
-        feedback=None,
+        plan_feedback=None,
         val_feedback=None,
     )
 
@@ -4195,7 +4243,11 @@ def main():
         apply_decompose_rag_cli_override(run_config, args.decompose_rag)
         apply_allocate_rag_cli_override(run_config, args.allocate_rag)
         apply_problem_rag_cli_override(run_config, args.problem_rag)
-        apply_feedback_cli_override(run_config, args.feedback, args.feedback_max_retries)
+        apply_feedback_cli_override(
+            run_config,
+            args.plan_feedback,
+            args.plan_feedback_max_retries,
+        )
         apply_val_feedback_cli_override(
             run_config,
             getattr(args, "val_feedback", None),
