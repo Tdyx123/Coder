@@ -201,6 +201,13 @@ def _run_microwave_state_builder(objs: List[str]) -> List[Dict[str, Any]]:
     return [{"name": objs[0], "contains": [], "states": states}]
 
 
+def _cold_object_state_builder(objs: List[str]) -> List[Dict[str, Any]]:
+    return [
+        {"name": objs[0], "contains": [], "states": ["COLD"]},
+        {"name": objs[1], "contains": [], "states": ["CLOSED"]},
+    ]
+
+
 def _putin_robot_skills(subtask: Dict[str, Any]) -> List[str]:
     objects = subtask.get("objects", [])
     if len(objects) > 1 and not _putin_requires_open_close(objects[1]):
@@ -587,7 +594,7 @@ SKILL_CONFIGS: Dict[str, SkillConfig] = {
         ),
         required_pickup=(0,),
         text_builder=lambda objs: f"cool the {_lower_objects(objs)[0]} in the {_lower_objects(objs)[1]}",
-        final_state_builder=_single_state_builder("COLD"),
+        final_state_builder=_cold_object_state_builder,
     ),
 }
 
@@ -1582,6 +1589,12 @@ class DataEngine:
         contains_by_name: Dict[str, List[str]] = {}
         states_by_name: Dict[str, List[str]] = {}
         names: List[str] = []
+        cold_object_fridges = {
+            subtask["objects"][1]
+            for subtask in subtasks
+            if subtask.get("skill") == "ColdObject"
+            and len(subtask.get("objects", [])) >= 2
+        }
 
         for subtask in subtasks:
             partial_states = self.get_subtask_final_state(subtask)
@@ -1609,6 +1622,11 @@ class DataEngine:
                     if state not in states_by_name[name]:
                         states_by_name[name].append(state)
 
+        for fridge in cold_object_fridges:
+            states = states_by_name.get(fridge, [])
+            if "CLOSED" in states:
+                states.remove("CLOSED")
+
         return [
             {
                 "name": name,
@@ -1616,6 +1634,11 @@ class DataEngine:
                 "states": states_by_name.get(name, []),
             }
             for name in names
+            if (
+                name not in cold_object_fridges
+                or contains_by_name.get(name)
+                or states_by_name.get(name)
+            )
         ]
 
     def _robot_can_complete_subtask(self, robot: Dict, subtask: Dict, obj_mass_map: Dict[str, float]) -> bool:

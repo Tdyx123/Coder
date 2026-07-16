@@ -33,6 +33,7 @@ from pddlrun_llmseparate import (
     PDDLError,
     RunConfig,
     TaskManager,
+    _strip_legacy_inaction_prompt_text,
     build_robot_domain_name_map,
     build_robot_team,
     load_run_config,
@@ -164,6 +165,79 @@ class PDDLRunConfigTests(unittest.TestCase):
     def setUp(self):
         if pddlrun_llmseparate_v2 is None and self._testMethodName.startswith("test_v2_"):
             self.skipTest("pddlrun_llmseparate_v2 source module is not present")
+
+    def test_prompt_templates_do_not_reference_legacy_inaction(self):
+        prompt_names = (
+            "pddl_train_task_decomposesep.txt",
+            "pddl_train_task_allocationsep_solution.txt",
+            "pddl_train_task_allocationsep_summary.txt",
+            "pddl_train_task_allocationsep_problem.txt",
+        )
+
+        for version in ("v1", "v2"):
+            for prompt_name in prompt_names:
+                prompt_path = ROOT / "prompts" / version / prompt_name
+                with self.subTest(prompt=str(prompt_path)):
+                    self.assertNotIn("inaction", prompt_path.read_text(encoding="utf-8").lower())
+
+    def test_strip_legacy_inaction_prompt_text_handles_historical_forms(self):
+        cleaned = _strip_legacy_inaction_prompt_text(
+            "Preconditions: (not (inaction ?robot))\n"
+            "Effects: (at ?robot ?knife), (not(inaction ?robot))\n"
+            "Preconditions: not (inaction robot1), (at ?robot ?door)\n"
+            "    :precondition (not (inaction ?robot))\n"
+            "    (inaction ?robot - robot)\n"
+            "The robot initiates as not inaction.\n"
+            "Keep this line."
+        )
+
+        self.assertEqual(
+            "Preconditions: None.\n"
+            "Effects: (at ?robot ?knife)\n"
+            "Preconditions: (at ?robot ?door)\n"
+            "    :precondition ()\n"
+            "Keep this line.",
+            cleaned,
+        )
+
+    def test_problem_summary_prompt_strips_legacy_inaction_from_all_inputs(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            prompt_dir = root / "prompts" / "v1"
+            prompt_dir.mkdir(parents=True)
+            (prompt_dir / "pddl_train_task_allocationsep_summary.txt").write_text(
+                "# static summary example\n"
+                "Preconditions: (not (inaction ?robot))\n",
+                encoding="utf-8",
+            )
+            manager = TaskManager(str(root), "test-model", config=RunConfig(root))
+            manager.current_task_run_dir = str(root / "run")
+            manager.current_task_manifest = {"artifacts": {}, "task": "Open the drawer"}
+            captured = {}
+
+            def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
+                captured["prompt"] = messages[-1]["content"]
+                return {}, "#SubTask 1: Open the drawer"
+
+            with patch.object(manager.llm, "query_model", side_effect=fake_query_model):
+                manager._generate_problem_summary(
+                    decomposed_plans=(
+                        "#SubTask 1: Open the drawer\n"
+                        "Effects: (object-open ?drawer), (not(inaction ?robot))\n"
+                    ),
+                    allocated_plans=(
+                        "# Sequence of Operations:\n"
+                        "Subtask 1: Robot 1;\n"
+                        "not (inaction robot1)\n"
+                    ),
+                    available_robots=[{"name": "robot1"}],
+                )
+
+            prompt = captured["prompt"]
+            self.assertNotIn("inaction", prompt.lower())
+            self.assertIn("# static summary example", prompt)
+            self.assertIn("#SubTask 1: Open the drawer", prompt)
+            self.assertIn("# Sequence of Operations:", prompt)
 
     def write_problem_generation_fixture(
         self,
@@ -3312,7 +3386,8 @@ class PDDLRunConfigTests(unittest.TestCase):
                             "decompose:fridge",
                             "decompose",
                             "Task: open fridge",
-                            "# Historical decomposition for opening a fridge",
+                            "# Historical decomposition for opening a fridge\n"
+                            "Preconditions: (not (inaction ?robot))",
                         )
                     ],
                 ),
@@ -3342,6 +3417,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertIn("# Example", prompt)
             self.assertNotIn("doc_id: decompose:fridge", prompt)
             self.assertIn("# Historical decomposition for opening a fridge", prompt)
+            self.assertNotIn("not (inaction", prompt.lower())
             self.assertNotIn("# static decompose example should be replaced", prompt)
             self.assertEqual(1300, captured["max_tokens"])
             self.assertEqual(
@@ -3480,7 +3556,8 @@ class PDDLRunConfigTests(unittest.TestCase):
                             "allocate:microwave",
                             "allocate",
                             "Task: heat apple microwave",
-                            "# Historical allocation for microwave heating",
+                            "# Historical allocation for microwave heating\n"
+                            "Effects: (at ?robot ?microwave), (not(inaction ?robot))",
                         )
                     ],
                     section="allocate_rag",
@@ -3495,7 +3572,9 @@ class PDDLRunConfigTests(unittest.TestCase):
 
             with patch.object(manager.llm, "query_model", side_effect=fake_query_model):
                 result = manager._generate_allocation_plan(
-                    '#SubTask 1: Heat the apple in the microwave\n# Task "Heat the apple" is done.',
+                    "#SubTask 1: Heat the apple in the microwave\n"
+                    "Preconditions: (not (inaction ?robot))\n"
+                    '# Task "Heat the apple" is done.',
                     robots=[{"name": "robot1", "skills": ["GoToObject"], "mass_capacity": 100}],
                     objects_ai="\n\nobjects = [{'name': 'Microwave', 'mass': 7.0}]",
                     key_objects=[{"name": "Microwave", "mass": 7.0}],
@@ -3509,6 +3588,8 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertIn("Do not copy object names, robot tokens, floor-plan facts", prompt)
             self.assertIn("# Example", prompt)
             self.assertIn("# Historical allocation for microwave heating", prompt)
+            self.assertNotIn("not (inaction", prompt.lower())
+            self.assertNotIn("not(inaction", prompt.lower())
             self.assertNotIn("doc_id: allocate:microwave", prompt)
             self.assertNotIn("# static allocation example should be replaced", prompt)
             self.assertIn("# Task Description: Heat the apple", prompt)
@@ -3719,7 +3800,18 @@ class PDDLRunConfigTests(unittest.TestCase):
     def test_problem_generation_prompt_includes_subtask_val_feedback(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
-            self.write_problem_generation_fixture(root)
+            self.write_problem_generation_fixture(
+                root,
+                domain_content=(
+                    "(define (domain robot1)\n"
+                    "  (:predicates\n"
+                    "    (inaction ?robot - robot)\n"
+                    "    (object-open ?object - object)\n"
+                    "    (at-location ?object - object ?loc - object)\n"
+                    "  )\n"
+                    ")"
+                ),
+            )
             manager = TaskManager(str(root), "test-model", config=RunConfig(root))
             manager.current_task_run_dir = str(root / "run")
             manager.current_task_manifest = {"artifacts": {}, "task": "Open the drawer"}
@@ -3737,7 +3829,10 @@ class PDDLRunConfigTests(unittest.TestCase):
                     )
 
             manager.problemextracting(
-                subtasks=["#SubTask 1: Open the drawer"],
+                subtasks=[
+                    "#SubTask 1: Open the drawer\n"
+                    "Preconditions: (not (inaction ?robot))"
+                ],
                 robot_assignments={1: 1},
                 llm=FakeLLM(),
                 model="test-model",
@@ -3746,11 +3841,19 @@ class PDDLRunConfigTests(unittest.TestCase):
                 prompt_allocation_set="pddl_train_task_allocationsep",
                 key_object_pddl_states=[{"object": "Drawer", "facts": []}],
                 val_feedback_by_subtask={
-                    1: "VAL status: validation_error\nVAL output:\nGoal not satisfied"
+                    1: (
+                        "VAL status: validation_error\n"
+                        "VAL output:\n"
+                        "Predicate inaction not found\n"
+                        "Goal not satisfied"
+                    )
                 },
             )
 
             self.assertIn("# VAL FEEDBACK FROM PREVIOUS ATTEMPT", captured["prompt"])
+            self.assertNotIn("not (inaction", captured["prompt"].lower())
+            self.assertIn("(inaction ?robot - robot)", captured["prompt"])
+            self.assertIn("Predicate inaction not found", captured["prompt"])
             self.assertIn("Goal not satisfied", captured["prompt"])
             self.assertIn("Do not change the assigned robot", captured["prompt"])
 
@@ -3771,6 +3874,7 @@ class PDDLRunConfigTests(unittest.TestCase):
                             "problem_generation",
                             "Task: open drawer",
                             "# Historical PDDL problem for opening a drawer\n"
+                            "  (:init (not (inaction robot1)))\n"
                             "(define (problem historical_open_drawer))",
                         )
                     ],
@@ -3794,7 +3898,10 @@ class PDDLRunConfigTests(unittest.TestCase):
                     )
 
             manager.problemextracting(
-                subtasks=["#SubTask 1: Open the drawer"],
+                subtasks=[
+                    "#SubTask 1: Open the drawer\n"
+                    "Effects: (object-open ?drawer), (not(inaction ?robot))"
+                ],
                 robot_assignments={1: 1},
                 llm=FakeLLM(),
                 model="test-model",
@@ -3814,6 +3921,8 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertIn("PDDL problem structure", prompt)
             self.assertIn("# Example", prompt)
             self.assertIn("# Historical PDDL problem for opening a drawer", prompt)
+            self.assertNotIn("not (inaction", prompt.lower())
+            self.assertNotIn("not(inaction", prompt.lower())
             self.assertNotIn("# static problem example should be replaced", prompt)
             self.assertNotIn("doc_id: problem_generation:drawer", prompt)
             retrieval = manager.current_task_manifest["problem_rag"]["retrievals"]["subtask_01"]

@@ -985,6 +985,45 @@ class DataEngineObjectPropertiesTests(unittest.TestCase):
             [{"name": "Mug", "contains": [], "states": ["FILLEDWITHWATER"]}],
         )
 
+    def test_cold_object_does_not_require_closed_fridge_final_state(self):
+        engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
+        cold_subtask = {"skill": "ColdObject", "objects": ["Apple", "Fridge"]}
+
+        self.assertEqual(
+            engine.get_subtask_final_state(cold_subtask),
+            [
+                {"name": "Apple", "contains": [], "states": ["COLD"]},
+                {"name": "Fridge", "contains": [], "states": ["CLOSED"]},
+            ],
+        )
+        self.assertEqual(
+            engine.get_task_final_state(
+                [cold_subtask, {"skill": "Open", "objects": ["Fridge"]}]
+            ),
+            [
+                {"name": "Apple", "contains": [], "states": ["COLD"]},
+                {"name": "Fridge", "contains": [], "states": ["OPENED"]},
+            ],
+        )
+        self.assertEqual(
+            engine.get_task_final_state(
+                [{"skill": "Open", "objects": ["Fridge"]}, cold_subtask]
+            ),
+            [{"name": "Apple", "contains": [], "states": ["COLD"]}],
+        )
+        self.assertEqual(
+            engine.get_task_final_state(
+                [
+                    cold_subtask,
+                    {"skill": "PutIn", "objects": ["Lettuce", "Fridge"]},
+                ]
+            ),
+            [
+                {"name": "Apple", "contains": [], "states": ["COLD"]},
+                {"name": "Fridge", "contains": ["Lettuce"], "states": []},
+            ],
+        )
+
     def test_task_final_state_broken_state_excludes_other_states(self):
         engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
 

@@ -19,33 +19,33 @@
 
 GoToObject: Robot goes to the egg.
 Parameters: ?robot , ?egg
-Preconditions: (not (inaction ?robot))
-Effects: (at ?robot ?egg), (not (inaction ?robot))
+Preconditions: None.
+Effects: (at ?robot ?egg)
 
 PickupObject: Robot picks up the egg.
 Parameters: ?robot , ?egg , ?egg_location 
-Preconditions: (at-location ?egg ?egg_location), (at ?robot ?egg), (not (inaction ?robot))
-Effects: (holding ?robot ?egg), (not (inaction ?robot))
+Preconditions: (at-location ?egg ?egg_location), (at ?robot ?egg)
+Effects: (holding ?robot ?egg)
 
 GoToObject: Robot goes to the fridge.
 Parameters: ?robot , ?fridge  ,
-Preconditions: (not (inaction ?robot))
-effects: (at ?robot ?fridge), (not (inaction ?robot))
+Preconditions: None.
+effects: (at ?robot ?fridge)
 
 OpenObject: Robot opens the fridge.
 Parameters: ?robot, ?fridge
-Preconditions: (not (inaction ?robot)), (at ?robot ?fridge)
-Effects: (object-open ?fridge), (not (inaction ?robot))
+Preconditions: (at ?robot ?fridge)
+Effects: (object-open ?fridge)
 
 PutObject: Robot puts the egg inside the fridge.
 Parameters: ?robot, ?egg, ?fridge
-Preconditions: (holding ?robot ?egg), (at ?robot ?fridge), (not (inaction ?robot))
-Effects: (at-location ?egg ?fridge), (not (holding ?robot ?egg)), (not (inaction ?robot))
+Preconditions: (holding ?robot ?egg), (at ?robot ?fridge)
+Effects: (at-location ?egg ?fridge), (not (holding ?robot ?egg))
 
 CloseObject: Robot closes the fridge.
 Parameters: ?robot, ?fridge 
-Preconditions: (not (inaction ?robot)), (at ?robot ?fridge)
-Effects: (not (object-open ?fridge)), (not (inaction ?robot))
+Preconditions: (at ?robot ?fridge)
+Effects: (not (object-open ?fridge))
 
 
 #Subtask 2: Prepare Apple Slices
@@ -55,38 +55,38 @@ Effects: (not (object-open ?fridge)), (not (inaction ?robot))
 
 GoToObject: Robot goes to the knife
 Parameters: ?robot, ?knife
-Preconditions: (not (inaction ?robot))
-Effects: (at ?robot ?knife), (not (inaction ?robot))
+Preconditions: None.
+Effects: (at ?robot ?knife)
 
 PickupObject: Robot pickes up the knife
 Parameters: ?robot, ?knife, ?knife_location 
-Preconditions: (at-location ?knife ?knife_location), (at ?robot ?knife), (not (inaction ?robot))
-Effects: (holding ?robot ?knife), (not (inaction ?robot))
+Preconditions: (at-location ?knife ?knife_location), (at ?robot ?knife)
+Effects: (holding ?robot ?knife)
 
 GoToObject: Robot goes to the apple
 Parameters: ?robot, ?apple
-Preconditions: (not (inaction ?robot))
-Effects: (at ?robot ?apple), (not (inaction ?robot))
+Preconditions: None.
+Effects: (at ?robot ?apple)
 
 SliceObject: Robot slices the apple
 Parameters: ?robot, ?apple
-Preconditions: (holding ?robot ?knife), (not (inaction ?robot))
-Effects: (sliced ?apple), (not (inaction ?robot))
+Preconditions: (holding ?robot ?knife)
+Effects: (sliced ?apple)
 
 PickupObject: Robot pickes up the apple
 Parameters: ?robot, ?apple, ?apple_location 
-Preconditions: (at-location ?apple ?apple_location), (at ?robot ?apple), (not (inaction ?robot))
-Effects: (holding ?robot ?apple), (not (inaction ?robot))
+Preconditions: (at-location ?apple ?apple_location), (at ?robot ?apple)
+Effects: (holding ?robot ?apple)
 
 GoToObject: Robot goes to the pot
 Parameters: ?robot, ?pot
-Preconditions: (not (inaction ?robot))
-Effects: (at ?robot ?pot), (not (inaction ?robot))
+Preconditions: None.
+Effects: (at ?robot ?pot)
 
 PutObject: Robot puts the apple to the pot
 Parameters: ?robot , ?apple, ?pot
-Preconditions: (holding ?robot ?apple), (at ?robot ?pot), (not (inaction ?robot))
-Effects: (at-location ?apple ?pot), (not (holding ?robot ?apple)), (not (inaction ?robot))
+Preconditions: (holding ?robot ?apple), (at ?robot ?pot)
+Effects: (at-location ?apple ?pot), (not (holding ?robot ?apple))
 
 
 #subtask 3: Place the Pot with Apple Slices in the Fridge
@@ -97,28 +97,28 @@ Effects: (at-location ?apple ?pot), (not (holding ?robot ?apple)), (not (inactio
 
 PickupObject: Robot pickes up the pot
 Parameters: ?robot, ?pot, ?pot_location
-Preconditions: (at-location ?pot ?pot_location), (at ?robot ?pot_location), (not (inaction ?robot))
-Effects: (holding ?robot ?pot), (not (inaction ?robot))
+Preconditions: (at-location ?pot ?pot_location), (at ?robot ?pot_location)
+Effects: (holding ?robot ?pot)
 
 GoToObject: Robot pickes up the fridge
 Parameters: ?robot, ?fridge
-Preconditions: (not (inaction ?robot))
-Effects: (at ?robot ?fridge), (not (inaction ?robot))
+Preconditions: None.
+Effects: (at ?robot ?fridge)
 
 OpenObject: Robot opens the fridge.
 Parameters: ?robot, ?fridge
-Preconditions: (not (inaction ?robot)), (at ?robot ?fridge)
-Effects: (object-open ?fridge), (not (inaction ?robot))
+Preconditions: (at ?robot ?fridge)
+Effects: (object-open ?fridge)
 
 PutObject: Robot puts the pot inside the fridge.
 Parameters: ?robot, ?pot, ?fridge
-Preconditions: (holding ?robot ?pot), (at ?robot ?fridge), (not (inaction ?robot))
-Effects: (at-location ?pot ?fridge), (not (holding ?robot ?pot)), (not (inaction ?robot))
+Preconditions: (holding ?robot ?pot), (at ?robot ?fridge)
+Effects: (at-location ?pot ?fridge), (not (holding ?robot ?pot))
 
 CloseObject: Robot closes the fridge.
 Parameters: ?robot, ?fridge 
-Preconditions: (not (inaction ?robot)), (at ?robot ?fridge)
-Effects: (not (object-open ?fridge)), (not (inaction ?robot))
+Preconditions: (at ?robot ?fridge)
+Effects: (not (object-open ?fridge))
 
 # Task Put an Egg in the Fridge, and place a pot containing Apple slices into the refrigerator is done.
 
@@ -148,23 +148,23 @@ Effects: (not (object-open ?fridge)), (not (inaction ?robot))
 
 GoToObject: Robot goes to the knife
 Parameters: ?robot, ?knife
-Preconditions: (not (inaction ?robot))
-Effects: (at ?robot ?knife), (not (inaction ?robot))
+Preconditions: None.
+Effects: (at ?robot ?knife)
 
 PickupObject: Robot pickes up the knife
 Parameters: ?robot, ?knife, ?knife_location 
-Preconditions: (at-location ?knife ?knife_location), (at ?robot ?knife), (not (inaction ?robot))
-Effects: (holding ?robot ?knife), (not (inaction ?robot))
+Preconditions: (at-location ?knife ?knife_location), (at ?robot ?knife)
+Effects: (holding ?robot ?knife)
 
 GoToObject: Robot goes to the lettuce
 Parameters: ?robot, ?lettuce
-Preconditions: (not (inaction ?robot))
-Effects: (at ?robot ?lettuce), (not (inaction ?robot))
+Preconditions: None.
+Effects: (at ?robot ?lettuce)
 
 SliceObject: Robot slices the lettuce
 Parameters: ?robot, ?lettuce
-Preconditions: (holding ?robot ?knife), (not (inaction ?robot))
-Effects: (sliced ?lettuce), (not (inaction ?robot))
+Preconditions: (holding ?robot ?knife)
+Effects: (sliced ?lettuce)
 
 #Subtask 2: Slice the Tomato.
 
@@ -174,23 +174,23 @@ Effects: (sliced ?lettuce), (not (inaction ?robot))
 
 GoToObject: Robot goes to the knife
 Parameters: ?robot, ?knife
-Preconditions: (not (inaction ?robot))
-Effects: (at ?robot ?knife), (not (inaction ?robot))
+Preconditions: None.
+Effects: (at ?robot ?knife)
 
 PickupObject: Robot pickes up the knife
 Parameters: ?robot, ?knife, ?knife_location 
-Preconditions: (at-location ?knife ?knife_location), (at ?robot ?knife), (not (inaction ?robot))
-Effects: (holding ?robot ?knife), (not (inaction ?robot))
+Preconditions: (at-location ?knife ?knife_location), (at ?robot ?knife)
+Effects: (holding ?robot ?knife)
 
 GoToObject: Robot goes to the tomato
 Parameters: ?robot, ?tomato
-Preconditions: (not (inaction ?robot))
-Effects: (at ?robot ?tomato), (not (inaction ?robot))
+Preconditions: None.
+Effects: (at ?robot ?tomato)
 
 SliceObject: Robot slices the tomato
 Parameters: ?robot, ?tomato
-Preconditions: (holding ?robot ?knife), (not (inaction ?robot))
-Effects: (sliced ?tomato), (not (inaction ?robot))
+Preconditions: (holding ?robot ?knife)
+Effects: (sliced ?tomato)
 
 #Subtask 3: Slice the Bread.
 
@@ -200,23 +200,23 @@ Effects: (sliced ?tomato), (not (inaction ?robot))
 
 GoToObject: Robot goes to the knife
 Parameters: ?robot, ?knife
-Preconditions: (not (inaction ?robot))
-Effects: (at ?robot ?knife), (not (inaction ?robot))
+Preconditions: None.
+Effects: (at ?robot ?knife)
 
 PickupObject: Robot pickes up the knife
 Parameters: ?robot, ?knife, ?knife_location 
-Preconditions: (at-location ?knife ?knife_location), (at ?robot ?knife), (not (inaction ?robot))
-Effects: (holding ?robot ?knife), (not (inaction ?robot))
+Preconditions: (at-location ?knife ?knife_location), (at ?robot ?knife)
+Effects: (holding ?robot ?knife)
 
 GoToObject: Robot goes to the bread
 Parameters: ?robot, ?bread
-Preconditions: (not (inaction ?robot))
-Effects: (at ?robot ?bread), (not (inaction ?robot))
+Preconditions: None.
+Effects: (at ?robot ?bread)
 
 SliceObject: Robot slices the bread
 Parameters: ?robot, ?bread
-Preconditions: (holding ?robot ?knife), (not (inaction ?robot))
-Effects: (sliced ?bread), (not (inaction ?robot))
+Preconditions: (holding ?robot ?knife)
+Effects: (sliced ?bread)
 
 #Subtask 4: Wash the Plate
 
@@ -225,23 +225,23 @@ Effects: (sliced ?bread), (not (inaction ?robot))
 
 GoToObject: Robot goes to the plate
 Parameters: ?robot, ?plate
-Preconditions: (not (inaction ?robot))
-Effects: (at ?robot ?plate), (not (inaction ?robot))
+Preconditions: None.
+Effects: (at ?robot ?plate)
 
 PickupObject: Robot pickes up the plate
 Parameters: ?robot, ?plate, ?plate_location 
-Preconditions: (at-location ?plate ?plate_location), (at ?robot ?plate), (not (inaction ?robot))
-Effects: (holding ?robot ?plate), (not (inaction ?robot))
+Preconditions: (at-location ?plate ?plate_location), (at ?robot ?plate)
+Effects: (holding ?robot ?plate)
                                         
 GoToObject: Robot goes to the sink
 Parameters: ?robot, ?sink
-Preconditions: (not (inaction ?robot))
-Effects: (at ?robot ?sink), (not (inaction ?robot))
+Preconditions: None.
+Effects: (at ?robot ?sink)
 
 CleanObject: Robot cleans the plate.
 Parameters: ?robot, ?plate, ?sink
-Preconditions: (at ?robot ?sink), (holding ?robot ?plate), (not (inaction ?robot))
-Effects: (cleaned ?robot ?plate), (not (inaction ?robot))
+Preconditions: (at ?robot ?sink), (holding ?robot ?plate)
+Effects: (cleaned ?robot ?plate)
 
 #Subtask 5: Assemble Sandwich on Plate
 
@@ -251,73 +251,73 @@ Effects: (cleaned ?robot ?plate), (not (inaction ?robot))
 
 GoToObject: Robot goes to the countertop
 Parameters: ?robot, ?countertop
-Preconditions: (not (inaction ?robot))
-Effects: (at ?robot ?countertop), (not (inaction ?robot))
+Preconditions: None.
+Effects: (at ?robot ?countertop)
 
 PutObject: Robot places the plate on the countertop.
 Parameters: ?robot, ?plate, ?countertop
-Preconditions: (holding ?robot ?plate), (at ?robot ?countertop), (not (inaction ?robot))
-Effects: (at-location ?plate ?countertop), (not (holding ?robot ?plate)), (not (inaction ?robot))
+Preconditions: (holding ?robot ?plate), (at ?robot ?countertop)
+Effects: (at-location ?plate ?countertop), (not (holding ?robot ?plate))
 
 GoToObject: Robot goes to the bread
 Parameters: ?robot, ?bread
-Preconditions: (not (inaction ?robot))
-Effects: (at ?robot ?bread), (not (inaction ?robot))
+Preconditions: None.
+Effects: (at ?robot ?bread)
 
 PickupObject: Robot pickes up the bread
 Parameters: ?robot, ?bread, ?bread_location 
-Preconditions: (at-location ?bread ?bread_location), (at ?robot ?bread), (not (inaction ?robot))
-Effects: (holding ?robot ?bread), (not (inaction ?robot))
+Preconditions: (at-location ?bread ?bread_location), (at ?robot ?bread)
+Effects: (holding ?robot ?bread)
 
 GoToObject: Robot goes to the plate.
 Parameters: ?robot, ?plate
-Preconditions: (not (inaction ?robot))
-Effects: (at ?robot ?plate), (not (inaction ?robot))
+Preconditions: None.
+Effects: (at ?robot ?plate)
 
 PutObject: Robot places the sliced bread on the plate.
 Parameters: ?robot, ?bread, ?plate
-Preconditions: (holding ?robot ?bread), (at ?robot ?plate), (not (inaction ?robot))
-Effects: (at-location ?bread ?plate), (not (holding ?robot ?bread)), (not (inaction ?robot))
+Preconditions: (holding ?robot ?bread), (at ?robot ?plate)
+Effects: (at-location ?bread ?plate), (not (holding ?robot ?bread))
 
 GoToObject: Robot goes to the sliced lettuce
 Parameters: ?robot, ?lettuce
-Preconditions: (not (inaction ?robot))
-Effects: (at ?robot ?lettuce), (not (inaction ?robot))
+Preconditions: None.
+Effects: (at ?robot ?lettuce)
 
 PickupObject: Robot pickes up the sliced lettuce
 Parameters: ?robot, ?lettuce, ?lettuce_location 
-Preconditions: (at-location ?lettuce ?lettuce_location), (at ?robot ?lettuce), (not (inaction ?robot))
-Effects: (holding ?robot ?lettuce), (not (inaction ?robot))
+Preconditions: (at-location ?lettuce ?lettuce_location), (at ?robot ?lettuce)
+Effects: (holding ?robot ?lettuce)
 
 GoToObject: Robot goes to the plate.
 Parameters: ?robot, ?plate
-Preconditions: (not (inaction ?robot))
-Effects: (at ?robot ?plate), (not (inaction ?robot))
+Preconditions: None.
+Effects: (at ?robot ?plate)
 
 PutObject: Robot places the sliced lettuce on the plate.
 Parameters: ?robot, ?lettuce, ?plate
-Preconditions: (holding ?robot ?lettuce), (at ?robot ?plate), (not (inaction ?robot))
-Effects: (at-location ?lettuce ?plate), (not (holding ?robot ?lettuce)), (not (inaction ?robot))
+Preconditions: (holding ?robot ?lettuce), (at ?robot ?plate)
+Effects: (at-location ?lettuce ?plate), (not (holding ?robot ?lettuce))
 
 GoToObject: Robot goes to the sliced tomato
 Parameters: ?robot, ?tomato
-Preconditions: (not (inaction ?robot))
-Effects: (at ?robot ?tomato), (not (inaction ?robot))
+Preconditions: None.
+Effects: (at ?robot ?tomato)
 
 PickupObject: Robot pickes up the tomato
 Parameters: ?robot, ?tomato, ?tomato_location 
-Preconditions: (at-location ?tomato ?tomato_location), (at ?robot ?tomato), (not (inaction ?robot))
-Effects: (holding ?robot ?tomato), (not (inaction ?robot))
+Preconditions: (at-location ?tomato ?tomato_location), (at ?robot ?tomato)
+Effects: (holding ?robot ?tomato)
 
 GoToObject: Robot goes to the plate.
 Parameters: ?robot, ?plate
-Preconditions: (not (inaction ?robot))
-Effects: (at ?robot ?plate), (not (inaction ?robot))
+Preconditions: None.
+Effects: (at ?robot ?plate)
 
 PutObject: Robot places the sliced tomato on the plate.
 Parameters: ?robot, ?tomato, ?plate
-Preconditions: (holding ?robot ?tomato), (at ?robot ?plate), (not (inaction ?robot))
-Effects: (at-location ?tomato ?plate), (not (holding ?robot ?tomato)), (not (inaction ?robot))
+Preconditions: (holding ?robot ?tomato), (at ?robot ?plate)
+Effects: (at-location ?tomato ?plate), (not (holding ?robot ?tomato))
 
 # Task Make a sandwich with sliced lettuce, sliced tomato, sliced bread and serve it on a washed plate is done.
 

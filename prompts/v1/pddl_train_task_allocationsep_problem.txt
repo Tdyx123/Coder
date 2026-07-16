@@ -14,23 +14,23 @@
 
 GoToObject: Robot goes to the knife
 Parameters: ?robot, ?knife
-Preconditions: (not (inaction ?robot))
-Effects: (at ?robot ?knife), (not (inaction ?robot))
+Preconditions: None.
+Effects: (at ?robot ?knife)
 
 PickupObject: Robot pickes up the knife
 Parameters: ?robot, ?knife, ?knife_location 
-Preconditions: (at-location ?knife ?knife_location), (at ?robot ?knife), (not (inaction ?robot))
-Effects: (holding ?robot ?knife), (not (inaction ?robot))
+Preconditions: (at-location ?knife ?knife_location), (at ?robot ?knife)
+Effects: (holding ?robot ?knife)
 
 GoToObject: Robot goes to the potato
 Parameters: ?robot, ?potato
-Preconditions: (not (inaction ?robot))
-Effects: (at ?robot ?potato), (not (inaction ?robot))
+Preconditions: None.
+Effects: (at ?robot ?potato)
 
 SliceObject: Robot slices the potato
 Parameters: ?robot, ?potato
-Preconditions: (holding ?robot ?knife), (not (inaction ?robot))
-Effects: (sliced ?potato), (not (inaction ?robot))
+Preconditions: (holding ?robot ?knife)
+Effects: (sliced ?potato)
 
 Assigned Robots: Robot 1
 Objects Involved: potato, knife
@@ -44,7 +44,6 @@ Objects Involved: potato, knife
     knife sink microwave mug coffee_machine toaster bread - object)
   (:predicates
     (at ?robot - robot ?object - object)
-    (inaction ?robot - robot) 
     (holding ?robot - robot ?object - object)
     (at-location  ?object - object ?location - object)
     (switch-on ?object - object)
@@ -59,7 +58,7 @@ Objects Involved: potato, knife
 
   (:action GoToObject
     :parameters (?robot - robot ?object - object)
-    :precondition (not (inaction ?robot))
+    :precondition ()
 
     :effect (and 
               (forall (?another_object - object)
@@ -68,7 +67,6 @@ Objects Involved: potato, knife
                 )
               )
               (at ?robot ?object)
-              (not (inaction ?robot))
             )
   )
 
@@ -81,11 +79,10 @@ Objects Involved: potato, knife
                       (at ?robot ?location))
                     (or (not(is-openable ?location))
                       (object-open ?location))
-                    (not(inaction ?robot)))
+                    )
     :effect (and
               (holding ?robot ?object)
               (not(at-location ?object ?location))
-              (not(inaction ?robot))
     )
   )
 
@@ -95,10 +92,8 @@ Objects Involved: potato, knife
                     (at-location ?object ?location)
                     (at ?robot ?location)
                     (holding ?robot ?knife)
-                    (not (inaction ?robot))
     )
     :effect (and
-              (not (inaction ?robot))
               (sliced ?object)
     )
   )   
@@ -122,7 +117,7 @@ key_object_pddl_states = [
   }
 ]
 
-#Task description: generate the problem file. Step by step, based on the objects potential useful availiable above, the domain file precondition, actions and subtask examination. Note that the robot initate as not inaction is enough(the statement includes robot location)
+#Task description: generate the problem file. Step by step, based on the objects potential useful availiable above, the domain file precondition, actions and subtask examination.
 #Use key_object_pddl_states as PDDL-ready context. Copy its facts into (:init), declare every object token referenced by those facts in (:objects) using the listed object_type, and do not output raw AI2-THOR fields such as isOpen, isToggled, isBroken, or parentReceptacles.
 #IMPORTANT, strictly follow the structure ,stop generate after the Problem file is generated.
 #To generate the problem file for the given domain and task of slicing a potato, we need to follow these steps:
@@ -142,7 +137,6 @@ key_object_pddl_states = [
     (at-location Potato CounterTop_1)
     (cookable-by-stove_burner Potato)
     (at-location Knife CounterTop_2)
-    not (inaction robot1)
 
 #Step 2: Define Goals
 
@@ -166,7 +160,6 @@ pddl
     (at-location Potato CounterTop_1)
     (cookable-by-stove_burner Potato)
     (at-location Knife CounterTop_2)
-    not (inaction robot1)
   )
   (:goal
     (sliced Potato)

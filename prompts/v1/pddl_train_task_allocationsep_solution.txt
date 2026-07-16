@@ -15,13 +15,13 @@
 
 GoToObject: Robot goes to the light switch.
 Parameters: ?robot , ?light_switch
-Preconditions: (not (inaction ?robot))
-Effects: (at ?robot ?light_switch), (not (inaction ?robot))
+Preconditions: None.
+Effects: (at ?robot ?light_switch)
 
 SwitchOff: Robot turns off the light.
 Parameters: ?robot, ?light_switch
-Preconditions: (at ?robot ?light_switch), (not (inaction ?robot)), (switch-on ?light_switch)
-Effects: (not (switch-on ?light_switch)), (not (inaction ?robot))
+Preconditions: (at ?robot ?light_switch), (switch-on ?light_switch)
+Effects: (not (switch-on ?light_switch))
 
 #Subtask 2: Turn on the Faucet
 
@@ -30,13 +30,13 @@ Effects: (not (switch-on ?light_switch)), (not (inaction ?robot))
 
 GoToObject: Robot goes to the faucet.
 Parameters: ?robot , ?faucet
-Preconditions: (not (inaction ?robot))
-Effects: (at ?robot ?faucet), (not (inaction ?robot))
+Preconditions: None.
+Effects: (at ?robot ?faucet)
 
 SwitchOn: Robot turns off the faucet.
 Parameters: ?robot, ?faucet
-Preconditions: (at ?robot ?faucet), (not (inaction ?robot)), (not (switch-on ?faucet))
-Effects: (switch-on ?faucet), (not (inaction ?robot))
+Preconditions: (at ?robot ?faucet), (not (switch-on ?faucet))
+Effects: (switch-on ?faucet)
 
 #Subtask 3: Leave the House
 
@@ -45,18 +45,18 @@ Effects: (switch-on ?faucet), (not (inaction ?robot))
 
 GoToObject: Robot goes to the door.
 Parameters: ?robot, ?door
-Preconditions: (not (inaction ?robot))
-Effects: (at ?robot ?door), (not (inaction ?robot))
+Preconditions: None.
+Effects: (at ?robot ?door)
 
 OpenObject: Robot opens the door.
 Parameters: ?robot, ?door
-Preconditions: (not (inaction ?robot)), (at ?robot ?door), (not(object-open ?door))
-Effects: (object-open ?door), (not (inaction ?robot))
+Preconditions: (at ?robot ?door), (not(object-open ?door))
+Effects: (object-open ?door)
 
 CloseObject: Robot closes the door.
 Parameters: ?robot, ?door
-Preconditions: (not (inaction ?robot)), (at ?robot ?door), (object-open ?door)
-Effects: (not(object-open ?door)), (not (inaction ?robot))
+Preconditions: (at ?robot ?door), (object-open ?door)
+Effects: (not(object-open ?door))
 
 # TASK ALLOCATION
 # Scenario: There are 2 robots available. Use available robots to execute independent subtasks in parallel whenever dependencies and robot capabilities allow. Robots should be assigned to subtasks that match their skills and mass capacity. 
@@ -94,23 +94,23 @@ Subtask 3: Robot 2;
 
 GoToObject: Robot goes to the knife
 Parameters: ?robot, ?knife
-Preconditions: (not (inaction ?robot))
-Effects: (at ?robot ?knife), (not (inaction ?robot))
+Preconditions: None.
+Effects: (at ?robot ?knife)
 
 PickupObject: Robot pickes up the knife
 Parameters: ?robot, ?knife, ?knife_location 
-Preconditions: (at-location ?knife ?knife_location), (at ?robot ?knife), (not (inaction ?robot))
-Effects: (holding ?robot ?knife), (not (inaction ?robot))
+Preconditions: (at-location ?knife ?knife_location), (at ?robot ?knife)
+Effects: (holding ?robot ?knife)
 
 GoToObject: Robot goes to the potato
 Parameters: ?robot, ?potato
-Preconditions: (not (inaction ?robot))
-Effects: (at ?robot ?potato), (not (inaction ?robot))
+Preconditions: None.
+Effects: (at ?robot ?potato)
 
 SliceObject: Robot slices the potato
 Parameters: ?robot, ?potato
-Preconditions: (holding ?robot ?knife), (not (inaction ?robot))
-Effects: (sliced ?potato), (not (inaction ?robot))
+Preconditions: (holding ?robot ?knife)
+Effects: (sliced ?potato)
 
 #Task Slice the Potato is done.
 

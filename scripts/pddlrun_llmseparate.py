@@ -93,6 +93,59 @@ def _normalize_subtask_header_line(
     )
 
 
+def _strip_legacy_inaction_prompt_text(text: Any) -> str:
+    """Remove legacy ``inaction`` references from non-authoritative prompt text."""
+    if text is None:
+        return ""
+
+    raw_text = str(text)
+    keep_trailing_newline = raw_text.endswith(("\n", "\r"))
+
+    canonical_not_pattern = re.compile(
+        r"\(\s*not\s*\(\s*inaction\b[^()]*\)\s*\)",
+        re.IGNORECASE,
+    )
+    loose_not_pattern = re.compile(
+        r"\bnot\s*\(\s*inaction\b[^()]*\)",
+        re.IGNORECASE,
+    )
+    positive_pattern = re.compile(
+        r"\(\s*inaction\b[^()]*\)",
+        re.IGNORECASE,
+    )
+
+    cleaned_lines: List[str] = []
+    for original_line in raw_text.splitlines():
+        line = canonical_not_pattern.sub("", original_line)
+        line = loose_not_pattern.sub("", line)
+        line = positive_pattern.sub("", line)
+
+        # Drop prose left over from historical examples such as
+        # "the robot initiates as not inaction".
+        if re.search(r"\binaction\b", line, re.IGNORECASE):
+            continue
+
+        line = re.sub(r"(:)\s*,\s*", r"\1 ", line)
+        line = re.sub(r",\s*,+", ",", line)
+        line = re.sub(r",\s*$", "", line)
+
+        if re.fullmatch(r"\s*Preconditions:\s*", line, re.IGNORECASE):
+            indent = line[: len(line) - len(line.lstrip())]
+            line = f"{indent}Preconditions: None."
+        elif re.fullmatch(r"\s*:precondition\s*", line, re.IGNORECASE):
+            indent = line[: len(line) - len(line.lstrip())]
+            line = f"{indent}:precondition ()"
+
+        if original_line.strip() and not line.strip():
+            continue
+        cleaned_lines.append(line.rstrip())
+
+    cleaned_text = "\n".join(cleaned_lines)
+    if cleaned_text and keep_trailing_newline:
+        cleaned_text += "\n"
+    return cleaned_text
+
+
 def _extract_subtask_blocks(
     text: str,
     allow_bare: bool = False,
@@ -3045,6 +3098,7 @@ class TaskManager:
                 self._read_decompose_static_prompt,
                 f"Task: {task}",
             )
+            decompose_prompt = _strip_legacy_inaction_prompt_text(decompose_prompt)
             
             # Construct the prompt incrementally like the original
             prompt = f"from pddl domain file with all possible actions: \n{domain_content}\n\n"
@@ -3141,7 +3195,9 @@ class TaskManager:
                 key_objects_by_subtask = {1: key_objects}
 
             # Build prompt incrementally like the original
-            allocation_decomposed_plan = self._strip_decomposition_completion_sentence(decomposed_plan)
+            allocation_decomposed_plan = _strip_legacy_inaction_prompt_text(
+                self._strip_decomposition_completion_sentence(decomposed_plan)
+            )
             task_description = ""
             if isinstance(self.current_task_manifest, dict):
                 task_description = str(self.current_task_manifest.get("task") or "").strip()
@@ -3149,11 +3205,13 @@ class TaskManager:
             rag_query = ""
             if self.allocate_rag_retriever:
                 rag_query = self._allocation_rag_query(decomposed_plan, robots, key_objects, subtasks)
-            prompt += self._rag_or_static_prompt_block(
-                self.allocate_rag_retriever,
-                self._allocate_rag_prompt_block,
-                self._read_allocation_static_prompt,
-                rag_query,
+            prompt += _strip_legacy_inaction_prompt_text(
+                self._rag_or_static_prompt_block(
+                    self.allocate_rag_retriever,
+                    self._allocate_rag_prompt_block,
+                    self._read_allocation_static_prompt,
+                    rag_query,
+                )
             )
             if task_description:
                 prompt += f"\n# Task Description: {task_description}\n"
@@ -3240,7 +3298,7 @@ class TaskManager:
             # Read summary prompt file
             prompt_file = self.config.prompt_file(f"{self.prompt_allocation_set}_summary.txt")
             with open(prompt_file, "r", encoding="utf-8") as code_prompt_file:
-                code_prompt = code_prompt_file.read()
+                code_prompt = _strip_legacy_inaction_prompt_text(code_prompt_file.read())
             
             # Build base prompt once
             base_prompt = " finish the problem content summary strictly following the example format"
@@ -3250,10 +3308,10 @@ class TaskManager:
             # Process each plan
             for i, (plan, solution) in enumerate(zip(decomposed_plans, allocated_plans)):
                 # Build prompt for this plan
-                prompt = base_prompt + plan
+                prompt = base_prompt + _strip_legacy_inaction_prompt_text(plan)
                 prompt += f"\n# TASK ALLOCATION"
                 prompt += f"\n\nrobots = {available_robots[i]}"
-                prompt += solution
+                prompt += _strip_legacy_inaction_prompt_text(solution)
                 prompt += f"\n# problem content summary  \n"
                 prompt_path = f"03_summary/summary_prompt_{i + 1:02d}.txt"
                 output_path = f"03_summary/summary_output_{i + 1:02d}.txt"
@@ -3474,8 +3532,11 @@ class TaskManager:
                     lambda: static_problem_prompt,
                     rag_query,
                 )
+            problem_prompt_examples = _strip_legacy_inaction_prompt_text(problem_prompt_examples)
 
-            subtask_prompt_text = self._format_problem_prompt_subtask(subtask)
+            subtask_prompt_text = _strip_legacy_inaction_prompt_text(
+                self._format_problem_prompt_subtask(subtask)
+            )
             prompt = (
                 "\n" + problem_prompt_examples +
                 " Finish the tasks like example\n"
@@ -3492,8 +3553,6 @@ class TaskManager:
                 f"The real PDDL domain and robot object for this subtask is {real_robot_name}. "
                 f"IMPORTANT the generated problem must use (:domain {real_robot_name}) and "
                 f"must use {real_robot_name} as the robot object token. "
-                "IMPORTANT the robot initiates strictly as not inaction and robot "
-                "(which includes location)\n"
                 "#IMPORTANT, strictly follow the structure, stop generating after the Problem file generation is done."
             )
             if subtask_feedback:
