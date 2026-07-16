@@ -2,7 +2,6 @@ storage:
   base_dir: logs/intermediate_runs
   task_manager_runs_dir: logs/task_manager_runs
   default_generated_subtask_dir: resources/generated_subtask
-  default_validated_subtask_dir: resources/validated_subtask
   default_each_run_dir: resources/each_run
   parallel_output_root: parallel_runs
 
@@ -49,9 +48,6 @@ llm:
     structure_fix:
       max_tokens: 1400
       frequency_penalty: 0.4
-    validate_problem:
-      max_tokens: 1400
-      frequency_penalty: 0.4
     decompose:
       max_tokens: 1300
       frequency_penalty: 0.0
@@ -65,9 +61,6 @@ llm:
       max_tokens: 1400
       frequency_penalty: 0.4
     problem_generation:
-      max_tokens: 1400
-      frequency_penalty: 0.4
-    llm_validator:
       max_tokens: 1400
       frequency_penalty: 0.4
     combine:
@@ -128,10 +121,8 @@ artifacts:
   task_context: inputs/task_context.json
   domain_content: inputs/domain_content.pddl
   generated_subtask_dir: 06_split/generated_subtask
-  validated_subtask_dir: 07_validate/validated_subtask
   each_run_dir: artifacts/each_run
   generated_subtask_manifest: 06_split/generated_subtask_manifest.json
-  validation_manifest: 07_validate/validation_manifest.json
   planner_manifest: 08_planner/planner_manifest.json
   val_manifest: 08_val/val_manifest.json
   decompose_prompt: 01_decompose/01_decompose_prompt.txt

@@ -310,8 +310,8 @@ def check_allocate_assignment_count(summary_path: str, index: int, data_root: st
     }
 
 @_return_unmatched_on_missing_file
-def check_validate_output_count(summary_path: str, index: int, data_root: str = "data") -> Union[Dict, bool]:
-    """Check one flattened summary result against its dataset JSONL validated PDDL count."""
+def check_problem_output_count(summary_path: str, index: int, data_root: str = "data") -> Union[Dict, bool]:
+    """Check one flattened summary result against its generated PDDL count."""
     if index < 0:
         raise IndexError(f"Flat index must be non-negative, got {index}")
 
@@ -327,9 +327,9 @@ def check_validate_output_count(summary_path: str, index: int, data_root: str = 
     if not task_run_dir:
         raise ValueError(f"Missing task_run_dir for flat index {index}")
 
-    validate_outputs_dir = os.path.join(task_run_dir, "07_validate", "outputs")
-    if not os.path.isdir(validate_outputs_dir):
-        raise FileNotFoundError(f"Validate outputs directory not found: {validate_outputs_dir}")
+    problem_outputs_dir = os.path.join(task_run_dir, "05_problem_generation", "outputs")
+    if not os.path.isdir(problem_outputs_dir):
+        raise FileNotFoundError(f"Problem outputs directory not found: {problem_outputs_dir}")
 
     floor_plan = _normalize_floor_plan(result.get("floor_plan"))
     if not floor_plan:
@@ -346,24 +346,24 @@ def check_validate_output_count(summary_path: str, index: int, data_root: str = 
     jsonl_path = os.path.join(_resolve_data_root(summary_data, data_root), test_set, f"FloorPlan{floor_plan}.jsonl")
     record = _load_jsonl_record(jsonl_path, task_index)
 
-    validated_paths = sorted(
-        os.path.join(validate_outputs_dir, f)
-        for f in os.listdir(validate_outputs_dir)
-        if f.endswith("_validated.pddl") and os.path.isfile(os.path.join(validate_outputs_dir, f))
+    problem_paths = sorted(
+        os.path.join(problem_outputs_dir, f)
+        for f in os.listdir(problem_outputs_dir)
+        if f.endswith("_problem.pddl") and os.path.isfile(os.path.join(problem_outputs_dir, f))
     )
-    validated_count = len(validated_paths)
+    problem_count = len(problem_paths)
     jsonl_count = len(record.get("subtasks", []))
 
     return {
-        "matched": validated_count == jsonl_count,
-        "validated_count": validated_count,
+        "matched": problem_count == jsonl_count,
+        "problem_count": problem_count,
         "jsonl_count": jsonl_count,
-        "validated_paths": validated_paths,
+        "problem_paths": problem_paths,
         "floor_plan": floor_plan,
         "task_index": task_index,
         "flat_index": index,
         "task_run_dir": task_run_dir,
-        "validate_outputs_dir": validate_outputs_dir,
+        "problem_outputs_dir": problem_outputs_dir,
         "jsonl_path": jsonl_path,
     }
 
@@ -475,7 +475,7 @@ def _passes_sft_checks(summary_path: str, index: int, data_root: str = "data") -
     checks = [
         check_decompose_subtask_count,
         check_allocate_assignment_count,
-        check_validate_output_count,
+        check_problem_output_count,
         check_planner_plan_count,
     ]
     for check in checks:
@@ -565,16 +565,6 @@ def _write_task_run_conversations(task_run_dir: str, output_path_base: str) -> N
                 os.path.join(problem_generation_path, "prompts", f),
                 problem_path,
                 os.path.join(output_path_base, "05_problem_generation.jsonl"),
-            )
-
-    validate_path = os.path.join(task_run_dir, "07_validate")
-    for f in sorted(os.listdir(os.path.join(validate_path, "prompts"))):
-        problem_path = os.path.join(validate_path, "outputs", f.replace("_prompt.txt", "_validated.pddl"))
-        if os.path.exists(problem_path):
-            append_conversation(
-                os.path.join(validate_path, "prompts", f),
-                problem_path,
-                os.path.join(output_path_base, "07_validate.jsonl"),
             )
 
 

@@ -281,18 +281,18 @@ class PDDLRunConfigTests(unittest.TestCase):
         manager.current_task_manifest = {"artifacts": {}, "task": "VAL fixture"}
         domain_file = root / "domain.pddl"
         domain_file.write_text("(define (domain fixture))", encoding="utf-8")
-        problem_dir = Path(manager.current_task_run_dir) / "07_validate" / "outputs"
+        problem_dir = Path(manager._get_raw_problem_file_path())
         plan_dir = Path(manager.current_task_run_dir) / "08_planner" / "outputs"
         problem_dir.mkdir(parents=True)
         plan_dir.mkdir(parents=True)
         planner_records = []
         for subtask_id in range(1, subtask_count + 1):
-            problem_file = f"subtask_{subtask_id:02d}_problem_validated.pddl"
+            problem_file = f"subtask_{subtask_id:02d}_problem.pddl"
             problem_dir.joinpath(problem_file).write_text(
                 "(define (problem fixture))",
                 encoding="utf-8",
             )
-            plan_file = plan_dir / f"subtask_{subtask_id:02d}_problem_validated_plan.txt"
+            plan_file = plan_dir / f"subtask_{subtask_id:02d}_problem_plan.txt"
             plan_file.write_text("(noop)", encoding="utf-8")
             planner_records.append({
                 "problem_file": problem_file,
@@ -591,6 +591,7 @@ class PDDLRunConfigTests(unittest.TestCase):
                 Path(manager.current_generated_subtask_dir),
                 expected_run_dir / "06_split" / "generated_subtask",
             )
+            self.assertFalse((expected_run_dir / "07_validate").exists())
             manifest = json.loads((expected_run_dir / "run_manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["task_index"], 0)
             self.assertEqual(manifest["test_set"], "final_test")
@@ -827,6 +828,8 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertFalse(config.get("val_feedback", "enabled"))
             self.assertEqual(config.get("val_feedback", "max_retries"), 2)
             self.assertEqual(config.artifact("val_manifest", "missing"), "08_val/val_manifest.json")
+            self.assertNotIn("default_validated_subtask_dir", SHARED_DEFAULT_RUN_CONFIG["storage"])
+            self.assertNotIn("validation_manifest", SHARED_DEFAULT_RUN_CONFIG["artifacts"])
 
     def test_rag_runtime_db_prewarm_defaults_to_explicit_opt_in(self):
         config = load_run_config(ROOT)
@@ -911,11 +914,11 @@ class PDDLRunConfigTests(unittest.TestCase):
             domain_file = resources_dir / "robot1.pddl"
             domain_file.write_text("(define (domain robot1))", encoding="utf-8")
 
-            validated_problem_dir = Path(manager._get_validated_problem_file_path())
-            validated_problem_dir.mkdir(parents=True, exist_ok=True)
-            problem_file = validated_problem_dir / "task.pddl"
+            problem_dir = Path(manager._get_raw_problem_file_path())
+            problem_dir.mkdir(parents=True, exist_ok=True)
+            problem_file = problem_dir / "subtask_01_problem.pddl"
             problem_file.write_text("(define (problem task) (:domain robot1 ))", encoding="utf-8")
-            output_file = Path(manager._get_plan_file_path()) / "task_plan.txt"
+            output_file = Path(manager._get_plan_file_path()) / "subtask_01_problem_plan.txt"
             captured = {}
 
             def fake_run(command, stdout, stderr, text, timeout):
@@ -939,16 +942,18 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertLess(command.index("--plan-file"), command.index("--alias"))
             self.assertEqual(command[3:5], ["--alias", "custom-alias"])
             self.assertEqual(command[-2:], [str(domain_file), str(problem_file)])
+            self.assertFalse((Path(manager.current_task_run_dir) / "07_validate").exists())
             self.assertFalse(output_file.exists())
             planner_manifest = (
                 Path(manager.current_task_run_dir)
                 / manager.current_task_manifest["artifacts"]["planner"]["manifest"]
             )
             planner_records = json.loads(planner_manifest.read_text(encoding="utf-8"))
+            self.assertEqual(planner_records[0]["problem_file"], "subtask_01_problem.pddl")
             self.assertEqual(planner_records[0]["compatibility_output"], str(output_file))
             self.assertNotIn((str(output_file), "planner stdout"), [call.args for call in write_file.call_args_list])
             self.assertTrue(
-                any(str(call.args[0]).endswith("08_planner/stdout/task_stdout.txt") and call.args[1] == "planner stdout"
+                any(str(call.args[0]).endswith("08_planner/stdout/subtask_01_problem_stdout.txt") and call.args[1] == "planner stdout"
                     for call in write_file.call_args_list)
             )
 
@@ -1212,7 +1217,7 @@ class PDDLRunConfigTests(unittest.TestCase):
                 side_effect=[first_val_records, second_val_records],
             ) as run_val, patch.object(manager, "_clean_subtask_attempt_outputs") as clean, \
                     patch.object(manager, "_generate_problem_files") as generate, \
-                    patch.object(manager, "_validate_and_plan", return_value=[planner_records[1]]) as plan:
+                    patch.object(manager, "_plan_generated_problems", return_value=[planner_records[1]]) as plan:
                 result = manager._run_val_feedback_loop(
                     subtasks=["first", "second"],
                     robot_assignments={1: 1, 2: 2},
@@ -1236,7 +1241,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             plan.assert_called_once_with(subtask_ids={2})
             self.assertEqual(
                 [record["problem_file"] for record in run_val.call_args_list[1].args[0]],
-                ["subtask_02_problem_validated.pddl"],
+                ["subtask_02_problem.pddl"],
             )
 
     def test_val_feedback_loop_retries_sparse_non_contiguous_subtasks(self):
@@ -1263,7 +1268,7 @@ class PDDLRunConfigTests(unittest.TestCase):
                 side_effect=[first_val_records, second_val_records],
             ) as run_val, patch.object(manager, "_clean_subtask_attempt_outputs"), \
                     patch.object(manager, "_generate_problem_files") as generate, \
-                    patch.object(manager, "_validate_and_plan", return_value=[planner_records[2]]):
+                    patch.object(manager, "_plan_generated_problems", return_value=[planner_records[2]]):
                 result = manager._run_val_feedback_loop(
                     subtasks=["first", "missing", "third"],
                     robot_assignments={1: 1, 3: 3},
@@ -1279,13 +1284,13 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertEqual(generate.call_args.kwargs["subtask_ids"], {3})
             self.assertEqual(
                 [record["problem_file"] for record in run_val.call_args_list[1].args[0]],
-                ["subtask_03_problem_validated.pddl"],
+                ["subtask_03_problem.pddl"],
             )
             self.assertEqual(
                 [record["problem_file"] for record in result["planner_records"]],
                 [
-                    "subtask_01_problem_validated.pddl",
-                    "subtask_03_problem_validated.pddl",
+                    "subtask_01_problem.pddl",
+                    "subtask_03_problem.pddl",
                 ],
             )
 
@@ -1339,7 +1344,7 @@ class PDDLRunConfigTests(unittest.TestCase):
                 }],
             ), patch.object(manager, "_clean_subtask_attempt_outputs"), \
                     patch.object(manager, "_generate_problem_files"), \
-                    patch.object(manager, "_validate_and_plan", return_value=[failed_planner_record]):
+                    patch.object(manager, "_plan_generated_problems", return_value=[failed_planner_record]):
                 result = manager._run_val_feedback_loop(
                     subtasks=["first"],
                     robot_assignments={1: 1},
@@ -1370,7 +1375,25 @@ class PDDLRunConfigTests(unittest.TestCase):
 
             self.assertEqual(manager.calculate_completion_rate(), (1, 2))
 
-    def test_run_fake_validator_copies_raw_problem_without_llm_call(self):
+    def test_completion_rate_counts_generated_problems_and_plain_plan_names(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manager = TaskManager(str(root), "test-model", config=RunConfig(root))
+            manager.current_task_run_dir = str(root / "task_run")
+            problem_dir = Path(manager._get_raw_problem_file_path())
+            plan_dir = Path(manager._get_plan_file_path())
+            problem_dir.mkdir(parents=True)
+            plan_dir.mkdir(parents=True)
+            for subtask_id in (1, 2):
+                (problem_dir / f"subtask_{subtask_id:02d}_problem.pddl").write_text(
+                    "(define (problem fixture))",
+                    encoding="utf-8",
+                )
+            (plan_dir / "subtask_01_problem_plan.txt").write_text("(noop)", encoding="utf-8")
+
+            self.assertEqual(manager.calculate_completion_rate(), (1, 2))
+
+    def test_plan_generated_problems_skips_validation_stage(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             manager = TaskManager(str(root), "test-model", config=RunConfig(root))
@@ -1378,65 +1401,11 @@ class PDDLRunConfigTests(unittest.TestCase):
             manager.current_task_manifest = {"artifacts": {}}
             Path(manager.current_task_run_dir).mkdir(parents=True)
 
-            raw_problem_dir = Path(manager._get_raw_problem_file_path())
-            raw_problem_dir.mkdir(parents=True, exist_ok=True)
-            raw_problem = raw_problem_dir / "subtask_01_problem.pddl"
-            raw_content = "\n".join([
-                "(define (problem subtask_01_problem)",
-                "  (:domain robot1)",
-                "  (:objects robot1 apple)",
-                "  (:init (available apple))",
-                "  (:goal (and (available apple)))",
-                ")",
-            ])
-            raw_problem.write_text(raw_content, encoding="utf-8")
+            with patch.object(manager, "run_planners", return_value=[]) as run_planners:
+                manager._plan_generated_problems()
 
-            with patch.object(manager.llm, "query_model") as query_model:
-                manager.run_fake_validator()
-
-            query_model.assert_not_called()
-            validated_problem = (
-                Path(manager._get_validated_problem_file_path())
-                / "subtask_01_problem_validated.pddl"
-            )
-            raw_validated = (
-                Path(manager.current_task_run_dir)
-                / "07_validate/outputs/subtask_01_problem_validated.raw.txt"
-            )
-            validate_input = (
-                Path(manager.current_task_run_dir)
-                / "07_validate/inputs/subtask_01_problem_input.pddl"
-            )
-            validate_prompt = (
-                Path(manager.current_task_run_dir)
-                / "07_validate/prompts/subtask_01_problem_prompt.txt"
-            )
-
-            self.assertEqual(validated_problem.read_text(encoding="utf-8"), raw_content)
-            self.assertEqual(raw_validated.read_text(encoding="utf-8"), raw_content)
-            self.assertEqual(validate_input.read_text(encoding="utf-8"), raw_content)
-            self.assertFalse(validate_prompt.exists())
-
-            validation_manifest = (
-                Path(manager.current_task_run_dir)
-                / manager.current_task_manifest["artifacts"]["validate"]["manifest"]
-            )
-            validation_records = json.loads(validation_manifest.read_text(encoding="utf-8"))
-            self.assertEqual(validation_records[0]["status"], "fake_validated")
-            self.assertEqual(validation_records[0]["validated_problem_path"], "07_validate/outputs/subtask_01_problem_validated.pddl")
-
-    def test_validate_and_plan_uses_fake_validator_call_site(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            manager = TaskManager(tmp_dir, "test-model")
-
-            with patch.object(manager, "run_fake_validator") as run_fake_validator, \
-                    patch.object(manager, "run_llmvalidator") as run_llmvalidator, \
-                    patch.object(manager, "run_planners") as run_planners:
-                manager._validate_and_plan()
-
-            run_fake_validator.assert_called_once_with()
-            run_llmvalidator.assert_not_called()
             run_planners.assert_called_once_with()
+            self.assertFalse((Path(manager.current_task_run_dir) / "07_validate").exists())
 
     def test_process_tasks_feedback_disabled_runs_one_attempt(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -2026,9 +1995,9 @@ class PDDLRunConfigTests(unittest.TestCase):
 
             plan_output_dir = Path(manager._get_plan_file_path())
             plan_output_dir.mkdir(parents=True, exist_ok=True)
-            recorded_plan = plan_output_dir / "recorded_validated_plan.txt"
+            recorded_plan = plan_output_dir / "recorded_plan.txt"
             recorded_plan.write_text("move robot apple (1)", encoding="utf-8")
-            unrelated_plan = Path(manager.file_processor.validated_subtask_path) / "unrelated_plan.txt"
+            unrelated_plan = root / "unrelated_plan.txt"
             unrelated_plan.write_text("drop robot banana (1)", encoding="utf-8")
 
             manager.current_task_manifest = {

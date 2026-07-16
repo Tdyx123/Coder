@@ -15,7 +15,7 @@ from sft_generator import (
     check_decompose_subtask_count,
     check_model,
     check_planner_plan_count,
-    check_validate_output_count,
+    check_problem_output_count,
     get_model,
     select_latest_unique_task_runs,
 )
@@ -70,17 +70,6 @@ class TestSftGeneratorModelCheck(unittest.TestCase):
         )
         (task_run_dir / "05_problem_generation" / "outputs" / "subtask_01_problem.pddl").write_text(
             f"problem output {name}",
-            encoding="utf-8",
-        )
-
-        (task_run_dir / "07_validate" / "prompts").mkdir(parents=True)
-        (task_run_dir / "07_validate" / "outputs").mkdir(parents=True)
-        (task_run_dir / "07_validate" / "prompts" / "subtask_01_prompt.txt").write_text(
-            f"validate prompt {name}",
-            encoding="utf-8",
-        )
-        (task_run_dir / "07_validate" / "outputs" / "subtask_01_validated.pddl").write_text(
-            f"validated output {name}",
             encoding="utf-8",
         )
 
@@ -247,7 +236,7 @@ class TestSftGeneratorModelCheck(unittest.TestCase):
             checks = [
                 check_decompose_subtask_count,
                 check_allocate_assignment_count,
-                check_validate_output_count,
+                check_problem_output_count,
                 check_planner_plan_count,
             ]
 

@@ -364,54 +364,6 @@ class PDDLUtils:
             cache_dir=run_config.ai2thor_objects_cache_dir,
         )
 
-class PDDLValidator:
-    """Handles PDDL validation operations"""
-    
-    def __init__(self, llm_handler: LLMHandler, file_processor: FileProcessor, config: Optional[RunConfig] = None):
-        """Initialize the PDDL validator.
-        
-        Args:
-            llm_handler (LLMHandler)
-            file_processor (FileProcessor)
-        """
-        self.llm = llm_handler
-        self.file_processor = file_processor
-        self.config = config or load_run_config(_repo_root())
-    
-    def validate_problem(self, domain_file: str, problem_file: str, model: str) -> None:
-        """Validate a PDDL problem file against its domain.
-
-
-        """
-        try:
-            domain_content = self.file_processor.read_file(domain_file)
-            problem_content = self.file_processor.read_file(problem_file)
-            
-            prompt = (
-                f"Domain Description:\n{domain_content}\n\n"
-                f"Problem Description:\n{problem_content}\n\n"
-                "Validate the preconditions in problem file to ensure all precondition listed object "
-
-            )
-            
-
-            messages = [
-                {"role": "system", "content": "You are a Robot PDDL problem Expert"},
-                {"role": "user", "content": prompt}
-            ]
-            call_config = self.config.llm_call("validate_problem")
-            _, validated_text = self.llm.query_model(
-                messages,
-                model,
-                frequency_penalty=call_config.get("frequency_penalty", 0.4),
-            )
-            
-            # Save the validated content back to the problem file
-            self.file_processor.write_file(problem_file, validated_text)
-            
-        except Exception as e:
-            raise ValidationError(f"Error validating PDDL problem: {str(e)}")
-
 class PDDLPlanner:
     
     def __init__(self, base_path: str, file_processor: FileProcessor, config: Optional[RunConfig] = None):
@@ -507,7 +459,6 @@ class TaskManager:
         # Initialize components
         self.llm = LLMHandler(self.config)
         self.file_processor = FileProcessor(base_path, config=self.config)
-        self.validator = PDDLValidator(self.llm, self.file_processor, self.config)
         self.planner = PDDLPlanner(base_path, self.file_processor, self.config)
         try:
             self.decompose_rag_retriever = PDDLRagRetriever.from_config(
@@ -541,7 +492,6 @@ class TaskManager:
         self.decomposed_plan: List[str] = []
         self.allocated_plan: List[str] = []
         self.code_plan: List[str] = []
-        self.validated_plan: List[str] = []  #PG: Added for validation
         self.combined_plan: List[str] = []
         self.code_planpddl: List[str] = []
         self.sequence_operations: str = ""  # Initialize sequence_operations
@@ -556,7 +506,6 @@ class TaskManager:
         self.current_task_run_dir: Optional[str] = None
         self.current_task_manifest: Dict[str, Any] = {}
         self.current_generated_subtask_dir: Optional[str] = None
-        self.current_validated_subtask_dir: Optional[str] = None
         self.current_each_run_dir: Optional[str] = None
         self.current_robot_domain_names: Dict[str, str] = {}
         self.dataset_robot_domain_name_maps: List[Dict[str, str]] = []
@@ -612,13 +561,6 @@ class TaskManager:
         self.file_processor.write_file(artifact_path, str(content))
         return artifact_path
 
-    def _get_validated_problem_file_path(self) -> Optional[str]:
-        """Write a text artifact under the current task run directory."""
-        if not self.current_task_run_dir:
-            return None
-
-        return os.path.join(self.current_task_run_dir, "07_validate/outputs")
-    
     def _get_raw_problem_file_path(self) -> Optional[str]:
         """Write a text artifact under the current task run directory."""
         if not self.current_task_run_dir:
@@ -1089,14 +1031,11 @@ class TaskManager:
             self.current_task_run_dir = os.path.join(self.intermediate_base_path, folder_name)
             os.makedirs(self.current_task_run_dir, exist_ok=True)
         generated_artifact_dir = self.config.artifact("generated_subtask_dir", "06_split/generated_subtask")
-        validated_artifact_dir = self.config.artifact("validated_subtask_dir", "07_validate/validated_subtask")
         each_run_artifact_dir = self.config.artifact("each_run_dir", "artifacts/each_run")
         self.current_generated_subtask_dir = os.path.join(self.current_task_run_dir, generated_artifact_dir)
-        self.current_validated_subtask_dir = os.path.join(self.current_task_run_dir, validated_artifact_dir)
         self.current_each_run_dir = os.path.join(self.current_task_run_dir, each_run_artifact_dir)
         self.file_processor.configure_workspace(
             subtask_path=self.current_generated_subtask_dir,
-            validated_subtask_path=self.current_validated_subtask_dir,
             each_run_path=self.current_each_run_dir,
         )
         self.current_task_manifest = {
@@ -1141,12 +1080,9 @@ class TaskManager:
         self._record_artifact("llm", "calls", llm_calls_path)
         self._persist_manifest()
 
-    def clean_generated_subtask_directory(self, isValidated: bool = False) -> None:
+    def clean_generated_subtask_directory(self) -> None:
         """Clean the generated subtask directory."""
-        if isValidated:
-            directory = self.file_processor.validated_subtask_path
-        else:
-            directory = self.file_processor.subtask_path
+        directory = self.file_processor.subtask_path
         try:
             if os.path.exists(directory):
                 for filename in os.listdir(directory):
@@ -1169,7 +1105,6 @@ class TaskManager:
         cleanup_paths = [
             os.path.join(self.current_task_run_dir, "05_problem_generation", "prompts"),
             os.path.join(self.current_task_run_dir, "05_problem_generation", "outputs"),
-            os.path.join(self.current_task_run_dir, "07_validate"),
             os.path.join(self.current_task_run_dir, "08_planner"),
         ]
         for path in cleanup_paths:
@@ -1186,9 +1121,6 @@ class TaskManager:
         roots = (
             "05_problem_generation/prompts",
             "05_problem_generation/outputs",
-            "07_validate/inputs",
-            "07_validate/prompts",
-            "07_validate/outputs",
             "08_planner/commands",
             "08_planner/stdout",
             "08_planner/stderr",
@@ -1557,7 +1489,7 @@ class TaskManager:
         executable = self._resolve_val_executable()
         arguments = self._val_arguments()
         timeout_seconds = max(1, int(self.config.get("val", "timeout_seconds", 60)))
-        validated_problem_dir = self._get_validated_problem_file_path()
+        problem_dir = self._get_raw_problem_file_path()
         records: List[Dict[str, Any]] = []
 
         for planner_record in planner_records:
@@ -1566,8 +1498,8 @@ class TaskManager:
             safe_name = self._sanitize_filename(problem_file.replace(".pddl", "") or "problem")
             domain_file = str(planner_record.get("domain_file") or "")
             problem_path = (
-                os.path.join(validated_problem_dir, problem_file)
-                if validated_problem_dir and problem_file
+                os.path.join(problem_dir, problem_file)
+                if problem_dir and problem_file
                 else ""
             )
             plan_file = str(planner_record.get("compatibility_output") or "")
@@ -1767,7 +1699,7 @@ class TaskManager:
                 val_feedback_by_subtask=val_feedback_by_subtask,
                 subtask_ids=retry_ids,
             )
-            updated_planner_records = self._validate_and_plan(subtask_ids=retry_ids)
+            updated_planner_records = self._plan_generated_problems(subtask_ids=retry_ids)
             for record in updated_planner_records:
                 subtask_id = self._subtask_id_from_filename(str(record.get("problem_file", "")))
                 if subtask_id is not None:
@@ -1874,8 +1806,8 @@ class TaskManager:
         )
         print("✓ Problem files generated")
 
-        planner_records = self._validate_and_plan()
-        print("✓ Validation and planning complete")
+        planner_records = self._plan_generated_problems()
+        print("✓ Planning complete")
 
         feedback_result = self._build_planner_feedback(
             planner_records,
@@ -1943,9 +1875,13 @@ class TaskManager:
             Tuple[int, int]: (number of completed tasks, total number of tasks)
         """
         total_subtasks = 0
-        validated_problem_file_path = self._get_validated_problem_file_path()
-        if validated_problem_file_path and os.path.exists(validated_problem_file_path):
-            total_subtasks = len([f for f in os.listdir(validated_problem_file_path) if f.endswith('_validated.pddl')])
+        problem_file_path = self._get_raw_problem_file_path()
+        if problem_file_path and os.path.exists(problem_file_path):
+            total_subtasks = len([
+                f
+                for f in os.listdir(problem_file_path)
+                if f.endswith("_problem.pddl")
+            ])
 
         if self.val_feedback_enabled:
             val_manifest_path = self.config.artifact("val_manifest", "08_val/val_manifest.json")
@@ -1963,7 +1899,7 @@ class TaskManager:
         TC = 0
         plan_file_path = self._get_plan_file_path()
         if plan_file_path and os.path.exists(plan_file_path):
-            TC = len([f for f in os.listdir(plan_file_path) if f.endswith('_validated_plan.txt')])
+            TC = len([f for f in os.listdir(plan_file_path) if f.endswith('_plan.txt')])
 
         return TC, total_subtasks
 
@@ -2026,8 +1962,6 @@ class TaskManager:
         # print(f"- decomposed_plan: {len(self.decomposed_plan)}")
         # print(f"- allocated_plan: {len(self.allocated_plan)}")
         # print(f"- code_plan: {len(self.code_plan)}")
-        # print(f"- validated_plan: {len(self.validated_plan)}")  #PG: Added for validation
-        
         date_time = datetime.now().strftime("%m-%d-%Y-%H-%M-%S")
         task_name = "_".join(task.split()).replace('\n', '')
         folder_name = f"{task_name}_plans_{date_time}"
@@ -2049,8 +1983,6 @@ class TaskManager:
             #print(f"Successfully wrote allocated_plan for task {idx + 1}")
             self._write_plan(log_folder, "code_plan.py", task_result["code_plan"] if task_result else self.code_plan[idx])
             #print(f"Successfully wrote code_plan for task {idx + 1}")
-            self._write_plan(log_folder, "validated_plan.py", task_result["validated_plan"] if task_result else self.validated_plan[idx])  #PG: Added for validation
-            #print(f"Successfully wrote validated_plan for task {idx + 1}")
             
             # Log main information
             if task_result:
@@ -2062,7 +1994,6 @@ class TaskManager:
 
 
             generated_subtask_dir = task_result["generated_subtask_dir"] if task_result else self.file_processor.subtask_path
-            validated_subtask_dir = task_result["validated_subtask_dir"] if task_result else self.file_processor.validated_subtask_path
             artifact_map = task_result.get("manifest", {}).get("artifacts", {}) if task_result else {}
             task_summary = {
                 "task": task,
@@ -2078,9 +2009,7 @@ class TaskManager:
                 "completion_rate": (TC / total_subtasks) if total_subtasks else 0.0,
                 "task_run_dir": task_result["task_run_dir"] if task_result else None,
                 "generated_subtask_dir": generated_subtask_dir,
-                "validated_subtask_dir": validated_subtask_dir,
                 "generated_subtasks": sorted(os.listdir(generated_subtask_dir)) if os.path.exists(generated_subtask_dir) else [],
-                "validated_subtasks": sorted(os.listdir(validated_subtask_dir)) if os.path.exists(validated_subtask_dir) else [],
                 "artifacts": artifact_map,
             }
             self.file_processor.write_json(os.path.join(log_folder, "task_summary.json"), task_summary)
@@ -2097,8 +2026,6 @@ class TaskManager:
                 f.write(f"\nTotalsubtask = {total_subtasks}")
                 f.write(f"\nTaskRunDir = {task_result['task_run_dir'] if task_result else ''}")
                 f.write(f"\nGeneratedSubtaskDir = {generated_subtask_dir}")
-                f.write(f"\nValidatedSubtaskDir = {validated_subtask_dir}")
-                f.write(f"\nValidationManifest = {artifact_map.get('validate', {}).get('manifest')}")
                 f.write(f"\nPlannerManifest = {artifact_map.get('planner', {}).get('manifest')}")
                 f.write(f"\nCombinePrompt = {artifact_map.get('combine', {}).get('prompt')}")
                 f.write(f"\nCombineOutput = {artifact_map.get('combine', {}).get('output')}")
@@ -2112,16 +2039,6 @@ class TaskManager:
                 if os.path.isfile(full_file_name):
                     shutil.copy(full_file_name, subtask_folder)
             
-            #PG: Added for validation
-            # Copy validated subtasks
-            validated_subtask_folder = os.path.join(log_folder, "validated_subtask")
-            os.makedirs(validated_subtask_folder)
-            source_validated_folder = validated_subtask_dir
-            for file_name in os.listdir(source_validated_folder):
-                full_file_name = os.path.join(source_validated_folder, file_name)
-                if os.path.isfile(full_file_name):
-                    shutil.copy(full_file_name, validated_subtask_folder)
-
         except Exception as e:
             print(f"Error writing plans for task {idx + 1}: {str(e)}")
 
@@ -2155,7 +2072,6 @@ class TaskManager:
             self.decomposed_plan = []
             self.allocated_plan = []
             self.code_plan = []
-            self.validated_plan = []  #PG: Added for validation
             self.combined_plan = []
             self.code_planpddl = []
             self.tc = []
@@ -2197,7 +2113,6 @@ class TaskManager:
                 
                 # Clean generated subtask directory before starting new task
                 self.clean_generated_subtask_directory()
-                self.clean_generated_subtask_directory(True)  #PG: Added for validation
                 
                 # Generate and store decomposed plan
                 decomposed_plan = self._generate_decomposed_plan(task, domain_content, robots, objects_ai)
@@ -3700,175 +3615,40 @@ class TaskManager:
 
         return text
 
-    def _validate_and_plan(self, subtask_ids: Optional[Set[int]] = None) -> List[Dict[str, Any]]:
-        """Validate and plan all problem files."""
+    def _plan_generated_problems(self, subtask_ids: Optional[Set[int]] = None) -> List[Dict[str, Any]]:
+        """Plan generated problem files, optionally restricted to selected subtasks."""
         try:
-            # First run fake validator
-            #print("Running fake validator...")
-            if subtask_ids is None:
-                self.run_fake_validator()
-            else:
-                self.run_fake_validator(subtask_ids=subtask_ids)
-            #input("Press Enter to continue")
-            # Wait for validation to complete
-            #print("Waiting 50 seconds for validation to complete...")
-            #time.sleep(50)
-            
-            # Then run planners
-            #print("Running planners...")
             if subtask_ids is None:
                 return self.run_planners()
             return self.run_planners(subtask_ids=subtask_ids)
-            #input("Press Enter to continue")
-            
         except Exception as e:
-            raise PDDLError(f"Error in validation and planning: {str(e)}")
-
-    def run_fake_validator(self, subtask_ids: Optional[Set[int]] = None) -> None:
-        """Copy generated problem files into the validation output directory."""
-        try:
-            raw_problem_file_path = self._get_raw_problem_file_path()
-            if not raw_problem_file_path or not os.path.exists(raw_problem_file_path):
-                print("no raw problem_file")
-                return
-
-            problem_files = sorted(
-                f
-                for f in os.listdir(raw_problem_file_path)
-                if f.endswith('.pddl')
-                and (
-                    subtask_ids is None
-                    or self._subtask_id_from_filename(f) in subtask_ids
-                )
-            )
-            validation_records = []
-            for problem_file in problem_files:
-                try:
-                    problem_file_full = os.path.join(raw_problem_file_path, problem_file)
-                    problem_content = self.file_processor.read_file(problem_file_full)
-                    safe_name = self._sanitize_filename(problem_file.replace(".pddl", ""))
-                    input_path = f"07_validate/inputs/{safe_name}_input.pddl"
-                    output_path0 = f"07_validate/outputs/{safe_name}_validated.raw.txt"
-                    output_path1 = f"07_validate/outputs/{safe_name}_validated.pddl"
-                    self._write_text_artifact(input_path, problem_content)
-                    self._write_text_artifact(output_path0, problem_content)
-                    self._write_text_artifact(output_path1, problem_content)
-                    validation_records.append({
-                        "problem_file": problem_file,
-                        "source_problem_path": os.path.join("05_problem_generation/outputs", problem_file),
-                        "input_path": input_path,
-                        "raw_output_path": output_path0,
-                        "validated_problem_path": output_path1,
-                        "status": "fake_validated",
-                    })
-
-                except Exception as e:
-                    print(f"Error processing file {problem_file}: {str(e)}")
-                    validation_records.append({
-                        "problem_file": problem_file,
-                        "status": "error",
-                        "error": str(e),
-                    })
-                    continue
-
-            validation_manifest_path = self.config.artifact("validation_manifest", "07_validate/validation_manifest.json")
-            existing_records = self._read_json_artifact(validation_manifest_path, [])
-            if not isinstance(existing_records, list) or subtask_ids is None:
-                existing_records = []
-            merged_records = self._merge_subtask_records(existing_records, validation_records)
-            self._write_json_artifact(validation_manifest_path, merged_records)
-            self._record_artifact("validate", "manifest", validation_manifest_path)
-            self._persist_manifest()
-
-        except Exception as e:
-            print(f"Error in run_fake_validator: {str(e)}")
-            raise
-
-    def run_llmvalidator(self) -> None:
-        """Run LLM validation on problem files."""
-        try:
-            raw_problem_file_path = self._get_raw_problem_file_path()
-            problem_files = [f for f in os.listdir(raw_problem_file_path) if f.endswith('.pddl')]
-            for problem_file in problem_files:
-                try:
-                    problem_file_full = os.path.join(raw_problem_file_path, problem_file)
-                    domain_name = self.file_processor.extract_domain_name(problem_file_full)
-                    if not domain_name:
-                        print(f"No domain specified in {problem_file}")
-                        continue
-                    
-                    real_robot_name = self.current_robot_domain_names.get(domain_name, domain_name)
-                    domain_file = str(self.config.robot_domain_path(f"{real_robot_name}.pddl"))
-
-                    if not domain_file:
-                        print(f"No domain file found for domain {domain_name}")
-                        continue
-
-                    domain_content = self.file_processor.read_file(domain_file)
-                    problem_content = self.file_processor.read_file(problem_file_full)
-
-                    prompt = (f"Domain Description:\n"
-                            f"{domain_content}\n\n"
-                            f"Problem Description:\n"
-                            f"{problem_content}\n\n"
-                            "Validate the preconditions in problem file to ensure all precondition listed object "
-                            "is included and also in domain file, and go over structure to check the parenthesis "
-                            "and syntext. Check and return only the validated problem file.")
-                    safe_name = self._sanitize_filename(problem_file.replace(".pddl", ""))
-                    input_path = f"07_validate/inputs/{safe_name}_input.pddl"
-                    prompt_path = f"07_validate/prompts/{safe_name}_prompt.txt"
-                    output_path0 = f"07_validate/outputs/{safe_name}_validated.raw.txt"
-                    output_path1 = f"07_validate/outputs/{safe_name}_validated.pddl"
-                    self._write_text_artifact(input_path, problem_content)
-                    self._write_text_artifact(prompt_path, prompt)
-                
-                    messages = [{"role": "system", "content": "You are a Robot PDDL problem Expert"},
-                            {"role": "user", "content": prompt}]
-                    call_config = self.config.llm_call("llm_validator")
-                    _, text = self.llm.query_model(
-                        messages,
-                        self.model,
-                        frequency_penalty=call_config.get("frequency_penalty", 0.4),
-                    )
-
-                    extracted_problem = self._extract_pddl_problem_block(text)
-                    self._write_text_artifact(output_path0, text)
-                    self._write_text_artifact(output_path1, extracted_problem)
-                    
-                except Exception as e:
-                    print(f"Error processing file {problem_file}: {str(e)}")
-                    continue
-            
-                    
-        except Exception as e:
-            print(f"Error in run_llmvalidator: {str(e)}")
-            raise
+            raise PDDLError(f"Error planning generated problems: {str(e)}")
 
     def run_planners(self, subtask_ids: Optional[Set[int]] = None) -> List[Dict[str, Any]]:
         """Run PDDL planners on problem files."""
         try:
             planner_path = str(self.config.planner_executable)
-            validated_problem_file_path = self._get_validated_problem_file_path()
-            if not validated_problem_file_path or not os.path.exists(validated_problem_file_path):
+            problem_file_path = self._get_raw_problem_file_path()
+            if not problem_file_path or not os.path.exists(problem_file_path):
                 print("no problem_file")
                 return []
             plan_file_path = self._get_plan_file_path()
             os.makedirs(plan_file_path, exist_ok=True)
             problem_files = [
                 f
-                for f in os.listdir(validated_problem_file_path)
+                for f in os.listdir(problem_file_path)
                 if f.endswith('.pddl')
                 and (
                     subtask_ids is None
                     or self._subtask_id_from_filename(f) in subtask_ids
                 )
-            ]  #PG: Changed to validated_subtask_path
+            ]
             planner_records = []
             for problem_file in problem_files:
                 domain_file = None
                 output_file = None
                 try:
-                    problem_file_full = os.path.join(validated_problem_file_path, problem_file) #PG: Changed to validated_subtask_path
+                    problem_file_full = os.path.join(problem_file_path, problem_file)
                     safe_name = self._sanitize_filename(problem_file.replace(".pddl", ""))
                     output_file = os.path.join(plan_file_path, f"{safe_name}_plan.txt")
                     if os.path.isfile(output_file):
@@ -3996,7 +3776,7 @@ class TaskManager:
  
         """
         plan_file_path = self._get_plan_file_path()
-        plan_files = [os.path.join(plan_file_path, f) for f in os.listdir(plan_file_path) if f.endswith('_validated_plan.txt')]
+        plan_files = [os.path.join(plan_file_path, f) for f in os.listdir(plan_file_path) if f.endswith('_plan.txt')]
         prompt = ""
         # Add plans from files if they exist
         if plan_files:

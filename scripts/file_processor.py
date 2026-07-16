@@ -28,7 +28,6 @@ class FileProcessor:
         base_path: str,
         config: Optional[RunConfig] = None,
         subtask_path: Optional[str] = None,
-        validated_subtask_path: Optional[str] = None,
         each_run_path: Optional[str] = None,
     ):
         """Initialize the file processor.
@@ -39,26 +38,21 @@ class FileProcessor:
         self.base_path = base_path
         self.config = config or load_run_config(base_path, error_cls=PDDLError)
         self.subtask_path = ""
-        self.validated_subtask_path = ""
         self.each_run_path = ""
         self.configure_workspace(
             subtask_path=subtask_path or str(self.config.path("storage", "default_generated_subtask_dir")),
-            validated_subtask_path=validated_subtask_path or str(self.config.path("storage", "default_validated_subtask_dir")),
             each_run_path=each_run_path or str(self.config.path("storage", "default_each_run_dir")),
         )
 
     def configure_workspace(
         self,
         subtask_path: str,
-        validated_subtask_path: str,
         each_run_path: str,
     ) -> None:
         """Configure the active workspace directories for generated artifacts."""
         self.subtask_path = subtask_path
-        self.validated_subtask_path = validated_subtask_path
         self.each_run_path = each_run_path
         os.makedirs(self.subtask_path, exist_ok=True)
-        os.makedirs(self.validated_subtask_path, exist_ok=True)
         os.makedirs(self.each_run_path, exist_ok=True)
 
     def read_file(self, file_path: str) -> str:
@@ -102,7 +96,6 @@ class FileProcessor:
     def split_pddl_tasks(
         self,
         code_plan: Union[str, List[str]],
-        isValidated: bool,
         output_directory: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """Split PDDL tasks and save them to files.
@@ -149,10 +142,7 @@ class FileProcessor:
                         self.write_file(custom_output_path, task)
 
                     # Also save to generated_subtask for compatibility
-                    if isValidated:
-                        subtask_filepath = os.path.join(self.validated_subtask_path, filename)  #PG: Changed for validation
-                    else:
-                        subtask_filepath = os.path.join(self.subtask_path, filename)
+                    subtask_filepath = os.path.join(self.subtask_path, filename)
                     #print("Saving pddl at path:", subtask_filepath)
                     self.write_file(subtask_filepath, task)
                     saved_tasks.append({
