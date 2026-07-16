@@ -46,6 +46,8 @@ Arguments currently supported by the script:
 - `--task-index`
 - `--decompose-rag`
 - `--no-decompose-rag`
+- `--problem-repair`
+- `--no-problem-repair`
 
 Current defaults in code:
 
@@ -75,6 +77,8 @@ Arguments:
 - `--disable-log-results`
 - `--decompose-rag`
 - `--no-decompose-rag`
+- `--problem-repair`
+- `--no-problem-repair`
 
 If `--output-root` is not provided, summary files are written under:
 
@@ -99,6 +103,11 @@ python scripts/baselines/LaMMA-P.py --root ./baselines/LaMMA-P
 
 python scripts/baselines/SMART-LLM.py --root ./baselines/SMART-LLM
 
+# Reproduce the legacy conservative 277/447 conversion baseline.
+python scripts/baselines/SMART-LLM.py \
+  --root ./baselines/SMART-LLM \
+  --recovery-mode conservative
+
 python scripts/baselines/Scale-Plan.py --root ./baselines/Scale-Plan
 
 python scripts/executor_system/parallel_runner.py \
@@ -116,10 +125,16 @@ Arguments:
 - `--output-dir`
 - `--validate-code`
 - `--no-validate-code`
+- SMART-LLM only: `--recovery-mode aggressive|conservative`
 
 Behavior worth knowing:
 
 - `--validate-code` is enabled by default
+- SMART-LLM defaults to deterministic `aggressive` free-format recovery after
+  conservative conversion fails; use `--recovery-mode conservative` for the
+  legacy conversion contract
+- SMART-LLM result rows identify direct versus recovered output through
+  `conversion_kind` and record recovery confidence, rules, and line-level events
 - the script recursively scans complete pddlrun task folders
 - `--parallel-run` accepts a `parallel_runs/...` directory or its `summary.json`
 - `--floor-plan` restricts conversion to one floor, e.g. `6` or `FloorPlan6`
@@ -291,6 +306,11 @@ Requests rotate across the configured keys in round-robin order. If a key encoun
 ```yaml
 storage:
   base_dir: logs/intermediate_runs
+
+problem_repair:
+  enabled: false
 ```
 
-Update this file if you want to redirect intermediate artifacts to another location.
+The optional Problem repair pass is disabled by default. It uses only generated
+Problem text and the corresponding in-memory Domain text; it does not invoke a
+planner, VAL, subprocess, or another LLM call.

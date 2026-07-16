@@ -6,12 +6,16 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 
 BASELINES = ("LaMMA-P", "SMART-LLM", "Scale-Plan", "KGLAMP")
 REPO_ROOT = Path(__file__).resolve().parents[1]
+SMART_LLM_RUNTIME_PATTERN = re.compile(
+    r"Total Task Runtime:\s*(\d+(?:\.\d+)?)\s+seconds"
+)
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
@@ -340,6 +344,27 @@ def smart_llm_decomposed_plan_count(baseline_root: Path) -> int:
     return sum(1 for path in logs_dir.rglob("decomposed_plan.py") if path.is_file())
 
 
+def smart_llm_planner_time_values(baseline_root: Path) -> List[float]:
+    logs_dir = baseline_root / "logs"
+    if not logs_dir.is_dir():
+        return []
+
+    values: List[float] = []
+    for log_path in sorted(logs_dir.rglob("log.txt")):
+        if not log_path.is_file():
+            continue
+        try:
+            lines = log_path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeError):
+            continue
+        for line in lines:
+            match = SMART_LLM_RUNTIME_PATTERN.fullmatch(line.strip())
+            if match:
+                values.append(float(match.group(1)))
+                break
+    return values
+
+
 def default_baseline_root(baseline: str) -> Path:
     if baseline not in BASELINES:
         raise RuntimeError(f"Unsupported baseline: {baseline}")
@@ -432,7 +457,7 @@ def build_smart_llm_row(
     return [
         "SMART-LLM",
         "",
-        "",
+        mean_and_population_stddev(smart_llm_planner_time_values(baseline_root)),
         "",
         "",
         mean_and_population_stddev(baseline_action_count_values(baseline_results)),

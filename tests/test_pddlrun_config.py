@@ -53,6 +53,7 @@ from run_config import RunConfig as SharedRunConfig
 from run_config import apply_allocate_rag_cli_override
 from run_config import apply_decompose_rag_cli_override
 from run_config import apply_feedback_cli_override
+from run_config import apply_problem_repair_cli_override
 from run_config import apply_problem_rag_cli_override
 from run_config import apply_val_feedback_cli_override
 
@@ -428,6 +429,15 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertTrue(config.get("feedback", "enabled"))
             self.assertEqual(config.get("feedback", "max_retries"), 5)
 
+    def test_apply_problem_repair_cli_override_preserves_config_when_omitted(self):
+        config = RunConfig(ROOT, values={"problem_repair": {"enabled": True}})
+
+        self.assertIs(apply_problem_repair_cli_override(config, None), config)
+        self.assertTrue(config.get("problem_repair", "enabled"))
+
+        apply_problem_repair_cli_override(config, False)
+        self.assertFalse(config.get("problem_repair", "enabled"))
+
     def test_single_runner_cli_defaults_to_decompose_rag_disabled(self):
         with patch("pddlrun_llmseparate.get_available_models", return_value=["deepseek-chat"]):
             args = parse_arguments(["--floor-plan", "6"])
@@ -435,6 +445,7 @@ class PDDLRunConfigTests(unittest.TestCase):
         self.assertFalse(args.decompose_rag)
         self.assertFalse(args.allocate_rag)
         self.assertFalse(args.problem_rag)
+        self.assertIsNone(args.problem_repair)
         self.assertIsNone(args.plan_feedback)
         self.assertIsNone(args.plan_feedback_max_retries)
         self.assertIsNone(args.val_feedback)
@@ -463,6 +474,14 @@ class PDDLRunConfigTests(unittest.TestCase):
 
         self.assertTrue(enabled_args.problem_rag)
         self.assertFalse(disabled_args.problem_rag)
+
+    def test_single_runner_cli_problem_repair_can_be_enabled_and_disabled(self):
+        with patch("pddlrun_llmseparate.get_available_models", return_value=["deepseek-chat"]):
+            enabled_args = parse_arguments(["--floor-plan", "6", "--problem-repair"])
+            disabled_args = parse_arguments(["--floor-plan", "6", "--no-problem-repair"])
+
+        self.assertTrue(enabled_args.problem_repair)
+        self.assertFalse(disabled_args.problem_repair)
 
     def test_single_runner_cli_plan_feedback_can_be_enabled_disabled_and_bounded(self):
         with patch("pddlrun_llmseparate.get_available_models", return_value=["deepseek-chat"]):
@@ -2713,6 +2732,102 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertNotIn("(switch-on Drawer)", result.prompt)
             self.assertIn("(:domain robot1)", result.raw_output)
             self.assertIn("(:domain robot1)", result.problem)
+            self.assertIsNone(result.repair)
+
+    def test_problemextracting_repairs_canonical_file_and_merges_sparse_manifest(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self.write_problem_generation_fixture(
+                root,
+                domain_content=(
+                    "(define (domain robot1)\n"
+                    "  (:types robot - object)\n"
+                    "  (:predicates (ready ?object - object))\n"
+                    ")\n"
+                ),
+            )
+            manager = TaskManager(
+                str(root),
+                "test-model",
+                config=RunConfig(root, values={"problem_repair": {"enabled": True}}),
+            )
+            manager.current_task_run_dir = str(root / "run")
+            manager.current_task_manifest = {"artifacts": {}, "task": "Repair fixture"}
+
+            class FakeLLM:
+                def __init__(self):
+                    self.calls = 0
+
+                def query_model(self, messages, model, max_tokens=None, frequency_penalty=0):
+                    self.calls += 1
+                    if self.calls == 1:
+                        return {}, (
+                            "Here is the problem:\n```pddl\n"
+                            "(define (problem first)\n"
+                            "  (:domain robot1)\n"
+                            "  (:objects Drawer drawer - imaginary)\n"
+                            "  (:init (ready drawer) (not (ready Drawer)))\n"
+                            "  (:goal (ready drawer))\n"
+                            ")\n```"
+                        )
+                    if self.calls == 2:
+                        return {}, (
+                            "(define (problem second)\n"
+                            "  (:domain robot1)\n"
+                            "  (:objects robot1 - robot)\n"
+                            "  (:init)\n"
+                            "  (:goal (and))\n"
+                            ")"
+                        )
+                    return {}, "(define (problem broken) (:domain robot1)"
+
+            llm = FakeLLM()
+            manager.problemextracting(
+                subtasks=["#SubTask 1: First", "#SubTask 2: Second"],
+                robot_assignments={1: 1, 2: 1},
+                llm=llm,
+                model="test-model",
+                file_processor=manager.file_processor,
+                objects_ai="objects = []",
+                prompt_allocation_set="pddl_train_task_allocationsep",
+            )
+
+            output_dir = root / "run" / "05_problem_generation" / "outputs"
+            repaired_problem = (output_dir / "subtask_01_problem.pddl").read_text(encoding="utf-8")
+            raw_problem = (output_dir / "subtask_01_problem.raw.txt").read_text(encoding="utf-8")
+            self.assertIn("Drawer - object", repaired_problem)
+            self.assertNotIn("(not (ready Drawer))", repaired_problem)
+            self.assertIn("```pddl", raw_problem)
+
+            manifest_path = root / "run" / "05_problem_generation" / "problem_repair_manifest.json"
+            first_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual([record["index"] for record in first_manifest], [1, 2])
+            self.assertEqual(first_manifest[0]["status"], "repaired")
+            self.assertIn("markdown_fence_in_pddl", first_manifest[0]["detected_categories"])
+
+            manager.problemextracting(
+                subtasks=["#SubTask 1: First", "#SubTask 2: Second"],
+                robot_assignments={1: 1, 2: 1},
+                llm=llm,
+                model="test-model",
+                file_processor=manager.file_processor,
+                objects_ai="objects = []",
+                prompt_allocation_set="pddl_train_task_allocationsep",
+                subtask_ids={2},
+            )
+
+            merged_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual([record["index"] for record in merged_manifest], [1, 2])
+            self.assertEqual(merged_manifest[0], first_manifest[0])
+            self.assertEqual(merged_manifest[1]["status"], "unresolved")
+            self.assertIn(
+                "unbalanced_problem_define_block",
+                merged_manifest[1]["unresolved"],
+            )
+            self.assertEqual(
+                manager.current_task_manifest["artifacts"]["problem_generation"]["problem_repair_manifest"],
+                "05_problem_generation/problem_repair_manifest.json",
+            )
 
     def test_key_objects_match_floorplan_objects_in_decomposition(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

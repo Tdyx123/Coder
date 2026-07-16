@@ -126,6 +126,7 @@ Common options:
 - `--plan-feedback-max-retries`: maximum plan-feedback retry rounds after the first allocation attempt
 - `--val-feedback`: run VAL after planning and retry failed PDDL Problem generation
 - `--val-feedback-max-retries`: maximum VAL-driven Problem regeneration rounds
+- `--problem-repair` / `--no-problem-repair`: enable or disable pure local checks and deterministic repairs after Problem generation (default: disabled)
 - `--no-log-results`: disable per-task result logging
 - `--bddl-file`: run from a BDDL file instead of a dataset floor plan
 
@@ -162,6 +163,7 @@ Useful options:
 - `--plan-feedback-max-retries`
 - `--val-feedback` / `--no-val-feedback`
 - `--val-feedback-max-retries`
+- `--problem-repair` / `--no-problem-repair`
 - `--disable-log-results`
 
 If `--output-root` is not provided, summaries are written to:

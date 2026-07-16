@@ -457,9 +457,28 @@ class SummarizeRunMetricsTest(unittest.TestCase):
                 "pass\n",
                 encoding="utf-8",
             )
+            (baseline_root / "logs" / "1" / "task_a" / "log.txt").write_text(
+                "Total Task Runtime: 10 seconds\n",
+                encoding="utf-8",
+            )
             (baseline_root / "logs" / "2" / "task_b").mkdir(parents=True)
             (baseline_root / "logs" / "2" / "task_b" / "decomposed_plan.py").write_text(
                 "pass\n",
+                encoding="utf-8",
+            )
+            (baseline_root / "logs" / "2" / "task_b" / "log.txt").write_text(
+                "header\nTotal Task Runtime: 20.0 seconds\nfooter\n",
+                encoding="utf-8",
+            )
+            invalid_logs_dir = baseline_root / "logs" / "3"
+            (invalid_logs_dir / "task_c").mkdir(parents=True)
+            (invalid_logs_dir / "task_c" / "log.txt").write_text(
+                "Total Task Runtime: invalid seconds\n",
+                encoding="utf-8",
+            )
+            (invalid_logs_dir / "task_d").mkdir(parents=True)
+            (invalid_logs_dir / "task_d" / "log.txt").write_text(
+                "runtime field is missing\n",
                 encoding="utf-8",
             )
             coderun_result = root / "coderun_results" / "smart.json"
@@ -491,7 +510,7 @@ class SummarizeRunMetricsTest(unittest.TestCase):
                 [
                     "SMART-LLM",
                     "",
-                    "",
+                    "15 +- 5",
                     "",
                     "",
                     "4 +- 2",
@@ -513,6 +532,10 @@ class SummarizeRunMetricsTest(unittest.TestCase):
             (baseline_root / "logs" / "1" / "task").mkdir(parents=True)
             (baseline_root / "logs" / "1" / "task" / "decomposed_plan.py").write_text(
                 "pass\n",
+                encoding="utf-8",
+            )
+            (baseline_root / "logs" / "1" / "task" / "log.txt").write_text(
+                "Total Task Runtime: 8.5 seconds\n",
                 encoding="utf-8",
             )
             coderun_result = root / "coderun_results" / "smart.json"
@@ -541,7 +564,7 @@ class SummarizeRunMetricsTest(unittest.TestCase):
                 [
                     "SMART-LLM",
                     "",
-                    "",
+                    "8.5 +- 0",
                     "",
                     "",
                     "3 +- 0",
@@ -551,6 +574,29 @@ class SummarizeRunMetricsTest(unittest.TestCase):
                     "0.5 +- 0",
                 ],
             )
+
+    def test_smart_llm_baseline_skips_unreadable_runtime_logs(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            baseline_root = Path(tmp_dir) / "baselines" / "SMART-LLM"
+            write_json(baseline_root / "plan_to_code_results.json", [])
+            log_path = baseline_root / "logs" / "1" / "task" / "log.txt"
+            log_path.parent.mkdir(parents=True)
+            log_path.write_text(
+                "Total Task Runtime: 12 seconds\n",
+                encoding="utf-8",
+            )
+
+            original_read_text = Path.read_text
+
+            def read_text(path, *args, **kwargs):
+                if path == log_path:
+                    raise OSError("unreadable test log")
+                return original_read_text(path, *args, **kwargs)
+
+            with patch.object(Path, "read_text", autospec=True, side_effect=read_text):
+                row = summarize_run_metrics.build_smart_llm_row(baseline_root, {})
+
+            self.assertEqual(row[2], "")
 
     def test_scale_plan_baseline_uses_planner_summary_and_baseline_action_counts(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

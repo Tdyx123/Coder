@@ -33,6 +33,7 @@ class ParallelRunnerTests(unittest.TestCase):
         self.assertFalse(args.decompose_rag)
         self.assertFalse(args.allocate_rag)
         self.assertFalse(args.problem_rag)
+        self.assertIsNone(args.problem_repair)
         self.assertIsNone(args.plan_feedback)
         self.assertIsNone(args.plan_feedback_max_retries)
         self.assertIsNone(args.val_feedback)
@@ -56,6 +57,13 @@ class ParallelRunnerTests(unittest.TestCase):
 
         self.assertTrue(enabled_args.problem_rag)
         self.assertFalse(disabled_args.problem_rag)
+
+    def test_cli_problem_repair_can_be_enabled_and_disabled(self):
+        enabled_args = parse_args(["--floor-plans", "6", "--problem-repair"])
+        disabled_args = parse_args(["--floor-plans", "6", "--no-problem-repair"])
+
+        self.assertTrue(enabled_args.problem_repair)
+        self.assertFalse(disabled_args.problem_repair)
 
     def test_cli_plan_feedback_can_be_enabled_disabled_and_bounded(self):
         enabled_args = parse_args([
@@ -187,6 +195,7 @@ class ParallelRunnerTests(unittest.TestCase):
                 decompose_rag=True,
                 allocate_rag=True,
                 problem_rag=True,
+                problem_repair=True,
                 plan_feedback=True,
                 plan_feedback_max_retries=4,
                 val_feedback=True,
@@ -199,6 +208,7 @@ class ParallelRunnerTests(unittest.TestCase):
                     "decompose_rag": {"enabled": False, "prewarm_runtime_db": True},
                     "allocate_rag": {"enabled": False, "prewarm_runtime_db": True},
                     "problem_rag": {"enabled": False, "prewarm_runtime_db": True},
+                    "problem_repair": {"enabled": False},
                     "feedback": {"enabled": False, "max_retries": 2},
                     "val_feedback": {"enabled": False, "max_retries": 2},
                 },
@@ -231,6 +241,7 @@ class ParallelRunnerTests(unittest.TestCase):
             self.assertEqual(config.get("feedback", "max_retries"), 4)
             self.assertTrue(config.get("val_feedback", "enabled"))
             self.assertEqual(config.get("val_feedback", "max_retries"), 3)
+            self.assertTrue(config.get("problem_repair", "enabled"))
 
     def test_main_preserves_feedback_config_when_cli_omits_feedback(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -273,6 +284,7 @@ class ParallelRunnerTests(unittest.TestCase):
                 decompose_rag=False,
                 allocate_rag=False,
                 problem_rag=False,
+                problem_repair=None,
                 plan_feedback=None,
                 plan_feedback_max_retries=None,
                 val_feedback=None,
@@ -284,6 +296,7 @@ class ParallelRunnerTests(unittest.TestCase):
                 values={
                     "feedback": {"enabled": True, "max_retries": 5},
                     "val_feedback": {"enabled": True, "max_retries": 4},
+                    "problem_repair": {"enabled": True},
                 },
             )
 
@@ -299,6 +312,7 @@ class ParallelRunnerTests(unittest.TestCase):
             self.assertEqual(config.get("feedback", "max_retries"), 5)
             self.assertTrue(config.get("val_feedback", "enabled"))
             self.assertEqual(config.get("val_feedback", "max_retries"), 4)
+            self.assertTrue(config.get("problem_repair", "enabled"))
 
     def test_load_jobs_skips_truthy_invalid_records(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

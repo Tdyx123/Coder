@@ -196,6 +196,7 @@ def open_drawer(robot):
                 output_root=output_root,
                 dry_run=False,
                 validate_code=True,
+                recovery_mode="conservative",
             )
 
             self.assertEqual(result.status, "skipped")
@@ -236,8 +237,13 @@ def open_drawer(robot):
             summary = json.loads((output_root / "plan_to_code_summary.json").read_text(encoding="utf-8"))
             details = json.loads((output_root / "plan_to_code_results.json").read_text(encoding="utf-8"))
             self.assertEqual(summary["successful_generations"], 1)
+            self.assertEqual(summary["direct_successful_generations"], 1)
+            self.assertEqual(summary["recovered_generations"], 0)
+            self.assertEqual(summary["recovery_mode"], "aggressive")
             self.assertTrue(summary["dry_run"])
             self.assertEqual(details[0]["status"], "success")
+            self.assertEqual(details[0]["conversion_kind"], "direct")
+            self.assertEqual(details[0]["recovery_events"], [])
             self.assertFalse((output_root / "logs" / "2" / "task" / "plan_to_code" / "executable_plan.py").exists())
 
     def test_successful_conversion_writes_clean_bundle_executable(self):
@@ -578,12 +584,200 @@ def open_drawer(robot):
 
             with self.patched_repo_root(root):
                 single_result = smart_llm_converter.convert_one(single_source, input_root, output_root, False, True)
-                multi_result = smart_llm_converter.convert_one(multi_source, input_root, output_root, False, True)
+                multi_result = smart_llm_converter.convert_one(
+                    multi_source,
+                    input_root,
+                    output_root,
+                    False,
+                    True,
+                    recovery_mode="conservative",
+                )
 
             self.assertEqual(single_result.status, "success")
             self.assertEqual(multi_result.status, "skipped")
             self.assertEqual(multi_result.skip_reason, "multi_robot_team")
             self.assertFalse((output_root / "logs" / "2" / "multi_team" / "plan_to_code" / "executable_plan.py").exists())
+
+    def test_recovery_candidates_handle_inline_fence_and_truncated_tail(self):
+        candidates = smart_llm_converter.recovery_candidates(
+            """
+Text before code.
+```Python def open_drawer(robot):
+    OpenObject(robot, 'Drawer')
+open_drawer(robots[0])
+PutObject(robot
+```
+"""
+        )
+
+        self.assertTrue(candidates)
+        self.assertTrue(any("open_drawer(robots[0])" in item.code for item in candidates))
+        self.assertTrue(
+            any("trim_incomplete_tail" in item.rules for item in candidates),
+            candidates,
+        )
+
+    def test_aggressive_recovery_ignores_metadata_and_synthesizes_driver(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            input_root = root / "input" / "logs"
+            output_root = root / "output"
+            source_path = self.write_code_plan(
+                input_root,
+                "2",
+                "metadata_driver",
+                (
+                    "# CODE\n"
+                    "robots = [{'name': 'robot1'}]\n"
+                    "def open_drawer(robot_list):\n"
+                    "    OpenObject(robot=robot_list[0], obj='Drawer')\n"
+                ),
+            )
+            self.write_log(source_path)
+            self.write_dataset(root)
+
+            with self.patched_repo_root(root):
+                result = smart_llm_converter.convert_one(
+                    source_path, input_root, output_root, False, True
+                )
+
+            self.assertTrue(result.success)
+            self.assertEqual(result.conversion_kind, "recovered")
+            self.assertEqual(result.initial_skip_reason, "no_clear_driver")
+            self.assertIn("synthesize_driver", result.recovery_rules)
+            self.assertIn("infer_robot_binding", result.recovery_rules)
+            executable = Path(result.generated["executable_plan"]).read_text(encoding="utf-8")
+            actions = self.bundle_from_executable(executable)["task_plan"]["stages"][0][
+                "robot_action_queues"
+            ]["robot1"]
+            self.assertEqual(actions[0]["action_type"], "OpenObject")
+
+    def test_aggressive_recovery_captures_function_version_at_thread_assignment(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            input_root = root / "input" / "logs"
+            output_root = root / "output"
+            source_path = self.write_code_plan(
+                input_root,
+                "2",
+                "duplicate_definition",
+                (
+                    "# CODE\n"
+                    "def open_drawer():\n"
+                    "    OpenObject('Drawer')\n"
+                    "worker = threading.Thread(target=open_drawer)\n"
+                    "def open_drawer(robot_list):\n"
+                    "    OpenObject(robot_list[0], 'Drawer')\n"
+                    "worker.start()\n"
+                    "worker.join()\n"
+                ),
+            )
+            self.write_log(source_path)
+            self.write_dataset(root)
+
+            with self.patched_repo_root(root):
+                result = smart_llm_converter.convert_one(
+                    source_path, input_root, output_root, False, True
+                )
+
+            self.assertTrue(result.success)
+            self.assertEqual(result.conversion_kind, "recovered")
+            executable = Path(result.generated["executable_plan"]).read_text(encoding="utf-8")
+            bundle = self.bundle_from_executable(executable)
+            self.assertEqual(
+                bundle["task_plan"]["stages"][0]["robot_action_queues"]["robot1"][0][
+                    "action_type"
+                ],
+                "OpenObject",
+            )
+
+    def test_aggressive_recovery_expands_lambda_thread_and_splits_robot_stages(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            input_root = root / "input" / "logs"
+            output_root = root / "output"
+            source_path = self.write_code_plan(
+                input_root,
+                "2",
+                "lambda_thread",
+                (
+                    "```python\n"
+                    "def open_drawer(robot):\n"
+                    "    OpenObject(robot, 'Drawer')\n"
+                    "def visit_drawer(robot):\n"
+                    "    GoToObject(robot, 'Drawer')\n"
+                    "worker = threading.Thread(target=lambda: [open_drawer(robots[0]), visit_drawer(robots[1])])\n"
+                    "worker.start()\n"
+                    "worker.join()\n"
+                    "```\n"
+                ),
+            )
+            self.write_log(
+                source_path,
+                robots=[{"name": "robot1"}, {"name": "robot2"}],
+            )
+            self.write_dataset(root, robot_count=2)
+
+            with self.patched_repo_root(root):
+                result = smart_llm_converter.convert_one(
+                    source_path, input_root, output_root, False, True
+                )
+
+            self.assertTrue(result.success)
+            self.assertIn("lambda_thread", result.recovery_rules)
+            self.assertIn("multi_robot_stage_split", result.recovery_rules)
+            executable = Path(result.generated["executable_plan"]).read_text(encoding="utf-8")
+            stages = self.bundle_from_executable(executable)["task_plan"]["stages"]
+            self.assertEqual([set(stage["robot_action_queues"]) for stage in stages], [{"robot1"}, {"robot2"}])
+
+    def test_aggressive_recovery_keeps_valid_actions_after_guard_and_pseudo_action(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            input_root = root / "input" / "logs"
+            output_root = root / "output"
+            source_path = self.write_code_plan(
+                input_root,
+                "2",
+                "guarded",
+                (
+                    "```python\n"
+                    "def guarded(robot1, robot2):\n"
+                    "    drawer_exists = any(obj['name'] == 'Drawer' for obj in objects)\n"
+                    "    if not drawer_exists:\n"
+                    "        print('missing')\n"
+                    "        return\n"
+                    "    GoToObject(robot1, robot2)\n"
+                    "    OpenObject(robot1, 'Drawer')\n"
+                    "guarded(robots[0], robots[1])\n"
+                    "```\n"
+                ),
+            )
+            self.write_log(
+                source_path,
+                robots=[{"name": "robot1"}, {"name": "robot2"}],
+            )
+            self.write_dataset(root, robot_count=2)
+
+            with self.patched_repo_root(root):
+                result = smart_llm_converter.convert_one(
+                    source_path, input_root, output_root, False, True
+                )
+
+            self.assertTrue(result.success)
+            self.assertIn("drop_unsupported_node", result.recovery_rules)
+            self.assertEqual(result.recovery_confidence, "low")
+            executable = Path(result.generated["executable_plan"]).read_text(encoding="utf-8")
+            actions = self.bundle_from_executable(executable)["task_plan"]["stages"][0][
+                "robot_action_queues"
+            ]["robot1"]
+            self.assertEqual([action["action_type"] for action in actions], ["OpenObject"])
+
+    def test_recovery_mode_cli_defaults_to_aggressive(self):
+        self.assertEqual(smart_llm_converter.parse_arguments([]).recovery_mode, "aggressive")
+        self.assertEqual(
+            smart_llm_converter.parse_arguments(["--recovery-mode", "conservative"]).recovery_mode,
+            "conservative",
+        )
 
     def test_missing_dataset_task_match_skips(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

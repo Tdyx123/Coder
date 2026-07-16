@@ -3407,14 +3407,7 @@ class ThorRuntime:
         if states and all(state in verified_states for state in states) and not contains:
             return True
 
-        object_match_patterns = [resolved_obj_name]
-        if resolved_obj_name != obj_name:
-            object_match_patterns.append(obj_name)
-        candidates = [
-            obj
-            for obj in self.current_objects()
-            if any(matches_object(pattern, obj) for pattern in object_match_patterns)
-        ]
+        candidates = self.find_objects(obj_name)
         if not candidates:
             return False
 

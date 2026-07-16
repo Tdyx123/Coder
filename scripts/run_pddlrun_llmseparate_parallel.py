@@ -13,6 +13,7 @@ from run_config import (
     apply_allocate_rag_cli_override,
     apply_decompose_rag_cli_override,
     apply_feedback_cli_override,
+    apply_problem_repair_cli_override,
     apply_problem_rag_cli_override,
     apply_val_feedback_cli_override,
     load_run_config,
@@ -86,6 +87,19 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="store_false",
         help="Disable PDDL problem-generation RAG and use the static problem prompt examples (default).",
     )
+    problem_repair_group = parser.add_mutually_exclusive_group()
+    problem_repair_group.add_argument(
+        "--problem-repair",
+        dest="problem_repair",
+        action="store_true",
+        help="Enable deterministic local repair of generated PDDL problems.",
+    )
+    problem_repair_group.add_argument(
+        "--no-problem-repair",
+        dest="problem_repair",
+        action="store_false",
+        help="Disable deterministic local repair of generated PDDL problems (default).",
+    )
     plan_feedback_group = parser.add_mutually_exclusive_group()
     plan_feedback_group.add_argument(
         "--plan-feedback",
@@ -129,6 +143,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         decompose_rag=False,
         allocate_rag=False,
         problem_rag=False,
+        problem_repair=None,
         plan_feedback=None,
         val_feedback=None,
     )
@@ -329,6 +344,10 @@ def main() -> None:
     apply_decompose_rag_cli_override(config, args.decompose_rag)
     apply_allocate_rag_cli_override(config, args.allocate_rag)
     apply_problem_rag_cli_override(config, args.problem_rag)
+    apply_problem_repair_cli_override(
+        config,
+        getattr(args, "problem_repair", None),
+    )
     apply_feedback_cli_override(
         config,
         args.plan_feedback,

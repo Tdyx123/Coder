@@ -28,12 +28,14 @@ from file_processor import FileProcessor, PDDLError
 from llm_handler import LLMError, LLMHandler
 from llm_logger import get_llm_logger
 from pddl_rag import PDDLRagError, PDDLRagRetriever, PDDLRagTimeoutError
+from pddl_problem_repair import ProblemRepairResult, repair_problem_pddl
 from parsing_utils import ParsingUtils
 from run_config import (
     RunConfig,
     apply_allocate_rag_cli_override,
     apply_decompose_rag_cli_override,
     apply_feedback_cli_override,
+    apply_problem_repair_cli_override,
     apply_problem_rag_cli_override,
     apply_val_feedback_cli_override,
     load_run_config as _load_run_config,
@@ -316,6 +318,7 @@ class ProblemGenerationResult:
     prompt: str
     raw_output: str
     problem: str
+    repair: Optional[ProblemRepairResult] = None
 
 
 class PDDLUtils:
@@ -452,6 +455,10 @@ class TaskManager:
         self.val_feedback_max_prompt_chars = max(
             500,
             int(self.config.get("val_feedback", "max_prompt_chars", 4000)),
+        )
+        self.problem_repair_enabled = _config_bool(
+            self.config.get("problem_repair", "enabled", False),
+            False,
         )
         self.runtime_config = {"storage": {"base_dir": str(self.config.storage_base_dir)}}
         self.instance_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_{uuid.uuid4().hex[:8]}"
@@ -633,6 +640,39 @@ class TaskManager:
         if section not in self.current_task_manifest["artifacts"]:
             self.current_task_manifest["artifacts"][section] = {}
         self.current_task_manifest["artifacts"][section][key] = relative_path
+
+    def _write_problem_repair_manifest(
+        self,
+        results: Sequence[ProblemGenerationResult],
+        replace_all: bool,
+    ) -> None:
+        """Merge per-subtask repair records and register the resulting artifact."""
+        if not self.problem_repair_enabled:
+            return
+
+        relative_path = self.config.artifact(
+            "problem_repair_manifest",
+            "05_problem_generation/problem_repair_manifest.json",
+        )
+        existing = [] if replace_all else self._read_json_artifact(relative_path, [])
+        if not isinstance(existing, list):
+            existing = []
+        by_index = {
+            int(record["index"]): dict(record)
+            for record in existing
+            if isinstance(record, dict) and str(record.get("index", "")).isdigit()
+        }
+        for result in results:
+            if result.repair is None:
+                continue
+            by_index[result.subtask_index] = result.repair.to_manifest_record(result.subtask_index)
+
+        self._write_json_artifact(
+            relative_path,
+            [by_index[index] for index in sorted(by_index)],
+        )
+        self._record_artifact("problem_generation", "problem_repair_manifest", relative_path)
+        self._persist_manifest()
 
     def _json_for_prompt(self, value: Any) -> str:
         """Serialize prompt context without failing on unusual runtime objects."""
@@ -3504,6 +3544,14 @@ class TaskManager:
                 real_robot_name,
             )
             extracted_problem = self._force_problem_domain(extracted_problem, real_robot_name)
+            repair_result: Optional[ProblemRepairResult] = None
+            if self.problem_repair_enabled:
+                repair_result = repair_problem_pddl(
+                    extracted_problem,
+                    domain_content,
+                    raw_output=text,
+                )
+                extracted_problem = repair_result.problem
             results.append(
                 ProblemGenerationResult(
                     subtask_index=subtask_idx,
@@ -3512,6 +3560,7 @@ class TaskManager:
                     prompt=prompt,
                     raw_output=text,
                     problem=extracted_problem,
+                    repair=repair_result,
                 )
             )
 
@@ -3584,6 +3633,8 @@ class TaskManager:
             self._write_text_artifact(prompt_path, result.prompt)
             self._write_text_artifact(output_path0, result.raw_output)
             self._write_text_artifact(output_path1, result.problem)
+
+        self._write_problem_repair_manifest(results, replace_all=subtask_ids is None)
 
         return [result.problem for result in results]
 
@@ -4023,6 +4074,19 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="store_false",
         help="Disable PDDL problem-generation RAG and use the static problem prompt examples (default).",
     )
+    problem_repair_group = parser.add_mutually_exclusive_group()
+    problem_repair_group.add_argument(
+        "--problem-repair",
+        dest="problem_repair",
+        action="store_true",
+        help="Enable deterministic local repair of generated PDDL problems.",
+    )
+    problem_repair_group.add_argument(
+        "--no-problem-repair",
+        dest="problem_repair",
+        action="store_false",
+        help="Disable deterministic local repair of generated PDDL problems (default).",
+    )
     plan_feedback_group = parser.add_mutually_exclusive_group()
     plan_feedback_group.add_argument(
         "--plan-feedback",
@@ -4066,6 +4130,7 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         decompose_rag=False,
         allocate_rag=False,
         problem_rag=False,
+        problem_repair=None,
         plan_feedback=None,
         val_feedback=None,
     )
@@ -4082,6 +4147,10 @@ def main():
         apply_decompose_rag_cli_override(run_config, args.decompose_rag)
         apply_allocate_rag_cli_override(run_config, args.allocate_rag)
         apply_problem_rag_cli_override(run_config, args.problem_rag)
+        apply_problem_repair_cli_override(
+            run_config,
+            getattr(args, "problem_repair", None),
+        )
         apply_feedback_cli_override(
             run_config,
             args.plan_feedback,

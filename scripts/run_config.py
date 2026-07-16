@@ -49,6 +49,9 @@ DEFAULT_RUN_CONFIG: Dict[str, Any] = {
         "max_retries": 2,
         "max_prompt_chars": 4000,
     },
+    "problem_repair": {
+        "enabled": False,
+    },
     "llm": {
         "providers_file": "scripts/providers.yaml",
         "default_max_tokens": 128,
@@ -129,6 +132,7 @@ DEFAULT_RUN_CONFIG: Dict[str, Any] = {
         "sequence_operations": "04_problem_files/02_sequence_operations.txt",
         "subtasks_index": "04_problem_files/03_subtasks.json",
         "generated_problem_files": "04_problem_files/04_generated_problem_files.json",
+        "problem_repair_manifest": "05_problem_generation/problem_repair_manifest.json",
         "combine_prompt": "09_combine/01_combine_prompt.txt",
         "combine_output": "09_combine/02_combined_plan.txt",
         "final_match_prompt": "10_final_match/01_match_prompt.txt",
@@ -216,6 +220,20 @@ def apply_val_feedback_cli_override(
         feedback_config["enabled"] = bool(enabled)
     if max_retries is not None:
         feedback_config["max_retries"] = max(0, int(max_retries))
+    return config
+
+
+def apply_problem_repair_cli_override(
+    config: "RunConfig",
+    enabled: Optional[bool] = None,
+) -> "RunConfig":
+    """Apply the CLI problem-repair switch when it is explicitly provided."""
+    repair_config = config.values.setdefault("problem_repair", {})
+    if not isinstance(repair_config, dict):
+        repair_config = {}
+        config.values["problem_repair"] = repair_config
+    if enabled is not None:
+        repair_config["enabled"] = bool(enabled)
     return config
 
 

@@ -142,6 +142,15 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--floor-plan", help="Optional floor/log folder filter, e.g. 2 or FloorPlan2.")
     parser.add_argument("--dry-run", action="store_true", help="Classify and summarize without writing code.")
     parser.add_argument(
+        "--recovery-mode",
+        choices=sorted(_impl.RECOVERY_MODES),
+        default="aggressive",
+        help=(
+            "Plan recovery policy. aggressive (default) applies deterministic free-format "
+            "recovery after conservative conversion fails; conservative preserves the legacy baseline."
+        ),
+    )
+    parser.add_argument(
         "--validate-code",
         action="store_true",
         default=True,
@@ -177,6 +186,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             limit=args.limit,
             dry_run=bool(args.dry_run),
             validate_code=bool(args.validate_code),
+            recovery_mode=str(args.recovery_mode),
         )
 
     print(

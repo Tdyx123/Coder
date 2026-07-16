@@ -38,6 +38,9 @@ val_feedback:
   max_retries: 2
   max_prompt_chars: 4000
 
+problem_repair:
+  enabled: false
+
 llm:
   providers_file: scripts/providers.yaml
   default_max_tokens: 128
@@ -135,6 +138,7 @@ artifacts:
   sequence_operations: 04_problem_files/02_sequence_operations.txt
   subtasks_index: 04_problem_files/03_subtasks.json
   generated_problem_files: 04_problem_files/04_generated_problem_files.json
+  problem_repair_manifest: 05_problem_generation/problem_repair_manifest.json
   combine_prompt: 09_combine/01_combine_prompt.txt
   combine_output: 09_combine/02_combined_plan.txt
   final_match_prompt: 10_final_match/01_match_prompt.txt

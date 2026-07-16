@@ -462,20 +462,22 @@ class RuntimeObjectAliasTest(unittest.TestCase):
             )
         )
 
-        runtime._test_objects = [
-            {
-                "objectId": second_id,
-                "objectType": "Drawer",
-                "visible": True,
-                "isOpen": True,
-            },
-            {
-                "objectId": first_id,
-                "objectType": "Drawer",
-                "visible": True,
-                "isOpen": False,
-            },
-        ]
+        runtime = runtime_with_objects(
+            [
+                {
+                    "objectId": second_id,
+                    "objectType": "Drawer",
+                    "visible": True,
+                    "isOpen": True,
+                },
+                {
+                    "objectId": first_id,
+                    "objectType": "Drawer",
+                    "visible": True,
+                    "isOpen": False,
+                },
+            ]
+        )
 
         self.assertTrue(
             runtime.goal_satisfied(
@@ -515,25 +517,91 @@ class RuntimeObjectAliasTest(unittest.TestCase):
             )
         )
 
-        runtime._test_objects = [
+        runtime = runtime_with_objects(
+            [
+                {
+                    "objectId": second_drawer_id,
+                    "objectType": "Drawer",
+                    "visible": True,
+                    "receptacleObjectIds": [credit_card_id],
+                },
+                {
+                    "objectId": first_drawer_id,
+                    "objectType": "Drawer",
+                    "visible": True,
+                    "receptacleObjectIds": [],
+                },
+                {
+                    "objectId": credit_card_id,
+                    "objectType": "CreditCard",
+                    "visible": True,
+                },
+            ]
+        )
+
+        self.assertTrue(
+            runtime.goal_satisfied(
+                {"name": "Drawer", "contains": ["CreditCard"], "states": []}
+            )
+        )
+
+    def test_goal_satisfied_reuses_operated_generic_alias_for_state(self):
+        first_id = "Drawer|+01.00|+00.20|-00.30"
+        second_id = "Drawer|+01.00|+00.60|-00.30"
+        objects = [
             {
-                "objectId": second_drawer_id,
+                "objectId": first_id,
                 "objectType": "Drawer",
-                "visible": True,
-                "receptacleObjectIds": [credit_card_id],
+                "name": "Drawer_first",
+                "isOpen": False,
             },
+            {
+                "objectId": second_id,
+                "objectType": "Drawer",
+                "name": "Drawer_second",
+                "isOpen": True,
+            },
+        ]
+        runtime = runtime_with_objects(objects)
+        runtime.record_operated_object_name(objects[1])
+
+        self.assertEqual(runtime.find_objects("Drawer")[0]["objectId"], second_id)
+        runtime.operated_object_names.clear()
+
+        self.assertTrue(
+            runtime.goal_satisfied(
+                {"name": "Drawer", "contains": [], "states": ["OPENED"]}
+            )
+        )
+
+    def test_goal_satisfied_reuses_operated_generic_alias_for_contains(self):
+        first_drawer_id = "Drawer|+01.00|+00.20|-00.30"
+        second_drawer_id = "Drawer|+01.00|+00.60|-00.30"
+        credit_card_id = "CreditCard|+01.00|+00.90|+00.00"
+        objects = [
             {
                 "objectId": first_drawer_id,
                 "objectType": "Drawer",
-                "visible": True,
+                "name": "Drawer_first",
                 "receptacleObjectIds": [],
+            },
+            {
+                "objectId": second_drawer_id,
+                "objectType": "Drawer",
+                "name": "Drawer_second",
+                "receptacleObjectIds": [credit_card_id],
             },
             {
                 "objectId": credit_card_id,
                 "objectType": "CreditCard",
-                "visible": True,
+                "name": "CreditCard_target",
             },
         ]
+        runtime = runtime_with_objects(objects)
+        runtime.record_operated_object_name(objects[1])
+
+        self.assertEqual(runtime.find_objects("Drawer")[0]["objectId"], second_drawer_id)
+        runtime.operated_object_names.clear()
 
         self.assertTrue(
             runtime.goal_satisfied(
