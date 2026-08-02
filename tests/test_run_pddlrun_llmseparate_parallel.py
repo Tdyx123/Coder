@@ -33,11 +33,25 @@ class ParallelRunnerTests(unittest.TestCase):
         self.assertFalse(args.decompose_rag)
         self.assertFalse(args.allocate_rag)
         self.assertFalse(args.problem_rag)
+        self.assertIsNone(args.allocate_model)
         self.assertIsNone(args.problem_repair)
         self.assertIsNone(args.plan_feedback)
         self.assertIsNone(args.plan_feedback_max_retries)
         self.assertIsNone(args.val_feedback)
         self.assertIsNone(args.val_feedback_max_retries)
+
+    def test_cli_accepts_allocate_model(self):
+        args = parse_args([
+            "--floor-plans",
+            "6",
+            "--model",
+            "global-model",
+            "--allocate-model",
+            "allocation-model",
+        ])
+
+        self.assertEqual(args.model, "global-model")
+        self.assertEqual(args.allocate_model, "allocation-model")
 
     def test_cli_decompose_rag_can_be_enabled_and_disabled(self):
         enabled_args = parse_args(["--floor-plans", "6", "--decompose-rag"])
@@ -341,6 +355,7 @@ class ParallelRunnerTests(unittest.TestCase):
     def test_run_single_job_passes_original_task_index(self):
         args = SimpleNamespace(
             model="test-model",
+            allocate_model="allocation-model",
             prompt_decompse_set="pddl_train_task_decomposesep",
             prompt_allocation_set="pddl_train_task_allocationsep",
             test_set="sample_set",
@@ -371,6 +386,8 @@ class ParallelRunnerTests(unittest.TestCase):
             )
 
         self.assertEqual(summary["task_index"], 17)
+        self.assertEqual(summary["model"], "test-model")
+        self.assertEqual(summary["allocate_model"], "allocation-model")
         self.assertEqual(
             summary["llm_token_usage"],
             {
@@ -381,6 +398,7 @@ class ParallelRunnerTests(unittest.TestCase):
         )
         mock_run.assert_called_once()
         self.assertEqual(mock_run.call_args.kwargs["task_index"], 17)
+        self.assertEqual(mock_run.call_args.kwargs["allocate_model"], "allocation-model")
 
 
 if __name__ == "__main__":

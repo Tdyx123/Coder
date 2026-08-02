@@ -1,0 +1,186 @@
+{
+  "gold": {
+    "records": 52,
+    "ordered_records": 41,
+    "forced_edges": 119,
+    "adjudication": "manual_reviewed_2026-08-01",
+    "selection_rule": "task_index modulo 5 in {0, 1}",
+    "path": "data/grpo/deepseek_v3_2_semantic_order_gold.jsonl"
+  },
+  "parser": {
+    "records_abstained": 0,
+    "exact_stage_records": 52,
+    "exact_stage_rate": 1.0,
+    "tp": 119,
+    "fp": 0,
+    "predicted_edges": 119,
+    "precision": 1.0,
+    "precision_lower_95": 0.9687283197580606,
+    "fn": 0,
+    "forced_edge_recall": 1.0,
+    "exactly_parsed_ordered_records": 41,
+    "ordered_task_coverage": 1.0
+  },
+  "thresholds": {
+    "min_empirical_precision": 0.9,
+    "min_precision_lower_95": 0.9,
+    "min_forced_edge_recall": 0.4,
+    "min_ordered_task_coverage": 0.4,
+    "min_alignment_score": 10,
+    "min_alignment_margin": 3
+  },
+  "accepted_patterns": [
+    {
+      "tp": 119,
+      "fp": 0,
+      "predicted_edges": 119,
+      "precision": 1.0,
+      "precision_lower_95": 0.9687283197580606,
+      "pattern": "explicit_then_stage_barrier",
+      "surface_forms": [
+        "A then B",
+        "A then B then C",
+        "A and B then C",
+        "A then B and C"
+      ],
+      "gold_edges": 119,
+      "fn": 0,
+      "recall": 1.0,
+      "accepted": true
+    },
+    {
+      "tp": 73,
+      "fp": 0,
+      "predicted_edges": 73,
+      "precision": 1.0,
+      "precision_lower_95": 0.9500079920442687,
+      "pattern": "then_serial_chain",
+      "records": 23,
+      "gold_edges": 73,
+      "fn": 0,
+      "recall": 1.0,
+      "independently_accepted": true,
+      "surface_forms": [
+        "A then B",
+        "A then B then C"
+      ],
+      "accepted": true
+    }
+  ],
+  "structural_pattern_diagnostics": [
+    {
+      "tp": 0,
+      "fp": 0,
+      "predicted_edges": 0,
+      "precision": null,
+      "precision_lower_95": null,
+      "pattern": "no_temporal_marker",
+      "records": 11,
+      "gold_edges": 0,
+      "fn": 0,
+      "recall": null,
+      "independently_accepted": false
+    },
+    {
+      "tp": 21,
+      "fp": 0,
+      "predicted_edges": 21,
+      "precision": 1.0,
+      "precision_lower_95": 0.8453609810751531,
+      "pattern": "then_fan_in",
+      "records": 9,
+      "gold_edges": 21,
+      "fn": 0,
+      "recall": 1.0,
+      "independently_accepted": false
+    },
+    {
+      "tp": 20,
+      "fp": 0,
+      "predicted_edges": 20,
+      "precision": 1.0,
+      "precision_lower_95": 0.8388748419471806,
+      "pattern": "then_fan_out",
+      "records": 8,
+      "gold_edges": 20,
+      "fn": 0,
+      "recall": 1.0,
+      "independently_accepted": false
+    },
+    {
+      "tp": 5,
+      "fp": 0,
+      "predicted_edges": 5,
+      "precision": 1.0,
+      "precision_lower_95": 0.5655175352168252,
+      "pattern": "then_grouped_chain",
+      "records": 1,
+      "gold_edges": 5,
+      "fn": 0,
+      "recall": 1.0,
+      "independently_accepted": false
+    },
+    {
+      "tp": 73,
+      "fp": 0,
+      "predicted_edges": 73,
+      "precision": 1.0,
+      "precision_lower_95": 0.9500079920442687,
+      "pattern": "then_serial_chain",
+      "records": 23,
+      "gold_edges": 73,
+      "fn": 0,
+      "recall": 1.0,
+      "independently_accepted": true
+    }
+  ],
+  "iteration_history": [
+    {
+      "iteration": "v1_before_pronoun_switch_alias",
+      "tp": 116,
+      "fp": 0,
+      "predicted_edges": 116,
+      "precision": 1.0,
+      "precision_lower_95": 0.9679454935003613,
+      "fn": 3,
+      "forced_edge_recall": 0.9747899159663865
+    },
+    {
+      "iteration": "v2_with_switch_it_them_on_alias",
+      "tp": 119,
+      "fp": 0,
+      "predicted_edges": 119,
+      "precision": 1.0,
+      "precision_lower_95": 0.9687283197580606,
+      "fn": 0,
+      "forced_edge_recall": 1.0
+    }
+  ],
+  "gate": {
+    "confidence_passed": true,
+    "coverage_passed": true,
+    "passed": true
+  },
+  "input": "data/grpo/deepseek_v3_2_decomposition_matches.jsonl",
+  "screening_summary": {
+    "records": 148,
+    "status_counts": {
+      "conflict": 52,
+      "no_forced_order": 22,
+      "pass": 74
+    },
+    "decomposition_status_counts": {
+      "conflict": 48,
+      "no_explicit_conflict": 78,
+      "not_applicable": 22
+    },
+    "parsed_forced_order_records": 126,
+    "parsed_forced_order_rate": 0.8513513513513513,
+    "reference_allocation_backtest": {
+      "conflict_records": 49,
+      "parallelized_forced_edges": 89,
+      "reversed_forced_edges": 13
+    },
+    "validation_gate_passed": true
+  }
+}

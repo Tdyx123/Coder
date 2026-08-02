@@ -445,11 +445,27 @@ class PDDLRunConfigTests(unittest.TestCase):
         self.assertFalse(args.decompose_rag)
         self.assertFalse(args.allocate_rag)
         self.assertFalse(args.problem_rag)
+        self.assertIsNone(args.allocate_model)
         self.assertIsNone(args.problem_repair)
         self.assertIsNone(args.plan_feedback)
         self.assertIsNone(args.plan_feedback_max_retries)
         self.assertIsNone(args.val_feedback)
         self.assertIsNone(args.val_feedback_max_retries)
+
+    def test_single_runner_cli_accepts_allocate_model(self):
+        with patch(
+            "pddlrun_llmseparate.get_available_models",
+            return_value=["deepseek-chat", "allocation-model"],
+        ):
+            args = parse_arguments([
+                "--floor-plan",
+                "6",
+                "--allocate-model",
+                "allocation-model",
+            ])
+
+        self.assertEqual(args.model, "deepseek-chat")
+        self.assertEqual(args.allocate_model, "allocation-model")
 
     def test_single_runner_cli_decompose_rag_can_be_enabled_and_disabled(self):
         with patch("pddlrun_llmseparate.get_available_models", return_value=["deepseek-chat"]):
@@ -593,6 +609,7 @@ class PDDLRunConfigTests(unittest.TestCase):
                 config=config,
                 test_set="final_test",
                 floor_plan="FloorPlan6",
+                allocate_model="allocation-model",
             )
 
             with patch("pddlrun_llmseparate.datetime", FixedDatetime):
@@ -618,6 +635,13 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertEqual(manifest["run_date"], "20260521")
             self.assertEqual(manifest["run_sequence"], 1)
             self.assertEqual(manifest["task_run_dir"], str(expected_run_dir))
+            self.assertEqual(manifest["model"], "test-model")
+            self.assertEqual(manifest["allocate_model"], "allocation-model")
+            task_context = json.loads(
+                (expected_run_dir / "inputs" / "task_context.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(task_context["model"], "test-model")
+            self.assertEqual(task_context["allocate_model"], "allocation-model")
 
     def test_prepare_task_run_dir_uses_manifest_task_index_override(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1843,6 +1867,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertEqual(validation_records[0]["validated_problem_path"], "07_validate/outputs/subtask_01_problem_validated.pddl")
 
             self.assertEqual(planner_records[0]["problem_file"], "subtask_01_problem_validated.pddl")
+            self.assertEqual(planner_records[0]["problem_path"], str(validated_problem))
             self.assertEqual(manager._subtask_id_from_filename(planner_records[0]["problem_file"]), 1)
             requirements = manager._build_subtask_requirements(
                 subtasks=["#SubTask 1: Go to apple"],
@@ -1884,6 +1909,277 @@ class PDDLRunConfigTests(unittest.TestCase):
                 "BreakEgg",
             ],
         )
+
+    def test_v2_extracts_physical_locations_and_replays_object_moves(self):
+        manager = pddlrun_llmseparate_v2.TaskManager.__new__(pddlrun_llmseparate_v2.TaskManager)
+        problem_pddl = """
+        (define (problem location-test)
+          (:domain allactionrobot)
+          (:init
+            (at-location Apple Bowl)
+            (at-location Bowl CounterTop_1)
+            (at-location Plate DiningTable_1)
+            (at-location Microwave KitchenIsland_1)
+            (at-location CycleA CycleB)
+            (at-location CycleB CycleA)
+            (not (at-location Apple WrongCounter))
+          )
+          (:goal (and))
+        )
+        """
+        plan_text = "\n".join(
+            [
+                "(gotoobject robot1 apple)",
+                "(pickupobject robot1 apple bowl)",
+                "(gotoobject robot1 plate)",
+                "(putobject robot1 apple plate)",
+                "(gotoobject robot1 apple)",
+                "(pickupobject robot1 apple plate)",
+                "(gotoobject robot1 sinkbasin)",
+                "(drophandobject robot1 apple)",
+                "(gotoobject robot1 apple)",
+                "(runmicrowave robot1 microwave apple)",
+                "(gotoobject robot1 cyclea)",
+                "(inspectobject robot1 apple)",
+            ]
+        )
+
+        required_locations, unresolved = manager._extract_required_locations(
+            manager._parse_plan_actions(plan_text),
+            problem_pddl,
+        )
+
+        self.assertEqual(
+            required_locations,
+            [
+                "CounterTop_1",
+                "DiningTable_1",
+                "sinkbasin",
+                "KitchenIsland_1",
+            ],
+        )
+        self.assertEqual(len(unresolved), 2)
+        self.assertIn("cycle detected", unresolved[0]["reason"])
+        self.assertIn("unsupported action", unresolved[1]["reason"])
+
+    def test_v2_build_requirements_reads_validated_problem_locations(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manager = pddlrun_llmseparate_v2.TaskManager(
+                str(root),
+                "test-model",
+                config=SharedRunConfig(root),
+            )
+            plan_path = root / "subtask_01_plan.txt"
+            plan_path.write_text(
+                "(gotoobject robot1 apple)\n(pickupobject robot1 apple bowl)\n",
+                encoding="utf-8",
+            )
+            validated_problem_path = root / "subtask_01_problem_validated.pddl"
+            validated_problem_path.write_text(
+                """
+                (define (problem validated-location)
+                  (:domain allactionrobot)
+                  (:init
+                    (at-location Apple Bowl)
+                    (at-location Bowl CounterTop_1)
+                  )
+                  (:goal (and))
+                )
+                """,
+                encoding="utf-8",
+            )
+            fallback_problem = """
+            (define (problem stale-location)
+              (:domain allactionrobot)
+              (:init (at-location Apple WrongCounter))
+              (:goal (and))
+            )
+            """
+
+            requirements = manager._build_subtask_requirements(
+                subtasks=["#SubTask 1: Pick up the apple"],
+                decomposed_plan="#SubTask 1: Pick up the apple",
+                problem_pddl=[fallback_problem],
+                planner_records=[
+                    {
+                        "problem_file": "subtask_01_problem_validated.pddl",
+                        "problem_path": str(validated_problem_path),
+                        "compatibility_output": str(plan_path),
+                    }
+                ],
+                objects_ai="objects=[]",
+                preferred_predecessors={1: []},
+            )
+
+            self.assertEqual(requirements[0]["required_locations"], ["CounterTop_1"])
+            self.assertEqual(requirements[0]["unresolved_location_actions"], [])
+
+            fallback_requirements = manager._build_subtask_requirements(
+                subtasks=["#SubTask 1: Pick up the apple"],
+                decomposed_plan="#SubTask 1: Pick up the apple",
+                problem_pddl=[fallback_problem],
+                planner_records=[
+                    {
+                        "problem_file": "subtask_01_problem_validated.pddl",
+                        "problem_path": str(root / "missing_validated_problem.pddl"),
+                        "compatibility_output": str(plan_path),
+                    }
+                ],
+                objects_ai="objects=[]",
+                preferred_predecessors={1: []},
+            )
+            self.assertEqual(
+                fallback_requirements[0]["required_locations"],
+                ["WrongCounter", "bowl"],
+            )
+
+            manager.current_task_run_dir = str(root / "task_run")
+            Path(manager.current_task_run_dir).mkdir(parents=True)
+            manager.current_task_manifest = {"artifacts": {}}
+            manager.current_robot_domain_names = {"robot1": "robot7"}
+            allocated = manager._allocate_subtasks_with_cpsat(
+                subtasks=["#SubTask 1: Pick up the apple"],
+                decomposed_plan="#SubTask 1: Pick up the apple",
+                problem_pddl=[fallback_problem],
+                planner_records=[
+                    {
+                        "problem_file": "subtask_01_problem_validated.pddl",
+                        "problem_path": str(validated_problem_path),
+                        "compatibility_output": str(plan_path),
+                    }
+                ],
+                available_robots=[
+                    {
+                        "name": "robot1",
+                        "skills": ["GoToObject", "PickupObject"],
+                        "mass_capacity": 1,
+                    }
+                ],
+                objects_ai="objects=[]",
+                preferred_predecessors={1: []},
+            )
+
+            self.assertEqual(allocated[0]["required_locations"], ["CounterTop_1"])
+            self.assertEqual(allocated[0]["unresolved_location_actions"], [])
+            self.assertEqual(allocated[0]["assigned_robot_domain"], "robot7")
+            saved_output = json.loads(
+                (root / "task_run/02_allocate/subtasks.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(saved_output[0]["required_locations"], ["CounterTop_1"])
+
+    def test_v2_location_capacity_serializes_only_shared_locations(self):
+        manager = pddlrun_llmseparate_v2.TaskManager.__new__(pddlrun_llmseparate_v2.TaskManager)
+        robots = [
+            {
+                "name": "robot1",
+                "skills": ["OpenObject"],
+                "mass_capacity": 0,
+            },
+            {
+                "name": "robot2",
+                "skills": ["CloseObject"],
+                "mass_capacity": 0,
+            },
+        ]
+
+        def requirements(second_location):
+            return [
+                {
+                    "subtask_id": 1,
+                    "predecessor_ids": [],
+                    "required_skills": ["OpenObject"],
+                    "min_mass_capacity": 0,
+                    "duration": 2,
+                    "required_locations": ["CounterTop_1"],
+                },
+                {
+                    "subtask_id": 2,
+                    "predecessor_ids": [],
+                    "required_skills": ["CloseObject"],
+                    "min_mass_capacity": 0,
+                    "duration": 2,
+                    "required_locations": second_location,
+                },
+            ]
+
+        shared_assignments = manager._solve_subtask_assignment(
+            requirements(["counter-top1"]),
+            robots,
+        )
+        shared_first = shared_assignments[1]
+        shared_second = shared_assignments[2]
+        self.assertEqual(shared_first["robot_name"], "robot1")
+        self.assertEqual(shared_second["robot_name"], "robot2")
+        self.assertGreaterEqual(
+            max(shared_first["start"], shared_second["start"]),
+            min(shared_first["end"], shared_second["end"]),
+        )
+        self.assertEqual(
+            max(shared_first["end"], shared_second["end"]),
+            4,
+        )
+
+        separate_assignments = manager._solve_subtask_assignment(
+            requirements(["DiningTable_1"]),
+            robots,
+        )
+        self.assertEqual(
+            max(item["end"] for item in separate_assignments.values()),
+            2,
+        )
+        self.assertEqual(
+            {item["start"] for item in separate_assignments.values()},
+            {0},
+        )
+
+        unresolved_assignments = manager._solve_subtask_assignment(
+            requirements([]),
+            robots,
+        )
+        self.assertEqual(
+            max(item["end"] for item in unresolved_assignments.values()),
+            2,
+        )
+
+        predecessor_requirements = requirements(["DiningTable_1"])
+        predecessor_requirements[1]["predecessor_ids"] = [1]
+        predecessor_assignments = manager._solve_subtask_assignment(
+            predecessor_requirements,
+            robots,
+        )
+        self.assertGreaterEqual(
+            predecessor_assignments[2]["start"],
+            predecessor_assignments[1]["end"],
+        )
+
+        capability_assignments = manager._solve_subtask_assignment(
+            [
+                {
+                    "subtask_id": 1,
+                    "predecessor_ids": [],
+                    "required_skills": ["OpenObject"],
+                    "min_mass_capacity": 3,
+                    "duration": 1,
+                    "required_locations": [],
+                }
+            ],
+            [
+                {
+                    "name": "robot1",
+                    "skills": ["OpenObject"],
+                    "mass_capacity": 1,
+                },
+                {
+                    "name": "robot2",
+                    "skills": ["OpenObject"],
+                    "mass_capacity": 5,
+                },
+            ],
+        )
+        self.assertEqual(capability_assignments[1]["robot_name"], "robot2")
 
     def test_v2_pairwise_precedence_extracts_predecessors(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -3582,6 +3878,80 @@ class PDDLRunConfigTests(unittest.TestCase):
             )
             self.assertNotIn("decompose_rag", manager.current_task_manifest)
             self.assertNotIn("allocate_rag", manager.current_task_manifest)
+
+    def test_allocate_model_defaults_to_global_model(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            prompt_dir = root / "prompts" / "v1"
+            prompt_dir.mkdir(parents=True)
+            (prompt_dir / "pddl_train_task_allocationsep_solution.txt").write_text(
+                "# static allocation example\n",
+                encoding="utf-8",
+            )
+            manager = TaskManager(str(root), "global-model", config=RunConfig(root))
+            manager.current_task_manifest = {"artifacts": {}, "task": "Open the drawer"}
+            called_models = []
+
+            def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
+                called_models.append(model)
+                return {}, "# Sequence of Operations:\nSubtask 1: Robot 1;"
+
+            with patch.object(manager.llm, "query_model", side_effect=fake_query_model):
+                manager._generate_allocation_plan(
+                    "#SubTask 1: Open the drawer",
+                    robots=[{"name": "robot1", "skills": ["OpenObject"]}],
+                    objects_ai="\n\nobjects = []",
+                    key_objects=[],
+                    key_objects_by_subtask={1: []},
+                )
+
+            self.assertEqual(manager.allocate_model, "global-model")
+            self.assertEqual(called_models, ["global-model"])
+
+    def test_allocate_model_override_is_isolated_to_allocation(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            prompt_dir = root / "prompts" / "v1"
+            prompt_dir.mkdir(parents=True)
+            (prompt_dir / "pddl_train_task_decomposesep.txt").write_text(
+                "# static decomposition example\n",
+                encoding="utf-8",
+            )
+            (prompt_dir / "pddl_train_task_allocationsep_solution.txt").write_text(
+                "# static allocation example\n",
+                encoding="utf-8",
+            )
+            manager = TaskManager(
+                str(root),
+                "global-model",
+                config=RunConfig(root),
+                allocate_model="allocation-model",
+            )
+            manager.current_task_manifest = {"artifacts": {}, "task": "Open the drawer"}
+            called_models = []
+
+            def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
+                called_models.append(model)
+                return {}, "# Sequence of Operations:\nSubtask 1: Robot 1;"
+
+            with patch.object(manager.llm, "query_model", side_effect=fake_query_model):
+                manager._run_decompose_generation(
+                    "Open the drawer",
+                    "(define (domain test))",
+                    [{"name": "robot1", "skills": ["OpenObject"]}],
+                    "\n\nobjects = []",
+                )
+                manager._generate_allocation_plan(
+                    "#SubTask 1: Open the drawer",
+                    robots=[{"name": "robot1", "skills": ["OpenObject"]}],
+                    objects_ai="\n\nobjects = []",
+                    key_objects=[],
+                    key_objects_by_subtask={1: []},
+                )
+
+            self.assertEqual(manager.model, "global-model")
+            self.assertEqual(manager.allocate_model, "allocation-model")
+            self.assertEqual(called_models, ["global-model", "allocation-model"])
 
     def test_allocation_prompt_includes_planner_feedback_when_provided(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

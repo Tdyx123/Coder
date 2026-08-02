@@ -12,10 +12,8 @@ from run_config import (
     RunConfig,
     apply_allocate_rag_cli_override,
     apply_decompose_rag_cli_override,
-    apply_feedback_cli_override,
     apply_problem_repair_cli_override,
     apply_problem_rag_cli_override,
-    apply_val_feedback_cli_override,
     load_run_config,
     normalize_floor_plan,
 )
@@ -31,7 +29,7 @@ class TaskJob:
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Parallel wrapper for pddlrun_llmseparate.py. "
+            "Parallel wrapper for pddlrun_llmseparate_v2.py. "
             "Runs multiple floor plans and multiple task indices in parallel."
         )
     )
@@ -106,52 +104,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="store_false",
         help="Disable deterministic local repair of generated PDDL problems (default).",
     )
-    plan_feedback_group = parser.add_mutually_exclusive_group()
-    plan_feedback_group.add_argument(
-        "--plan-feedback",
-        dest="plan_feedback",
-        action="store_true",
-        help="Enable planner-feedback retries from allocation onward.",
-    )
-    plan_feedback_group.add_argument(
-        "--no-plan-feedback",
-        dest="plan_feedback",
-        action="store_false",
-        help="Disable planner-feedback retries.",
-    )
-    parser.add_argument(
-        "--plan-feedback-max-retries",
-        dest="plan_feedback_max_retries",
-        type=int,
-        default=None,
-        help="Maximum feedback retry rounds after the first allocation attempt.",
-    )
-    val_feedback_group = parser.add_mutually_exclusive_group()
-    val_feedback_group.add_argument(
-        "--val-feedback",
-        dest="val_feedback",
-        action="store_true",
-        help="Enable VAL validation and failed-subtask problem-generation retries.",
-    )
-    val_feedback_group.add_argument(
-        "--no-val-feedback",
-        dest="val_feedback",
-        action="store_false",
-        help="Disable VAL validation and feedback retries.",
-    )
-    parser.add_argument(
-        "--val-feedback-max-retries",
-        type=int,
-        default=None,
-        help="Maximum VAL feedback retry rounds after the first validation attempt.",
-    )
     parser.set_defaults(
         decompose_rag=False,
         allocate_rag=False,
         problem_rag=False,
         problem_repair=None,
-        plan_feedback=None,
-        val_feedback=None,
     )
     return parser.parse_args(argv)
 
@@ -196,7 +153,7 @@ def prewarm_decompose_rag_if_configured(config: RunConfig) -> bool:
     if not config_bool(config.get("decompose_rag", "prewarm_runtime_db", False), False):
         return False
 
-    from pddlrun_llmseparate import prewarm_decompose_rag_runtime_db
+    from pddlrun_llmseparate_v2 import prewarm_decompose_rag_runtime_db
 
     return prewarm_decompose_rag_runtime_db(config)
 
@@ -207,7 +164,7 @@ def prewarm_allocate_rag_if_configured(config: RunConfig) -> bool:
     if not config_bool(config.get("allocate_rag", "prewarm_runtime_db", False), False):
         return False
 
-    from pddlrun_llmseparate import prewarm_allocate_rag_runtime_db
+    from pddlrun_llmseparate_v2 import prewarm_allocate_rag_runtime_db
 
     return prewarm_allocate_rag_runtime_db(config)
 
@@ -218,7 +175,7 @@ def prewarm_problem_rag_if_configured(config: RunConfig) -> bool:
     if not config_bool(config.get("problem_rag", "prewarm_runtime_db", False), False):
         return False
 
-    from pddlrun_llmseparate import prewarm_problem_rag_runtime_db
+    from pddlrun_llmseparate_v2 import prewarm_problem_rag_runtime_db
 
     return prewarm_problem_rag_runtime_db(config)
 
@@ -258,7 +215,7 @@ def run_single_job(
     error_message = None
 
     try:
-        from pddlrun_llmseparate import run_single_floor_plan_task
+        from pddlrun_llmseparate_v2 import run_single_floor_plan_task
 
         with contextlib.redirect_stdout(io.StringIO()):
             result = run_single_floor_plan_task(
@@ -306,7 +263,7 @@ def run_floor_plan_jobs(
     args: argparse.Namespace,
     floor_plan: str,
 ) -> Dict[str, Any]:
-    from pddlrun_llmseparate import PDDLUtils
+    from pddlrun_llmseparate_v2 import PDDLUtils
 
     jobs = load_jobs(config, args.test_set, floor_plan)
     floor_plan_key = normalize_floor_plan(floor_plan)
@@ -356,21 +313,11 @@ def main() -> None:
         config,
         getattr(args, "problem_repair", None),
     )
-    apply_feedback_cli_override(
-        config,
-        args.plan_feedback,
-        args.plan_feedback_max_retries,
-    )
-    apply_val_feedback_cli_override(
-        config,
-        getattr(args, "val_feedback", None),
-        getattr(args, "val_feedback_max_retries", None),
-    )
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     output_root = (
         config.resolve_path(args.output_root)
         if args.output_root
-        else config.path("storage", "parallel_output_root") / f"pddlrun_llmseparate_{timestamp}"
+        else config.path("storage", "parallel_output_root") / f"pddlrun_llmseparate_v2_{timestamp}"
     )
     output_root.mkdir(parents=True, exist_ok=True)
 

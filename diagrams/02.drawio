@@ -1,0 +1,325 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-07-31T00:00:00.000Z" agent="Codex" version="24.7.17" type="device" compressed="false">
+  <diagram id="method-overview" name="Method Overview">
+    <mxGraphModel dx="2860" dy="1220" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2860" pageHeight="1220" math="0" shadow="0" background="#FFFDF8">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- Section labels -->
+        <mxCell id="section_inputs" value="INPUTS" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=16;fontStyle=1;fontColor=#34424C;" vertex="1" parent="1">
+          <mxGeometry x="40" y="155" width="250" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="section_reasoning" value="LLM REASONING &amp;amp; SYMBOLIC GROUNDING" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=16;fontStyle=1;fontColor=#34424C;" vertex="1" parent="1">
+          <mxGeometry x="350" y="155" width="1010" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="section_planning" value="PER-SUBTASK GENERATION &amp;amp; SYMBOLIC PLANNING" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=16;fontStyle=1;fontColor=#34424C;" vertex="1" parent="1">
+          <mxGeometry x="1410" y="155" width="780" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="section_validation" value="VALIDATION &amp;amp; OUTPUT" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=16;fontStyle=1;fontColor=#34424C;" vertex="1" parent="1">
+          <mxGeometry x="2230" y="155" width="600" height="30" as="geometry"/>
+        </mxCell>
+
+        <!-- Optional prompting resources -->
+        <mxCell id="rag_decompose" value="&lt;b&gt;Static Few-shot Examples&lt;/b&gt;&lt;br&gt;/ Optional RAG" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#F8F2DD;strokeColor=#B7A96A;fontColor=#39444D;fontFamily=Helvetica;fontSize=13;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="360" y="45" width="200" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="rag_allocate" value="&lt;b&gt;Static Few-shot Examples&lt;/b&gt;&lt;br&gt;/ Optional RAG" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#F8F2DD;strokeColor=#B7A96A;fontColor=#39444D;fontFamily=Helvetica;fontSize=13;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1140" y="45" width="200" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="rag_problem" value="&lt;b&gt;Static Few-shot Examples&lt;/b&gt;&lt;br&gt;/ Optional RAG" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#F8F2DD;strokeColor=#B7A96A;fontColor=#39444D;fontFamily=Helvetica;fontSize=13;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1570" y="45" width="200" height="70" as="geometry"/>
+        </mxCell>
+
+        <!-- Inputs -->
+        <mxCell id="input_task" value="&lt;b&gt;Task Description&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64727D&quot;&gt;Dataset Task&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#F7F4ED;strokeColor=#7A8793;fontColor=#24313A;fontFamily=Helvetica;fontSize=15;align=center;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="235" width="200" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="input_scene" value="&lt;b&gt;AI2-THOR Scene Metadata&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64727D&quot;&gt;Objects, Properties, Relations&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#F7F4ED;strokeColor=#7A8793;fontColor=#24313A;fontFamily=Helvetica;fontSize=15;align=center;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="365" width="200" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="input_domain" value="&lt;b&gt;All-action PDDL Domain&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64727D&quot;&gt;Actions, Types, Predicates&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#F7F4ED;strokeColor=#7A8793;fontColor=#24313A;fontFamily=Helvetica;fontSize=15;align=center;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="495" width="200" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="input_robots" value="&lt;b&gt;Heterogeneous Robot Team&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64727D&quot;&gt;Skills, Capacity, Domain Mapping&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#F7F4ED;strokeColor=#7A8793;fontColor=#24313A;fontFamily=Helvetica;fontSize=15;align=left;spacingLeft=58;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="625" width="200" height="90" as="geometry"/>
+        </mxCell>
+
+        <!-- Decomposition and grounding -->
+        <mxCell id="decomposition" value="&lt;b&gt;Task Decomposition&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#846414&quot;&gt;LLM&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#5F6870&quot;&gt;parallelize independent work&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#FFF0B8;strokeColor=#C69214;strokeWidth=2;fontColor=#2F3438;fontFamily=Helvetica;fontSize=16;align=left;spacingLeft=68;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="350" y="285" width="220" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtasks" value="&lt;b&gt;Dependency-aware&lt;br&gt;Subtasks&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64727D&quot;&gt;sequential + parallel&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#F7F4ED;strokeColor=#7A8793;fontColor=#24313A;fontFamily=Helvetica;fontSize=14;align=center;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="610" y="305" width="175" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="grounding" value="&lt;b&gt;Key-object Grounding&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#415B70&quot;&gt;Relevant Object Matching&lt;br&gt;Object-ID Binding&lt;br&gt;PDDL-ready State Construction&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#DCECF5;strokeColor=#5B8DB8;strokeWidth=2;fontColor=#24313A;fontFamily=Helvetica;fontSize=15;align=center;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="825" y="270" width="245" height="150" as="geometry"/>
+        </mxCell>
+        <mxCell id="grounding_output" value="Subtask-specific Objects &amp;amp; States" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#EDF5FB;strokeColor=#87AFCB;fontColor=#415B70;fontFamily=Helvetica;fontSize=13;align=center;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="850" y="445" width="195" height="55" as="geometry"/>
+        </mxCell>
+
+        <!-- Capability-aware allocation -->
+        <mxCell id="allocation" value="&lt;b&gt;Capability-aware Allocation&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#846414&quot;&gt;LLM&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#5F6870&quot;&gt;all required skills&lt;br&gt;pickup capacity when needed&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#FFF0B8;strokeColor=#C69214;strokeWidth=2;fontColor=#2F3438;fontFamily=Helvetica;fontSize=15;align=center;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1120" y="270" width="240" height="150" as="geometry"/>
+        </mxCell>
+        <mxCell id="allocation_output" value="&lt;b&gt;Robot Assignments&lt;/b&gt;&lt;br&gt;Sequence of Operations" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#FFF9E8;strokeColor=#D5B14E;fontColor=#59491D;fontFamily=Helvetica;fontSize=14;align=center;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1135" y="455" width="210" height="70" as="geometry"/>
+        </mxCell>
+
+        <!-- Parallel problem generation region -->
+        <mxCell id="problem_group" value="&lt;b&gt;Parallel Per-subtask PDDL Problem Generation&lt;/b&gt; &amp;nbsp; &lt;font color=&quot;#846414&quot;&gt;LLM&lt;/font&gt;" style="swimlane;sketch=1;curveFitting=1;jiggle=1;horizontal=1;startSize=42;rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#FFF9E8;swimlaneFillColor=#FFFCF4;strokeColor=#C69214;strokeWidth=2;fontColor=#2F3438;fontFamily=Helvetica;fontSize=15;align=center;verticalAlign=middle;arcSize=8;collapsible=0;" vertex="1" parent="1">
+          <mxGeometry x="1410" y="205" width="520" height="440" as="geometry"/>
+        </mxCell>
+        <mxCell id="lane_1" value="&lt;b&gt;Subtask 1&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64727D&quot;&gt;Assigned Robot&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#F7F4ED;strokeColor=#9AA5AE;fontColor=#34424C;fontFamily=Helvetica;fontSize=13;align=center;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="1430" y="275" width="95" height="85" as="geometry"/>
+        </mxCell>
+        <mxCell id="problem_gen_1" value="&lt;b&gt;PDDL Problem Generation&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64727D&quot;&gt;Robot-specific Domain&lt;br&gt;Predicate Filtering&lt;br&gt;PDDL-ready States&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#FFF0B8;strokeColor=#C69214;fontColor=#2F3438;fontFamily=Helvetica;fontSize=13;align=center;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="1540" y="265" width="220" height="105" as="geometry"/>
+        </mxCell>
+        <mxCell id="repair_1" value="&lt;b&gt;PDDL Repair&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#5B7182&quot;&gt;Optional&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#DCECF5;strokeColor=#5B8DB8;fontColor=#24313A;fontFamily=Helvetica;fontSize=13;align=center;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="1780" y="275" width="125" height="85" as="geometry"/>
+        </mxCell>
+        <mxCell id="lane_2" value="&lt;b&gt;Subtask 2&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64727D&quot;&gt;Assigned Robot&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#F7F4ED;strokeColor=#9AA5AE;fontColor=#34424C;fontFamily=Helvetica;fontSize=13;align=center;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="1430" y="395" width="95" height="85" as="geometry"/>
+        </mxCell>
+        <mxCell id="problem_gen_2" value="&lt;b&gt;PDDL Problem Generation&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64727D&quot;&gt;Robot-specific Domain&lt;br&gt;Predicate Filtering&lt;br&gt;PDDL-ready States&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#FFF0B8;strokeColor=#C69214;fontColor=#2F3438;fontFamily=Helvetica;fontSize=13;align=center;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="1540" y="385" width="220" height="105" as="geometry"/>
+        </mxCell>
+        <mxCell id="repair_2" value="&lt;b&gt;PDDL Repair&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#5B7182&quot;&gt;Optional&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#DCECF5;strokeColor=#5B8DB8;fontColor=#24313A;fontFamily=Helvetica;fontSize=13;align=center;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="1780" y="395" width="125" height="85" as="geometry"/>
+        </mxCell>
+        <mxCell id="lane_n" value="&lt;b&gt;Subtask n&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64727D&quot;&gt;Assigned Robot&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#F7F4ED;strokeColor=#9AA5AE;fontColor=#34424C;fontFamily=Helvetica;fontSize=13;align=center;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="1430" y="515" width="95" height="85" as="geometry"/>
+        </mxCell>
+        <mxCell id="problem_gen_n" value="&lt;b&gt;PDDL Problem Generation&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64727D&quot;&gt;Robot-specific Domain&lt;br&gt;Predicate Filtering&lt;br&gt;PDDL-ready States&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#FFF0B8;strokeColor=#C69214;fontColor=#2F3438;fontFamily=Helvetica;fontSize=13;align=center;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="1540" y="505" width="220" height="105" as="geometry"/>
+        </mxCell>
+        <mxCell id="repair_n" value="&lt;b&gt;PDDL Repair&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#5B7182&quot;&gt;Optional&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#DCECF5;strokeColor=#5B8DB8;fontColor=#24313A;fontFamily=Helvetica;fontSize=13;align=center;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="1780" y="515" width="125" height="85" as="geometry"/>
+        </mxCell>
+
+        <!-- Planning, validation, and output -->
+        <mxCell id="planner" value="&lt;b&gt;Fast Downward Planner&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#415B70&quot;&gt;Robot-specific Domain&lt;br&gt;+ PDDL Problem&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#DCECF5;strokeColor=#5B8DB8;strokeWidth=2;fontColor=#24313A;fontFamily=Helvetica;fontSize=15;align=center;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1975" y="340" width="205" height="115" as="geometry"/>
+        </mxCell>
+        <mxCell id="plan_found" value="&lt;b&gt;Plan&lt;br&gt;Found?&lt;/b&gt;" style="rhombus;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#EDF5FB;strokeColor=#5B8DB8;strokeWidth=2;fontColor=#2F4657;fontFamily=Helvetica;fontSize=14;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="2220" y="352" width="100" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="val" value="&lt;b&gt;VAL Plan Validation&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#4F7658&quot;&gt;Optional&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#64727D&quot;&gt;Domain + Problem + Plan&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#E4F2E2;strokeColor=#4F8A60;strokeWidth=2;fontColor=#24313A;fontFamily=Helvetica;fontSize=15;align=center;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="2370" y="335" width="205" height="125" as="geometry"/>
+        </mxCell>
+        <mxCell id="output" value="&lt;b&gt;Executable Per-subtask Plans&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#4F7658&quot;&gt;Robot-specific Plans&lt;br&gt;Completion Summary&lt;br&gt;Run Artifacts &amp;amp; Diagnostics&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#DDEFD9;strokeColor=#4F8A60;strokeWidth=2;fontColor=#24313A;fontFamily=Helvetica;fontSize=15;align=center;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="2620" y="320" width="205" height="155" as="geometry"/>
+        </mxCell>
+
+        <!-- Editable hand-drawn pictograms -->
+        <mxCell id="robot_antenna" value="" style="shape=line;sketch=1;curveFitting=1;jiggle=1;strokeColor=#52616B;strokeWidth=2;rotation=90;" vertex="1" parent="1">
+          <mxGeometry x="73" y="626" width="15" height="8" as="geometry"/>
+        </mxCell>
+        <mxCell id="robot_antenna_tip" value="" style="ellipse;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#E9826E;strokeColor=#52616B;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="75" y="624" width="9" height="9" as="geometry"/>
+        </mxCell>
+        <mxCell id="robot_head" value="" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#DCECF5;strokeColor=#52616B;strokeWidth=2;arcSize=18;" vertex="1" parent="1">
+          <mxGeometry x="57" y="640" width="46" height="31" as="geometry"/>
+        </mxCell>
+        <mxCell id="robot_eye_left" value="" style="ellipse;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#52616B;strokeColor=#52616B;" vertex="1" parent="1">
+          <mxGeometry x="68" y="650" width="6" height="6" as="geometry"/>
+        </mxCell>
+        <mxCell id="robot_eye_right" value="" style="ellipse;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#52616B;strokeColor=#52616B;" vertex="1" parent="1">
+          <mxGeometry x="86" y="650" width="6" height="6" as="geometry"/>
+        </mxCell>
+        <mxCell id="robot_body" value="" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#FFF0B8;strokeColor=#52616B;strokeWidth=2;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="64" y="674" width="33" height="27" as="geometry"/>
+        </mxCell>
+        <mxCell id="llm_cloud" value="&lt;b&gt;LLM&lt;/b&gt;" style="shape=cloud;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#FFFDF8;strokeColor=#C69214;strokeWidth=2;fontColor=#846414;fontFamily=Helvetica;fontSize=12;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="362" y="315" width="67" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="sketch_note_grounding" value="scene facts → symbolic predicates" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontStyle=2;fontColor=#5B7182;rotation=-2;" vertex="1" parent="1">
+          <mxGeometry x="835" y="510" width="225" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="sketch_note_parallel" value="one lane per assigned subtask" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontStyle=2;fontColor=#846414;rotation=1;" vertex="1" parent="1">
+          <mxGeometry x="1515" y="650" width="300" height="30" as="geometry"/>
+        </mxCell>
+
+        <!-- Notes and legend -->
+        <mxCell id="hybrid_note" value="&lt;b&gt;Hybrid reasoning architecture:&lt;/b&gt; semantic decomposition and allocation → grounded PDDL generation → symbolic search → formal validation" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#FAFBFC;strokeColor=#C8D0D6;fontColor=#4A5862;fontFamily=Helvetica;fontSize=14;align=center;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="760" y="1035" width="1320" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend_forward_line" value="" style="shape=line;sketch=1;curveFitting=1;jiggle=1;strokeColor=#536471;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="70" y="1050" width="70" height="10" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend_forward_text" value="Forward data flow" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=13;fontColor=#4A5862;" vertex="1" parent="1">
+          <mxGeometry x="150" y="1037" width="150" height="35" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend_optional_line" value="" style="shape=line;sketch=1;curveFitting=1;jiggle=1;strokeColor=#9B8B4A;strokeWidth=2;dashed=1;dashPattern=1 4;" vertex="1" parent="1">
+          <mxGeometry x="320" y="1050" width="70" height="10" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend_optional_text" value="Optional context / bypass" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=13;fontColor=#4A5862;" vertex="1" parent="1">
+          <mxGeometry x="400" y="1037" width="180" height="35" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend_feedback_line" value="" style="shape=line;sketch=1;curveFitting=1;jiggle=1;strokeColor=#C75B5B;strokeWidth=2;dashed=1;dashPattern=8 6;" vertex="1" parent="1">
+          <mxGeometry x="600" y="1050" width="70" height="10" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend_feedback_text" value="Feedback retry" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=13;fontColor=#4A5862;" vertex="1" parent="1">
+          <mxGeometry x="680" y="1037" width="130" height="35" as="geometry"/>
+        </mxCell>
+
+        <!-- Input dependency edges -->
+        <mxCell id="edge_task_decomposition" value="" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.6;strokeColor=#7A8793;" edge="1" parent="1" source="input_task" target="decomposition">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_scene_decomposition" value="" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.6;strokeColor=#7A8793;entryX=0.2;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="input_scene" target="decomposition">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_domain_decomposition" value="" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.6;strokeColor=#7A8793;entryX=0.8;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="input_domain" target="decomposition">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="300" y="540"/>
+              <mxPoint x="300" y="430"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge_scene_grounding" value="scene objects" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.4;strokeColor=#8A98A3;fontColor=#64727D;fontFamily=Helvetica;fontSize=12;labelBackgroundColor=#FFFFFF;entryX=0.15;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="input_scene" target="grounding">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="280" y="740"/>
+              <mxPoint x="860" y="740"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge_domain_grounding" value="supported predicates" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.4;strokeColor=#8A98A3;fontColor=#64727D;fontFamily=Helvetica;fontSize=12;labelBackgroundColor=#FFFFFF;entryX=0.8;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="input_domain" target="grounding">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="260" y="775"/>
+              <mxPoint x="1020" y="775"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge_robots_allocation" value="skills, capacity, domain map" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.6;strokeColor=#7A8793;fontColor=#64727D;fontFamily=Helvetica;fontSize=12;labelBackgroundColor=#FFFFFF;entryX=0.25;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="input_robots" target="allocation">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="270" y="705"/>
+              <mxPoint x="1180" y="705"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Main forward-flow edges -->
+        <mxCell id="edge_decomposition_subtasks" value="" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=2;strokeColor=#536471;" edge="1" parent="1" source="decomposition" target="subtasks">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_subtasks_grounding" value="" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=2;strokeColor=#536471;" edge="1" parent="1" source="subtasks" target="grounding">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_grounding_output" value="" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.8;strokeColor=#5B8DB8;" edge="1" parent="1" source="grounding" target="grounding_output">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_grounding_allocation" value="key objects" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=2;strokeColor=#536471;fontColor=#536471;fontFamily=Helvetica;fontSize=12;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="grounding" target="allocation">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_subtasks_allocation" value="subtasks + dependencies" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#7A8793;fontColor=#64727D;fontFamily=Helvetica;fontSize=12;labelBackgroundColor=#FFFFFF;entryX=0.2;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="subtasks" target="allocation">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="700" y="225"/>
+              <mxPoint x="1170" y="225"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge_allocation_output" value="" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=2;strokeColor=#C69214;" edge="1" parent="1" source="allocation" target="allocation_output">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_grounded_context_problem" value="subtask-specific PDDL states" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.6;strokeColor=#5B8DB8;fontColor=#415B70;fontFamily=Helvetica;fontSize=12;labelBackgroundColor=#FFFFFF;entryX=0.2;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="grounding_output" target="problem_group">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="950" y="810"/>
+              <mxPoint x="1510" y="810"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge_allocation_lane_1" value="" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.8;strokeColor=#536471;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="allocation_output" target="lane_1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_allocation_lane_2" value="parallel fan-out" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.8;strokeColor=#536471;fontColor=#536471;fontFamily=Helvetica;fontSize=12;labelBackgroundColor=#FFFFFF;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="allocation_output" target="lane_2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_allocation_lane_n" value="" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.8;strokeColor=#536471;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="allocation_output" target="lane_n">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_lane_1_gen" value="" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.7;strokeColor=#536471;" edge="1" parent="1" source="lane_1" target="problem_gen_1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_lane_2_gen" value="" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.7;strokeColor=#536471;" edge="1" parent="1" source="lane_2" target="problem_gen_2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_lane_n_gen" value="" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.7;strokeColor=#536471;" edge="1" parent="1" source="lane_n" target="problem_gen_n">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_gen_1_repair" value="" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.7;strokeColor=#536471;" edge="1" parent="1" source="problem_gen_1" target="repair_1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_gen_2_repair" value="" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.7;strokeColor=#536471;" edge="1" parent="1" source="problem_gen_2" target="repair_2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_gen_n_repair" value="" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.7;strokeColor=#536471;" edge="1" parent="1" source="problem_gen_n" target="repair_n">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_repair_1_planner" value="" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.8;strokeColor=#536471;entryX=0;entryY=0.2;entryDx=0;entryDy=0;" edge="1" parent="1" source="repair_1" target="planner">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_repair_2_planner" value="robot-specific problems" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.8;strokeColor=#536471;fontColor=#536471;fontFamily=Helvetica;fontSize=12;labelBackgroundColor=#FFFFFF;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="repair_2" target="planner">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_repair_n_planner" value="" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.8;strokeColor=#536471;entryX=0;entryY=0.8;entryDx=0;entryDy=0;" edge="1" parent="1" source="repair_n" target="planner">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_planner_decision" value="per-subtask plans" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=2;strokeColor=#536471;fontColor=#536471;fontFamily=Helvetica;fontSize=12;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="planner" target="plan_found">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_decision_val" value="Yes · VAL enabled" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=2;strokeColor=#536471;fontColor=#536471;fontFamily=Helvetica;fontSize=12;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="plan_found" target="val">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_val_output" value="Valid" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=2;strokeColor=#4F8A60;fontColor=#4F7658;fontFamily=Helvetica;fontSize=12;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="val" target="output">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_val_bypass" value="VAL disabled" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#9B8B4A;dashed=1;dashPattern=1 4;fontColor=#716633;fontFamily=Helvetica;fontSize=12;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="plan_found" target="output">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="2270" y="240"/>
+              <mxPoint x="2720" y="240"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Optional prompt augmentation edges -->
+        <mxCell id="edge_rag_decompose" value="optional context" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=0;strokeWidth=1.7;strokeColor=#9B8B4A;dashed=1;dashPattern=1 4;fontColor=#716633;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="rag_decompose" target="decomposition">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_rag_allocate" value="optional context" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=0;strokeWidth=1.7;strokeColor=#9B8B4A;dashed=1;dashPattern=1 4;fontColor=#716633;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="rag_allocate" target="allocation">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_rag_problem" value="optional context" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=0;strokeWidth=1.7;strokeColor=#9B8B4A;dashed=1;dashPattern=1 4;fontColor=#716633;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#FFFFFF;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="rag_problem" target="problem_group">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- Feedback loops -->
+        <mxCell id="edge_planner_feedback" value="&lt;b&gt;Planner Feedback (optional)&lt;/b&gt;&lt;br&gt;retry from allocation" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=2.4;strokeColor=#C75B5B;dashed=1;dashPattern=8 6;fontColor=#A34444;fontFamily=Helvetica;fontSize=13;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="plan_found" target="allocation">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="2270" y="865"/>
+              <mxPoint x="1240" y="865"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge_val_feedback" value="&lt;b&gt;VAL Feedback (optional)&lt;/b&gt;&lt;br&gt;regenerate failed subtasks only&lt;br&gt;robot assignments unchanged" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=2.4;strokeColor=#C75B5B;dashed=1;dashPattern=8 6;fontColor=#A34444;fontFamily=Helvetica;fontSize=13;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.72;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="val" target="problem_group">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="2470" y="955"/>
+              <mxPoint x="1780" y="955"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

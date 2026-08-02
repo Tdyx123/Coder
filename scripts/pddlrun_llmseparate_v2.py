@@ -34,14 +34,16 @@ from run_config import (
     RunConfig,
     apply_allocate_rag_cli_override,
     apply_decompose_rag_cli_override,
-    apply_feedback_cli_override,
     apply_problem_repair_cli_override,
     apply_problem_rag_cli_override,
-    apply_val_feedback_cli_override,
     load_run_config as _load_run_config,
     normalize_floor_plan,
 )
-from special_task_skills import SPECIAL_TASK_SKILL_PROMPT_RULE
+from special_task_skills import (
+    SPECIAL_TASK_SKILL_ALIASES,
+    SPECIAL_TASK_SKILL_PROMPT_RULE,
+    robot_skill_for_special_task_skill,
+)
 
 import sys
 sys.path.append(".")
@@ -451,15 +453,6 @@ class TaskManager:
         self.config = config or load_run_config(base_path)
         self.test_set = test_set
         self.floor_plan = normalize_floor_plan(str(floor_plan)) if floor_plan is not None else None
-        self.feedback_enabled = _config_bool(self.config.get("feedback", "enabled", False), False)
-        self.feedback_max_retries = max(0, int(self.config.get("feedback", "max_retries", 2)))
-        self.feedback_max_prompt_chars = max(500, int(self.config.get("feedback", "max_prompt_chars", 4000)))
-        self.val_feedback_enabled = _config_bool(self.config.get("val_feedback", "enabled", False), False)
-        self.val_feedback_max_retries = max(0, int(self.config.get("val_feedback", "max_retries", 2)))
-        self.val_feedback_max_prompt_chars = max(
-            500,
-            int(self.config.get("val_feedback", "max_prompt_chars", 4000)),
-        )
         self.problem_repair_enabled = _config_bool(
             self.config.get("problem_repair", "enabled", False),
             False,
@@ -594,6 +587,13 @@ class TaskManager:
             return None
 
         return os.path.join(self.current_task_run_dir, "08_planner/outputs")
+
+    def _get_validated_problem_file_path(self) -> Optional[str]:
+        """Return the task-local directory for validated allaction problems."""
+        if not self.current_task_run_dir:
+            return None
+
+        return os.path.join(self.current_task_run_dir, "07_validate/outputs")
 
     def _write_json_artifact(self, relative_path: str, content: Any) -> Optional[str]:
         """Write a JSON artifact under the current task run directory."""
@@ -1143,44 +1143,6 @@ class TaskManager:
         except Exception as e:
             print(f"Error accessing directory {directory}: {str(e)}")
 
-    def _clean_feedback_attempt_outputs(self) -> None:
-        """Remove downstream artifacts that must not leak across feedback attempts."""
-        if not self.current_task_run_dir:
-            return
-
-        cleanup_paths = [
-            os.path.join(self.current_task_run_dir, "05_problem_generation", "prompts"),
-            os.path.join(self.current_task_run_dir, "05_problem_generation", "outputs"),
-            os.path.join(self.current_task_run_dir, "08_planner"),
-        ]
-        for path in cleanup_paths:
-            if os.path.isdir(path):
-                shutil.rmtree(path)
-            elif os.path.isfile(path):
-                os.unlink(path)
-
-    def _clean_subtask_attempt_outputs(self, subtask_ids: Set[int]) -> None:
-        """Remove stale canonical artifacts for selected VAL-feedback subtasks."""
-        if not self.current_task_run_dir:
-            return
-
-        roots = (
-            "05_problem_generation/prompts",
-            "05_problem_generation/outputs",
-            "08_planner/commands",
-            "08_planner/stdout",
-            "08_planner/stderr",
-            "08_planner/outputs",
-        )
-        prefixes = tuple(f"subtask_{subtask_id:02d}_" for subtask_id in sorted(subtask_ids))
-        for relative_root in roots:
-            root = Path(self.current_task_run_dir) / relative_root
-            if not root.is_dir():
-                continue
-            for path in root.iterdir():
-                if path.is_file() and path.name.startswith(prefixes):
-                    path.unlink()
-
     @staticmethod
     def _subtask_id_from_filename(filename: str) -> Optional[int]:
         match = re.search(r"subtask[_-]?0*(\d+)", str(filename), re.IGNORECASE)
@@ -1278,11 +1240,11 @@ class TaskManager:
         has_planner_error = self._planner_output_has_error(stdout_text, stderr_text, return_code, status)
 
         if not plan_generated:
-            feedback_reason = "No planner plan was generated."
+            failure_reason = "No planner plan was generated."
         elif has_planner_error:
-            feedback_reason = "Planner produced a plan but reported an error."
+            failure_reason = "Planner produced a plan but reported an error."
         else:
-            feedback_reason = ""
+            failure_reason = ""
 
         return {
             "status": status,
@@ -1290,630 +1252,10 @@ class TaskManager:
             "plan_size_bytes": plan_size_bytes,
             "plan_generated": plan_generated,
             "has_planner_error": has_planner_error,
-            "feedback_reason": feedback_reason,
+            "failure_reason": failure_reason,
             "planner_output_excerpt": self._summarize_planner_output(stdout_text, stderr_text),
         }
 
-    def _build_planner_feedback(
-        self,
-        planner_records: Sequence[Dict[str, Any]],
-        expected_subtask_count: int,
-        robot_assignments: Optional[Dict[int, int]] = None,
-        expected_subtask_ids: Optional[Iterable[int]] = None,
-    ) -> Dict[str, Any]:
-        records_by_subtask: Dict[int, Dict[str, Any]] = {}
-        for record in planner_records:
-            subtask_id = self._subtask_id_from_filename(str(record.get("problem_file", "")))
-            if subtask_id is not None:
-                records_by_subtask[subtask_id] = record
-
-        failed_sections: Dict[int, str] = {}
-        subtask_feedback: Dict[int, str] = {}
-        subtask_ids = (
-            sorted({int(subtask_id) for subtask_id in expected_subtask_ids})
-            if expected_subtask_ids is not None
-            else range(1, expected_subtask_count + 1)
-        )
-        for subtask_id in subtask_ids:
-            record = records_by_subtask.get(subtask_id)
-            if record and self._planner_record_success(record):
-                continue
-
-            robot_num = robot_assignments.get(subtask_id) if robot_assignments else None
-            if robot_num is None:
-                feedback_line = "No valid previous robot assignment was found. Please assign a capable robot for this subtask."
-            else:
-                feedback_line = (
-                    f"The previously assigned robot was Robot {robot_num}. "
-                    "This robot may be unable to complete this subtask."
-                )
-            subtask_feedback[subtask_id] = feedback_line
-            failed_sections[subtask_id] = f"- Subtask {subtask_id}: {feedback_line}"
-
-        succeeded = not failed_sections
-        if succeeded:
-            return {
-                "succeeded": True,
-                "feedback_text": "",
-                "failed_subtask_ids": [],
-                "planner_feedback_by_subtask": {},
-            }
-
-        parts = [
-            "# PLANNER FEEDBACK FROM PREVIOUS ATTEMPT",
-            "",
-            "Failed subtasks:",
-        ]
-        parts.extend(failed_sections[subtask_id] for subtask_id in sorted(failed_sections))
-        parts.extend([
-            "",
-            "Please reconsider the robot assignment for the failed subtasks.",
-        ])
-        feedback_text = "\n".join(parts).strip()
-        if len(feedback_text) > self.feedback_max_prompt_chars:
-            feedback_text = feedback_text[:self.feedback_max_prompt_chars].rstrip() + "\n...[truncated]"
-
-        return {
-            "succeeded": False,
-            "feedback_text": feedback_text,
-            "failed_subtask_ids": sorted(failed_sections),
-            "planner_feedback_by_subtask": subtask_feedback,
-        }
-
-    @staticmethod
-    def _val_output_text(value: Any) -> str:
-        if value is None:
-            return ""
-        if isinstance(value, bytes):
-            return value.decode("utf-8", errors="replace")
-        return str(value)
-
-    @staticmethod
-    def _val_output_has_domain_error(output_text: str) -> bool:
-        lowered = output_text.lower()
-        return any(
-            marker in lowered
-            for marker in (
-                "problem in domain definition",
-                "error in domain definition",
-                "errors in domain definition",
-                "failed to parse domain",
-                "cannot parse domain",
-            )
-        )
-
-    def _resolve_val_executable(self) -> Optional[str]:
-        configured = str(self.config.get("val", "executable", "Validate") or "Validate").strip()
-        candidate = Path(configured).expanduser()
-        if candidate.is_absolute():
-            return str(candidate) if candidate.is_file() else None
-        if candidate.parent != Path("."):
-            resolved = self.config.resolve_path(candidate)
-            return str(resolved) if resolved.is_file() else None
-        return shutil.which(configured)
-
-    def _val_arguments(self) -> List[str]:
-        configured = self.config.get("val", "arguments", ["-v", "-e"])
-        if not isinstance(configured, list):
-            return ["-v", "-e"]
-        return [str(argument) for argument in configured]
-
-    def _classify_val_result(
-        self,
-        return_code: Optional[int],
-        stdout_text: str,
-        stderr_text: str,
-        infrastructure_error: Optional[str] = None,
-    ) -> Tuple[str, bool]:
-        combined = "\n".join(part for part in (stdout_text, stderr_text) if part)
-        if infrastructure_error:
-            return "infrastructure_error", False
-        if self._val_output_has_domain_error(combined):
-            return "domain_error", False
-        if return_code == 0 and re.search(r"\bPlan\s+valid\b", combined, re.IGNORECASE):
-            return "valid", True
-        if return_code is None or return_code == 0 or return_code < 0 or not combined.strip():
-            return "infrastructure_error", False
-        return "validation_error", False
-
-    def _format_val_feedback(self, record: Dict[str, Any]) -> str:
-        output_parts = []
-        if record.get("stdout"):
-            output_parts.append(f"stdout:\n{record['stdout']}")
-        if record.get("stderr"):
-            output_parts.append(f"stderr:\n{record['stderr']}")
-        if record.get("infrastructure_error") and not output_parts:
-            output_parts.append(str(record["infrastructure_error"]))
-        output_text = "\n\n".join(output_parts).strip() or "VAL returned no diagnostic output."
-        feedback = (
-            f"VAL status: {record.get('status', 'unknown')}\n"
-            f"VAL exit code: {record.get('return_code')}\n"
-            f"VAL output:\n{output_text}"
-        )
-        if len(feedback) > self.val_feedback_max_prompt_chars:
-            feedback = feedback[:self.val_feedback_max_prompt_chars].rstrip() + "\n...[truncated]"
-        return feedback
-
-    def _record_val_attempt(
-        self,
-        allocation_attempt: int,
-        val_attempt: int,
-        records: Sequence[Dict[str, Any]],
-    ) -> None:
-        val_manifest_path = self.config.artifact("val_manifest", "08_val/val_manifest.json")
-        manifest = self._read_json_artifact(
-            val_manifest_path,
-            {"enabled": True, "attempts": [], "latest_by_subtask": {}},
-        )
-        if not isinstance(manifest, dict):
-            manifest = {"enabled": True, "attempts": [], "latest_by_subtask": {}}
-        attempts = manifest.setdefault("attempts", [])
-        if not isinstance(attempts, list):
-            attempts = []
-            manifest["attempts"] = attempts
-        attempt_target_ids = sorted(
-            int(record["subtask_id"])
-            for record in records
-            if record.get("subtask_id") is not None
-        )
-        attempts.append({
-            "allocation_attempt": allocation_attempt,
-            "val_attempt": val_attempt,
-            "targeted_subtask_ids": attempt_target_ids,
-            "records": list(records),
-        })
-        latest = manifest.setdefault("latest_by_subtask", {})
-        if not isinstance(latest, dict):
-            latest = {}
-            manifest["latest_by_subtask"] = latest
-        for record in records:
-            if record.get("subtask_id") is not None:
-                latest[str(record["subtask_id"])] = dict(record)
-        existing_target_ids = manifest.get("targeted_subtask_ids", [])
-        if not isinstance(existing_target_ids, list):
-            existing_target_ids = []
-        targeted_subtask_ids = sorted({
-            *(int(subtask_id) for subtask_id in existing_target_ids),
-            *attempt_target_ids,
-        })
-        manifest["targeted_subtask_ids"] = targeted_subtask_ids
-        manifest["passed"] = bool(targeted_subtask_ids) and all(
-            isinstance(latest.get(str(subtask_id)), dict)
-            and bool(latest[str(subtask_id)].get("valid"))
-            for subtask_id in targeted_subtask_ids
-        )
-        manifest["enabled"] = True
-        self._write_json_artifact(val_manifest_path, manifest)
-        self._record_artifact("val", "manifest", val_manifest_path)
-
-        feedback_manifest = self.current_task_manifest.setdefault("val_feedback", {})
-        feedback_manifest["enabled"] = True
-        feedback_manifest["max_retries"] = self.val_feedback_max_retries
-        feedback_attempts = feedback_manifest.setdefault("attempts", [])
-        feedback_attempts.append({
-            "allocation_attempt": allocation_attempt,
-            "val_attempt": val_attempt,
-            "targeted_subtask_ids": sorted(
-                int(record["subtask_id"])
-                for record in records
-                if record.get("subtask_id") is not None
-            ),
-            "valid_subtask_ids": sorted(
-                int(record["subtask_id"])
-                for record in records
-                if record.get("valid") and record.get("subtask_id") is not None
-            ),
-            "failed_subtask_ids": sorted(
-                int(record["subtask_id"])
-                for record in records
-                if not record.get("valid") and record.get("subtask_id") is not None
-            ),
-            "statuses": {
-                str(record["subtask_id"]): record.get("status")
-                for record in records
-                if record.get("subtask_id") is not None
-            },
-        })
-        self._persist_manifest()
-
-    def _set_val_feedback_status(self, status: str) -> None:
-        if not isinstance(self.current_task_manifest, dict):
-            return
-        feedback_manifest = self.current_task_manifest.setdefault("val_feedback", {})
-        feedback_manifest["enabled"] = True
-        feedback_manifest["max_retries"] = self.val_feedback_max_retries
-        feedback_manifest["status"] = status
-        self._persist_manifest()
-
-    def run_val_validations(
-        self,
-        planner_records: Sequence[Dict[str, Any]],
-        allocation_attempt: int = 1,
-        val_attempt: int = 1,
-    ) -> List[Dict[str, Any]]:
-        """Run VAL for planner records and persist full per-attempt diagnostics."""
-        executable = self._resolve_val_executable()
-        arguments = self._val_arguments()
-        timeout_seconds = max(1, int(self.config.get("val", "timeout_seconds", 60)))
-        problem_dir = self._get_raw_problem_file_path()
-        records: List[Dict[str, Any]] = []
-
-        for planner_record in planner_records:
-            problem_file = str(planner_record.get("problem_file") or "")
-            subtask_id = self._subtask_id_from_filename(problem_file)
-            safe_name = self._sanitize_filename(problem_file.replace(".pddl", "") or "problem")
-            domain_file = str(planner_record.get("domain_file") or "")
-            problem_path = (
-                os.path.join(problem_dir, problem_file)
-                if problem_dir and problem_file
-                else ""
-            )
-            plan_file = str(planner_record.get("compatibility_output") or "")
-            base_artifact = (
-                f"08_val/allocation_attempt_{allocation_attempt:02d}/"
-                f"val_attempt_{val_attempt:02d}"
-            )
-            command_path = f"{base_artifact}/commands/{safe_name}_command.txt"
-            stdout_path = f"{base_artifact}/stdout/{safe_name}_stdout.txt"
-            stderr_path = f"{base_artifact}/stderr/{safe_name}_stderr.txt"
-            command: List[str] = []
-            stdout_text = ""
-            stderr_text = ""
-            return_code: Optional[int] = None
-            infrastructure_error: Optional[str] = None
-            started_at = time.time()
-
-            missing_inputs = [
-                label
-                for label, path in (
-                    ("domain", domain_file),
-                    ("problem", problem_path),
-                    ("plan", plan_file),
-                )
-                if not path or not os.path.isfile(path)
-            ]
-            if executable is None:
-                infrastructure_error = "VAL executable was not found. Configure val.executable or PATH."
-            elif missing_inputs:
-                infrastructure_error = "Missing VAL input file(s): " + ", ".join(missing_inputs)
-            else:
-                command = [executable, *arguments, domain_file, problem_path, plan_file]
-                try:
-                    result = subprocess.run(
-                        command,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        text=True,
-                        timeout=timeout_seconds,
-                    )
-                    return_code = result.returncode
-                    stdout_text = result.stdout or ""
-                    stderr_text = result.stderr or ""
-                except subprocess.TimeoutExpired as exc:
-                    stdout_text = self._val_output_text(exc.stdout)
-                    stderr_text = self._val_output_text(exc.stderr)
-                    infrastructure_error = f"VAL timed out after {timeout_seconds} seconds."
-                except OSError as exc:
-                    infrastructure_error = f"Unable to execute VAL: {exc}"
-
-            if infrastructure_error:
-                stderr_text = "\n".join(
-                    part for part in (stderr_text, infrastructure_error) if part
-                )
-            status, valid = self._classify_val_result(
-                return_code,
-                stdout_text,
-                stderr_text,
-                infrastructure_error=infrastructure_error,
-            )
-            self._write_text_artifact(command_path, " ".join(command))
-            self._write_text_artifact(stdout_path, stdout_text)
-            self._write_text_artifact(stderr_path, stderr_text)
-            record = {
-                "subtask_id": subtask_id,
-                "problem_file": problem_file,
-                "domain_file": domain_file or None,
-                "problem_path": problem_path or None,
-                "plan_file": plan_file or None,
-                "command_path": command_path,
-                "stdout_path": stdout_path,
-                "stderr_path": stderr_path,
-                "return_code": return_code,
-                "duration_seconds": round(time.time() - started_at, 3),
-                "status": status,
-                "valid": valid,
-                "infrastructure_error": infrastructure_error,
-                "stdout": stdout_text,
-                "stderr": stderr_text,
-            }
-            record["feedback"] = self._format_val_feedback(record)
-            records.append(record)
-
-        self._record_val_attempt(allocation_attempt, val_attempt, records)
-        return records
-
-    def _run_val_feedback_loop(
-        self,
-        subtasks: List[str],
-        robot_assignments: Dict[int, int],
-        objects_ai: str,
-        key_object_pddl_states: Optional[List[Dict[str, Any]]],
-        key_object_pddl_states_by_subtask: Optional[Dict[int, List[Dict[str, Any]]]],
-        planner_records: Sequence[Dict[str, Any]],
-        allocation_attempt: int,
-    ) -> Dict[str, Any]:
-        """Validate plans with VAL and regenerate only repairable failed subtasks."""
-        planner_by_subtask = {
-            subtask_id: dict(record)
-            for record in planner_records
-            for subtask_id in [self._subtask_id_from_filename(str(record.get("problem_file", "")))]
-            if subtask_id is not None
-        }
-        target_ids = set(planner_by_subtask)
-        val_attempt = 1
-
-        while True:
-            target_planner_records = [
-                planner_by_subtask[subtask_id]
-                for subtask_id in sorted(target_ids)
-                if subtask_id in planner_by_subtask
-            ]
-            val_records = self.run_val_validations(
-                target_planner_records,
-                allocation_attempt=allocation_attempt,
-                val_attempt=val_attempt,
-            )
-            failed_records = [record for record in val_records if not record.get("valid")]
-            if not failed_records:
-                self._set_val_feedback_status("passed")
-                return {
-                    "succeeded": True,
-                    "failure_source": None,
-                    "feedback_text": "",
-                    "failed_subtask_ids": [],
-                    "planner_feedback_by_subtask": {},
-                    "planner_records": [planner_by_subtask[key] for key in sorted(planner_by_subtask)],
-                    "val_records": val_records,
-                }
-
-            if any(record.get("status") == "domain_error" for record in failed_records):
-                self._set_val_feedback_status("domain_error")
-                return {
-                    "succeeded": False,
-                    "failure_source": "val_domain",
-                    "feedback_text": "",
-                    "failed_subtask_ids": sorted(
-                        record["subtask_id"]
-                        for record in failed_records
-                        if record.get("subtask_id") is not None
-                    ),
-                    "planner_feedback_by_subtask": {},
-                    "planner_records": [planner_by_subtask[key] for key in sorted(planner_by_subtask)],
-                    "val_records": val_records,
-                }
-
-            if any(record.get("status") == "infrastructure_error" for record in failed_records):
-                self._set_val_feedback_status("infrastructure_error")
-                return {
-                    "succeeded": False,
-                    "failure_source": "val_infrastructure",
-                    "feedback_text": "",
-                    "failed_subtask_ids": sorted(
-                        record["subtask_id"]
-                        for record in failed_records
-                        if record.get("subtask_id") is not None
-                    ),
-                    "planner_feedback_by_subtask": {},
-                    "planner_records": [planner_by_subtask[key] for key in sorted(planner_by_subtask)],
-                    "val_records": val_records,
-                }
-
-            retry_ids = {
-                int(record["subtask_id"])
-                for record in failed_records
-                if record.get("subtask_id") is not None
-            }
-            if val_attempt > self.val_feedback_max_retries:
-                self._set_val_feedback_status("retry_exhausted")
-                return {
-                    "succeeded": False,
-                    "failure_source": "val_validation",
-                    "feedback_text": "",
-                    "failed_subtask_ids": sorted(retry_ids),
-                    "planner_feedback_by_subtask": {},
-                    "planner_records": [planner_by_subtask[key] for key in sorted(planner_by_subtask)],
-                    "val_records": val_records,
-                }
-
-            val_feedback_by_subtask = {
-                int(record["subtask_id"]): str(record.get("feedback") or "")
-                for record in failed_records
-                if record.get("subtask_id") is not None
-            }
-            print(
-                "Retrying PDDL problem generation with VAL feedback for subtasks "
-                f"{sorted(retry_ids)} (VAL attempt {val_attempt + 1}/"
-                f"{self.val_feedback_max_retries + 1})"
-            )
-            self._clean_subtask_attempt_outputs(retry_ids)
-            self._generate_problem_files(
-                subtasks,
-                robot_assignments,
-                objects_ai,
-                key_object_pddl_states=key_object_pddl_states,
-                key_object_pddl_states_by_subtask=key_object_pddl_states_by_subtask,
-                val_feedback_by_subtask=val_feedback_by_subtask,
-                subtask_ids=retry_ids,
-            )
-            updated_planner_records = self._plan_generated_problems(subtask_ids=retry_ids)
-            for record in updated_planner_records:
-                subtask_id = self._subtask_id_from_filename(str(record.get("problem_file", "")))
-                if subtask_id is not None:
-                    planner_by_subtask[subtask_id] = dict(record)
-
-            merged_planner_records = [
-                planner_by_subtask[key]
-                for key in sorted(planner_by_subtask)
-            ]
-            planner_feedback = self._build_planner_feedback(
-                updated_planner_records,
-                len(subtasks),
-                robot_assignments,
-                expected_subtask_ids=retry_ids,
-            )
-            if not planner_feedback["succeeded"]:
-                self._set_val_feedback_status("planner_failed")
-                return {
-                    **planner_feedback,
-                    "failure_source": "planner",
-                    "planner_records": merged_planner_records,
-                    "val_records": val_records,
-                }
-
-            target_ids = retry_ids
-            val_attempt += 1
-
-    def _record_feedback_attempt(
-        self,
-        attempt_result: Dict[str, Any],
-        will_retry: bool,
-    ) -> None:
-        if (
-            not self.feedback_enabled
-            or not isinstance(self.current_task_manifest, dict)
-            or str(attempt_result.get("failure_source") or "").startswith("val_")
-        ):
-            return
-
-        feedback_manifest = self.current_task_manifest.setdefault("feedback", {})
-        attempts = feedback_manifest.setdefault("attempts", [])
-        attempts.append({
-            "attempt": attempt_result.get("attempt_index"),
-            "succeeded": bool(attempt_result.get("succeeded")),
-            "will_retry": bool(will_retry),
-            "failed_subtask_ids": attempt_result.get("failed_subtask_ids", []),
-            "feedback_path": attempt_result.get("feedback_path"),
-            "planner_summary": [
-                {
-                    "problem_file": record.get("problem_file"),
-                    "status": record.get("status"),
-                    "return_code": record.get("return_code"),
-                    "plan_generated": record.get("plan_generated"),
-                    "has_planner_error": record.get("has_planner_error"),
-                    "feedback_reason": record.get("feedback_reason"),
-                }
-                for record in attempt_result.get("planner_records", [])
-            ],
-        })
-        feedback_manifest["enabled"] = True
-        feedback_manifest["max_retries"] = self.feedback_max_retries
-        self._persist_manifest()
-
-    def _run_feedback_attempt(
-        self,
-        decomposed_plan: str,
-        subtasks: List[str],
-        robots: List[dict],
-        objects_ai: str,
-        key_objects: List[Dict[str, Any]],
-        key_objects_by_subtask: Dict[int, List[Dict[str, Any]]],
-        key_object_pddl_states: Optional[List[Dict[str, Any]]] = None,
-        key_object_pddl_states_by_subtask: Optional[Dict[int, List[Dict[str, Any]]]] = None,
-        attempt_index: int = 1,
-        feedback_text: Optional[str] = None,
-        planner_feedback_by_subtask: Optional[Dict[int, str]] = None,
-    ) -> Dict[str, Any]:
-        allocation_result = self._generate_allocation_plan(
-            decomposed_plan,
-            robots,
-            objects_ai,
-            key_objects=key_objects,
-            key_objects_by_subtask=key_objects_by_subtask,
-            feedback_text=feedback_text,
-        )
-        self._write_allocation_generation_artifacts(
-            allocation_result,
-            attempt_index=attempt_index if self.feedback_enabled else None,
-        )
-        allocated_plan = allocation_result["text"]
-        print(f"✓ Allocation plan generated (attempt {attempt_index})")
-
-        sequence_operations = self._extract_sequence_operations(allocated_plan)
-        robot_assignments = self._extract_robot_assignments(sequence_operations)
-        print(f"✓ Extracted {len(subtasks)} subtasks with robot assignments")
-
-        _ = self._generate_problem_files(
-            subtasks,
-            robot_assignments,
-            objects_ai,
-            key_object_pddl_states=key_object_pddl_states,
-            key_object_pddl_states_by_subtask=key_object_pddl_states_by_subtask,
-            planner_feedback_by_subtask=planner_feedback_by_subtask,
-        )
-        print("✓ Problem files generated")
-
-        planner_records = self._plan_generated_problems()
-        print("✓ Planning complete")
-
-        feedback_result = self._build_planner_feedback(
-            planner_records,
-            len(subtasks),
-            robot_assignments,
-        )
-        feedback_result["failure_source"] = (
-            None if feedback_result["succeeded"] else "planner"
-        )
-
-        feedback_path = None
-        if (
-            self.feedback_enabled
-            and feedback_result.get("failure_source") == "planner"
-            and feedback_result["feedback_text"]
-        ):
-            feedback_path = f"02_allocate/feedback/attempt_{attempt_index:02d}_feedback.txt"
-            self._write_text_artifact(feedback_path, feedback_result["feedback_text"])
-            self._record_artifact("allocate", f"attempt_{attempt_index:02d}_feedback", feedback_path)
-            self._persist_manifest()
-
-        return {
-            "attempt_index": attempt_index,
-            "allocation_result": allocation_result,
-            "allocated_plan": allocated_plan,
-            "sequence_operations": sequence_operations,
-            "robot_assignments": robot_assignments,
-            "planner_records": planner_records,
-            "feedback_path": feedback_path,
-            **feedback_result,
-        }
-
-    def _merge_planner_records(
-        self,
-        planner_records: Sequence[Dict[str, Any]],
-        updated_records: Sequence[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
-        """Merge updated VAL records without dropping allocation diagnostics."""
-        updated_by_subtask = {
-            subtask_id: dict(record)
-            for record in updated_records
-            for subtask_id in [
-                self._subtask_id_from_filename(str(record.get("problem_file", "")))
-            ]
-            if subtask_id is not None
-        }
-        merged_records: List[Dict[str, Any]] = []
-        merged_subtask_ids: Set[int] = set()
-        for record in planner_records:
-            subtask_id = self._subtask_id_from_filename(str(record.get("problem_file", "")))
-            if subtask_id is not None and subtask_id in updated_by_subtask:
-                merged_records.append(updated_by_subtask[subtask_id])
-                merged_subtask_ids.add(subtask_id)
-            else:
-                merged_records.append(dict(record))
-
-        for subtask_id in sorted(set(updated_by_subtask) - merged_subtask_ids):
-            merged_records.append(updated_by_subtask[subtask_id])
-        return merged_records
-    
     def calculate_completion_rate(self) -> Tuple[int, int]:
         """
         
@@ -1928,19 +1270,6 @@ class TaskManager:
                 for f in os.listdir(problem_file_path)
                 if f.endswith("_problem.pddl")
             ])
-
-        if self.val_feedback_enabled:
-            val_manifest_path = self.config.artifact("val_manifest", "08_val/val_manifest.json")
-            val_manifest = self._read_json_artifact(val_manifest_path, {})
-            latest = val_manifest.get("latest_by_subtask", {}) if isinstance(val_manifest, dict) else {}
-            if not isinstance(latest, dict):
-                latest = {}
-            TC = sum(
-                1
-                for record in latest.values()
-                if isinstance(record, dict) and bool(record.get("valid"))
-            )
-            return TC, total_subtasks
 
         TC = 0
         plan_file_path = self._get_plan_file_path()
@@ -2106,15 +1435,10 @@ class TaskManager:
         robot_domain_name_maps: Optional[List[Dict[str, str]]] = None,
         task_indices: Optional[List[int]] = None,
     ) -> None:
-        """Process a list of tasks."""
+        """Run the plan-first, capability-filtered robot allocation pipeline."""
         try:
-            # Initial task count
             print(f"\n[DIAGNOSTIC] Initial Task Count: {len(test_tasks)}")
-            
-            # Store objects_ai for use in other methods
             self.objects_ai = objects_ai
-            
-            # Initialize or reset result lists
             self.decomposed_plan = []
             self.allocated_plan = []
             self.code_plan = []
@@ -2123,8 +1447,7 @@ class TaskManager:
             self.tc = []
             self.total_subtasks = []
             self.task_results = []
-            
-            # Get domain content
+
             allaction_domain_path = str(self.config.allaction_domain_path())
             domain_content = self.file_processor.read_file(allaction_domain_path)
             effective_robot_domain_name_maps = (
@@ -2132,17 +1455,14 @@ class TaskManager:
                 if robot_domain_name_maps is not None
                 else self.dataset_robot_domain_name_maps
             )
-            
-            # Process each task
-            for task_idx, (task, robots) in enumerate(zip(test_tasks, available_robots)):
+
+            for task_idx, (task, task_robots) in enumerate(zip(test_tasks, available_robots)):
                 manifest_task_index = (
-                    task_idx
-                    if task_indices is None
-                    else int(task_indices[task_idx])
+                    task_idx if task_indices is None else int(task_indices[task_idx])
                 )
-                print(f"\n{'='*50}")
+                print(f"\n{'=' * 50}")
                 print(f"Processing Task: {task}: {task_idx + 1}/{len(test_tasks)}")
-                print(f"{'='*50}")
+                print(f"{'=' * 50}")
                 self.current_robot_domain_names = (
                     copy.deepcopy(effective_robot_domain_name_maps[task_idx])
                     if task_idx < len(effective_robot_domain_name_maps)
@@ -2151,168 +1471,395 @@ class TaskManager:
                 self._prepare_task_run_dir(
                     task_idx,
                     task,
-                    robots,
+                    task_robots,
                     objects_ai,
                     domain_content,
                     manifest_task_index=manifest_task_index,
                 )
-                
-                # Clean generated subtask directory before starting new task
                 self.clean_generated_subtask_directory()
-                
-                # Generate and store decomposed plan
-                decomposed_plan = self._generate_decomposed_plan(task, domain_content, robots, objects_ai)
+
+                decomposed_plan = self._generate_decomposed_plan(
+                    task,
+                    domain_content,
+                    task_robots,
+                    objects_ai,
+                )
                 self.decomposed_plan.append(decomposed_plan)
-                
                 print("✓ Decomposed plan generated")
-                #print("decomposed plan:\n", decomposed_plan)
-                #print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
 
                 subtasks = ParsingUtils.extract_subtasks(decomposed_plan)
-                key_objects_by_subtask = self._extract_key_objects_by_subtask(subtasks, objects_ai)
-                key_objects = self._combine_key_objects_by_subtask(key_objects_by_subtask)
-                key_objects_artifact = "02_allocate/00_key_objects.json"
-                key_objects_by_subtask_artifact = "02_allocate/00_key_objects_by_subtask.json"
-                self._write_json_artifact(key_objects_artifact, key_objects)
-                self._record_artifact("allocate", "key_objects", key_objects_artifact)
-                self._write_json_artifact(key_objects_by_subtask_artifact, key_objects_by_subtask)
-                self._record_artifact("allocate", "key_objects_by_subtask", key_objects_by_subtask_artifact)
+                if not subtasks:
+                    raise PDDLError("Task decomposition produced no subtasks")
+                print(f"✓ Extracted {len(subtasks)} subtasks")
+
+                pairwise_predecessors = self._generate_pairwise_predecessors(
+                    task=task,
+                    decomposed_plan=decomposed_plan,
+                    subtasks=subtasks,
+                )
+                if pairwise_predecessors is None:
+                    print("! Pairwise precedence unavailable; using deterministic fallback")
+                else:
+                    print("✓ Pairwise precedence extracted")
+
+                key_objects_by_subtask = self._extract_key_objects_by_subtask(
+                    subtasks,
+                    objects_ai,
+                )
+                key_objects = self._combine_key_objects_by_subtask(
+                    key_objects_by_subtask,
+                )
+                self._write_json_artifact("02_allocate/00_key_objects.json", key_objects)
+                self._record_artifact(
+                    "allocate",
+                    "key_objects",
+                    "02_allocate/00_key_objects.json",
+                )
+                self._write_json_artifact(
+                    "02_allocate/00_key_objects_by_subtask.json",
+                    key_objects_by_subtask,
+                )
+                self._record_artifact(
+                    "allocate",
+                    "key_objects_by_subtask",
+                    "02_allocate/00_key_objects_by_subtask.json",
+                )
+
                 key_object_pddl_context = self._build_key_object_pddl_context(
                     key_objects,
                     domain_content,
                 )
                 key_object_pddl_states = key_object_pddl_context["states"]
-                key_object_id_bindings = key_object_pddl_context["object_id_bindings"]
                 key_object_pddl_context_by_subtask = {
-                    subtask_idx: self._build_key_object_pddl_context(subtask_key_objects, domain_content)
-                    for subtask_idx, subtask_key_objects in key_objects_by_subtask.items()
+                    subtask_id: self._build_key_object_pddl_context(
+                        subtask_key_objects,
+                        domain_content,
+                    )
+                    for subtask_id, subtask_key_objects in key_objects_by_subtask.items()
                 }
                 key_object_pddl_states_by_subtask = {
-                    subtask_idx: subtask_context["states"]
-                    for subtask_idx, subtask_context in key_object_pddl_context_by_subtask.items()
+                    subtask_id: context["states"]
+                    for subtask_id, context in key_object_pddl_context_by_subtask.items()
                 }
-                key_object_id_bindings_by_subtask = {
-                    subtask_idx: subtask_context["object_id_bindings"]
-                    for subtask_idx, subtask_context in key_object_pddl_context_by_subtask.items()
-                }
-                key_object_states_artifact = "05_problem_generation/key_object_pddl_states.json"
-                key_object_states_by_subtask_artifact = "05_problem_generation/key_object_pddl_states_by_subtask.json"
-                key_object_id_bindings_artifact = "05_problem_generation/key_object_id_bindings.json"
-                key_object_id_bindings_by_subtask_artifact = "05_problem_generation/key_object_id_bindings_by_subtask.json"
-                self._write_json_artifact(key_object_states_artifact, key_object_pddl_states)
-                self._record_artifact("problem_files", "key_object_pddl_states", key_object_states_artifact)
-                self._write_json_artifact(key_object_states_by_subtask_artifact, key_object_pddl_states_by_subtask)
-                self._record_artifact("problem_files", "key_object_pddl_states_by_subtask", key_object_states_by_subtask_artifact)
-                self._write_json_artifact(key_object_id_bindings_artifact, key_object_id_bindings)
-                self._record_artifact("problem_files", "key_object_id_bindings", key_object_id_bindings_artifact)
-                self._write_json_artifact(key_object_id_bindings_by_subtask_artifact, key_object_id_bindings_by_subtask)
-                self._record_artifact("problem_files", "key_object_id_bindings_by_subtask", key_object_id_bindings_by_subtask_artifact)
+                self._write_json_artifact(
+                    "05_problem_generation/key_object_pddl_states.json",
+                    key_object_pddl_states,
+                )
+                self._record_artifact(
+                    "problem_files",
+                    "key_object_pddl_states",
+                    "05_problem_generation/key_object_pddl_states.json",
+                )
+                self._write_json_artifact(
+                    "05_problem_generation/key_object_pddl_states_by_subtask.json",
+                    key_object_pddl_states_by_subtask,
+                )
+                self._record_artifact(
+                    "problem_files",
+                    "key_object_pddl_states_by_subtask",
+                    "05_problem_generation/key_object_pddl_states_by_subtask.json",
+                )
                 self._persist_manifest()
                 print(f"✓ Matched {len(key_objects)} key objects")
 
-                max_attempts = 1 + (self.feedback_max_retries if self.feedback_enabled else 0)
-                attempt_feedback_text = None
-                planner_feedback_by_subtask = None
-                attempt_result: Dict[str, Any] = {}
-                for attempt_index in range(1, max_attempts + 1):
-                    if attempt_index > 1:
-                        print(f"Retrying from allocation with planner feedback (attempt {attempt_index}/{max_attempts})")
-                        self._clean_feedback_attempt_outputs()
+                problem_pddl = self._generate_allaction_problem_files(
+                    subtasks,
+                    objects_ai,
+                    key_object_pddl_states=key_object_pddl_states,
+                    key_object_pddl_states_by_subtask=key_object_pddl_states_by_subtask,
+                )
+                print("✓ Full-capability Problem PDDL files generated")
 
-                    attempt_result = self._run_feedback_attempt(
-                        decomposed_plan=decomposed_plan,
-                        subtasks=subtasks,
-                        robots=robots,
-                        objects_ai=objects_ai,
-                        key_objects=key_objects,
-                        key_objects_by_subtask=key_objects_by_subtask,
-                        key_object_pddl_states=key_object_pddl_states,
-                        key_object_pddl_states_by_subtask=key_object_pddl_states_by_subtask,
-                        attempt_index=attempt_index,
-                        feedback_text=attempt_feedback_text,
-                        planner_feedback_by_subtask=planner_feedback_by_subtask,
-                    )
+                planner_records = self._validate_and_plan()
+                print("✓ Full-capability plans generated")
 
-                    will_retry = (
-                        self.feedback_enabled
-                        and not attempt_result.get("succeeded", False)
-                        and (attempt_result.get("failure_source") or "planner") == "planner"
-                        and attempt_index < max_attempts
-                    )
-                    self._record_feedback_attempt(attempt_result, will_retry)
-                    if not will_retry:
-                        break
+                allocated_subtasks = self._allocate_subtasks_with_cpsat(
+                    subtasks=subtasks,
+                    decomposed_plan=decomposed_plan,
+                    problem_pddl=problem_pddl,
+                    planner_records=planner_records,
+                    available_robots=task_robots,
+                    objects_ai=objects_ai,
+                    preferred_predecessors=pairwise_predecessors,
+                )
+                self.allocated_plan.append(
+                    json.dumps(allocated_subtasks, indent=2, ensure_ascii=False)
+                )
+                print("✓ Integer-programming robot allocation generated")
 
-                    attempt_feedback_text = attempt_result.get("feedback_text") or ""
-                    planner_feedback_by_subtask = attempt_result.get("planner_feedback_by_subtask") or {}
-
-                if self.val_feedback_enabled:
-                    final_planner_records = attempt_result.get("planner_records", [])
-                    available_planner_records = [
-                        record
-                        for record in final_planner_records
-                        if self._planner_record_success(record)
-                    ]
-                    if available_planner_records:
-                        val_result = self._run_val_feedback_loop(
-                            subtasks=subtasks,
-                            robot_assignments=attempt_result.get("robot_assignments", {}),
-                            objects_ai=objects_ai,
-                            key_object_pddl_states=key_object_pddl_states,
-                            key_object_pddl_states_by_subtask=key_object_pddl_states_by_subtask,
-                            planner_records=available_planner_records,
-                            allocation_attempt=int(attempt_result.get("attempt_index") or attempt_index),
-                        )
-                        attempt_result["planner_records"] = self._merge_planner_records(
-                            final_planner_records,
-                            val_result.get("planner_records", available_planner_records),
-                        )
-                        attempt_result["val_result"] = val_result
-                        print("✓ VAL validation complete")
-
-                allocated_plan = attempt_result.get("allocated_plan", "")
-                self.allocated_plan.append(allocated_plan)
-                #print("Allocation Plan:\n", allocated_plan)
-                #print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-                
-                # currently don't combine the plans
-                # # Combine and process plans
-                # combined_plan = self._combine_all_plans(decomposed_plan, sequence_operations)
-                # self.combined_plan.append(combined_plan)
-                # print("✓ Plans combined")
-                # #print("Combined Plan:\n", combined_plan)
-                # #input("Press Enter to continue")
-
-                # # Match references and store final PDDL plan
-                # matched_plan = self._match_references_for_plan(combined_plan, objects_ai)
-                # self.code_planpddl.append(matched_plan)
-                # print("✓ References matched")
-                # print("Final PDDL Plan:\n", matched_plan)
-
-                # Calculate completion rate
-                tc, total = self.calculate_completion_rate()
-
+                completed = len(allocated_subtasks)
+                total = len(subtasks)
                 self.current_task_manifest["completion"] = {
-                    "successful_subtasks": tc,
-                    "total_subtasks": total
+                    "successful_subtasks": completed,
+                    "total_subtasks": total,
                 }
                 self._persist_manifest()
-                print(f"Task {task_idx + 1} completion rate: {tc}/{total}")
-                self.tc = tc
+                print(f"Task {task_idx + 1} completion rate: {completed}/{total}")
+                self.tc = completed
                 self.total = total
-                
-            print(f"\n{'='*50}")
+
+            print(f"\n{'=' * 50}")
             print(f"All {len(test_tasks)} tasks processed")
-            print(f"{'='*50}")
-            
-        except Exception as e:
-            print(f"\n[ERROR] Task Processing Failed:")
-            print(f"Error type: {type(e).__name__}")
-            print(f"Error message: {str(e)}")
-            print(f"Current task index: {task_idx if 'task_idx' in locals() else 'Not started'}")
+            print(f"{'=' * 50}")
+        except Exception as exc:
+            print("\n[ERROR] Task Processing Failed:")
+            print(f"Error type: {type(exc).__name__}")
+            print(f"Error message: {exc}")
+            print(
+                "Current task index: "
+                + str(task_idx if "task_idx" in locals() else "Not started")
+            )
             raise
         finally:
             get_llm_logger().clear_context()
+
+    def _generate_pairwise_predecessors(
+        self,
+        task: str,
+        decomposed_plan: str,
+        subtasks: List[str],
+    ) -> Optional[Dict[int, List[int]]]:
+        """Classify pairwise subtask dependencies for the scheduling model."""
+        subtask_count = len(subtasks)
+        output_artifact = self.config.artifact(
+            "precedence_output",
+            "02_precedence/predecessors.json",
+        )
+        manifest_artifact = self.config.artifact(
+            "precedence_manifest",
+            "02_precedence/pairwise_manifest.json",
+        )
+
+        if subtask_count <= 1:
+            predecessors = {1: []} if subtask_count == 1 else {}
+            self._write_json_artifact(output_artifact, predecessors)
+            self._write_json_artifact(
+                manifest_artifact,
+                {"status": "not_required", "pairs": [], "predecessors": predecessors},
+            )
+            self._record_artifact("precedence", "output", output_artifact)
+            self._record_artifact("precedence", "manifest", manifest_artifact)
+            self._persist_manifest()
+            return predecessors
+
+        pair_records: List[Dict[str, Any]] = []
+        try:
+            prompt_path = self.config.prompt_file(
+                "pddl_train_task_precedence_pairwise.txt"
+            )
+            if not prompt_path.is_file():
+                prompt_path = _repo_root() / "prompts/v2/pddl_train_task_precedence_pairwise.txt"
+            prompt_template = self.file_processor.read_file(str(prompt_path))
+            edges: Set[Tuple[int, int]] = set()
+            call_config = self.config.llm_call("precedence")
+
+            for first_index in range(subtask_count):
+                for second_index in range(first_index + 1, subtask_count):
+                    subtask_a_id = first_index + 1
+                    subtask_b_id = second_index + 1
+                    prompt = self._render_pairwise_precedence_prompt(
+                        prompt_template,
+                        task,
+                        decomposed_plan,
+                        subtask_a_id,
+                        subtasks[first_index],
+                        subtask_b_id,
+                        subtasks[second_index],
+                    )
+                    prompt_artifact = (
+                        f"02_precedence/prompts/subtask_{subtask_a_id:02d}_"
+                        f"subtask_{subtask_b_id:02d}.txt"
+                    )
+                    response_artifact = (
+                        f"02_precedence/outputs/subtask_{subtask_a_id:02d}_"
+                        f"subtask_{subtask_b_id:02d}.txt"
+                    )
+                    self._write_text_artifact(prompt_artifact, prompt)
+                    _, response_text = self.llm.query_model(
+                        [{"role": "user", "content": prompt}],
+                        self.model,
+                        max_tokens=call_config.get("max_tokens", 700),
+                        frequency_penalty=call_config.get("frequency_penalty", 0.0),
+                    )
+                    self._write_text_artifact(response_artifact, response_text)
+                    parsed = self._parse_pairwise_precedence_response(
+                        response_text,
+                        subtask_a_id,
+                        subtask_b_id,
+                    )
+                    relation = parsed["relation"]
+                    if relation == "A_BEFORE_B":
+                        edges.add((subtask_a_id, subtask_b_id))
+                    elif relation == "B_BEFORE_A":
+                        edges.add((subtask_b_id, subtask_a_id))
+                    pair_records.append(
+                        {
+                            **parsed,
+                            "prompt_path": prompt_artifact,
+                            "output_path": response_artifact,
+                        }
+                    )
+
+            predecessors = self._predecessors_from_edges(edges, subtask_count)
+            if self._has_precedence_cycle(predecessors, subtask_count):
+                raise ValidationError("Pairwise precedence result is invalid or cyclic")
+            self._write_json_artifact(output_artifact, predecessors)
+            self._write_json_artifact(
+                manifest_artifact,
+                {
+                    "status": "success",
+                    "pairs": pair_records,
+                    "edges": [list(edge) for edge in sorted(edges)],
+                    "predecessors": predecessors,
+                },
+            )
+            self._record_artifact("precedence", "output", output_artifact)
+            self._record_artifact("precedence", "manifest", manifest_artifact)
+            self._persist_manifest()
+            return predecessors
+        except Exception as exc:
+            self._write_json_artifact(
+                manifest_artifact,
+                {
+                    "status": "fallback",
+                    "error": str(exc),
+                    "pairs": pair_records,
+                },
+            )
+            self._record_artifact("precedence", "manifest", manifest_artifact)
+            self._persist_manifest()
+            return None
+
+    @staticmethod
+    def _render_pairwise_precedence_prompt(
+        prompt_template: str,
+        task: str,
+        decomposed_plan: str,
+        subtask_a_id: int,
+        subtask_a: str,
+        subtask_b_id: int,
+        subtask_b: str,
+    ) -> str:
+        return prompt_template.format(
+            task=task,
+            decomposed_plan=decomposed_plan,
+            subtask_a_id=subtask_a_id,
+            subtask_a=subtask_a,
+            subtask_b_id=subtask_b_id,
+            subtask_b=subtask_b,
+        )
+
+    def _parse_pairwise_precedence_response(
+        self,
+        text: str,
+        expected_subtask_a_id: int,
+        expected_subtask_b_id: int,
+    ) -> Dict[str, Any]:
+        parsed = self._extract_json_object(text)
+        try:
+            subtask_a_id = int(parsed.get("subtask_a_id"))
+            subtask_b_id = int(parsed.get("subtask_b_id"))
+        except (TypeError, ValueError) as exc:
+            raise ValidationError(
+                "Pairwise precedence response has non-numeric subtask ids"
+            ) from exc
+        if (subtask_a_id, subtask_b_id) != (
+            expected_subtask_a_id,
+            expected_subtask_b_id,
+        ):
+            raise ValidationError("Pairwise precedence response ids do not match expected pair")
+        relation = str(parsed.get("relation") or "").strip().upper()
+        if relation not in {"A_BEFORE_B", "B_BEFORE_A", "NO_ORDER"}:
+            raise ValidationError(f"Invalid pairwise precedence relation: {relation}")
+        return {
+            "subtask_a_id": subtask_a_id,
+            "subtask_b_id": subtask_b_id,
+            "relation": relation,
+            "reason": str(parsed.get("reason") or "").strip(),
+        }
+
+    @staticmethod
+    def _extract_json_object(text: str) -> Dict[str, Any]:
+        raw = str(text).strip()
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start < 0 or end < start:
+            raise ValidationError("Pairwise precedence response does not contain JSON")
+        try:
+            parsed = json.loads(raw[start:end + 1])
+        except json.JSONDecodeError as exc:
+            raise ValidationError("Pairwise precedence response contains invalid JSON") from exc
+        if not isinstance(parsed, dict):
+            raise ValidationError("Pairwise precedence response must be a JSON object")
+        return parsed
+
+    @staticmethod
+    def _predecessors_from_edges(
+        edges: Set[Tuple[int, int]],
+        subtask_count: int,
+    ) -> Dict[int, List[int]]:
+        predecessors = {subtask_id: [] for subtask_id in range(1, subtask_count + 1)}
+        for predecessor_id, successor_id in sorted(edges):
+            if (
+                predecessor_id != successor_id
+                and predecessor_id in predecessors
+                and successor_id in predecessors
+            ):
+                predecessors[successor_id].append(predecessor_id)
+        return predecessors
+
+    def _normalize_predecessor_map(
+        self,
+        predecessors: Dict[int, List[int]],
+        subtask_count: int,
+    ) -> Optional[Dict[int, List[int]]]:
+        try:
+            normalized = {
+                subtask_id: sorted(
+                    {
+                        int(predecessor_id)
+                        for predecessor_id in predecessors.get(
+                            subtask_id,
+                            predecessors.get(str(subtask_id), []),
+                        )
+                        if 1 <= int(predecessor_id) <= subtask_count
+                        and int(predecessor_id) != subtask_id
+                    }
+                )
+                for subtask_id in range(1, subtask_count + 1)
+            }
+        except (AttributeError, TypeError, ValueError):
+            return None
+        if self._has_precedence_cycle(normalized, subtask_count):
+            return None
+        return normalized
+
+    @staticmethod
+    def _has_precedence_cycle(
+        predecessors: Dict[int, List[int]],
+        subtask_count: int,
+    ) -> bool:
+        states = {subtask_id: 0 for subtask_id in range(1, subtask_count + 1)}
+
+        def visit(subtask_id: int) -> bool:
+            if states[subtask_id] == 1:
+                return True
+            if states[subtask_id] == 2:
+                return False
+            states[subtask_id] = 1
+            for predecessor_id in predecessors.get(subtask_id, []):
+                if predecessor_id in states and visit(predecessor_id):
+                    return True
+            states[subtask_id] = 2
+            return False
+
+        return any(visit(subtask_id) for subtask_id in states)
 
     def _sequence_assignment_re(self) -> re.Pattern:
         return ParsingUtils.sequence_assignment_re()
@@ -3126,117 +2673,780 @@ class TaskManager:
         return "\n".join(
             line for line in lines if not completion_line_pattern.match(line)
         ).strip()
-    
-    def _generate_allocation_plan(
+
+    def _allocate_subtasks_with_cpsat(
+        self,
+        subtasks: List[str],
+        decomposed_plan: str,
+        problem_pddl: List[str],
+        planner_records: List[Dict[str, Any]],
+        available_robots: List[dict],
+        objects_ai: str,
+        preferred_predecessors: Optional[Dict[int, List[int]]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Filter capable robots from generated plans and solve their allocation."""
+        requirements = self._build_subtask_requirements(
+            subtasks=subtasks,
+            decomposed_plan=decomposed_plan,
+            problem_pddl=problem_pddl,
+            planner_records=planner_records,
+            objects_ai=objects_ai,
+            preferred_predecessors=preferred_predecessors,
+        )
+        candidates = self._filter_candidate_robots(requirements, available_robots)
+        assignments = self._solve_subtask_assignment(requirements, available_robots)
+
+        output: List[Dict[str, Any]] = []
+        for requirement in requirements:
+            subtask_id = requirement["subtask_id"]
+            assignment = assignments[subtask_id]
+            assigned_robot = assignment["robot_name"]
+            output.append(
+                {
+                    "subtask_id": subtask_id,
+                    "name": requirement["name"],
+                    "predecessor_ids": requirement["predecessor_ids"],
+                    "required_skills": requirement["required_skills"],
+                    "min_mass_capacity": requirement["min_mass_capacity"],
+                    "required_locations": requirement["required_locations"],
+                    "unresolved_location_actions": requirement[
+                        "unresolved_location_actions"
+                    ],
+                    "candidate_robots": candidates[subtask_id],
+                    "assigned_robot": assigned_robot,
+                    "assigned_robot_domain": self.current_robot_domain_names.get(
+                        assigned_robot,
+                        assigned_robot,
+                    ),
+                    "start": assignment["start"],
+                    "end": assignment["end"],
+                }
+            )
+
+        allocate_subtasks_artifact = self.config.artifact(
+            "allocate_subtasks",
+            "02_allocate/subtasks.json",
+        )
+        requirements_artifact = "02_allocate/requirements.json"
+        candidates_artifact = "02_allocate/candidate_robots.json"
+        self._write_json_artifact(requirements_artifact, requirements)
+        self._write_json_artifact(candidates_artifact, candidates)
+        self._write_json_artifact(allocate_subtasks_artifact, output)
+        self._record_artifact("allocate", "requirements", requirements_artifact)
+        self._record_artifact("allocate", "candidate_robots", candidates_artifact)
+        self._record_artifact("allocate", "subtasks", allocate_subtasks_artifact)
+        self._persist_manifest()
+        return output
+
+    def _build_subtask_requirements(
+        self,
+        subtasks: List[str],
+        decomposed_plan: str,
+        problem_pddl: List[str],
+        planner_records: List[Dict[str, Any]],
+        objects_ai: str,
+        preferred_predecessors: Optional[Dict[int, List[int]]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Derive robot skills and payload needs from each full-capability plan."""
+        records_by_subtask = {
+            subtask_id: record
+            for record in planner_records
+            for subtask_id in [
+                self._subtask_id_from_filename(str(record.get("problem_file", "")))
+            ]
+            if subtask_id is not None
+        }
+        object_masses = self._parse_object_masses(objects_ai)
+        predecessors = (
+            self._normalize_predecessor_map(
+                preferred_predecessors,
+                len(subtasks),
+            )
+            if preferred_predecessors is not None
+            else None
+        )
+        if predecessors is None:
+            predecessors = self._infer_predecessors(decomposed_plan, problem_pddl)
+
+        requirements: List[Dict[str, Any]] = []
+        for subtask_id, subtask in enumerate(subtasks, start=1):
+            record = records_by_subtask.get(subtask_id)
+            if not record:
+                raise PDDLError(f"No planner record for subtask {subtask_id}")
+            plan_path = record.get("compatibility_output")
+            if not plan_path or not os.path.isfile(str(plan_path)):
+                raise PDDLError(
+                    f"No full-capability plan file for subtask {subtask_id}: {plan_path}"
+                )
+            plan_text = self.file_processor.read_file(str(plan_path))
+            actions_in_plan = self._parse_plan_actions(plan_text)
+            if not actions_in_plan:
+                raise PDDLError(
+                    f"No plan actions found for subtask {subtask_id}: {plan_path}"
+                )
+            fallback_problem = (
+                problem_pddl[subtask_id - 1]
+                if subtask_id - 1 < len(problem_pddl)
+                else ""
+            )
+            planner_problem = self._read_planner_problem_content(
+                record,
+                fallback_problem,
+            )
+            required_locations, unresolved_location_actions = (
+                self._extract_required_locations(
+                    actions_in_plan,
+                    planner_problem,
+                )
+            )
+            requirements.append(
+                {
+                    "subtask_id": subtask_id,
+                    "name": self._extract_subtask_name(subtask, subtask_id),
+                    "predecessor_ids": predecessors.get(subtask_id, []),
+                    "required_skills": self._extract_required_skills(actions_in_plan),
+                    "min_mass_capacity": round(
+                        self._calculate_pickup_mass_peak(
+                            actions_in_plan,
+                            object_masses,
+                        ),
+                        6,
+                    ),
+                    "duration": max(1, len(actions_in_plan)),
+                    "required_locations": required_locations,
+                    "unresolved_location_actions": unresolved_location_actions,
+                    "plan_path": str(plan_path),
+                }
+            )
+        return requirements
+
+    def _filter_candidate_robots(
+        self,
+        requirements: List[Dict[str, Any]],
+        available_robots: List[dict],
+    ) -> Dict[int, List[str]]:
+        """Return the robots satisfying every plan-derived constraint per subtask."""
+        candidates: Dict[int, List[str]] = {}
+        for requirement in requirements:
+            required_skills = {
+                self._canonical_skill_name(skill)
+                for skill in requirement["required_skills"]
+            }
+            candidate_names = []
+            for robot_index, robot in enumerate(available_robots, start=1):
+                robot_skills = {
+                    self._canonical_skill_name(skill)
+                    for skill in robot.get("skills", [])
+                }
+                try:
+                    mass_capacity = float(
+                        robot.get("mass_capacity", robot.get("mass", 0)) or 0
+                    )
+                except (TypeError, ValueError):
+                    mass_capacity = 0.0
+                if required_skills.issubset(robot_skills) and mass_capacity >= float(
+                    requirement["min_mass_capacity"]
+                ):
+                    candidate_names.append(
+                        str(robot.get("name") or f"robot{robot_index}")
+                    )
+            if not candidate_names:
+                raise PDDLError(
+                    "No feasible robot for subtask "
+                    f"{requirement['subtask_id']} skills={requirement['required_skills']} "
+                    f"min_mass_capacity={requirement['min_mass_capacity']}"
+                )
+            candidates[requirement["subtask_id"]] = candidate_names
+        return candidates
+
+    def _solve_subtask_assignment(
+        self,
+        requirements: List[Dict[str, Any]],
+        available_robots: List[dict],
+    ) -> Dict[int, Dict[str, Any]]:
+        """Solve binary robot assignment and non-overlapping scheduling with CP-SAT."""
+        try:
+            from ortools.sat.python import cp_model
+        except ImportError as exc:
+            raise PDDLError(
+                "OR-Tools is required for integer-programming robot allocation."
+            ) from exc
+        if not requirements:
+            return {}
+        if not available_robots:
+            raise PDDLError("No robots available for integer-programming allocation")
+
+        candidates = self._filter_candidate_robots(requirements, available_robots)
+        candidate_sets = {
+            subtask_id: set(names) for subtask_id, names in candidates.items()
+        }
+        robot_names = [
+            str(robot.get("name") or f"robot{index}")
+            for index, robot in enumerate(available_robots, start=1)
+        ]
+        task_index_by_id = {
+            requirement["subtask_id"]: index
+            for index, requirement in enumerate(requirements)
+        }
+        horizon = max(1, sum(int(req["duration"]) for req in requirements))
+        model = cp_model.CpModel()
+        starts = [
+            model.NewIntVar(0, horizon, f"start_{req['subtask_id']}")
+            for req in requirements
+        ]
+        ends = [
+            model.NewIntVar(0, horizon, f"end_{req['subtask_id']}")
+            for req in requirements
+        ]
+        assigned: Dict[Tuple[int, int], Any] = {}
+        task_intervals: List[Any] = []
+        intervals_by_robot: Dict[int, List[Any]] = {
+            robot_index: [] for robot_index in range(len(available_robots))
+        }
+
+        for task_index, requirement in enumerate(requirements):
+            duration = int(requirement["duration"])
+            model.Add(ends[task_index] == starts[task_index] + duration)
+            task_intervals.append(
+                model.NewIntervalVar(
+                    starts[task_index],
+                    duration,
+                    ends[task_index],
+                    f"task_interval_{requirement['subtask_id']}",
+                )
+            )
+            choices = []
+            for robot_index, robot_name in enumerate(robot_names):
+                variable = model.NewBoolVar(
+                    f"x_{requirement['subtask_id']}_{robot_index + 1}"
+                )
+                assigned[(task_index, robot_index)] = variable
+                if robot_name not in candidate_sets[requirement["subtask_id"]]:
+                    model.Add(variable == 0)
+                choices.append(variable)
+                intervals_by_robot[robot_index].append(
+                    model.NewOptionalIntervalVar(
+                        starts[task_index],
+                        duration,
+                        ends[task_index],
+                        variable,
+                        f"interval_{requirement['subtask_id']}_{robot_index + 1}",
+                    )
+                )
+            model.Add(sum(choices) == 1)
+
+        for intervals in intervals_by_robot.values():
+            model.AddNoOverlap(intervals)
+
+        intervals_by_location: Dict[str, List[Any]] = {}
+        for task_index, requirement in enumerate(requirements):
+            seen_location_keys: Set[str] = set()
+            for location in requirement.get("required_locations", []):
+                location_key = self._object_key(location)
+                if not location_key or location_key in seen_location_keys:
+                    continue
+                seen_location_keys.add(location_key)
+                intervals_by_location.setdefault(location_key, []).append(
+                    task_intervals[task_index]
+                )
+        for intervals in intervals_by_location.values():
+            if len(intervals) > 1:
+                model.AddNoOverlap(intervals)
+
+        for task_index, requirement in enumerate(requirements):
+            for predecessor_id in requirement["predecessor_ids"]:
+                predecessor_index = task_index_by_id.get(predecessor_id)
+                if predecessor_index is not None:
+                    model.Add(starts[task_index] >= ends[predecessor_index])
+
+        makespan = model.NewIntVar(0, horizon, "makespan")
+        model.AddMaxEquality(makespan, ends)
+        used_robots = []
+        for robot_index in range(len(available_robots)):
+            used = model.NewBoolVar(f"used_robot_{robot_index + 1}")
+            robot_assignments = [
+                assigned[(task_index, robot_index)]
+                for task_index in range(len(requirements))
+            ]
+            for variable in robot_assignments:
+                model.Add(variable <= used)
+            model.Add(sum(robot_assignments) >= used)
+            used_robots.append(used)
+
+        tie_break_robot_order = sum(
+            (robot_index + 1) * assigned[(task_index, robot_index)]
+            for task_index in range(len(requirements))
+            for robot_index in range(len(available_robots))
+        )
+        used_weight = len(requirements) * len(available_robots) + 1
+        makespan_weight = used_weight * (len(available_robots) + 1)
+        model.Minimize(
+            makespan * makespan_weight
+            + sum(used_robots) * used_weight
+            + tie_break_robot_order
+        )
+
+        solver = cp_model.CpSolver()
+        status = solver.Solve(model)
+        if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+            raise PDDLError(
+                f"Integer-programming allocation failed: {solver.StatusName(status)}"
+            )
+        assignments: Dict[int, Dict[str, Any]] = {}
+        for task_index, requirement in enumerate(requirements):
+            chosen_robot_index = next(
+                (
+                    robot_index
+                    for robot_index in range(len(available_robots))
+                    if solver.Value(assigned[(task_index, robot_index)])
+                ),
+                None,
+            )
+            if chosen_robot_index is None:
+                raise PDDLError(
+                    f"Integer program did not assign subtask {requirement['subtask_id']}"
+                )
+            assignments[requirement["subtask_id"]] = {
+                "robot_name": robot_names[chosen_robot_index],
+                "robot_index": chosen_robot_index + 1,
+                "start": solver.Value(starts[task_index]),
+                "end": solver.Value(ends[task_index]),
+            }
+        return assignments
+
+    @staticmethod
+    def _extract_subtask_name(subtask: str, subtask_id: int) -> str:
+        for line in str(subtask).splitlines():
+            match = _match_subtask_header_line(line.strip(), allow_bare=True)
+            if match:
+                return match.group("title").strip()
+        return f"Subtask {subtask_id}"
+
+    def _parse_plan_actions(self, plan_text: str) -> List[Dict[str, Any]]:
+        """Parse Fast Downward plan lines into canonical skills and arguments."""
+        actions_in_plan: List[Dict[str, Any]] = []
+        for line in str(plan_text).splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith(";"):
+                continue
+            action_match = re.search(r"\(([^()]+)\)", stripped)
+            if action_match:
+                inner = action_match.group(1).strip()
+            else:
+                inner = re.sub(r"\s*\(\d+(?:\.\d+)?\)\s*$", "", stripped)
+                inner = re.sub(r"^\s*\d+(?:\.\d+)?\s*:\s*", "", inner).strip()
+            parts = inner.split()
+            if not parts:
+                continue
+            actions_in_plan.append(
+                {
+                    "raw": stripped,
+                    "skill": self._canonical_skill_name(parts[0]),
+                    "args": parts[1:],
+                }
+            )
+        return actions_in_plan
+
+    def _read_planner_problem_content(
+        self,
+        planner_record: Dict[str, Any],
+        fallback_problem: str,
+    ) -> str:
+        """Read the exact problem used by the planner, with generated-PDDL fallback."""
+        candidate_paths: List[str] = []
+        problem_path = planner_record.get("problem_path")
+        if problem_path:
+            candidate_paths.append(str(problem_path))
+
+        task_run_dir = getattr(self, "current_task_run_dir", None)
+        problem_file = planner_record.get("problem_file")
+        if task_run_dir and problem_file:
+            candidate_paths.append(
+                os.path.join(
+                    str(task_run_dir),
+                    "07_validate/outputs",
+                    str(problem_file),
+                )
+            )
+
+        for candidate_path in candidate_paths:
+            if not os.path.isfile(candidate_path):
+                continue
+            try:
+                return self.file_processor.read_file(candidate_path)
+            except Exception:
+                continue
+        return str(fallback_problem or "")
+
+    def _parse_initial_object_locations(
+        self,
+        problem_pddl: str,
+    ) -> Dict[str, str]:
+        """Return object-to-parent mappings from positive ``at-location`` init facts."""
+        init_section = self._extract_pddl_section(problem_pddl, "init")
+        if not init_section:
+            return {}
+
+        init_section = re.sub(r";.*", "", init_section)
+        init_section = re.sub(
+            r"\(\s*not\s*\(\s*at-location\b[^()]*\)\s*\)",
+            "",
+            init_section,
+            flags=re.IGNORECASE,
+        )
+        object_locations: Dict[str, str] = {}
+        for match in re.finditer(
+            r"\(\s*at-location\s+([^\s()]+)\s+([^\s()]+)\s*\)",
+            init_section,
+            flags=re.IGNORECASE,
+        ):
+            object_token, parent_token = match.groups()
+            object_key = self._object_key(object_token)
+            if object_key:
+                object_locations[object_key] = parent_token
+        return object_locations
+
+    def _resolve_physical_location(
+        self,
+        token: Any,
+        object_locations: Dict[str, str],
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """Resolve an object or container token to its terminal physical location."""
+        current = str(token or "").strip()
+        if not current:
+            return None, "location token is empty"
+
+        seen: Set[str] = set()
+        while True:
+            current_key = self._object_key(current)
+            if not current_key:
+                return None, f"invalid location token: {current!r}"
+            if current_key in seen:
+                return None, f"at-location cycle detected at {current}"
+            seen.add(current_key)
+            parent = object_locations.get(current_key)
+            if not parent:
+                return current, None
+            current = str(parent).strip()
+
+    def _extract_required_locations(
+        self,
+        actions_in_plan: List[Dict[str, Any]],
+        problem_pddl: str,
+    ) -> Tuple[List[str], List[Dict[str, str]]]:
+        """Derive whole-subtask physical locations by replaying its action sequence."""
+        object_locations = self._parse_initial_object_locations(problem_pddl)
+        current_robot_location: Optional[str] = None
+        required_locations: List[str] = []
+        seen_locations: Set[str] = set()
+        unresolved: List[Dict[str, str]] = []
+
+        explicit_location_arguments = {
+            "PickupObject": 2,
+            "PutObject": 2,
+            "SliceObject": 2,
+        }
+        resource_arguments = {
+            "CleanObject": 2,
+            "RunMicrowave": 1,
+            "RunCoffeeMachine": 1,
+            "RunToaster": 1,
+            "CookByStoveBurner": 1,
+            "HeatByStoveBurner": 1,
+            "FillWater": 1,
+            "ColdObject": 1,
+            "PrepareEgg": 2,
+        }
+        target_arguments = {
+            "GoToObject": 1,
+            "OpenObject": 1,
+            "CloseObject": 1,
+            "BreakObject": 1,
+            "SwitchOn": 1,
+            "SwitchOff": 1,
+            "PushObject": 1,
+            "PullObject": 1,
+        }
+        current_location_actions = {"DropHandObject", "ThrowObject"}
+
+        for action in actions_in_plan:
+            skill = str(action.get("skill") or "").strip()
+            args = action.get("args", [])
+            if not isinstance(args, list):
+                args = list(args) if isinstance(args, tuple) else []
+            raw_action = str(action.get("raw") or skill)
+            location_token: Optional[str] = None
+            missing_argument_index: Optional[int] = None
+
+            if skill in explicit_location_arguments:
+                argument_index = explicit_location_arguments[skill]
+                if len(args) > argument_index:
+                    location_token = str(args[argument_index])
+                else:
+                    missing_argument_index = argument_index
+            elif skill in resource_arguments:
+                argument_index = resource_arguments[skill]
+                if len(args) > argument_index:
+                    location_token = str(args[argument_index])
+                else:
+                    missing_argument_index = argument_index
+            elif skill in target_arguments:
+                argument_index = target_arguments[skill]
+                if len(args) > argument_index:
+                    location_token = str(args[argument_index])
+                else:
+                    missing_argument_index = argument_index
+            elif skill in current_location_actions:
+                location_token = current_robot_location
+                if not location_token:
+                    unresolved.append(
+                        {
+                            "action": raw_action,
+                            "reason": "robot location is unknown before this action",
+                        }
+                    )
+            else:
+                unresolved.append(
+                    {
+                        "action": raw_action,
+                        "reason": f"unsupported action for location inference: {skill}",
+                    }
+                )
+
+            if missing_argument_index is not None:
+                unresolved.append(
+                    {
+                        "action": raw_action,
+                        "reason": (
+                            "missing location argument at index "
+                            f"{missing_argument_index}"
+                        ),
+                    }
+                )
+
+            resolved_location: Optional[str] = None
+            if location_token:
+                resolved_location, resolution_error = self._resolve_physical_location(
+                    location_token,
+                    object_locations,
+                )
+                if resolution_error:
+                    unresolved.append(
+                        {
+                            "action": raw_action,
+                            "reason": resolution_error,
+                        }
+                    )
+                elif resolved_location:
+                    location_key = self._object_key(resolved_location)
+                    if location_key and location_key not in seen_locations:
+                        seen_locations.add(location_key)
+                        required_locations.append(resolved_location)
+                    current_robot_location = resolved_location
+
+            object_token = str(args[1]) if len(args) > 1 else None
+            if skill == "PickupObject" and object_token:
+                object_locations.pop(self._object_key(object_token), None)
+            elif skill == "PutObject" and object_token and len(args) > 2:
+                object_locations[self._object_key(object_token)] = str(args[2])
+            elif skill in current_location_actions and object_token and resolved_location:
+                object_locations[self._object_key(object_token)] = resolved_location
+
+        return required_locations, unresolved
+
+    def _extract_required_skills(
+        self,
+        actions_in_plan: List[Dict[str, Any]],
+    ) -> List[str]:
+        required_skills: List[str] = []
+        seen: Set[str] = set()
+        for action in actions_in_plan:
+            skill = robot_skill_for_special_task_skill(action["skill"])
+            if skill not in seen:
+                seen.add(skill)
+                required_skills.append(skill)
+        return required_skills
+
+    def _calculate_pickup_mass_peak(
+        self,
+        actions_in_plan: List[Dict[str, Any]],
+        object_masses: Dict[str, float],
+    ) -> float:
+        held: Dict[str, float] = {}
+        current_mass = 0.0
+        peak_mass = 0.0
+        for action in actions_in_plan:
+            skill = action["skill"]
+            args = action.get("args", [])
+            if skill == "PickupObject" and len(args) >= 2:
+                object_key = self._object_key(args[1])
+                if object_key not in held:
+                    mass = object_masses.get(object_key, 0.0)
+                    held[object_key] = mass
+                    current_mass += mass
+                    peak_mass = max(peak_mass, current_mass)
+            elif skill in {"PutObject", "DropHandObject", "ThrowObject"} and len(args) >= 2:
+                object_key = self._object_key(args[1])
+                if object_key in held:
+                    current_mass -= held.pop(object_key)
+        return max(0.0, peak_mass)
+
+    def _parse_object_masses(self, objects_ai: str) -> Dict[str, float]:
+        object_masses: Dict[str, float] = {}
+        for item in self._parse_objects_ai(objects_ai):
+            if not isinstance(item, dict) or not item.get("name"):
+                continue
+            try:
+                mass = float(item.get("mass", item.get("mass_capacity", 0.0)) or 0.0)
+            except (TypeError, ValueError):
+                mass = 0.0
+            key = self._object_key(item["name"])
+            object_masses[key] = max(object_masses.get(key, 0.0), mass)
+        return object_masses
+
+    @staticmethod
+    def _object_key(value: str) -> str:
+        return re.sub(r"[^a-z0-9]", "", str(value).lower())
+
+    def _canonical_skill_name(self, action_name: str) -> str:
+        key = self._object_key(action_name)
+        aliases = {
+            self._object_key(skill): skill
+            for skill in (
+                "GoToObject",
+                "OpenObject",
+                "CloseObject",
+                "BreakObject",
+                "SliceObject",
+                "SwitchOn",
+                "SwitchOff",
+                "PickupObject",
+                "PutObject",
+                "CleanObject",
+                "RunMicrowave",
+                "RunCoffeeMachine",
+                "RunToaster",
+                "CookByStoveBurner",
+                "HeatByStoveBurner",
+                "FillWater",
+                "ColdObject",
+                "PrepareEgg",
+                "DropHandObject",
+                "ThrowObject",
+                "PushObject",
+                "PullObject",
+            )
+        }
+        aliases.update(SPECIAL_TASK_SKILL_ALIASES)
+        return aliases.get(key, str(action_name).strip())
+
+    def _infer_predecessors(
         self,
         decomposed_plan: str,
-        robots: List[dict],
-        objects_ai: str,
-        key_objects: Optional[List[Dict[str, Any]]] = None,
-        key_objects_by_subtask: Optional[Dict[int, List[Dict[str, Any]]]] = None,
-        feedback_text: Optional[str] = None,
-    ) -> Dict[str, str]:
-        """Generate allocation plan for decomposed tasks.
-        
-        """
-        try:
-            subtasks = ParsingUtils.extract_subtasks(decomposed_plan)
-            if key_objects_by_subtask is None:
-                if subtasks:
-                    key_objects_by_subtask = self._extract_key_objects_by_subtask(subtasks, objects_ai)
-                else:
-                    key_objects_by_subtask = {}
-            if key_objects is None:
-                key_objects = (
-                    self._combine_key_objects_by_subtask(key_objects_by_subtask)
-                    if key_objects_by_subtask
-                    else self._extract_key_objects_from_decomposition(decomposed_plan, objects_ai)
+        problem_pddl: List[str],
+    ) -> Dict[int, List[int]]:
+        subtask_count = len(problem_pddl)
+        edges = self._infer_text_precedence_edges(decomposed_plan)
+        init_facts = [self._extract_pddl_facts(problem, "init") for problem in problem_pddl]
+        goal_facts = [self._extract_pddl_facts(problem, "goal") for problem in problem_pddl]
+        for predecessor_index, predecessor_goals in enumerate(goal_facts, start=1):
+            for successor_index, successor_init in enumerate(init_facts, start=1):
+                if predecessor_index != successor_index and predecessor_goals & successor_init:
+                    edges.add((predecessor_index, successor_index))
+        edges = {
+            (before, after)
+            for before, after in edges
+            if 1 <= before <= subtask_count
+            and 1 <= after <= subtask_count
+            and before != after
+        }
+        predecessors = self._predecessors_from_edges(edges, subtask_count)
+        if self._has_precedence_cycle(predecessors, subtask_count):
+            return {subtask_id: [] for subtask_id in range(1, subtask_count + 1)}
+        return predecessors
+
+    @staticmethod
+    def _infer_text_precedence_edges(decomposed_plan: str) -> Set[Tuple[int, int]]:
+        edges: Set[Tuple[int, int]] = set()
+        for sentence in re.split(r"[\n.]", str(decomposed_plan)):
+            lowered = f" {sentence.casefold()} "
+            ids = [
+                int(value)
+                for value in re.findall(r"sub\s*task\s*(\d+)", sentence, re.IGNORECASE)
+            ]
+            if len(ids) < 2:
+                continue
+            before_match = re.search(
+                r"sub\s*task\s*(\d+).*?\bbefore\b.*?sub\s*task\s*(\d+)",
+                sentence,
+                re.IGNORECASE,
+            )
+            after_match = re.search(
+                r"sub\s*task\s*(\d+).*?\bafter\b.*?sub\s*task\s*(\d+)",
+                sentence,
+                re.IGNORECASE,
+            )
+            depends_match = re.search(
+                r"sub\s*task\s*(\d+).*?\bdepends(?:\s+on)?\b.*?sub\s*task\s*(\d+)",
+                sentence,
+                re.IGNORECASE,
+            )
+            if before_match:
+                edges.add((int(before_match.group(1)), int(before_match.group(2))))
+            elif after_match:
+                edges.add((int(after_match.group(2)), int(after_match.group(1))))
+            elif depends_match:
+                edges.add((int(depends_match.group(2)), int(depends_match.group(1))))
+            elif any(marker in lowered for marker in (" then ", " sequential ")):
+                edges.update(zip(ids, ids[1:]))
+        return edges
+
+    def _extract_pddl_facts(self, pddl_content: str, section_name: str) -> Set[str]:
+        section = self._extract_pddl_section(pddl_content, section_name)
+        if not section:
+            return set()
+        section = re.sub(r";.*", "", section)
+        section = re.sub(
+            r"\(\s*not\s+\([^()]*\)\s*\)",
+            "",
+            section,
+            flags=re.IGNORECASE,
+        )
+        facts: Set[str] = set()
+        for match in re.finditer(r"\(\s*([A-Za-z][A-Za-z0-9_-]*)\s+([^()]*)\)", section):
+            predicate = match.group(1)
+            if predicate.casefold() in {"and", "not"}:
+                continue
+            args = [arg for arg in match.group(2).split() if arg and not arg.startswith("-")]
+            if args:
+                facts.add(
+                    self._object_key(predicate)
+                    + ":"
+                    + ",".join(self._object_key(arg) for arg in args)
                 )
-            if not key_objects_by_subtask and key_objects:
-                key_objects_by_subtask = {1: key_objects}
+        return facts
 
-            # Build prompt incrementally like the original
-            allocation_decomposed_plan = _strip_legacy_inaction_prompt_text(
-                self._strip_decomposition_completion_sentence(decomposed_plan)
-            )
-            task_description = ""
-            if isinstance(self.current_task_manifest, dict):
-                task_description = str(self.current_task_manifest.get("task") or "").strip()
-            prompt = "\n"
-            rag_query = ""
-            if self.allocate_rag_retriever:
-                rag_query = self._allocation_rag_query(decomposed_plan, robots, key_objects, subtasks)
-            prompt += _strip_legacy_inaction_prompt_text(
-                self._rag_or_static_prompt_block(
-                    self.allocate_rag_retriever,
-                    self._allocate_rag_prompt_block,
-                    self._read_allocation_static_prompt,
-                    rag_query,
-                )
-            )
-            if task_description:
-                prompt += f"\n# Task Description: {task_description}\n"
-            prompt += allocation_decomposed_plan
-            prompt += f"\n# TASK ALLOCATION"
-            prompt += f"\n# Scenario: There are {len(robots)} robots available. Use available robots to execute independent subtasks in parallel whenever dependencies and robot capabilities allow. Robots should be assigned to subtasks that match their skills, and mass capacity should only be considered when a subtask requires picking up the relevant object. Using your reasoning come up with a solution to satisfy all constraints."
-            prompt += f"\n\nrobots = {robots}"
-            prompt += f"\nobjects = {key_objects}"
-            prompt += f"\n\n# IMPORTANT: The AI should ensure that the robots assigned to the tasks have all the necessary skills to perform the tasks. IMPORTANT: Determine whether the subtasks must be performed sequentially or in parallel, or a combination of both and allocate robots based on availability. "
-            prompt += f"\n# SOLUTION\n"
-            prompt += f"\n# Additional Output Rules:"
-            prompt += f"\n# - Use robots and objects as allocation context."
-            prompt += f"\n# - Assign robots using the task-local robot ids from robots = ..."
-            prompt += f"\n# - Judge robot capability using robot skills, and only consider mass capacity for objects that the subtask requires a robot to pick up."
-            prompt += f"\n# - Only assign a robot if it has every required skill."
-            prompt += f"\n{SPECIAL_TASK_SKILL_PROMPT_RULE}"
-            prompt += f"\n# - If multiple robots satisfy all constraints equally, choose the robot with the smallest robot number/name order."
-            prompt += f"\n# - Mass capacity only matters for objects that must be picked up."
-            prompt += f"\n# - The SOLUTION must strictly follow the concise reasoning style shown in the examples."
-            prompt += f"\n# - For the **Sequence of Operations** part: if two or more subtasks can be executed in parallel (i.e., they are independent), they MUST be placed on the same line, separated by a semicolon and no newline. "
-            prompt += f"\n#   Example correct format: Subtask 1: Robot 1;Subtask 2: Robot 2;"
-            prompt += f"\n#   Sequential subtasks that depend on others should appear on their own new line."
-            prompt += f"\n# - End with one final machine-readable block headed exactly '# Sequence of Operations:'."
-            prompt += f"\n# - Every assignment in that final block must use numeric subtask and robot ids, e.g. 'Subtask 1: Robot 2;'."
-            prompt += f"\n# - Do not use placeholders or non-numeric assignments such as 'Subtask;Robot;', 'Subtask A', 'Robot ?', or 'Robot A'."
-            prompt += f"\n# - Do not output self-corrections or extra explanation after the final '# Sequence of Operations:' block.\n"
-            if feedback_text:
-                feedback_block = str(feedback_text).strip()
-                if not feedback_block.startswith("# PLANNER FEEDBACK FROM PREVIOUS ATTEMPT"):
-                    feedback_block = "# PLANNER FEEDBACK FROM PREVIOUS ATTEMPT\n\n" + feedback_block
-                prompt += "\n" + feedback_block + "\n"
-            messages = [{"role": "user", "content": prompt}]
-            call_config = self.config.llm_call("allocate")
-            _, text = self.llm.query_model(
-                messages,
-                self.allocate_model,
-                frequency_penalty=call_config.get("frequency_penalty", 0.69),
-            )
-            return {"prompt": prompt, "text": text}
-            
-        except Exception as e:
-            raise PDDLError(f"Error generating allocation plan: {str(e)}")
-
-    def _write_allocation_generation_artifacts(
-        self,
-        result: Dict[str, str],
-        attempt_index: Optional[int] = None,
-    ) -> None:
-        """Persist allocation prompt/output artifacts produced by allocation generation."""
-        allocate_prompt_artifact = self.config.artifact("allocate_prompt", "02_allocate/01_allocate_prompt.txt")
-        allocate_output_artifact = self.config.artifact("allocate_output", "02_allocate/02_allocate_output.txt")
-        self._write_text_artifact(allocate_prompt_artifact, result["prompt"])
-        self._record_artifact("allocate", "prompt", allocate_prompt_artifact)
-        self._write_text_artifact(allocate_output_artifact, result["text"])
-        self._record_artifact("allocate", "output", allocate_output_artifact)
-        if attempt_index is not None:
-            attempt_prompt_artifact = f"02_allocate/attempt_{attempt_index:02d}/01_allocate_prompt.txt"
-            attempt_output_artifact = f"02_allocate/attempt_{attempt_index:02d}/02_allocate_output.txt"
-            self._write_text_artifact(attempt_prompt_artifact, result["prompt"])
-            self._write_text_artifact(attempt_output_artifact, result["text"])
-            self._record_artifact("allocate", f"attempt_{attempt_index:02d}_prompt", attempt_prompt_artifact)
-            self._record_artifact("allocate", f"attempt_{attempt_index:02d}_output", attempt_output_artifact)
-        self._persist_manifest()
-
+    @staticmethod
+    def _extract_pddl_section(pddl_content: str, section_name: str) -> str:
+        match = re.search(
+            rf"\(\s*:{re.escape(section_name)}\b",
+            str(pddl_content),
+            flags=re.IGNORECASE,
+        )
+        if not match:
+            return ""
+        start = match.start()
+        depth = 0
+        for index in range(start, len(pddl_content)):
+            char = pddl_content[index]
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth == 0:
+                    return pddl_content[start:index + 1]
+        return pddl_content[start:]
+    
     def _generate_problem_summary(self, decomposed_plans: Union[str, List[str]], allocated_plans: Union[str, List[str]], available_robots: Union[List[dict], List[List[dict]]]) -> List[str]:
         """Generate problem summaries from decomposed and allocated plans.
         
@@ -3300,349 +3510,176 @@ class TaskManager:
         except Exception as e:
             raise PDDLError(f"Error generating problem summary: {str(e)}")
 
-    def _generate_problem_files(
-        self,
-        subtasks: List[str],
-        robot_assignments: Dict[int, int],
-        objects_ai: str,
-        key_object_pddl_states: Optional[List[Dict[str, Any]]] = None,
-        key_object_pddl_states_by_subtask: Optional[Dict[int, List[Dict[str, Any]]]] = None,
-        planner_feedback_by_subtask: Optional[Dict[int, str]] = None,
-        val_feedback_by_subtask: Optional[Dict[int, str]] = None,
-        subtask_ids: Optional[Set[int]] = None,
-    ) -> List[str]:
-        """Generate PDDL problem files from subtasks and robot assignments.
-
-        Args:
-            subtasks: List of subtask text
-            robot_assignments: Dict mapping subtask index to robot number
-            objects_ai: AI objects description
-            key_object_pddl_states: PDDL-ready state facts for key objects
-            key_object_pddl_states_by_subtask: PDDL-ready state facts keyed by subtask index
-
-        Returns:
-            List[str]: Generated PDDL problem files
-        """
-        problem_pddl = []
-        subtasks_index_artifact = self.config.artifact("subtasks_index", "04_problem_files/03_subtasks.json")
-        generated_problem_files_artifact = self.config.artifact("generated_problem_files", "04_problem_files/04_generated_problem_files.json")
-
-        subtask_entries = []
-        for idx, subtask in enumerate(subtasks, start=1):
-            relative_path = f"04_problem_files/subtasks/subtask_{idx:02d}.txt"
-            self._write_text_artifact(relative_path, subtask)
-            subtask_entries.append({
-                "index": idx,
-                "path": relative_path
-            })
-        self._write_json_artifact(subtasks_index_artifact, subtask_entries)
-        self._record_artifact("problem_files", "subtasks_index", subtasks_index_artifact)
-
-        self._ensure_raw_problem_output_dir()
-        problem_pddl = self.problemextracting(
-            subtasks=subtasks,
-            robot_assignments=robot_assignments,
-            llm=self.llm,
-            model=self.model,
-            file_processor=self.file_processor,
-            objects_ai=objects_ai,
-            prompt_allocation_set=self.prompt_allocation_set,
-            key_object_pddl_states=key_object_pddl_states,
-            key_object_pddl_states_by_subtask=key_object_pddl_states_by_subtask,
-            planner_feedback_by_subtask=planner_feedback_by_subtask,
-            val_feedback_by_subtask=val_feedback_by_subtask,
-            subtask_ids=subtask_ids,
-        )
-        selected_ids = (
-            sorted(subtask_ids)
-            if subtask_ids is not None
-            else list(range(1, len(subtasks) + 1))
-        )
-        generated_updates = []
-        raw_problem_dir = self._get_raw_problem_file_path()
-        for subtask_id in selected_ids:
-            generated_path = (
-                os.path.join(raw_problem_dir, f"subtask_{subtask_id:02d}_problem.pddl")
-                if raw_problem_dir
-                else ""
-            )
-            if generated_path and os.path.isfile(generated_path):
-                generated_updates.append({
-                    "index": subtask_id,
-                    "content": self.file_processor.read_file(generated_path),
-                })
-        existing_generated = self._read_json_artifact(generated_problem_files_artifact, [])
-        if not isinstance(existing_generated, list) or subtask_ids is None:
-            existing_generated = []
-        generated_by_index = {
-            int(entry["index"]): entry
-            for entry in existing_generated
-            if isinstance(entry, dict) and str(entry.get("index", "")).isdigit()
-        }
-        for entry in generated_updates:
-            generated_by_index[int(entry["index"])] = entry
-        self._write_json_artifact(
-            generated_problem_files_artifact,
-            [generated_by_index[index] for index in sorted(generated_by_index)],
-        )
-        self._record_artifact("problem_files", "generated_problem_files", generated_problem_files_artifact)
-        self._persist_manifest()
-
-        return problem_pddl
-
     @staticmethod
     def _format_problem_prompt_subtask(subtask: str) -> str:
-        """Remove numbered subtask headers before adding the problem prompt label."""
+        """Remove a numbered subtask header before building the Problem prompt."""
         lines = str(subtask).strip().splitlines()
         if not lines:
             return ""
-
         first_line = lines[0].strip()
         match = _match_subtask_header_line(first_line, allow_bare=True)
         if match:
             first_line = match.group("title").strip()
-
         formatted_lines = [first_line] if first_line else []
         formatted_lines.extend(line.rstrip() for line in lines[1:])
         return "\n".join(formatted_lines).strip()
-    
 
-    def _run_problem_generation(
-            self,
-            subtasks: List[str],
-            robot_assignments: Dict[int, int],
-            llm: 'LLMHandler',
-            model: str,
-            objects_ai: str,
-            domain_contents_by_robot: Dict[str, str],
-            static_problem_prompt: str,
-            key_object_pddl_states: Optional[List[Dict[str, Any]]] = None,
-            key_object_pddl_states_by_subtask: Optional[Dict[Union[int, str], List[Dict[str, Any]]]] = None,
-            planner_feedback_by_subtask: Optional[Dict[int, str]] = None,
-            val_feedback_by_subtask: Optional[Dict[int, str]] = None,
-            subtask_ids: Optional[Set[int]] = None,
-        ) -> List[ProblemGenerationResult]:
-        """Generate problem prompts and PDDL results without reading or writing artifacts.
+    def _generate_allaction_problem_files(
+        self,
+        subtasks: List[str],
+        objects_ai: str,
+        key_object_pddl_states: Optional[List[Dict[str, Any]]] = None,
+        key_object_pddl_states_by_subtask: Optional[
+            Dict[Union[int, str], List[Dict[str, Any]]]
+        ] = None,
+    ) -> List[str]:
+        """Generate one Problem PDDL per subtask with the full-capability domain."""
+        subtasks_index_artifact = self.config.artifact(
+            "subtasks_index",
+            "04_problem_files/03_subtasks.json",
+        )
+        generated_problem_files_artifact = self.config.artifact(
+            "generated_problem_files",
+            "04_problem_files/04_generated_problem_files.json",
+        )
+        subtask_entries = []
+        for subtask_id, subtask in enumerate(subtasks, start=1):
+            relative_path = f"04_problem_files/subtasks/subtask_{subtask_id:02d}.txt"
+            self._write_text_artifact(relative_path, subtask)
+            subtask_entries.append({"index": subtask_id, "path": relative_path})
+        self._write_json_artifact(subtasks_index_artifact, subtask_entries)
+        self._record_artifact("problem_files", "subtasks_index", subtasks_index_artifact)
 
-        Args:
-            subtasks: List of subtask text
-            robot_assignments: Dict mapping subtask index to robot number
-            llm: LLM handler
-            model: Model name
-            objects_ai: AI objects description
-            domain_contents_by_robot: Domain content keyed by real robot/domain name
-            static_problem_prompt: Static fallback few-shot prompt content
-            key_object_pddl_states: PDDL-ready state facts for key objects
-            key_object_pddl_states_by_subtask: PDDL-ready state facts keyed by subtask index
-
-        Returns:
-            List[ProblemGenerationResult]: Generated in-memory problem artifacts
-        """
+        domain_content = self.file_processor.read_file(
+            str(self.config.allaction_domain_path())
+        )
+        problem_prompt_path = self.config.prompt_file(
+            f"{self.prompt_allocation_set}_problem.txt"
+        )
+        static_problem_prompt = self.file_processor.read_file(str(problem_prompt_path))
         results: List[ProblemGenerationResult] = []
 
-        for subtask_idx, subtask in enumerate(subtasks, start=1):
-            if subtask_ids is not None and subtask_idx not in subtask_ids:
-                continue
-            robot_num = robot_assignments.get(subtask_idx, 1)
-            normalized_robot_name = f"robot{robot_num}"
-            real_robot_name = self.current_robot_domain_names.get(normalized_robot_name, normalized_robot_name)
-
-            domain_content = (
-                domain_contents_by_robot.get(real_robot_name)
-                or domain_contents_by_robot.get(normalized_robot_name, "")
-            )
-            if not domain_content:
-                print(f"Domain content not provided or empty for robot/domain: {real_robot_name}")
-                continue
-
-            subtask_key_object_states = key_object_pddl_states
+        for subtask_id, subtask in enumerate(subtasks, start=1):
+            subtask_states = key_object_pddl_states
             if key_object_pddl_states_by_subtask is not None:
-                if subtask_idx in key_object_pddl_states_by_subtask:
-                    subtask_key_object_states = key_object_pddl_states_by_subtask[subtask_idx]
-                else:
-                    subtask_key_object_states = key_object_pddl_states_by_subtask.get(str(subtask_idx), [])
-            domain_key_object_states = self._filter_key_object_pddl_states_for_domain(
-                subtask_key_object_states,
+                subtask_states = key_object_pddl_states_by_subtask.get(
+                    subtask_id,
+                    key_object_pddl_states_by_subtask.get(str(subtask_id), []),
+                )
+            filtered_states = self._filter_key_object_pddl_states_for_domain(
+                subtask_states,
                 domain_content,
             )
-            key_object_pddl_states_text = json.dumps(
-                domain_key_object_states,
-                ensure_ascii=False,
-                indent=2,
-            )
-            subtask_feedback = ""
-            if planner_feedback_by_subtask:
-                subtask_feedback = str(planner_feedback_by_subtask.get(subtask_idx) or "").strip()
-            val_feedback = ""
-            if val_feedback_by_subtask:
-                val_feedback = str(val_feedback_by_subtask.get(subtask_idx) or "").strip()
-            problem_prompt_examples = static_problem_prompt
+            prompt_examples = static_problem_prompt
             if self.problem_rag_retriever:
                 rag_query = self._problem_rag_query(
-                    subtask_idx,
+                    subtask_id,
                     subtask,
-                    real_robot_name,
+                    "robot1",
                     domain_content,
                     objects_ai,
-                    domain_key_object_states,
+                    filtered_states,
                 )
-                manifest_key = f"subtask_{subtask_idx:02d}"
-                problem_prompt_examples = self._rag_or_static_prompt_block(
+                manifest_key = f"subtask_{subtask_id:02d}"
+                prompt_examples = self._rag_or_static_prompt_block(
                     self.problem_rag_retriever,
-                    lambda query_text, key=manifest_key: self._problem_rag_prompt_block(query_text, key),
+                    lambda query, key=manifest_key: self._problem_rag_prompt_block(
+                        query,
+                        key,
+                    ),
                     lambda: static_problem_prompt,
                     rag_query,
                 )
-            problem_prompt_examples = _strip_legacy_inaction_prompt_text(problem_prompt_examples)
-
-            subtask_prompt_text = _strip_legacy_inaction_prompt_text(
+            prompt_examples = _strip_legacy_inaction_prompt_text(prompt_examples)
+            subtask_text = _strip_legacy_inaction_prompt_text(
                 self._format_problem_prompt_subtask(subtask)
             )
             prompt = (
-                "\n" + problem_prompt_examples +
-                " Finish the tasks like example\n"
-                "Subtask : " + subtask_prompt_text +
-                "\nDomain file content:\n" + domain_content +
-                "\nkey_object_pddl_states = " + key_object_pddl_states_text +
-                "\nTask description: generate the problem file. Based on "
-                "the domain file preconditions, actions, and subtask. "
-                "Use key_object_pddl_states as PDDL-ready context: declare every object token "
-                "referenced by those entries and copy applicable facts into (:init). "
-                "Do not emit raw AI2-THOR state fields such as isOpen or isToggled; emit only "
-                "predicates declared in the domain file. "
-                f"IMPORTANT {normalized_robot_name} is only the task-local allocation name. "
-                f"The real PDDL domain and robot object for this subtask is {real_robot_name}. "
-                f"IMPORTANT the generated problem must use (:domain {real_robot_name}) and "
-                f"must use {real_robot_name} as the robot object token. "
-                "#IMPORTANT, strictly follow the structure, stop generating after the Problem file generation is done."
+                "\n"
+                + prompt_examples
+                + "\nGenerate one PDDL problem for the subtask below.\n"
+                + "Subtask: "
+                + subtask_text
+                + "\n\nFull-capability domain file content:\n"
+                + domain_content
+                + "\n\nAvailable objects:\n"
+                + str(objects_ai)
+                + "\n\nkey_object_pddl_states = "
+                + json.dumps(filtered_states, ensure_ascii=False, indent=2)
+                + "\n\nUse (:domain allactionrobot) and use robot1 as the only robot "
+                "object. robot1 is a synthetic full-capability robot used only to obtain "
+                "the action plan before real robots are filtered and allocated. Declare "
+                "every referenced object and use only predicates declared by the domain. "
+                "Return only the complete Problem PDDL."
             )
-            if subtask_feedback:
-                prompt += (
-                    "\n# PLANNER FEEDBACK FOR THIS SUBTASK\n"
-                    "The previous attempt may not have completed this subtask with the assigned robot. "
-                    "Use the feedback below while generating the next problem for this subtask.\n"
-                    + subtask_feedback
-                )
-            if val_feedback:
-                prompt += (
-                    "\n# VAL FEEDBACK FROM PREVIOUS ATTEMPT\n"
-                    "The previous problem and its newly generated plan failed VAL validation. "
-                    "Regenerate the PDDL problem so that a new plan satisfies the domain semantics "
-                    "and passes VAL. Do not change the assigned robot.\n"
-                    + val_feedback
-                )
-
             messages = [
-                {"role": "system", "content": "You are a Robot PDDL problem Expert"},
-                {"role": "user", "content": prompt}
+                {"role": "system", "content": "You are a Robot PDDL problem expert."},
+                {"role": "user", "content": prompt},
             ]
             call_config = self.config.llm_call("problem_generation")
-            _, text = llm.query_model(
+            _, raw_output = self.llm.query_model(
                 messages,
-                model,
+                self.model,
                 frequency_penalty=call_config.get("frequency_penalty", 0.4),
             )
-
-            extracted_problem = self._extract_pddl_problem_block(text)
-            extracted_problem = self._force_problem_robot_name(
-                extracted_problem,
-                normalized_robot_name,
-                real_robot_name,
+            problem = self._extract_pddl_problem_block(raw_output)
+            problem = re.sub(
+                r"(?<![A-Za-z0-9_])robot\d+(?![A-Za-z0-9_])",
+                "robot1",
+                problem,
+                flags=re.IGNORECASE,
             )
-            extracted_problem = self._force_problem_domain(extracted_problem, real_robot_name)
+            problem = self._force_problem_domain(problem, "allactionrobot")
             repair_result: Optional[ProblemRepairResult] = None
             if self.problem_repair_enabled:
                 repair_result = repair_problem_pddl(
-                    extracted_problem,
+                    problem,
                     domain_content,
-                    raw_output=text,
+                    raw_output=raw_output,
                 )
-                extracted_problem = repair_result.problem
-            results.append(
-                ProblemGenerationResult(
-                    subtask_index=subtask_idx,
-                    normalized_robot_name=normalized_robot_name,
-                    real_robot_name=real_robot_name,
-                    prompt=prompt,
-                    raw_output=text,
-                    problem=extracted_problem,
-                    repair=repair_result,
+                problem = self._force_problem_domain(
+                    repair_result.problem,
+                    "allactionrobot",
                 )
+            result = ProblemGenerationResult(
+                subtask_index=subtask_id,
+                normalized_robot_name="robot1",
+                real_robot_name="robot1",
+                prompt=prompt,
+                raw_output=raw_output,
+                problem=problem,
+                repair=repair_result,
+            )
+            results.append(result)
+            self._write_text_artifact(
+                f"05_problem_generation/prompts/subtask_{subtask_id:02d}_prompt.txt",
+                prompt,
+            )
+            self._write_text_artifact(
+                f"05_problem_generation/outputs/subtask_{subtask_id:02d}_problem.raw.txt",
+                raw_output,
+            )
+            self._write_text_artifact(
+                f"05_problem_generation/outputs/subtask_{subtask_id:02d}_problem.pddl",
+                problem,
             )
 
-        return results
-
-    def problemextracting(
-            self,
-            subtasks: List[str],
-            robot_assignments: Dict[int, int],
-            llm: 'LLMHandler',
-            model: str,
-            file_processor: 'FileProcessor',
-            objects_ai: str,
-            prompt_allocation_set: str,
-            key_object_pddl_states: Optional[List[Dict[str, Any]]] = None,
-            key_object_pddl_states_by_subtask: Optional[Dict[Union[int, str], List[Dict[str, Any]]]] = None,
-            planner_feedback_by_subtask: Optional[Dict[int, str]] = None,
-            val_feedback_by_subtask: Optional[Dict[int, str]] = None,
-            subtask_ids: Optional[Set[int]] = None,
-        ) -> List[str]:
-        """Extract problem files from subtasks using precomputed robot assignments.
-
-        Args:
-            subtasks: List of subtask text
-            robot_assignments: Dict mapping subtask index to robot number
-            llm: LLM handler
-            model: Model name
-            file_processor: File processor instance
-            objects_ai: AI objects description
-            prompt_allocation_set: Prompt template name
-            key_object_pddl_states: PDDL-ready state facts for key objects
-            key_object_pddl_states_by_subtask: PDDL-ready state facts keyed by subtask index
-
-        Returns:
-            List[str]: Generated PDDL problem files
-        """
-        domain_contents_by_robot: Dict[str, str] = {}
-        for subtask_idx, _ in enumerate(subtasks, start=1):
-            robot_num = robot_assignments.get(subtask_idx, 1)
-            normalized_robot_name = f"robot{robot_num}"
-            real_robot_name = self.current_robot_domain_names.get(normalized_robot_name, normalized_robot_name)
-            if real_robot_name in domain_contents_by_robot:
-                continue
-
-            robotassignnumber = f"{real_robot_name}.pddl"
-            domain_path = str(self.config.robot_domain_path(robotassignnumber))
-            domain_contents_by_robot[real_robot_name] = file_processor.read_file(domain_path) or ""
-
-        problem_fileexamplepath = self.config.prompt_file(f"{prompt_allocation_set}_problem.txt")
-        problem_examplecontent = file_processor.read_file(str(problem_fileexamplepath)) or ""
-        results = self._run_problem_generation(
-            subtasks=subtasks,
-            robot_assignments=robot_assignments,
-            llm=llm,
-            model=model,
-            objects_ai=objects_ai,
-            domain_contents_by_robot=domain_contents_by_robot,
-            static_problem_prompt=problem_examplecontent,
-            key_object_pddl_states=key_object_pddl_states,
-            key_object_pddl_states_by_subtask=key_object_pddl_states_by_subtask,
-            planner_feedback_by_subtask=planner_feedback_by_subtask,
-            val_feedback_by_subtask=val_feedback_by_subtask,
-            subtask_ids=subtask_ids,
+        problems = [result.problem for result in results]
+        self._write_json_artifact(
+            generated_problem_files_artifact,
+            [
+                {"index": index, "content": content}
+                for index, content in enumerate(problems, start=1)
+            ],
         )
-
-        for result in results:
-            prompt_path = f"05_problem_generation/prompts/subtask_{result.subtask_index:02d}_prompt.txt"
-            output_path0 = f"05_problem_generation/outputs/subtask_{result.subtask_index:02d}_problem.raw.txt"
-            output_path1 = f"05_problem_generation/outputs/subtask_{result.subtask_index:02d}_problem.pddl"
-            self._write_text_artifact(prompt_path, result.prompt)
-            self._write_text_artifact(output_path0, result.raw_output)
-            self._write_text_artifact(output_path1, result.problem)
-
-        self._write_problem_repair_manifest(results, replace_all=subtask_ids is None)
-
-        return [result.problem for result in results]
+        self._record_artifact(
+            "problem_files",
+            "generated_problem_files",
+            generated_problem_files_artifact,
+        )
+        self._write_problem_repair_manifest(results, replace_all=True)
+        self._persist_manifest()
+        return problems
 
     def _extract_pddl_problem_block(self, text: str) -> str:
         """Extract clean PDDL problem block from text.
@@ -3671,6 +3708,252 @@ class TaskManager:
                     return text[start_idx:idx + 1].strip()
 
         return text
+
+    def _domain_file_for_problem_domain(self, domain_name: str) -> Optional[str]:
+        """Resolve a generated problem's domain without using robot allocation."""
+        if not domain_name:
+            return None
+        if domain_name.casefold() == "allactionrobot":
+            domain_path = str(self.config.allaction_domain_path())
+            return domain_path if os.path.isfile(domain_path) else None
+        domain_path = str(self.config.robot_domain_path(f"{domain_name}.pddl"))
+        return domain_path if os.path.isfile(domain_path) else None
+
+    def run_llmvalidator(self) -> List[Dict[str, Any]]:
+        """Validate every full-capability Problem PDDL before planning it."""
+        raw_problem_dir = self._get_raw_problem_file_path()
+        if not raw_problem_dir or not os.path.isdir(raw_problem_dir):
+            return []
+
+        validation_records: List[Dict[str, Any]] = []
+        validated_problem_files: List[str] = []
+        problem_files = sorted(
+            filename
+            for filename in os.listdir(raw_problem_dir)
+            if filename.endswith(".pddl")
+        )
+        for problem_file in problem_files:
+            try:
+                problem_full_path = os.path.join(raw_problem_dir, problem_file)
+                domain_name = self.file_processor.extract_domain_name(problem_full_path)
+                domain_file = self._domain_file_for_problem_domain(domain_name or "")
+                if not domain_name or not domain_file:
+                    validation_records.append(
+                        {
+                            "problem_file": problem_file,
+                            "domain_name": domain_name,
+                            "status": "skipped",
+                            "error": "Problem domain could not be resolved",
+                        }
+                    )
+                    continue
+                domain_content = self.file_processor.read_file(domain_file)
+                problem_content = self.file_processor.read_file(problem_full_path)
+                prompt = (
+                    "Domain Description:\n"
+                    + domain_content
+                    + "\n\nProblem Description:\n"
+                    + problem_content
+                    + "\n\nValidate the Problem PDDL against the domain. Check object "
+                    "declarations, predicate/action compatibility, syntax, and balanced "
+                    "parentheses. Return only the corrected complete Problem PDDL."
+                )
+                safe_name = self._sanitize_filename(problem_file[:-5])
+                input_path = f"07_validate/inputs/{safe_name}_input.pddl"
+                prompt_path = f"07_validate/prompts/{safe_name}_prompt.txt"
+                raw_output_path = f"07_validate/outputs/{safe_name}_validated.raw.txt"
+                validated_problem_path = (
+                    f"07_validate/outputs/{safe_name}_validated.pddl"
+                )
+                self._write_text_artifact(input_path, problem_content)
+                self._write_text_artifact(prompt_path, prompt)
+                call_config = self.config.llm_call("llm_validator")
+                _, raw_output = self.llm.query_model(
+                    [
+                        {
+                            "role": "system",
+                            "content": "You are a Robot PDDL problem expert.",
+                        },
+                        {"role": "user", "content": prompt},
+                    ],
+                    self.model,
+                    frequency_penalty=call_config.get("frequency_penalty", 0.4),
+                )
+                validated_problem = self._extract_pddl_problem_block(raw_output)
+                if "(define (problem" not in validated_problem.casefold():
+                    raise ValidationError("Validator did not return a Problem PDDL block")
+                validated_problem = self._force_problem_domain(
+                    validated_problem,
+                    "allactionrobot",
+                )
+                validated_problem = re.sub(
+                    r"(?<![A-Za-z0-9_])robot\d+(?![A-Za-z0-9_])",
+                    "robot1",
+                    validated_problem,
+                    flags=re.IGNORECASE,
+                )
+                self._write_text_artifact(raw_output_path, raw_output)
+                validated_full_path = self._write_text_artifact(
+                    validated_problem_path,
+                    validated_problem,
+                )
+                if validated_full_path:
+                    validated_problem_files.append(validated_full_path)
+                validation_records.append(
+                    {
+                        "problem_file": problem_file,
+                        "domain_name": "allactionrobot",
+                        "domain_file": domain_file,
+                        "input_path": input_path,
+                        "prompt_path": prompt_path,
+                        "raw_output_path": raw_output_path,
+                        "validated_problem_path": validated_problem_path,
+                        "status": "validated",
+                    }
+                )
+            except Exception as exc:
+                validation_records.append(
+                    {
+                        "problem_file": problem_file,
+                        "status": "error",
+                        "error": str(exc),
+                    }
+                )
+
+        validation_manifest = "07_validate/validation_manifest.json"
+        self._write_json_artifact(validation_manifest, validation_records)
+        self._record_artifact("validate", "manifest", validation_manifest)
+        self.current_task_manifest.setdefault("validate", {})[
+            "validated_problem_files"
+        ] = validated_problem_files
+        self._persist_manifest()
+        return validation_records
+
+    def run_allaction_planners(self) -> List[Dict[str, Any]]:
+        """Plan validated problems with the full-capability PDDL domain."""
+        validated_problem_dir = self._get_validated_problem_file_path()
+        if not validated_problem_dir or not os.path.isdir(validated_problem_dir):
+            return []
+        plan_dir = self._get_plan_file_path()
+        if not plan_dir:
+            return []
+        os.makedirs(plan_dir, exist_ok=True)
+        planner_path = str(self.config.planner_executable)
+        domain_file = str(self.config.allaction_domain_path())
+        planner_records: List[Dict[str, Any]] = []
+        plan_output_files: List[str] = []
+
+        for problem_file in sorted(
+            filename
+            for filename in os.listdir(validated_problem_dir)
+            if filename.endswith(".pddl")
+        ):
+            problem_full_path = os.path.join(validated_problem_dir, problem_file)
+            safe_name = self._sanitize_filename(problem_file[:-5])
+            output_file = os.path.join(plan_dir, f"{safe_name}_plan.txt")
+            if os.path.isfile(output_file):
+                os.unlink(output_file)
+            command = [
+                planner_path,
+                "--plan-file",
+                output_file,
+                "--alias",
+                str(self.config.get("planner", "alias", "seq-opt-lmcut")),
+                domain_file,
+                problem_full_path,
+            ]
+            started_at = time.time()
+            try:
+                result = subprocess.run(
+                    command,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=int(
+                        self.config.get("planner", "timeout_seconds", 300)
+                    ),
+                )
+                command_path = f"08_planner/commands/{safe_name}_command.txt"
+                stdout_path = f"08_planner/stdout/{safe_name}_stdout.txt"
+                stderr_path = f"08_planner/stderr/{safe_name}_stderr.txt"
+                self._write_text_artifact(command_path, " ".join(command))
+                self._write_text_artifact(stdout_path, result.stdout)
+                self._write_text_artifact(stderr_path, result.stderr)
+                if os.path.isfile(output_file):
+                    plan_output_files.append(output_file)
+                planner_records.append(
+                    {
+                        "problem_file": problem_file,
+                        "problem_path": problem_full_path,
+                        "domain_name": "allactionrobot",
+                        "domain_file": domain_file,
+                        "command_path": command_path,
+                        "stdout_path": stdout_path,
+                        "stderr_path": stderr_path,
+                        "return_code": result.returncode,
+                        "duration_seconds": round(time.time() - started_at, 3),
+                        "compatibility_output": output_file,
+                        **self._build_planner_status_fields(
+                            output_file,
+                            stdout_text=result.stdout,
+                            stderr_text=result.stderr,
+                            return_code=result.returncode,
+                            status="completed",
+                        ),
+                    }
+                )
+            except subprocess.TimeoutExpired as exc:
+                planner_records.append(
+                    {
+                        "problem_file": problem_file,
+                        "problem_path": problem_full_path,
+                        "domain_name": "allactionrobot",
+                        "domain_file": domain_file,
+                        "compatibility_output": output_file,
+                        "error": str(exc),
+                        **self._build_planner_status_fields(
+                            output_file,
+                            stderr_text=str(exc),
+                            status="timeout",
+                        ),
+                    }
+                )
+            except Exception as exc:
+                planner_records.append(
+                    {
+                        "problem_file": problem_file,
+                        "problem_path": problem_full_path,
+                        "domain_name": "allactionrobot",
+                        "domain_file": domain_file,
+                        "compatibility_output": output_file,
+                        "error": str(exc),
+                        **self._build_planner_status_fields(
+                            output_file,
+                            stderr_text=str(exc),
+                            status="error",
+                        ),
+                    }
+                )
+
+        planner_manifest = self.config.artifact(
+            "planner_manifest",
+            "08_planner/planner_manifest.json",
+        )
+        self._write_json_artifact(planner_manifest, planner_records)
+        self._record_artifact("planner", "manifest", planner_manifest)
+        self.current_task_manifest.setdefault("planner", {})[
+            "plan_output_files"
+        ] = plan_output_files
+        self._persist_manifest()
+        return planner_records
+
+    def _validate_and_plan(self) -> List[Dict[str, Any]]:
+        """Validate full-capability problems and generate their plans."""
+        try:
+            self.run_llmvalidator()
+            return self.run_allaction_planners()
+        except Exception as exc:
+            raise PDDLError(f"Error in validation and planning: {exc}") from exc
 
     def _plan_generated_problems(self, subtask_ids: Optional[Set[int]] = None) -> List[Dict[str, Any]]:
         """Plan generated problem files, optionally restricted to selected subtasks."""
@@ -4103,52 +4386,11 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="store_false",
         help="Disable deterministic local repair of generated PDDL problems (default).",
     )
-    plan_feedback_group = parser.add_mutually_exclusive_group()
-    plan_feedback_group.add_argument(
-        "--plan-feedback",
-        dest="plan_feedback",
-        action="store_true",
-        help="Enable planner-feedback retries from allocation onward.",
-    )
-    plan_feedback_group.add_argument(
-        "--no-plan-feedback",
-        dest="plan_feedback",
-        action="store_false",
-        help="Disable planner-feedback retries.",
-    )
-    parser.add_argument(
-        "--plan-feedback-max-retries",
-        dest="plan_feedback_max_retries",
-        type=int,
-        default=None,
-        help="Maximum feedback retry rounds after the first allocation attempt.",
-    )
-    val_feedback_group = parser.add_mutually_exclusive_group()
-    val_feedback_group.add_argument(
-        "--val-feedback",
-        dest="val_feedback",
-        action="store_true",
-        help="Enable VAL validation and failed-subtask problem-generation retries.",
-    )
-    val_feedback_group.add_argument(
-        "--no-val-feedback",
-        dest="val_feedback",
-        action="store_false",
-        help="Disable VAL validation and feedback retries.",
-    )
-    parser.add_argument(
-        "--val-feedback-max-retries",
-        type=int,
-        default=None,
-        help="Maximum VAL feedback retry rounds after the first validation attempt.",
-    )
     parser.set_defaults(
         decompose_rag=False,
         allocate_rag=False,
         problem_rag=False,
         problem_repair=None,
-        plan_feedback=None,
-        val_feedback=None,
     )
 
     return parser.parse_args(argv)
@@ -4167,17 +4409,6 @@ def main():
             run_config,
             getattr(args, "problem_repair", None),
         )
-        apply_feedback_cli_override(
-            run_config,
-            args.plan_feedback,
-            args.plan_feedback_max_retries,
-        )
-        apply_val_feedback_cli_override(
-            run_config,
-            getattr(args, "val_feedback", None),
-            getattr(args, "val_feedback_max_retries", None),
-        )
-        
         # Initialize task manager
         task_manager = TaskManager(
             base_path=base_path,

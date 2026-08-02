@@ -1,6 +1,7 @@
 litellm>=1.0.0
 ai2thor
 scipy
+ortools
 numpy
 opencv-python
 pathlib

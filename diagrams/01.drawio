@@ -1,0 +1,264 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-07-31T00:00:00.000Z" agent="Codex" version="24.7.17" type="device" compressed="false">
+  <diagram id="task-data-engine-qa" name="Task Data Engine and QA Construction">
+    <mxGraphModel dx="1920" dy="1080" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1920" pageHeight="1080" math="0" shadow="0" background="#FFFFFF">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- Page title and section backgrounds -->
+        <mxCell id="title" value="Task Data Engine and QA Pair Construction" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=28;fontStyle=1;fontColor=#243447;" vertex="1" parent="1">
+          <mxGeometry x="410" y="24" width="1100" height="42" as="geometry"/>
+        </mxCell>
+        <mxCell id="panel_a" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=#F8FAFC;strokeColor=#C7D2DE;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="20" y="112" width="1240" height="920" as="geometry"/>
+        </mxCell>
+        <mxCell id="panel_b" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=#FCFCFD;strokeColor=#C7D2DE;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="1280" y="112" width="620" height="920" as="geometry"/>
+        </mxCell>
+        <mxCell id="panel_a_label" value="(a) Task Data Generation" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=19;fontStyle=1;fontColor=#243447;" vertex="1" parent="1">
+          <mxGeometry x="40" y="126" width="360" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="panel_b_label" value="(b) QA Pair Construction" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=19;fontStyle=1;fontColor=#243447;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="126" width="340" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="divider" value="" style="shape=line;html=1;strokeColor=#AEB9C5;strokeWidth=1.5;dashed=1;dashPattern=6 6;" vertex="1" parent="1">
+          <mxGeometry x="1268" y="128" width="1" height="886" as="geometry"/>
+        </mxCell>
+
+        <!-- Input resources -->
+        <mxCell id="input_panel" value="&lt;b&gt;Input Resources&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#EEF3F7;strokeColor=#7F96A8;strokeWidth=1.5;fontSize=16;fontColor=#243447;verticalAlign=top;spacingTop=12;" vertex="1" parent="1">
+          <mxGeometry x="42" y="176" width="196" height="772" as="geometry"/>
+        </mxCell>
+        <mxCell id="input_scene" value="&lt;b&gt;AI2-THOR Scene&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#60788A&quot;&gt;Floor Plan&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#9DB1C1;strokeWidth=1.5;fontSize=15;fontColor=#243447;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="232" width="160" height="116" as="geometry"/>
+        </mxCell>
+        <mxCell id="scene_icon" value="" style="shape=mxgraph.basic.rect;rounded=0;fillColor=#DCE7F0;strokeColor=#66869C;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="80" y="252" width="34" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="scene_wall_1" value="" style="shape=line;strokeColor=#66869C;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="84" y="258" width="26" height="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="input_objects" value="&lt;b&gt;Object Metadata&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#60788A&quot;&gt;Name · Mass · Properties&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#9DB1C1;strokeWidth=1.5;fontSize=15;fontColor=#243447;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="380" width="160" height="116" as="geometry"/>
+        </mxCell>
+        <mxCell id="object_chip_1" value="" style="ellipse;whiteSpace=wrap;html=1;fillColor=#DCE7F0;strokeColor=#66869C;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="80" y="402" width="24" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="object_chip_2" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=20;fillColor=#DCE7F0;strokeColor=#66869C;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="112" y="400" width="28" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="input_skills" value="&lt;b&gt;Skill Library&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#60788A&quot;&gt;Preconditions · Arity&lt;br&gt;Affordances&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#9DB1C1;strokeWidth=1.5;fontSize=15;fontColor=#243447;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="528" width="160" height="128" as="geometry"/>
+        </mxCell>
+        <mxCell id="skill_chip_1" value="S1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#DCE7F0;strokeColor=#66869C;fontColor=#486477;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="78" y="550" width="28" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="skill_chip_2" value="S2" style="ellipse;whiteSpace=wrap;html=1;fillColor=#DCE7F0;strokeColor=#66869C;fontColor=#486477;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="114" y="550" width="28" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="input_robots" value="&lt;b&gt;Robot Profiles&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#60788A&quot;&gt;Skills · Mass Capacity&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#9DB1C1;strokeWidth=1.5;fontSize=15;fontColor=#243447;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="60" y="688" width="160" height="128" as="geometry"/>
+        </mxCell>
+        <mxCell id="robot_icon_1" value="R1" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#DCE7F0;strokeColor=#66869C;fontColor=#486477;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="78" y="710" width="34" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="robot_icon_2" value="R2" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#DCE7F0;strokeColor=#66869C;fontColor=#486477;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="120" y="710" width="34" height="30" as="geometry"/>
+        </mxCell>
+
+        <!-- Data Engine container -->
+        <mxCell id="engine_panel" value="&lt;b&gt;Data Engine&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#E6F5F2;strokeColor=#2A9D8F;strokeWidth=2;fontSize=18;fontColor=#17695F;verticalAlign=top;spacingTop=12;" vertex="1" parent="1">
+          <mxGeometry x="270" y="176" width="818" height="772" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="complexity" value="&lt;b&gt;Task Complexity&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#397B73&quot;&gt;Simple: 1–2 · Complex: 3–5&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=14;fillColor=#FFFFFF;strokeColor=#62B5A9;strokeWidth=1.5;fontSize=12;fontColor=#17695F;" vertex="1" parent="1">
+          <mxGeometry x="452" y="230" width="174" height="56" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="object_skill" value="&lt;b&gt;Object–Skill&lt;br&gt;Matching&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#397B73&quot;&gt;Object Properties&lt;br&gt;Preconditions&lt;br&gt;Pair Compatibility&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#2A9D8F;strokeWidth=2;fontSize=14;fontColor=#17695F;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="294" y="330" width="118" height="190" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtask_sampling" value="&lt;b&gt;Subtask&lt;br&gt;Sampling&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#397B73&quot;&gt;Applicable Skills&lt;br&gt;Probability Gate&lt;br&gt;Unary / Binary&lt;br&gt;Second Object&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#2A9D8F;strokeWidth=2;fontSize=14;fontColor=#17695F;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="438" y="330" width="128" height="190" as="geometry"/>
+        </mxCell>
+        <mxCell id="rule_filter" value="&lt;b&gt;Rule-based&lt;br&gt;Filtering&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#397B73&quot;&gt;Unique Sample&lt;br&gt;No Duplicates&lt;br&gt;No State Conflict&lt;br&gt;Valid Placement&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#2A9D8F;strokeWidth=2;fontSize=14;fontColor=#17695F;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="592" y="330" width="128" height="190" as="geometry"/>
+        </mxCell>
+        <mxCell id="feasibility" value="&lt;b&gt;Robot Feasibility&lt;br&gt;Check&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#397B73&quot;&gt;Required Skills&lt;br&gt;Mass Capacity&lt;br&gt;All Assignable?&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#2A9D8F;strokeWidth=2;fontSize=14;fontColor=#17695F;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="746" y="330" width="128" height="190" as="geometry"/>
+        </mxCell>
+        <mxCell id="verbalization" value="&lt;b&gt;Task&lt;br&gt;Verbalization&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#397B73&quot;&gt;Logical Validation&lt;br&gt;Natural-language Task&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#2A9D8F;strokeWidth=2;fontSize=14;fontColor=#17695F;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="900" y="330" width="128" height="190" as="geometry"/>
+        </mxCell>
+        <mxCell id="state_construction" value="&lt;b&gt;State Construction&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#397B73&quot;&gt;Goal State Aggregation&lt;br&gt;Pre-task Actions&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#2A9D8F;strokeWidth=2;fontSize=14;fontColor=#17695F;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="900" y="622" width="128" height="142" as="geometry"/>
+        </mxCell>
+        <mxCell id="robot_team" value="&lt;b&gt;Robot Team Sampling&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#397B73&quot;&gt;2–4 heterogeneous robots&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=14;fillColor=#FFFFFF;strokeColor=#62B5A9;strokeWidth=1.5;fontSize=12;fontColor=#17695F;" vertex="1" parent="1">
+          <mxGeometry x="728" y="618" width="164" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="object_chain" value="Object Chaining" style="rounded=1;whiteSpace=wrap;html=1;arcSize=20;fillColor=#D7EFEA;strokeColor=#62B5A9;fontSize=11;fontColor=#397B73;" vertex="1" parent="1">
+          <mxGeometry x="447" y="550" width="110" height="34" as="geometry"/>
+        </mxCell>
+
+        <!-- Structured task record -->
+        <mxCell id="record" value="&lt;b&gt;Structured&lt;br&gt;Task Record&lt;/b&gt;&lt;hr&gt;&lt;font color=&quot;#526779&quot;&gt;Task Description&lt;br&gt;Subtasks&lt;br&gt;Robot Set&lt;br&gt;Reference Assignment&lt;br&gt;Goal States&lt;br&gt;Pre-task Actions&lt;/font&gt;" style="shape=document;whiteSpace=wrap;html=1;boundedLbl=1;fillColor=#FFFFFF;strokeColor=#526779;strokeWidth=2;fontSize=13;fontColor=#243447;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="1106" y="378" width="136" height="286" as="geometry"/>
+        </mxCell>
+        <mxCell id="record_caption" value="Validated Dataset Record" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=11;fontColor=#6B7E8E;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="1104" y="678" width="140" height="28" as="geometry"/>
+        </mxCell>
+
+        <!-- QA branch backgrounds -->
+        <mxCell id="qa_decomp_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=#F0EBF8;strokeColor=#B7A6D0;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="174" width="580" height="250" as="geometry"/>
+        </mxCell>
+        <mxCell id="qa_alloc_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=#FFF1DF;strokeColor=#E9B87E;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="448" width="580" height="250" as="geometry"/>
+        </mxCell>
+        <mxCell id="qa_problem_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=#E8F5EC;strokeColor=#8DC39E;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="722" width="580" height="282" as="geometry"/>
+        </mxCell>
+
+        <!-- Decomposition QA -->
+        <mxCell id="decomp_title" value="Decomposition QA" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=17;fontStyle=1;fontColor=#5A3F86;" vertex="1" parent="1">
+          <mxGeometry x="1320" y="186" width="230" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="decomp_source" value="&lt;b&gt;Source Fields&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#68577F&quot;&gt;Task Description&lt;br&gt;Scene Objects&lt;br&gt;Robot Profiles&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#7B61A8;strokeWidth=1.7;fontSize=12;fontColor=#5A3F86;spacing=7;" vertex="1" parent="1">
+          <mxGeometry x="1320" y="228" width="132" height="154" as="geometry"/>
+        </mxCell>
+        <mxCell id="decomp_template" value="&lt;b&gt;QA Builder&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#68577F&quot;&gt;Select Fields&lt;br&gt;Apply Template&lt;br&gt;Write Answer&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#7B61A8;strokeWidth=1.7;fontSize=12;fontColor=#5A3F86;spacing=7;" vertex="1" parent="1">
+          <mxGeometry x="1474" y="228" width="120" height="154" as="geometry"/>
+        </mxCell>
+        <mxCell id="decomp_qa" value="&lt;b&gt;Q&lt;/b&gt;  Decompose the task.&lt;hr&gt;&lt;b&gt;A&lt;/b&gt;  Ordered / Parallel Subtasks&lt;br&gt;&lt;font color=&quot;#68577F&quot;&gt;Dependencies · Parallelism&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#7B61A8;strokeWidth=2;fontSize=12;fontColor=#3D2C58;spacing=9;" vertex="1" parent="1">
+          <mxGeometry x="1616" y="228" width="240" height="154" as="geometry"/>
+        </mxCell>
+
+        <!-- Allocation QA -->
+        <mxCell id="alloc_title" value="Allocation QA" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=17;fontStyle=1;fontColor=#9B5A18;" vertex="1" parent="1">
+          <mxGeometry x="1320" y="460" width="230" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="alloc_source" value="&lt;b&gt;Source Fields&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#8A653D&quot;&gt;Subtasks&lt;br&gt;Robot Skills&lt;br&gt;Object Mass&lt;br&gt;Dependencies&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#E59038;strokeWidth=1.7;fontSize=12;fontColor=#9B5A18;spacing=7;" vertex="1" parent="1">
+          <mxGeometry x="1320" y="502" width="132" height="154" as="geometry"/>
+        </mxCell>
+        <mxCell id="alloc_template" value="&lt;b&gt;QA Builder&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#8A653D&quot;&gt;Select Fields&lt;br&gt;Apply Template&lt;br&gt;Write Answer&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#E59038;strokeWidth=1.7;fontSize=12;fontColor=#9B5A18;spacing=7;" vertex="1" parent="1">
+          <mxGeometry x="1474" y="502" width="120" height="154" as="geometry"/>
+        </mxCell>
+        <mxCell id="alloc_qa" value="&lt;b&gt;Q&lt;/b&gt;  Assign feasible robots.&lt;hr&gt;&lt;b&gt;A&lt;/b&gt;  Robot Assignment&lt;br&gt;Sequence of Operations&lt;br&gt;&lt;font color=&quot;#8A653D&quot;&gt;Parallel · Sequential&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#E59038;strokeWidth=2;fontSize=12;fontColor=#664015;spacing=9;" vertex="1" parent="1">
+          <mxGeometry x="1616" y="502" width="240" height="154" as="geometry"/>
+        </mxCell>
+
+        <!-- PDDL Problem QA -->
+        <mxCell id="problem_title" value="PDDL Problem QA" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=17;fontStyle=1;fontColor=#347147;" vertex="1" parent="1">
+          <mxGeometry x="1320" y="734" width="230" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="problem_source" value="&lt;b&gt;Planning Context&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#52775D&quot;&gt;One Subtask&lt;br&gt;Assigned Robot&lt;br&gt;Robot Domain&lt;br&gt;Initial State · Goal&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#4F9D69;strokeWidth=1.7;fontSize=12;fontColor=#347147;spacing=7;" vertex="1" parent="1">
+          <mxGeometry x="1320" y="780" width="132" height="178" as="geometry"/>
+        </mxCell>
+        <mxCell id="problem_template" value="&lt;b&gt;QA Builder&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#52775D&quot;&gt;Select Fields&lt;br&gt;Apply Problem Template&lt;br&gt;Write PDDL Answer&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#4F9D69;strokeWidth=1.7;fontSize=12;fontColor=#347147;spacing=7;" vertex="1" parent="1">
+          <mxGeometry x="1474" y="780" width="120" height="178" as="geometry"/>
+        </mxCell>
+        <mxCell id="problem_qa" value="&lt;b&gt;Q&lt;/b&gt;  Construct the PDDL problem.&lt;hr&gt;&lt;b&gt;A&lt;/b&gt;  &lt;font face=&quot;Courier New&quot;&gt;(define (problem ...))&lt;br&gt;(:objects ...)&lt;br&gt;(:init ...)&lt;br&gt;(:goal (...))&lt;/font&gt;" style="shape=document;whiteSpace=wrap;html=1;boundedLbl=1;fillColor=#FFFFFF;strokeColor=#4F9D69;strokeWidth=2;fontSize=12;fontColor=#274D32;spacing=9;" vertex="1" parent="1">
+          <mxGeometry x="1616" y="780" width="240" height="178" as="geometry"/>
+        </mxCell>
+
+        <!-- Branch hub -->
+        <mxCell id="branch_hub" value="" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#34495E;strokeColor=#34495E;" vertex="1" parent="1">
+          <mxGeometry x="1282" y="558" width="12" height="12" as="geometry"/>
+        </mxCell>
+
+        <!-- Main pipeline edges -->
+        <mxCell id="edge_inputs_engine" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#34495E;strokeWidth=2;endArrow=block;endFill=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="input_panel" target="object_skill">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_object_sampling" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#34495E;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="object_skill" target="subtask_sampling">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_sampling_filter" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#34495E;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="subtask_sampling" target="rule_filter">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_filter_feasibility" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#34495E;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="rule_filter" target="feasibility">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_feasibility_verbal" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#34495E;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="feasibility" target="verbalization">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_verbal_state" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#34495E;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="verbalization" target="state_construction">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_state_record" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#34495E;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.75;entryDx=0;entryDy=0;" edge="1" parent="1" source="state_construction" target="record">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1068" y="694"/>
+              <mxPoint x="1068" y="593"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge_complexity_sampling" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#62B5A9;strokeWidth=1.5;endArrow=open;endFill=0;dashed=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="complexity" target="subtask_sampling">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_team_feasibility" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#62B5A9;strokeWidth=1.5;endArrow=open;endFill=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="robot_team" target="feasibility">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_chain_sampling" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#62B5A9;strokeWidth=1.3;endArrow=open;endFill=0;dashed=1;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="object_chain" target="subtask_sampling">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- Retry loops -->
+        <mxCell id="edge_filter_retry" value="Reject &amp;amp; Resample" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#C65D5D;strokeWidth=2;dashed=1;dashPattern=7 5;endArrow=block;endFill=1;fontColor=#A54646;fontSize=11;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.7;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="rule_filter" target="subtask_sampling">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="656" y="304"/>
+              <mxPoint x="528" y="304"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge_feas_retry" value="Reject &amp;amp; Resample" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#C65D5D;strokeWidth=2;dashed=1;dashPattern=7 5;endArrow=block;endFill=1;fontColor=#A54646;fontSize=11;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.2;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="feasibility" target="subtask_sampling">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="810" y="590"/>
+              <mxPoint x="464" y="590"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Record to QA branching -->
+        <mxCell id="edge_record_hub" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#34495E;strokeWidth=2;endArrow=none;exitX=1;exitY=0.65;exitDx=0;exitDy=0;" edge="1" parent="1" source="record" target="branch_hub">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_hub_decomp" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#7B61A8;strokeWidth=2;endArrow=block;endFill=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="branch_hub" target="decomp_source">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="1308" y="305"/></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge_hub_alloc" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#E59038;strokeWidth=2;endArrow=block;endFill=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="branch_hub" target="alloc_source">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_hub_problem" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#4F9D69;strokeWidth=2;endArrow=block;endFill=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="branch_hub" target="problem_source">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="1308" y="869"/></Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- QA lane edges -->
+        <mxCell id="edge_decomp_source_template" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#7B61A8;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="decomp_source" target="decomp_template"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="edge_decomp_template_qa" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#7B61A8;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="decomp_template" target="decomp_qa"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="edge_alloc_source_template" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#E59038;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="alloc_source" target="alloc_template"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="edge_alloc_template_qa" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#E59038;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="alloc_template" target="alloc_qa"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="edge_problem_source_template" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#4F9D69;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="problem_source" target="problem_template"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="edge_problem_template_qa" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#4F9D69;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="problem_template" target="problem_qa"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- Footer legend -->
+        <mxCell id="legend_generation" value="Data Generation" style="rounded=1;whiteSpace=wrap;html=1;arcSize=20;fillColor=#E6F5F2;strokeColor=#2A9D8F;fontColor=#17695F;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="55" y="974" width="118" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend_qa" value="QA Construction" style="rounded=1;whiteSpace=wrap;html=1;arcSize=20;fillColor=#F0EBF8;strokeColor=#7B61A8;fontColor=#5A3F86;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="184" y="974" width="118" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend_retry" value="Reject &amp;amp; Resample" style="rounded=1;whiteSpace=wrap;html=1;arcSize=20;fillColor=#FBEAEA;strokeColor=#C65D5D;dashed=1;fontColor=#A54646;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="313" y="974" width="136" height="32" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
