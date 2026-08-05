@@ -294,7 +294,12 @@ def complete_with_provider(
     model_key = model.lower()
     is_qwen37_max = model_key == "qwen3.7-max"
     uses_max_completion_tokens = model_key in {"qwen3.7-max", "mimo-v2.5"}
-    disables_thinking = model_key in {"deepseek-v4-pro", "mimo-v2.5", "kimi-k2.6"}
+    disables_thinking = model_key in {
+        "deepseek-v4-flash",
+        "deepseek-v4-pro",
+        "mimo-v2.5",
+        "kimi-k2.6",
+    }
     kwargs: Dict[str, Any] = {
         "model": model,
         "messages": messages,

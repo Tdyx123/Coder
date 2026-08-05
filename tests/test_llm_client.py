@@ -176,6 +176,28 @@ class LLMClientTests(unittest.TestCase):
             {"request_id": "abc", "thinking": {"type": "disabled"}},
         )
 
+    def test_complete_with_provider_disables_deepseek_v4_flash_thinking(self):
+        seen_kwargs = []
+
+        def fake_completion(**kwargs):
+            seen_kwargs.append(kwargs)
+            return self._stream_response("ok")
+
+        with patch.object(llm_client, "completion", side_effect=fake_completion):
+            llm_client.complete_with_provider(
+                model="DeepSeek-V4-Flash",
+                prompt="hello",
+                provider=self.provider,
+                max_tokens=16,
+                temperature=0.1,
+                extra_body={"request_id": "abc", "thinking": {"type": "enabled"}},
+            )
+
+        self.assertEqual(
+            seen_kwargs[0]["extra_body"],
+            {"request_id": "abc", "thinking": {"type": "disabled"}},
+        )
+
     def test_complete_with_provider_applies_mimo_v25_request_params(self):
         seen_kwargs = []
 
