@@ -2693,19 +2693,55 @@ class TaskManager:
             objects_ai=objects_ai,
             preferred_predecessors=preferred_predecessors,
         )
-        candidates = self._filter_candidate_robots(requirements, available_robots)
-        assignments = self._solve_subtask_assignment(requirements, available_robots)
+        actionable_requirements = [
+            requirement
+            for requirement in requirements
+            if requirement.get("requires_execution", True)
+        ]
+        if actionable_requirements:
+            actionable_candidates = self._filter_candidate_robots(
+                actionable_requirements,
+                available_robots,
+            )
+            assignments = self._solve_subtask_assignment(
+                actionable_requirements,
+                available_robots,
+            )
+        else:
+            actionable_candidates = {}
+            assignments = {}
+        candidates = {
+            requirement["subtask_id"]: actionable_candidates.get(
+                requirement["subtask_id"],
+                [],
+            )
+            for requirement in requirements
+        }
 
         output: List[Dict[str, Any]] = []
         for requirement in requirements:
             subtask_id = requirement["subtask_id"]
-            assignment = assignments[subtask_id]
-            assigned_robot = assignment["robot_name"]
+            requires_execution = requirement.get("requires_execution", True)
+            if requires_execution:
+                assignment = assignments[subtask_id]
+                assigned_robot = assignment["robot_name"]
+                assigned_robot_domain = self.current_robot_domain_names.get(
+                    assigned_robot,
+                    assigned_robot,
+                )
+                start = assignment["start"]
+                end = assignment["end"]
+            else:
+                assigned_robot = None
+                assigned_robot_domain = None
+                start = 0
+                end = 0
             output.append(
                 {
                     "subtask_id": subtask_id,
                     "name": requirement["name"],
                     "predecessor_ids": requirement["predecessor_ids"],
+                    "requires_execution": requires_execution,
                     "required_skills": requirement["required_skills"],
                     "min_mass_capacity": requirement["min_mass_capacity"],
                     "required_locations": requirement["required_locations"],
@@ -2714,12 +2750,9 @@ class TaskManager:
                     ],
                     "candidate_robots": candidates[subtask_id],
                     "assigned_robot": assigned_robot,
-                    "assigned_robot_domain": self.current_robot_domain_names.get(
-                        assigned_robot,
-                        assigned_robot,
-                    ),
-                    "start": assignment["start"],
-                    "end": assignment["end"],
+                    "assigned_robot_domain": assigned_robot_domain,
+                    "start": start,
+                    "end": end,
                 }
             )
 

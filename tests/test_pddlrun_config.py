@@ -2029,6 +2029,155 @@ class PDDLRunConfigTests(unittest.TestCase):
                     preferred_predecessors={1: []},
                 )
 
+    def test_v2_allocation_excludes_zero_step_requirements(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manager = pddlrun_llmseparate_v2.TaskManager(
+                str(root),
+                "test-model",
+                config=SharedRunConfig(root),
+            )
+            manager.current_task_run_dir = str(root / "task_run")
+            Path(manager.current_task_run_dir).mkdir(parents=True)
+            manager.current_task_manifest = {"artifacts": {}}
+            manager.current_robot_domain_names = {"robot1": "robot7"}
+
+            noop_plan = root / "subtask_01_plan.txt"
+            noop_plan.write_text("; cost = 0 (unit cost)\n", encoding="utf-8")
+            action_plan = root / "subtask_02_plan.txt"
+            action_plan.write_text(
+                "(gotoobject robot1 apple)\n; cost = 1 (unit cost)\n",
+                encoding="utf-8",
+            )
+
+            allocated = manager._allocate_subtasks_with_cpsat(
+                subtasks=[
+                    "#SubTask 1: Already complete",
+                    "#SubTask 2: Go to the apple",
+                ],
+                decomposed_plan="two independent subtasks",
+                problem_pddl=["", ""],
+                planner_records=[
+                    {
+                        "problem_file": "subtask_01_problem_validated.pddl",
+                        "compatibility_output": str(noop_plan),
+                        "return_code": 0,
+                        "status": "completed",
+                        "has_planner_error": False,
+                    },
+                    {
+                        "problem_file": "subtask_02_problem_validated.pddl",
+                        "compatibility_output": str(action_plan),
+                        "return_code": 0,
+                        "status": "completed",
+                        "has_planner_error": False,
+                    },
+                ],
+                available_robots=[
+                    {
+                        "name": "robot1",
+                        "skills": ["GoToObject"],
+                        "mass_capacity": 1,
+                    }
+                ],
+                objects_ai="objects=[]",
+                preferred_predecessors={1: [], 2: []},
+            )
+
+            self.assertEqual(
+                [item["subtask_id"] for item in allocated],
+                [1, 2],
+            )
+            self.assertFalse(allocated[0]["requires_execution"])
+            self.assertEqual(allocated[0]["candidate_robots"], [])
+            self.assertIsNone(allocated[0]["assigned_robot"])
+            self.assertIsNone(allocated[0]["assigned_robot_domain"])
+            self.assertEqual(
+                (allocated[0]["start"], allocated[0]["end"]),
+                (0, 0),
+            )
+            self.assertTrue(allocated[1]["requires_execution"])
+            self.assertEqual(allocated[1]["candidate_robots"], ["robot1"])
+            self.assertEqual(allocated[1]["assigned_robot"], "robot1")
+            self.assertEqual(allocated[1]["assigned_robot_domain"], "robot7")
+
+            requirements = json.loads(
+                (root / "task_run/02_allocate/requirements.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            candidates = json.loads(
+                (root / "task_run/02_allocate/candidate_robots.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            saved_output = json.loads(
+                (root / "task_run/02_allocate/subtasks.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(
+                [item["subtask_id"] for item in requirements],
+                [1, 2],
+            )
+            self.assertEqual(
+                [item["requires_execution"] for item in requirements],
+                [False, True],
+            )
+            self.assertEqual(candidates, {"1": [], "2": ["robot1"]})
+            self.assertEqual(
+                [item["subtask_id"] for item in saved_output],
+                [1, 2],
+            )
+
+    def test_v2_all_noop_allocation_skips_cpsat(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manager = pddlrun_llmseparate_v2.TaskManager(
+                str(root),
+                "test-model",
+                config=SharedRunConfig(root),
+            )
+            manager.current_task_run_dir = str(root / "task_run")
+            Path(manager.current_task_run_dir).mkdir(parents=True)
+            manager.current_task_manifest = {"artifacts": {}}
+
+            noop_plan = root / "subtask_01_plan.txt"
+            noop_plan.write_text("; cost = 0 (unit cost)\n", encoding="utf-8")
+
+            with patch.object(
+                manager,
+                "_solve_subtask_assignment",
+                side_effect=AssertionError("CP-SAT must not run for no-op subtasks"),
+            ):
+                allocated = manager._allocate_subtasks_with_cpsat(
+                    subtasks=["#SubTask 1: Already complete"],
+                    decomposed_plan="#SubTask 1: Already complete",
+                    problem_pddl=[""],
+                    planner_records=[
+                        {
+                            "problem_file": "subtask_01_problem_validated.pddl",
+                            "compatibility_output": str(noop_plan),
+                            "return_code": 0,
+                            "status": "completed",
+                            "has_planner_error": False,
+                        }
+                    ],
+                    available_robots=[],
+                    objects_ai="objects=[]",
+                    preferred_predecessors={1: []},
+                )
+
+            self.assertEqual(len(allocated), 1)
+            self.assertFalse(allocated[0]["requires_execution"])
+            self.assertEqual(allocated[0]["candidate_robots"], [])
+            self.assertIsNone(allocated[0]["assigned_robot"])
+            self.assertIsNone(allocated[0]["assigned_robot_domain"])
+            self.assertEqual(
+                (allocated[0]["start"], allocated[0]["end"]),
+                (0, 0),
+            )
+
     def test_v2_build_requirements_reads_validated_problem_locations(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
