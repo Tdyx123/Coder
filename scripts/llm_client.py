@@ -292,7 +292,7 @@ def complete_with_provider(
 ) -> Any:
     messages = _normalize_messages(prompt)
     model_key = model.lower()
-    is_qwen37_max = model_key == "qwen3.7-max"
+    is_qwen37 = model_key == "qwen3.7-max" or model_key == "qwen3.7-plus"
     uses_max_completion_tokens = model_key in {"qwen3.7-max", "mimo-v2.5"}
     disables_thinking = model_key in {
         "deepseek-v4-flash",
@@ -329,7 +329,7 @@ def complete_with_provider(
             kwargs[key] = value
     if extra_body is not None:
         kwargs["extra_body"] = extra_body
-    if is_qwen37_max:
+    if is_qwen37:
         qwen_extra_body = dict(kwargs.get("extra_body") or {})
         qwen_extra_body["enable_thinking"] = False
         kwargs["extra_body"] = qwen_extra_body
