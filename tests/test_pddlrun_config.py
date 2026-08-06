@@ -1962,6 +1962,73 @@ class PDDLRunConfigTests(unittest.TestCase):
         self.assertIn("cycle detected", unresolved[0]["reason"])
         self.assertIn("unsupported action", unresolved[1]["reason"])
 
+    def test_v2_build_requirements_accepts_successful_zero_step_plan(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manager = pddlrun_llmseparate_v2.TaskManager(
+                str(root),
+                "test-model",
+                config=SharedRunConfig(root),
+            )
+            plan_path = root / "subtask_01_plan.txt"
+            plan_path.write_text("; cost = 0 (unit cost)\n", encoding="utf-8")
+
+            requirements = manager._build_subtask_requirements(
+                subtasks=["#SubTask 1: Already complete"],
+                decomposed_plan="#SubTask 1: Already complete",
+                problem_pddl=[""],
+                planner_records=[
+                    {
+                        "problem_file": "subtask_01_problem_validated.pddl",
+                        "compatibility_output": str(plan_path),
+                        "return_code": 0,
+                        "status": "completed",
+                        "has_planner_error": False,
+                    }
+                ],
+                objects_ai="objects=[]",
+                preferred_predecessors={1: []},
+            )
+
+            self.assertFalse(requirements[0]["requires_execution"])
+            self.assertEqual(requirements[0]["required_skills"], [])
+            self.assertEqual(requirements[0]["min_mass_capacity"], 0)
+            self.assertEqual(requirements[0]["duration"], 0)
+            self.assertEqual(requirements[0]["required_locations"], [])
+            self.assertEqual(requirements[0]["unresolved_location_actions"], [])
+
+    def test_v2_build_requirements_rejects_unmarked_empty_plan(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manager = pddlrun_llmseparate_v2.TaskManager(
+                str(root),
+                "test-model",
+                config=SharedRunConfig(root),
+            )
+            plan_path = root / "subtask_01_plan.txt"
+            plan_path.write_text("", encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                pddlrun_llmseparate_v2.PDDLError,
+                "No plan actions found",
+            ):
+                manager._build_subtask_requirements(
+                    subtasks=["#SubTask 1: Missing plan"],
+                    decomposed_plan="#SubTask 1: Missing plan",
+                    problem_pddl=[""],
+                    planner_records=[
+                        {
+                            "problem_file": "subtask_01_problem_validated.pddl",
+                            "compatibility_output": str(plan_path),
+                            "return_code": 0,
+                            "status": "completed",
+                            "has_planner_error": False,
+                        }
+                    ],
+                    objects_ai="objects=[]",
+                    preferred_predecessors={1: []},
+                )
+
     def test_v2_build_requirements_reads_validated_problem_locations(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)

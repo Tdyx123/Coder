@@ -2780,45 +2780,78 @@ class TaskManager:
                 )
             plan_text = self.file_processor.read_file(str(plan_path))
             actions_in_plan = self._parse_plan_actions(plan_text)
-            if not actions_in_plan:
+            requires_execution = bool(actions_in_plan)
+            if not requires_execution and not self._is_valid_zero_action_plan(
+                record,
+                plan_text,
+            ):
                 raise PDDLError(
                     f"No plan actions found for subtask {subtask_id}: {plan_path}"
                 )
-            fallback_problem = (
-                problem_pddl[subtask_id - 1]
-                if subtask_id - 1 < len(problem_pddl)
-                else ""
-            )
-            planner_problem = self._read_planner_problem_content(
-                record,
-                fallback_problem,
-            )
-            required_locations, unresolved_location_actions = (
-                self._extract_required_locations(
-                    actions_in_plan,
-                    planner_problem,
+            if requires_execution:
+                fallback_problem = (
+                    problem_pddl[subtask_id - 1]
+                    if subtask_id - 1 < len(problem_pddl)
+                    else ""
                 )
-            )
+                planner_problem = self._read_planner_problem_content(
+                    record,
+                    fallback_problem,
+                )
+                required_locations, unresolved_location_actions = (
+                    self._extract_required_locations(
+                        actions_in_plan,
+                        planner_problem,
+                    )
+                )
+                required_skills = self._extract_required_skills(actions_in_plan)
+                min_mass_capacity = round(
+                    self._calculate_pickup_mass_peak(
+                        actions_in_plan,
+                        object_masses,
+                    ),
+                    6,
+                )
+            else:
+                required_locations = []
+                unresolved_location_actions = []
+                required_skills = []
+                min_mass_capacity = 0.0
             requirements.append(
                 {
                     "subtask_id": subtask_id,
                     "name": self._extract_subtask_name(subtask, subtask_id),
                     "predecessor_ids": predecessors.get(subtask_id, []),
-                    "required_skills": self._extract_required_skills(actions_in_plan),
-                    "min_mass_capacity": round(
-                        self._calculate_pickup_mass_peak(
-                            actions_in_plan,
-                            object_masses,
-                        ),
-                        6,
-                    ),
-                    "duration": max(1, len(actions_in_plan)),
+                    "requires_execution": requires_execution,
+                    "required_skills": required_skills,
+                    "min_mass_capacity": min_mass_capacity,
+                    "duration": len(actions_in_plan),
                     "required_locations": required_locations,
                     "unresolved_location_actions": unresolved_location_actions,
                     "plan_path": str(plan_path),
                 }
             )
         return requirements
+
+    @staticmethod
+    def _is_valid_zero_action_plan(
+        planner_record: Dict[str, Any],
+        plan_text: str,
+    ) -> bool:
+        """Return whether successful planner output represents a legal no-op."""
+        if planner_record.get("return_code") not in (None, 0):
+            return False
+        if planner_record.get("has_planner_error") is True:
+            return False
+        if planner_record.get("status") not in (None, "completed", "ok"):
+            return False
+        return bool(
+            re.search(
+                r"^\s*;\s*cost\s*=\s*0(?:\s|\(|$)",
+                str(plan_text),
+                flags=re.IGNORECASE | re.MULTILINE,
+            )
+        )
 
     def _filter_candidate_robots(
         self,
