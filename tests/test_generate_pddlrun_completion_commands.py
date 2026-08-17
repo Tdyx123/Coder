@@ -344,6 +344,49 @@ class CompletionCommandGeneratorTests(unittest.TestCase):
         self.assertIn("FloorPlan4", stderr)
         self.assertEqual(len(stderr.splitlines()), 3)
 
+    def test_absolute_test_set_cannot_enumerate_dataset_outside_data_root(self):
+        outside_dataset = self.repo_root / "absolute dataset"
+        outside_dataset.mkdir()
+        for floor in (1, 2, 3):
+            (outside_dataset / f"FloorPlan{floor}.jsonl").write_text(
+                "{}\n", encoding="utf-8"
+            )
+        run_dir = create_run(
+            self.repo_root,
+            "pddlrun_llmseparate_absolute_test_set",
+            str(outside_dataset),
+            [1, 2],
+        )
+
+        return_code, stdout, stderr = run_generator(self.module, self.repo_root)
+
+        self.assertEqual(return_code, 1)
+        self.assertEqual(stdout, "")
+        self.assertIn(run_dir.name, stderr)
+        self.assertIn("test_set", stderr)
+
+    def test_traversing_test_set_cannot_enumerate_dataset_outside_data_root(self):
+        (self.repo_root / "data").mkdir()
+        outside_dataset = self.repo_root / "escaped-set"
+        outside_dataset.mkdir()
+        for floor in (1, 2, 3):
+            (outside_dataset / f"FloorPlan{floor}.jsonl").write_text(
+                "{}\n", encoding="utf-8"
+            )
+        run_dir = create_run(
+            self.repo_root,
+            "pddlrun_llmseparate_traversing_test_set",
+            "../escaped-set",
+            [1, 2],
+        )
+
+        return_code, stdout, stderr = run_generator(self.module, self.repo_root)
+
+        self.assertEqual(return_code, 1)
+        self.assertEqual(stdout, "")
+        self.assertIn(run_dir.name, stderr)
+        self.assertIn("test_set", stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

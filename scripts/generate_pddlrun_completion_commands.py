@@ -159,7 +159,14 @@ def _metadata_from_summaries(
 
 
 def _target_floors(repo_root: Path, test_set: str) -> Tuple[int, ...]:
-    dataset_dir = repo_root / "data" / test_set
+    data_root = (repo_root / "data").resolve()
+    dataset_dir = (data_root / test_set).resolve()
+    try:
+        dataset_dir.relative_to(data_root)
+    except ValueError as exc:
+        raise RunEvaluationError(
+            f"test_set escapes repository data root: {test_set}"
+        ) from exc
     if not dataset_dir.is_dir():
         raise RunEvaluationError(f"dataset directory not found: {dataset_dir}")
     floors = {
