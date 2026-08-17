@@ -27,6 +27,62 @@ from run_pddlrun_llmseparate_parallel import (
 
 
 class ParallelRunnerTests(unittest.TestCase):
+    def _run_main_with_args(self, root, floor_plans, merge_existing, run_floor_plan_jobs=None):
+        args = SimpleNamespace(
+            floor_plans=floor_plans,
+            model="test-model",
+            allocate_model=None,
+            test_set="sample_set",
+            max_floor_plan_workers=1,
+            max_task_workers=1,
+            output_root=str(root),
+            prompt_decompse_set="pddl_train_task_decomposesep",
+            prompt_allocation_set="pddl_train_task_allocationsep",
+            decompose_rag=False,
+            allocate_rag=False,
+            problem_rag=False,
+            problem_repair=None,
+            plan_feedback=None,
+            plan_feedback_max_retries=None,
+            val_feedback=None,
+            val_feedback_max_retries=None,
+            disable_log_results=False,
+            merge_existing_floor_summaries=merge_existing,
+        )
+        patches = [
+            patch("run_pddlrun_llmseparate_parallel.parse_args", return_value=args),
+            patch(
+                "run_pddlrun_llmseparate_parallel.load_run_config",
+                return_value=RunConfig(root),
+            ),
+            patch(
+                "run_pddlrun_llmseparate_parallel.prewarm_decompose_rag_if_configured",
+                return_value=False,
+            ),
+            patch(
+                "run_pddlrun_llmseparate_parallel.prewarm_allocate_rag_if_configured",
+                return_value=False,
+            ),
+            patch(
+                "run_pddlrun_llmseparate_parallel.prewarm_problem_rag_if_configured",
+                return_value=False,
+            ),
+        ]
+        if run_floor_plan_jobs is not None:
+            patches.append(
+                patch(
+                    "run_pddlrun_llmseparate_parallel.run_floor_plan_jobs",
+                    side_effect=run_floor_plan_jobs,
+                )
+            )
+
+        with patches[0], patches[1], patches[2], patches[3], patches[4]:
+            if len(patches) == 6:
+                with patches[5]:
+                    parallel_main()
+            else:
+                parallel_main()
+
     def test_cli_defaults_to_decompose_rag_disabled(self):
         args = parse_args(["--floor-plans", "6"])
 
@@ -39,6 +95,132 @@ class ParallelRunnerTests(unittest.TestCase):
         self.assertIsNone(args.plan_feedback_max_retries)
         self.assertIsNone(args.val_feedback)
         self.assertIsNone(args.val_feedback_max_retries)
+        self.assertFalse(args.merge_existing_floor_summaries)
+
+    def test_cli_can_enable_merging_existing_floor_summaries(self):
+        args = parse_args(["--floor-plans", "6", "--merge-existing-floor-summaries"])
+
+        self.assertTrue(args.merge_existing_floor_summaries)
+
+    def test_main_merges_floor_summaries_in_numerical_order_and_aggregates_counts(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output_root = Path(tmp_dir) / "parallel"
+            existing_summary_path = output_root / "FloorPlan10" / "summary.json"
+            existing_summary_path.parent.mkdir(parents=True)
+            existing_summary_path.write_text(
+                json.dumps(
+                    {
+                        "floor_plan": "10",
+                        "task_count": 4,
+                        "success_count": 3,
+                        "failure_count": 1,
+                        "all_pass_count": 2,
+                        "pass_one_count": 3,
+                        "results": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            new_summary = {
+                "floor_plan": "2",
+                "task_count": 3,
+                "success_count": 2,
+                "failure_count": 1,
+                "all_pass_count": 1,
+                "pass_one_count": 2,
+                "results": [],
+            }
+
+            def write_new_floor_summary(repo_root, target_root, config, args, floor_plan):
+                summary_path = target_root / "FloorPlan2" / "summary.json"
+                summary_path.parent.mkdir(parents=True)
+                summary_path.write_text(json.dumps(new_summary), encoding="utf-8")
+                return new_summary
+
+            self._run_main_with_args(
+                output_root,
+                floor_plans=["2"],
+                merge_existing=True,
+                run_floor_plan_jobs=write_new_floor_summary,
+            )
+
+            final_summary = json.loads((output_root / "summary.json").read_text(encoding="utf-8"))
+
+            self.assertEqual(
+                [summary["floor_plan"] for summary in final_summary["summaries"]],
+                ["2", "10"],
+            )
+            self.assertEqual(final_summary["floor_plan_count"], 2)
+            self.assertEqual(final_summary["success_count"], 5)
+            self.assertEqual(final_summary["failure_count"], 2)
+            self.assertEqual(final_summary["all_pass_count"], 3)
+            self.assertEqual(final_summary["pass_one_count"], 5)
+
+    def test_main_rejects_invalid_existing_floor_summaries(self):
+        required_counts = {
+            "task_count": 1,
+            "success_count": 1,
+            "failure_count": 0,
+            "all_pass_count": 1,
+            "pass_one_count": 1,
+            "results": [],
+        }
+        cases = {
+            "malformed JSON": {
+                "files": {"FloorPlan1/summary.json": "{not-json"},
+                "message": "Malformed JSON",
+            },
+            "directory/file mismatch": {
+                "files": {
+                    "FloorPlan2/summary.json": json.dumps(
+                        {"floor_plan": "3", **required_counts}
+                    )
+                },
+                "message": "does not match directory",
+            },
+            "duplicate normalized ids": {
+                "files": {
+                    "FloorPlan3/summary.json": json.dumps(
+                        {"floor_plan": "3", **required_counts}
+                    ),
+                    "FloorPlan03/summary.json": json.dumps(
+                        {"floor_plan": "03", **required_counts}
+                    ),
+                },
+                "message": "Duplicate normalized floor id",
+            },
+            "missing aggregate count": {
+                "files": {
+                    "FloorPlan4/summary.json": json.dumps(
+                        {
+                            "floor_plan": "4",
+                            "task_count": 1,
+                            "success_count": 1,
+                            "failure_count": 0,
+                            "all_pass_count": 1,
+                            "results": [],
+                        }
+                    )
+                },
+                "message": "missing required aggregate count fields",
+            },
+        }
+
+        for case_name, case in cases.items():
+            with self.subTest(case=case_name), tempfile.TemporaryDirectory() as tmp_dir:
+                output_root = Path(tmp_dir) / "parallel"
+                for relative_path, content in case["files"].items():
+                    summary_path = output_root / relative_path
+                    summary_path.parent.mkdir(parents=True, exist_ok=True)
+                    summary_path.write_text(content, encoding="utf-8")
+
+                with self.assertRaisesRegex(ValueError, case["message"]):
+                    self._run_main_with_args(
+                        output_root,
+                        floor_plans=[],
+                        merge_existing=True,
+                    )
 
     def test_cli_accepts_allocate_model(self):
         args = parse_args([

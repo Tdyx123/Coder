@@ -2,6 +2,7 @@ import argparse
 import contextlib
 import io
 import json
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -28,6 +29,16 @@ class TaskJob:
     record: Dict[str, Any]
 
 
+FLOOR_SUMMARY_DIRECTORY_PATTERN = re.compile(r"^FloorPlan([0-9]+)$")
+REQUIRED_AGGREGATE_COUNT_FIELDS = (
+    "task_count",
+    "success_count",
+    "failure_count",
+    "all_pass_count",
+    "pass_one_count",
+)
+
+
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -47,6 +58,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--max-floor-plan-workers", type=int, default=2)
     parser.add_argument("--max-task-workers", type=int, default=2)
     parser.add_argument("--output-root", type=str, default=None)
+    parser.add_argument(
+        "--merge-existing-floor-summaries",
+        action="store_true",
+        help="Rebuild the top-level summary from all floor summaries in --output-root.",
+    )
     parser.add_argument("--prompt-decompse-set", type=str, default="pddl_train_task_decomposesep")
     parser.add_argument("--prompt-allocation-set", type=str, default="pddl_train_task_allocationsep")
     parser.add_argument(
@@ -168,6 +184,79 @@ def floor_plan_sort_key(value: str) -> tuple:
             suffix.append(ch)
     number = int("".join(prefix_digits)) if prefix_digits else -1
     return (number, "".join(suffix))
+
+
+def normalized_numeric_floor_id(value: Any, summary_path: Path) -> str:
+    floor_id = normalize_floor_plan(str(value))
+    if not floor_id.isdigit():
+        raise ValueError(
+            f"Invalid floor_plan in floor summary {summary_path}: expected a numeric floor id"
+        )
+    return str(int(floor_id))
+
+
+def load_floor_plan_summaries(output_root: Path) -> List[Dict[str, Any]]:
+    loaded_summaries = []
+    seen_floor_ids = {}
+
+    for floor_directory in sorted(output_root.iterdir(), key=lambda path: path.name):
+        if not floor_directory.is_dir():
+            continue
+        match = FLOOR_SUMMARY_DIRECTORY_PATTERN.fullmatch(floor_directory.name)
+        if match is None:
+            continue
+
+        summary_path = floor_directory / "summary.json"
+        if not summary_path.is_file():
+            continue
+
+        directory_floor_id = str(int(match.group(1)))
+        try:
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Malformed JSON in floor summary {summary_path}: {exc.msg}") from exc
+
+        if not isinstance(summary, dict):
+            raise ValueError(f"Invalid floor summary {summary_path}: expected a JSON object")
+        if "floor_plan" not in summary:
+            raise ValueError(f"Invalid floor summary {summary_path}: missing floor_plan")
+
+        summary_floor_id = normalized_numeric_floor_id(summary["floor_plan"], summary_path)
+        if summary_floor_id != directory_floor_id:
+            raise ValueError(
+                f"Floor id {summary['floor_plan']!r} in {summary_path} "
+                f"does not match directory {floor_directory.name}"
+            )
+        if summary_floor_id in seen_floor_ids:
+            raise ValueError(
+                f"Duplicate normalized floor id {summary_floor_id} in "
+                f"{seen_floor_ids[summary_floor_id]} and {summary_path}"
+            )
+
+        missing_fields = [
+            field for field in REQUIRED_AGGREGATE_COUNT_FIELDS if field not in summary
+        ]
+        if missing_fields:
+            raise ValueError(
+                f"Floor summary {summary_path} is missing required aggregate count fields: "
+                f"{', '.join(missing_fields)}"
+            )
+        invalid_fields = [
+            field
+            for field in REQUIRED_AGGREGATE_COUNT_FIELDS
+            if type(summary[field]) is not int or summary[field] < 0
+        ]
+        if invalid_fields:
+            raise ValueError(
+                f"Invalid aggregate count fields in floor summary {summary_path}: "
+                f"{', '.join(invalid_fields)} must be non-negative integers"
+            )
+
+        seen_floor_ids[summary_floor_id] = summary_path
+        loaded_summaries.append((int(summary_floor_id), summary))
+
+    loaded_summaries.sort(key=lambda item: item[0])
+    return [summary for _, summary in loaded_summaries]
 
 
 def safe_count(value: Any) -> int:
@@ -398,7 +487,10 @@ def main() -> None:
                 f"{summary['success_count']}/{summary['task_count']} success"
             )
 
-    summaries.sort(key=lambda item: floor_plan_sort_key(item["floor_plan"]))
+    if getattr(args, "merge_existing_floor_summaries", False):
+        summaries = load_floor_plan_summaries(output_root)
+    else:
+        summaries.sort(key=lambda item: floor_plan_sort_key(item["floor_plan"]))
     final_summary = {
         "created_at": timestamp,
         "repo_root": str(repo_root),
