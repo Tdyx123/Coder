@@ -172,6 +172,18 @@ If `--output-root` is not provided, summaries are written to:
 parallel_runs/pddlrun_llmseparate_<timestamp>/
 ```
 
+To print completion commands for eligible incomplete runs under `parallel_runs/`:
+
+```bash
+python scripts/generate_pddlrun_completion_commands.py
+```
+
+This no-argument generator only prints comment-and-command pairs; it does not
+start jobs or write files. Each generated command uses the original run directory
+as `--output-root` and enables `--merge-existing-floor-summaries`, so running that
+command writes the missing floors back to the original output root and rebuilds
+the top-level summary from both existing and newly generated floor summaries.
+
 ### 3. Convert Generated Plans into Executable AI2-THOR Code
 
 For the newer `parallel_runs/pddlrun_llmseparate_<timestamp>/` layout, encode the allocation and planner artifacts deterministically into standalone AI2-THOR scripts:
