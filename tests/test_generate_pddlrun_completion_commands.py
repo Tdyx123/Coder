@@ -387,6 +387,37 @@ class CompletionCommandGeneratorTests(unittest.TestCase):
         self.assertIn(run_dir.name, stderr)
         self.assertIn("test_set", stderr)
 
+    def test_dataset_symlink_loop_error_does_not_suppress_valid_run_command(self):
+        create_dataset(self.repo_root, "set-a", [1, 2, 3])
+        loop_path = self.repo_root / "data" / "loop-set"
+        loop_path.symlink_to("loop-set", target_is_directory=True)
+        bad_run = create_run(
+            self.repo_root,
+            "pddlrun_llmseparate_a_symlink_loop",
+            "loop-set",
+            [1, 2],
+        )
+        valid_run = create_run(
+            self.repo_root,
+            "pddlrun_llmseparate_z_valid_after_loop",
+            "set-a",
+            [1, 2],
+        )
+
+        try:
+            return_code, stdout, stderr = run_generator(self.module, self.repo_root)
+        except RuntimeError as exc:
+            self.fail(
+                f"scanner leaked RuntimeError and suppressed valid output: {exc}"
+            )
+
+        self.assertEqual(return_code, 1)
+        self.assertEqual(len(command_tokens(stdout)), 1)
+        self.assertIn(str(valid_run), command_tokens(stdout)[0])
+        self.assertNotIn(str(bad_run), stdout)
+        self.assertIn(bad_run.name, stderr)
+        self.assertEqual(len(stderr.splitlines()), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

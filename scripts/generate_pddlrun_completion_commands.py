@@ -159,8 +159,13 @@ def _metadata_from_summaries(
 
 
 def _target_floors(repo_root: Path, test_set: str) -> Tuple[int, ...]:
-    data_root = (repo_root / "data").resolve()
-    dataset_dir = (data_root / test_set).resolve()
+    try:
+        data_root = (repo_root / "data").resolve()
+        dataset_dir = (data_root / test_set).resolve()
+    except RuntimeError as exc:
+        raise RunEvaluationError(
+            f"cannot resolve dataset path for test_set {test_set}: {exc}"
+        ) from exc
     try:
         dataset_dir.relative_to(data_root)
     except ValueError as exc:
