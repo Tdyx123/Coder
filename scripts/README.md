@@ -265,6 +265,89 @@ logs/<log_folder_name>/
 
 So the command value should be a directory name directly inside `logs/`.
 
+### `multi_robot_avoidance.py`
+
+Standalone deterministic L0/L1 prototype for multi-robot endpoint assignment,
+space-time path reservations, and failure injection. It does not import
+AI2-THOR or `executor_system`, and it is not wired into generated plan
+execution.
+
+Run the built-in crossing demo:
+
+```bash
+python scripts/multi_robot_avoidance.py --demo crossing --pretty
+```
+
+Other demos are `joint-assignment`, `failure`, and `stale-world`. The failure
+and stale-world demos intentionally exit with status 4 after emitting their
+JSON result. Use `--plan-only` to skip FakeRuntime execution.
+
+Run a JSON scenario:
+
+```bash
+python scripts/multi_robot_avoidance.py \
+  --scenario-file /path/to/scenario.json \
+  --pretty
+```
+
+Minimal input shape:
+
+```json
+{
+  "grid_size_m": 0.25,
+  "hard_clearance_m": 0.35,
+  "max_ticks": 64,
+  "max_assignment_trials": 256,
+  "walkable": [[0, 0], [1, 0], [2, 0], [0, 2], [1, 2], [2, 2]],
+  "conflicts": [],
+  "robots": [
+    {
+      "id": "A",
+      "start": [0, 0],
+      "candidates": [{"id": "A1", "position": [2, 0], "cost": 1.0}]
+    },
+    {
+      "id": "B",
+      "start": [0, 2],
+      "candidates": [{"id": "B1", "position": [2, 2], "cost": 1.0}]
+    }
+  ],
+  "execution": {
+    "failure_at_micro_step": null,
+    "external_version_bump_before_micro_step": null
+  }
+}
+```
+
+Process exit codes:
+
+- `0`: `PLANNED` or `EXECUTED`
+- `2`: `INVALID_SCENARIO`
+- `3`: `NO_PLAN_FOUND` or `SEARCH_LIMIT_REACHED`
+- `4`: `COMMIT_REJECTED_STALE_WORLD` or `EXECUTION_FAILED`
+
+AI2-THOR alignment and limitations:
+
+- The defaults mirror this repository's 0.25 m navigation step and 0.35 m
+  center-clearance policy. The latter is an application constraint, not a
+  guarantee from Unity's collision geometry.
+- The current runtime uses `snapToGrid=False` and rounds world coordinates to
+  0.25 m grid keys. This prototype accepts integer grid keys and therefore does
+  not model floating-point drift or real colliders.
+- `GetReachablePositions` alone does not prove that an object is interactable
+  from a point. A future adapter must also account for rotation, camera horizon,
+  visibility, held objects, and interactable poses.
+- Current `GoToObject` uses candidate `Teleport` attempts, while
+  `MoveToPosition` performs incremental movement. A future adapter must keep
+  endpoint-only reservations separate from path reservations.
+- The world version is synthetic. A real adapter would have to increment it
+  after every relevant simulator state change.
+- Prioritized space-time A* is intentionally bounded and incomplete. A
+  `NO_PLAN_FOUND` result means this planner found no plan; it is not a proof
+  that the MAPF instance is unsatisfiable.
+- Starvation, online wait-for deadlocks, done-robot parking, rotations, and
+  held-object footprints remain L2/runtime concerns.
+
 ## Dataset Format
 
 The parallel runner currently loads task files from:

@@ -1,346 +1,230 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<mxfile host="app.diagrams.net" modified="2026-07-31T00:00:00.000Z" agent="Codex" version="24.7.17" type="device" compressed="false">
-  <diagram id="method-overview" name="Method Overview">
-    <mxGraphModel dx="2860" dy="1220" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2860" pageHeight="1220" math="0" shadow="0" background="#FFFDF8">
+<mxfile host="app.diagrams.net" modified="2026-08-10T00:00:00.000Z" agent="Codex" version="28.2.3" type="device" compressed="false">
+  <diagram id="pddl-feedback-method" name="PDDL Feedback Method">
+    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" math="0" shadow="0" background="#FCFDFE">
       <root>
         <mxCell id="0"/>
         <mxCell id="1" parent="0"/>
 
-        <!-- Section labels -->
-        <mxCell id="section_inputs" value="INPUTS" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=16;fontStyle=1;fontColor=#34424C;" vertex="1" parent="1">
-          <mxGeometry x="40" y="155" width="250" height="30" as="geometry"/>
-        </mxCell>
-        <mxCell id="section_reasoning" value="LLM REASONING &amp;amp; SYMBOLIC GROUNDING" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=16;fontStyle=1;fontColor=#34424C;" vertex="1" parent="1">
-          <mxGeometry x="350" y="155" width="1010" height="30" as="geometry"/>
-        </mxCell>
-        <mxCell id="section_planning" value="PER-SUBTASK GENERATION &amp;amp; SYMBOLIC PLANNING" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=16;fontStyle=1;fontColor=#34424C;" vertex="1" parent="1">
-          <mxGeometry x="1410" y="155" width="780" height="30" as="geometry"/>
-        </mxCell>
-        <mxCell id="section_validation" value="VALIDATION &amp;amp; OUTPUT" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=16;fontStyle=1;fontColor=#34424C;" vertex="1" parent="1">
-          <mxGeometry x="2230" y="155" width="600" height="30" as="geometry"/>
-        </mxCell>
-
-        <!-- Optional prompting resources -->
-        <mxCell id="rag_decompose" value="&lt;b&gt;Static Few-shot Examples&lt;/b&gt;&lt;br&gt;/ Optional RAG" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#F8F2DD;strokeColor=#B7A96A;fontColor=#39444D;fontFamily=Helvetica;fontSize=13;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="360" y="45" width="200" height="70" as="geometry"/>
-        </mxCell>
-        <mxCell id="rag_allocate" value="&lt;b&gt;Static Few-shot Examples&lt;/b&gt;&lt;br&gt;/ Optional RAG" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#F8F2DD;strokeColor=#B7A96A;fontColor=#39444D;fontFamily=Helvetica;fontSize=13;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1140" y="45" width="200" height="70" as="geometry"/>
-        </mxCell>
-        <mxCell id="rag_problem" value="&lt;b&gt;Static Few-shot Examples&lt;/b&gt;&lt;br&gt;/ Optional RAG" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#F8F2DD;strokeColor=#B7A96A;fontColor=#39444D;fontFamily=Helvetica;fontSize=13;align=center;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1570" y="45" width="200" height="70" as="geometry"/>
-        </mxCell>
-
         <!-- Inputs -->
-        <mxCell id="input_task" value="&lt;b&gt;Task Description&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64727D&quot;&gt;Dataset Task&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#F7F4ED;strokeColor=#7A8793;fontColor=#24313A;fontFamily=Helvetica;fontSize=14;align=left;spacingLeft=58;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
-          <mxGeometry x="40" y="235" width="200" height="90" as="geometry"/>
+        <mxCell id="inputs_group" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;gradientColor=#F8FAFD;strokeColor=#4D5562;strokeWidth=1.8;dashed=1;dashPattern=5 4;arcSize=12;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="35" y="190" width="195" height="300" as="geometry"/>
         </mxCell>
-        <mxCell id="input_scene" value="&lt;b&gt;AI2-THOR Scene Metadata&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64727D&quot;&gt;Objects, Properties, Relations&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#F7F4ED;strokeColor=#7A8793;fontColor=#24313A;fontFamily=Helvetica;fontSize=14;align=left;spacingLeft=58;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
-          <mxGeometry x="40" y="365" width="200" height="90" as="geometry"/>
+        <mxCell id="inputs_title" value="&lt;b&gt;Inputs&lt;/b&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=18;fontColor=#222833;" vertex="1" parent="1">
+          <mxGeometry x="70" y="198" width="125" height="32" as="geometry"/>
         </mxCell>
-        <mxCell id="input_domain" value="&lt;b&gt;All-action PDDL Domain&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64727D&quot;&gt;Actions, Types, Predicates&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#F7F4ED;strokeColor=#7A8793;fontColor=#24313A;fontFamily=Helvetica;fontSize=14;align=left;spacingLeft=58;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
-          <mxGeometry x="40" y="495" width="200" height="90" as="geometry"/>
+        <mxCell id="input_task_icon" value="" style="shape=image;html=1;imageAspect=0;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20512%20512%22%3E%3C%21--%21%20Font%20Awesome%20Free%207.3.1%20by%20%40fontawesome%20-%20https%3A%2F%2Ffontawesome.com%20License%20-%20https%3A%2F%2Ffontawesome.com%2Flicense%2Ffree%20%28Icons%3A%20CC%20BY%204.0%2C%20Fonts%3A%20SIL%20OFL%201.1%2C%20Code%3A%20MIT%20License%29%20Copyright%202026%20Fonticons%2C%20Inc.%20--%3E%3Cpath%20fill%3D%22%23303744%22%20d%3D%22M133.8%2036.3c10.9%207.6%2013.5%2022.6%205.9%2033.4l-56%2080c-4.1%205.8-10.5%209.5-17.6%2010.1S52%20158%2047%20153L7%20113C-2.3%20103.6-2.3%2088.4%207%2079S31.6%2069.7%2041%2079l19.8%2019.8%2039.6-56.6c7.6-10.9%2022.6-13.5%2033.4-5.9zm0%20160c10.9%207.6%2013.5%2022.6%205.9%2033.4l-56%2080c-4.1%205.8-10.5%209.5-17.6%2010.1S52%20318%2047%20313L7%20273c-9.4-9.4-9.4-24.6%200-33.9s24.6-9.4%2033.9%200l19.8%2019.8%2039.6-56.6c7.6-10.9%2022.6-13.5%2033.4-5.9zM224%2096c0-17.7%2014.3-32%2032-32l224%200c17.7%200%2032%2014.3%2032%2032s-14.3%2032-32%2032l-224%200c-17.7%200-32-14.3-32-32zm0%20160c0-17.7%2014.3-32%2032-32l224%200c17.7%200%2032%2014.3%2032%2032s-14.3%2032-32%2032l-224%200c-17.7%200-32-14.3-32-32zM160%20416c0-17.7%2014.3-32%2032-32l288%200c17.7%200%2032%2014.3%2032%2032s-14.3%2032-32%2032l-288%200c-17.7%200-32-14.3-32-32zM64%20376a40%2040%200%201%201%200%2080%2040%2040%200%201%201%200-80z%22%2F%3E%3C%2Fsvg%3E;" vertex="1" parent="1">
+          <mxGeometry x="55" y="245" width="34" height="34" as="geometry"/>
         </mxCell>
-        <mxCell id="input_robots" value="&lt;b&gt;Heterogeneous Robot Team&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64727D&quot;&gt;Skills, Capacity, Domain Mapping&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#F7F4ED;strokeColor=#7A8793;fontColor=#24313A;fontFamily=Helvetica;fontSize=14;align=left;spacingLeft=58;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
-          <mxGeometry x="40" y="625" width="200" height="90" as="geometry"/>
+        <mxCell id="input_task_text" value="Task" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=16;fontColor=#222833;" vertex="1" parent="1">
+          <mxGeometry x="105" y="244" width="105" height="36" as="geometry"/>
         </mxCell>
-
-        <!-- Decomposition and grounding -->
-        <mxCell id="decomposition" value="&lt;b&gt;Task Decomposition&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#846414&quot;&gt;LLM&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#5F6870&quot;&gt;parallelize independent work&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#FFF0B8;strokeColor=#C69214;strokeWidth=2;fontColor=#2F3438;fontFamily=Helvetica;fontSize=15;align=left;spacingLeft=68;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
-          <mxGeometry x="350" y="285" width="220" height="120" as="geometry"/>
+        <mxCell id="input_robot_icon" value="" style="shape=image;html=1;imageAspect=0;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20640%20512%22%3E%3C%21--%21%20Font%20Awesome%20Free%207.3.1%20by%20%40fontawesome%20-%20https%3A%2F%2Ffontawesome.com%20License%20-%20https%3A%2F%2Ffontawesome.com%2Flicense%2Ffree%20%28Icons%3A%20CC%20BY%204.0%2C%20Fonts%3A%20SIL%20OFL%201.1%2C%20Code%3A%20MIT%20License%29%20Copyright%202026%20Fonticons%2C%20Inc.%20--%3E%3Cpath%20fill%3D%22%23303744%22%20d%3D%22M352%200c0-17.7-14.3-32-32-32S288-17.7%20288%200l0%2064-96%200c-53%200-96%2043-96%2096l0%20224c0%2053%2043%2096%2096%2096l256%200c53%200%2096-43%2096-96l0-224c0-53-43-96-96-96l-96%200%200-64zM160%20368c0-13.3%2010.7-24%2024-24l32%200c13.3%200%2024%2010.7%2024%2024s-10.7%2024-24%2024l-32%200c-13.3%200-24-10.7-24-24zm120%200c0-13.3%2010.7-24%2024-24l32%200c13.3%200%2024%2010.7%2024%2024s-10.7%2024-24%2024l-32%200c-13.3%200-24-10.7-24-24zm120%200c0-13.3%2010.7-24%2024-24l32%200c13.3%200%2024%2010.7%2024%2024s-10.7%2024-24%2024l-32%200c-13.3%200-24-10.7-24-24zM224%20176a48%2048%200%201%201%200%2096%2048%2048%200%201%201%200-96zm144%2048a48%2048%200%201%201%2096%200%2048%2048%200%201%201%20-96%200zM64%20224c0-17.7-14.3-32-32-32S0%20206.3%200%20224l0%2096c0%2017.7%2014.3%2032%2032%2032s32-14.3%2032-32l0-96zm544-32c-17.7%200-32%2014.3-32%2032l0%2096c0%2017.7%2014.3%2032%2032%2032s32-14.3%2032-32l0-96c0-17.7-14.3-32-32-32z%22%2F%3E%3C%2Fsvg%3E;" vertex="1" parent="1">
+          <mxGeometry x="53" y="307" width="38" height="34" as="geometry"/>
         </mxCell>
-        <mxCell id="subtasks" value="&lt;b&gt;Dependency-aware&lt;br&gt;Subtasks&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64727D&quot;&gt;sequential + parallel&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#F7F4ED;strokeColor=#7A8793;fontColor=#24313A;fontFamily=Helvetica;fontSize=14;align=center;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
-          <mxGeometry x="610" y="305" width="175" height="80" as="geometry"/>
+        <mxCell id="input_robot_text" value="Robot List" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=16;fontColor=#222833;" vertex="1" parent="1">
+          <mxGeometry x="105" y="306" width="110" height="36" as="geometry"/>
         </mxCell>
-        <mxCell id="grounding" value="&lt;b&gt;Key-object Grounding&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#415B70&quot;&gt;Relevant Object Matching&lt;br&gt;Object-ID Binding&lt;br&gt;PDDL-ready State Construction&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#DCECF5;strokeColor=#5B8DB8;strokeWidth=2;fontColor=#24313A;fontFamily=Helvetica;fontSize=14;align=left;spacingLeft=66;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
-          <mxGeometry x="825" y="270" width="245" height="150" as="geometry"/>
+        <mxCell id="input_cache_icon" value="" style="shape=image;html=1;imageAspect=0;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20512%20512%22%3E%3C%21--%21%20Font%20Awesome%20Free%207.3.1%20by%20%40fontawesome%20-%20https%3A%2F%2Ffontawesome.com%20License%20-%20https%3A%2F%2Ffontawesome.com%2Flicense%2Ffree%20%28Icons%3A%20CC%20BY%204.0%2C%20Fonts%3A%20SIL%20OFL%201.1%2C%20Code%3A%20MIT%20License%29%20Copyright%202026%20Fonticons%2C%20Inc.%20--%3E%3Cpath%20fill%3D%22%23303744%22%20d%3D%22M224.3-2.5c19.8-11.4%2044.2-11.4%2064%200L464.2%2099c19.8%2011.4%2032%2032.6%2032%2055.4l0%20203c0%2022.9-12.2%2044-32%2055.4L288.3%20514.5c-19.8%2011.4-44.2%2011.4-64%200L48.5%20413c-19.8-11.4-32-32.6-32-55.4l0-203c0-22.9%2012.2-44%2032-55.4L224.3-2.5zm207.8%20360l0-166.1-143.8%2083%200%20166.1%20143.8-83z%22%2F%3E%3C%2Fsvg%3E;" vertex="1" parent="1">
+          <mxGeometry x="55" y="367" width="35" height="35" as="geometry"/>
         </mxCell>
-        <mxCell id="grounding_output" value="Subtask-specific Objects &amp;amp; States" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#EDF5FB;strokeColor=#87AFCB;fontColor=#415B70;fontFamily=Helvetica;fontSize=13;align=center;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
-          <mxGeometry x="850" y="445" width="195" height="55" as="geometry"/>
+        <mxCell id="input_cache_text" value="Cached&lt;br&gt;Objects" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=16;fontColor=#222833;" vertex="1" parent="1">
+          <mxGeometry x="105" y="361" width="110" height="48" as="geometry"/>
         </mxCell>
-
-        <!-- Capability-aware allocation -->
-        <mxCell id="allocation" value="&lt;b&gt;Capability-aware Allocation&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#846414&quot;&gt;LLM&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#5F6870&quot;&gt;all required skills&lt;br&gt;pickup capacity when needed&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#FFF0B8;strokeColor=#C69214;strokeWidth=2;fontColor=#2F3438;fontFamily=Helvetica;fontSize=14;align=left;spacingLeft=60;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
-          <mxGeometry x="1120" y="270" width="240" height="150" as="geometry"/>
+        <mxCell id="input_domain_icon" value="" style="shape=image;html=1;imageAspect=0;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20384%20512%22%3E%3C%21--%21%20Font%20Awesome%20Free%207.3.1%20by%20%40fontawesome%20-%20https%3A%2F%2Ffontawesome.com%20License%20-%20https%3A%2F%2Ffontawesome.com%2Flicense%2Ffree%20%28Icons%3A%20CC%20BY%204.0%2C%20Fonts%3A%20SIL%20OFL%201.1%2C%20Code%3A%20MIT%20License%29%20Copyright%202026%20Fonticons%2C%20Inc.%20--%3E%3Cpath%20fill%3D%22%23303744%22%20d%3D%22M0%2064C0%2028.7%2028.7%200%2064%200L213.5%200c17%200%2033.3%206.7%2045.3%2018.7L365.3%20125.3c12%2012%2018.7%2028.3%2018.7%2045.3L384%20448c0%2035.3-28.7%2064-64%2064L64%20512c-35.3%200-64-28.7-64-64L0%2064zm208-5.5l0%2093.5c0%2013.3%2010.7%2024%2024%2024L325.5%20176%20208%2058.5zM154.2%20295.6c8.6-10.1%207.5-25.2-2.6-33.8s-25.2-7.5-33.8%202.6l-48%2056c-7.7%209-7.7%2022.2%200%2031.2l48%2056c8.6%2010.1%2023.8%2011.2%2033.8%202.6s11.2-23.8%202.6-33.8l-34.6-40.4%2034.6-40.4zm112-31.2c-8.6-10.1-23.8-11.2-33.8-2.6s-11.2%2023.8-2.6%2033.8l34.6%2040.4-34.6%2040.4c-8.6%2010.1-7.5%2025.2%202.6%2033.8s25.2%207.5%2033.8-2.6l48-56c7.7-9%207.7-22.2%200-31.2l-48-56z%22%2F%3E%3C%2Fsvg%3E;" vertex="1" parent="1">
+          <mxGeometry x="57" y="432" width="31" height="41" as="geometry"/>
         </mxCell>
-        <mxCell id="allocation_output" value="&lt;b&gt;Robot Assignments&lt;/b&gt;&lt;br&gt;Sequence of Operations" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#FFF9E8;strokeColor=#D5B14E;fontColor=#59491D;fontFamily=Helvetica;fontSize=14;align=center;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
-          <mxGeometry x="1135" y="455" width="210" height="70" as="geometry"/>
+        <mxCell id="input_domain_text" value="PDDL&lt;br&gt;Domains" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=16;fontColor=#222833;" vertex="1" parent="1">
+          <mxGeometry x="105" y="427" width="110" height="48" as="geometry"/>
         </mxCell>
 
-        <!-- Parallel problem generation region -->
-        <mxCell id="problem_group" value="&lt;b&gt;Parallel Per-subtask PDDL Problem Generation&lt;/b&gt; &amp;nbsp; &lt;font color=&quot;#846414&quot;&gt;LLM&lt;/font&gt;" style="swimlane;sketch=1;curveFitting=1;jiggle=1;horizontal=1;startSize=42;rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF9E8;swimlaneFillColor=#FFFCF4;strokeColor=#C69214;strokeWidth=2;fontColor=#2F3438;fontFamily=Helvetica;fontSize=15;align=center;verticalAlign=middle;arcSize=8;collapsible=0;" vertex="1" parent="1">
-          <mxGeometry x="1410" y="205" width="520" height="440" as="geometry"/>
+        <!-- Static grounding -->
+        <mxCell id="grounding" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F7FAFF;gradientColor=#EAF2FF;gradientDirection=south;strokeColor=#173F8F;strokeWidth=2;arcSize=12;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="290" y="270" width="250" height="190" as="geometry"/>
         </mxCell>
-        <mxCell id="lane_1" value="&lt;b&gt;Subtask 1&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64727D&quot;&gt;Assigned Robot&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#F7F4ED;strokeColor=#9AA5AE;fontColor=#34424C;fontFamily=Helvetica;fontSize=13;align=center;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
-          <mxGeometry x="1430" y="275" width="95" height="85" as="geometry"/>
+        <mxCell id="grounding_title" value="&lt;b&gt;Object &amp;amp; Static-State&lt;br&gt;Grounding&lt;/b&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=18;fontColor=#173F8F;" vertex="1" parent="1">
+          <mxGeometry x="310" y="282" width="210" height="50" as="geometry"/>
         </mxCell>
-        <mxCell id="problem_gen_1" value="&lt;b&gt;PDDL Problem Generation&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64727D&quot;&gt;Robot-specific Domain&lt;br&gt;Predicate Filtering&lt;br&gt;PDDL-ready States&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#FFF0B8;strokeColor=#C69214;fontColor=#2F3438;fontFamily=Helvetica;fontSize=12;align=left;spacingLeft=42;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
-          <mxGeometry x="1540" y="265" width="220" height="105" as="geometry"/>
+        <mxCell id="grounding_cube" value="" style="shape=image;html=1;imageAspect=0;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20512%20512%22%3E%3C%21--%21%20Font%20Awesome%20Free%207.3.1%20by%20%40fontawesome%20-%20https%3A%2F%2Ffontawesome.com%20License%20-%20https%3A%2F%2Ffontawesome.com%2Flicense%2Ffree%20%28Icons%3A%20CC%20BY%204.0%2C%20Fonts%3A%20SIL%20OFL%201.1%2C%20Code%3A%20MIT%20License%29%20Copyright%202026%20Fonticons%2C%20Inc.%20--%3E%3Cpath%20fill%3D%22%23303744%22%20d%3D%22M224.3-2.5c19.8-11.4%2044.2-11.4%2064%200L464.2%2099c19.8%2011.4%2032%2032.6%2032%2055.4l0%20203c0%2022.9-12.2%2044-32%2055.4L288.3%20514.5c-19.8%2011.4-44.2%2011.4-64%200L48.5%20413c-19.8-11.4-32-32.6-32-55.4l0-203c0-22.9%2012.2-44%2032-55.4L224.3-2.5zm207.8%20360l0-166.1-143.8%2083%200%20166.1%20143.8-83z%22%2F%3E%3C%2Fsvg%3E;" vertex="1" parent="1">
+          <mxGeometry x="325" y="352" width="47" height="47" as="geometry"/>
         </mxCell>
-        <mxCell id="repair_1" value="&lt;b&gt;PDDL Repair&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#5B7182&quot;&gt;Optional&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#DCECF5;strokeColor=#5B8DB8;fontColor=#24313A;fontFamily=Helvetica;fontSize=13;align=center;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
-          <mxGeometry x="1780" y="275" width="125" height="85" as="geometry"/>
+        <mxCell id="grounding_fact_icon" value="" style="shape=image;html=1;imageAspect=0;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20384%20512%22%3E%3C%21--%21%20Font%20Awesome%20Free%207.3.1%20by%20%40fontawesome%20-%20https%3A%2F%2Ffontawesome.com%20License%20-%20https%3A%2F%2Ffontawesome.com%2Flicense%2Ffree%20%28Icons%3A%20CC%20BY%204.0%2C%20Fonts%3A%20SIL%20OFL%201.1%2C%20Code%3A%20MIT%20License%29%20Copyright%202026%20Fonticons%2C%20Inc.%20--%3E%3Cpath%20fill%3D%22%23303744%22%20d%3D%22M0%2064C0%2028.7%2028.7%200%2064%200L213.5%200c17%200%2033.3%206.7%2045.3%2018.7L365.3%20125.3c12%2012%2018.7%2028.3%2018.7%2045.3L384%20448c0%2035.3-28.7%2064-64%2064L64%20512c-35.3%200-64-28.7-64-64L0%2064zm208-5.5l0%2093.5c0%2013.3%2010.7%2024%2024%2024L325.5%20176%20208%2058.5zM154.2%20295.6c8.6-10.1%207.5-25.2-2.6-33.8s-25.2-7.5-33.8%202.6l-48%2056c-7.7%209-7.7%2022.2%200%2031.2l48%2056c8.6%2010.1%2023.8%2011.2%2033.8%202.6s11.2-23.8%202.6-33.8l-34.6-40.4%2034.6-40.4zm112-31.2c-8.6-10.1-23.8-11.2-33.8-2.6s-11.2%2023.8-2.6%2033.8l34.6%2040.4-34.6%2040.4c-8.6%2010.1-7.5%2025.2%202.6%2033.8s25.2%207.5%2033.8-2.6l48-56c7.7-9%207.7-22.2%200-31.2l-48-56z%22%2F%3E%3C%2Fsvg%3E;" vertex="1" parent="1">
+          <mxGeometry x="458" y="348" width="38" height="51" as="geometry"/>
         </mxCell>
-        <mxCell id="lane_2" value="&lt;b&gt;Subtask 2&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64727D&quot;&gt;Assigned Robot&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#F7F4ED;strokeColor=#9AA5AE;fontColor=#34424C;fontFamily=Helvetica;fontSize=13;align=center;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
-          <mxGeometry x="1430" y="395" width="95" height="85" as="geometry"/>
+        <mxCell id="grounding_relation" value="on · near" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=14;fontStyle=2;fontColor=#303744;" vertex="1" parent="1">
+          <mxGeometry x="375" y="342" width="80" height="30" as="geometry"/>
         </mxCell>
-        <mxCell id="problem_gen_2" value="&lt;b&gt;PDDL Problem Generation&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64727D&quot;&gt;Robot-specific Domain&lt;br&gt;Predicate Filtering&lt;br&gt;PDDL-ready States&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#FFF0B8;strokeColor=#C69214;fontColor=#2F3438;fontFamily=Helvetica;fontSize=12;align=left;spacingLeft=42;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
-          <mxGeometry x="1540" y="385" width="220" height="105" as="geometry"/>
+        <mxCell id="grounding_arrow" value="" style="shape=line;strokeColor=#303744;strokeWidth=1.8;endArrow=classic;endFill=1;" vertex="1" parent="1">
+          <mxGeometry x="382" y="378" width="68" height="1" as="geometry"/>
         </mxCell>
-        <mxCell id="repair_2" value="&lt;b&gt;PDDL Repair&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#5B7182&quot;&gt;Optional&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#DCECF5;strokeColor=#5B8DB8;fontColor=#24313A;fontFamily=Helvetica;fontSize=13;align=center;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
-          <mxGeometry x="1780" y="395" width="125" height="85" as="geometry"/>
-        </mxCell>
-        <mxCell id="lane_n" value="&lt;b&gt;Subtask n&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64727D&quot;&gt;Assigned Robot&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#F7F4ED;strokeColor=#9AA5AE;fontColor=#34424C;fontFamily=Helvetica;fontSize=13;align=center;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
-          <mxGeometry x="1430" y="515" width="95" height="85" as="geometry"/>
-        </mxCell>
-        <mxCell id="problem_gen_n" value="&lt;b&gt;PDDL Problem Generation&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#64727D&quot;&gt;Robot-specific Domain&lt;br&gt;Predicate Filtering&lt;br&gt;PDDL-ready States&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#FFF0B8;strokeColor=#C69214;fontColor=#2F3438;fontFamily=Helvetica;fontSize=12;align=left;spacingLeft=42;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
-          <mxGeometry x="1540" y="505" width="220" height="105" as="geometry"/>
-        </mxCell>
-        <mxCell id="repair_n" value="&lt;b&gt;PDDL Repair&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#5B7182&quot;&gt;Optional&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#DCECF5;strokeColor=#5B8DB8;fontColor=#24313A;fontFamily=Helvetica;fontSize=13;align=center;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
-          <mxGeometry x="1780" y="515" width="125" height="85" as="geometry"/>
+        <mxCell id="grounding_note" value="Object IDs · PDDL predicates · initial facts" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontColor=#526171;" vertex="1" parent="1">
+          <mxGeometry x="305" y="414" width="220" height="26" as="geometry"/>
         </mxCell>
 
-        <!-- Planning, validation, and output -->
-        <mxCell id="planner" value="&lt;b&gt;Fast Downward Planner&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#415B70&quot;&gt;Robot-specific Domain&lt;br&gt;+ PDDL Problem&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#DCECF5;strokeColor=#5B8DB8;strokeWidth=2;fontColor=#24313A;fontFamily=Helvetica;fontSize=14;align=left;spacingLeft=62;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
-          <mxGeometry x="1975" y="340" width="205" height="115" as="geometry"/>
+        <!-- Central LLM core -->
+        <mxCell id="llm_core" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF9F2;gradientColor=#FFE8D2;gradientDirection=south;strokeColor=#D85B00;strokeWidth=2.4;arcSize=12;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="600" y="230" width="430" height="260" as="geometry"/>
         </mxCell>
-        <mxCell id="plan_found" value="&lt;b&gt;Plan&lt;br&gt;Found?&lt;/b&gt;" style="rhombus;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#EDF5FB;strokeColor=#5B8DB8;strokeWidth=2;fontColor=#2F4657;fontFamily=Helvetica;fontSize=14;align=center;verticalAlign=middle;" vertex="1" parent="1">
-          <mxGeometry x="2220" y="352" width="100" height="90" as="geometry"/>
+        <mxCell id="llm_title" value="&lt;b&gt;LLM&lt;/b&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=42;fontColor=#D85B00;" vertex="1" parent="1">
+          <mxGeometry x="715" y="248" width="200" height="58" as="geometry"/>
         </mxCell>
-        <mxCell id="val" value="&lt;b&gt;VAL Plan Validation&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#4F7658&quot;&gt;Optional&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#64727D&quot;&gt;Domain + Problem + Plan&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#E4F2E2;strokeColor=#4F8A60;strokeWidth=2;fontColor=#24313A;fontFamily=Helvetica;fontSize=14;align=left;spacingLeft=60;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
-          <mxGeometry x="2370" y="335" width="205" height="125" as="geometry"/>
+        <mxCell id="llm_subtitle" value="&lt;b&gt;Reasoning &amp;amp; Planning Core&lt;/b&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=19;fontColor=#D85B00;" vertex="1" parent="1">
+          <mxGeometry x="675" y="302" width="280" height="34" as="geometry"/>
         </mxCell>
-        <mxCell id="output" value="&lt;b&gt;Executable Per-subtask Plans&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#4F7658&quot;&gt;Robot-specific Plans&lt;br&gt;Completion Summary&lt;br&gt;Run Artifacts &amp;amp; Diagnostics&lt;/font&gt;" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#DDEFD9;strokeColor=#4F8A60;strokeWidth=2;fontColor=#24313A;fontFamily=Helvetica;fontSize=14;align=left;spacingLeft=58;verticalAlign=middle;arcSize=10;" vertex="1" parent="1">
-          <mxGeometry x="2620" y="320" width="205" height="155" as="geometry"/>
+        <mxCell id="llm_chip_icon" value="" style="shape=image;html=1;imageAspect=0;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20512%20512%22%3E%3C%21--%21%20Font%20Awesome%20Free%207.3.1%20by%20%40fontawesome%20-%20https%3A%2F%2Ffontawesome.com%20License%20-%20https%3A%2F%2Ffontawesome.com%2Flicense%2Ffree%20%28Icons%3A%20CC%20BY%204.0%2C%20Fonts%3A%20SIL%20OFL%201.1%2C%20Code%3A%20MIT%20License%29%20Copyright%202026%20Fonticons%2C%20Inc.%20--%3E%3Cpath%20fill%3D%22%23D85B00%22%20d%3D%22M176%2024c0-13.3-10.7-24-24-24s-24%2010.7-24%2024l0%2040c-35.3%200-64%2028.7-64%2064l-40%200c-13.3%200-24%2010.7-24%2024s10.7%2024%2024%2024l40%200%200%2056-40%200c-13.3%200-24%2010.7-24%2024s10.7%2024%2024%2024l40%200%200%2056-40%200c-13.3%200-24%2010.7-24%2024s10.7%2024%2024%2024l40%200c0%2035.3%2028.7%2064%2064%2064l0%2040c0%2013.3%2010.7%2024%2024%2024s24-10.7%2024-24l0-40%2056%200%200%2040c0%2013.3%2010.7%2024%2024%2024s24-10.7%2024-24l0-40%2056%200%200%2040c0%2013.3%2010.7%2024%2024%2024s24-10.7%2024-24l0-40c35.3%200%2064-28.7%2064-64l40%200c13.3%200%2024-10.7%2024-24s-10.7-24-24-24l-40%200%200-56%2040%200c13.3%200%2024-10.7%2024-24s-10.7-24-24-24l-40%200%200-56%2040%200c13.3%200%2024-10.7%2024-24s-10.7-24-24-24l-40%200c0-35.3-28.7-64-64-64l0-40c0-13.3-10.7-24-24-24s-24%2010.7-24%2024l0%2040-56%200%200-40c0-13.3-10.7-24-24-24s-24%2010.7-24%2024l0%2040-56%200%200-40zM160%20128l192%200c17.7%200%2032%2014.3%2032%2032l0%20192c0%2017.7-14.3%2032-32%2032l-192%200c-17.7%200-32-14.3-32-32l0-192c0-17.7%2014.3-32%2032-32zm16%2048l0%20160%20160%200%200-160-160%200z%22%2F%3E%3C%2Fsvg%3E;" vertex="1" parent="1">
+          <mxGeometry x="750" y="345" width="130" height="130" as="geometry"/>
         </mxCell>
-
-        <!-- Font Awesome Free 6.7.2 icons: CC BY 4.0, https://fontawesome.com/license/free -->
-        <mxCell id="fa_task" value="" style="shape=image;html=1;imageAspect=0;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20512%20512%22%3E%3C%21--%21%20Font%20Awesome%20Free%206.7.2%20by%20%40fontawesome%20-%20https%3A%2F%2Ffontawesome.com%20License%20-%20https%3A%2F%2Ffontawesome.com%2Flicense%2Ffree%20%28Icons%3A%20CC%20BY%204.0%2C%20Fonts%3A%20SIL%20OFL%201.1%2C%20Code%3A%20MIT%20License%29%20Copyright%202024%20Fonticons%2C%20Inc.%20--%3E%3Cpath%20fill%3D%22%2352616B%22%20d%3D%22M152.1%2038.2c9.9%208.9%2010.7%2024%201.8%2033.9l-72%2080c-4.4%204.9-10.6%207.8-17.2%207.9s-12.9-2.4-17.6-7L7%20113C-2.3%20103.6-2.3%2088.4%207%2079s24.6-9.4%2033.9%200l22.1%2022.1%2055.1-61.2c8.9-9.9%2024-10.7%2033.9-1.8zm0%20160c9.9%208.9%2010.7%2024%201.8%2033.9l-72%2080c-4.4%204.9-10.6%207.8-17.2%207.9s-12.9-2.4-17.6-7L7%20273c-9.4-9.4-9.4-24.6%200-33.9s24.6-9.4%2033.9%200l22.1%2022.1%2055.1-61.2c8.9-9.9%2024-10.7%2033.9-1.8zM224%2096c0-17.7%2014.3-32%2032-32l224%200c17.7%200%2032%2014.3%2032%2032s-14.3%2032-32%2032l-224%200c-17.7%200-32-14.3-32-32zm0%20160c0-17.7%2014.3-32%2032-32l224%200c17.7%200%2032%2014.3%2032%2032s-14.3%2032-32%2032l-224%200c-17.7%200-32-14.3-32-32zM160%20416c0-17.7%2014.3-32%2032-32l288%200c17.7%200%2032%2014.3%2032%2032s-14.3%2032-32%2032l-288%200c-17.7%200-32-14.3-32-32zM48%20368a48%2048%200%201%201%200%2096%2048%2048%200%201%201%200-96z%22%2F%3E%3C%2Fsvg%3E;" vertex="1" parent="1">
-          <mxGeometry x="55" y="259" width="36" height="36" as="geometry"/>
-        </mxCell>
-        <mxCell id="fa_scene" value="" style="shape=image;html=1;imageAspect=0;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20448%20512%22%3E%3C%21--%21%20Font%20Awesome%20Free%206.7.2%20by%20%40fontawesome%20-%20https%3A%2F%2Ffontawesome.com%20License%20-%20https%3A%2F%2Ffontawesome.com%2Flicense%2Ffree%20%28Icons%3A%20CC%20BY%204.0%2C%20Fonts%3A%20SIL%20OFL%201.1%2C%20Code%3A%20MIT%20License%29%20Copyright%202024%20Fonticons%2C%20Inc.%20--%3E%3Cpath%20fill%3D%22%2352616B%22%20d%3D%22M192%2064l0%2064c0%2017.7%2014.3%2032%2032%2032l64%200c17.7%200%2032-14.3%2032-32l0-64c0-17.7-14.3-32-32-32l-64%200c-17.7%200-32%2014.3-32%2032zM82.7%20207c-15.3%208.8-20.5%2028.4-11.7%2043.7l32%2055.4c8.8%2015.3%2028.4%2020.5%2043.7%2011.7l55.4-32c15.3-8.8%2020.5-28.4%2011.7-43.7l-32-55.4c-8.8-15.3-28.4-20.5-43.7-11.7L82.7%20207zM288%20192c-17.7%200-32%2014.3-32%2032l0%2064c0%2017.7%2014.3%2032%2032%2032l64%200c17.7%200%2032-14.3%2032-32l0-64c0-17.7-14.3-32-32-32l-64%200zm64%20160c-17.7%200-32%2014.3-32%2032l0%2064c0%2017.7%2014.3%2032%2032%2032l64%200c17.7%200%2032-14.3%2032-32l0-64c0-17.7-14.3-32-32-32l-64%200zM160%20384l0%2064c0%2017.7%2014.3%2032%2032%2032l64%200c17.7%200%2032-14.3%2032-32l0-64c0-17.7-14.3-32-32-32l-64%200c-17.7%200-32%2014.3-32%2032zM32%20352c-17.7%200-32%2014.3-32%2032l0%2064c0%2017.7%2014.3%2032%2032%2032l64%200c17.7%200%2032-14.3%2032-32l0-64c0-17.7-14.3-32-32-32l-64%200z%22%2F%3E%3C%2Fsvg%3E;" vertex="1" parent="1">
-          <mxGeometry x="55" y="389" width="36" height="36" as="geometry"/>
-        </mxCell>
-        <mxCell id="fa_domain" value="" style="shape=image;html=1;imageAspect=0;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20384%20512%22%3E%3C%21--%21%20Font%20Awesome%20Free%206.7.2%20by%20%40fontawesome%20-%20https%3A%2F%2Ffontawesome.com%20License%20-%20https%3A%2F%2Ffontawesome.com%2Flicense%2Ffree%20%28Icons%3A%20CC%20BY%204.0%2C%20Fonts%3A%20SIL%20OFL%201.1%2C%20Code%3A%20MIT%20License%29%20Copyright%202024%20Fonticons%2C%20Inc.%20--%3E%3Cpath%20fill%3D%22%2352616B%22%20d%3D%22M64%200C28.7%200%200%2028.7%200%2064L0%20448c0%2035.3%2028.7%2064%2064%2064l256%200c35.3%200%2064-28.7%2064-64l0-288-128%200c-17.7%200-32-14.3-32-32L224%200%2064%200zM256%200l0%20128%20128%200L256%200zM153%20289l-31%2031%2031%2031c9.4%209.4%209.4%2024.6%200%2033.9s-24.6%209.4-33.9%200L71%20337c-9.4-9.4-9.4-24.6%200-33.9l48-48c9.4-9.4%2024.6-9.4%2033.9%200s9.4%2024.6%200%2033.9zM265%20255l48%2048c9.4%209.4%209.4%2024.6%200%2033.9l-48%2048c-9.4%209.4-24.6%209.4-33.9%200s-9.4-24.6%200-33.9l31-31-31-31c-9.4-9.4-9.4-24.6%200-33.9s24.6-9.4%2033.9%200z%22%2F%3E%3C%2Fsvg%3E;" vertex="1" parent="1">
-          <mxGeometry x="55" y="519" width="36" height="36" as="geometry"/>
-        </mxCell>
-        <mxCell id="fa_robot_team" value="" style="shape=image;html=1;imageAspect=0;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20640%20512%22%3E%3C%21--%21%20Font%20Awesome%20Free%206.7.2%20by%20%40fontawesome%20-%20https%3A%2F%2Ffontawesome.com%20License%20-%20https%3A%2F%2Ffontawesome.com%2Flicense%2Ffree%20%28Icons%3A%20CC%20BY%204.0%2C%20Fonts%3A%20SIL%20OFL%201.1%2C%20Code%3A%20MIT%20License%29%20Copyright%202024%20Fonticons%2C%20Inc.%20--%3E%3Cpath%20fill%3D%22%2352616B%22%20d%3D%22M320%200c17.7%200%2032%2014.3%2032%2032l0%2064%20120%200c39.8%200%2072%2032.2%2072%2072l0%20272c0%2039.8-32.2%2072-72%2072l-304%200c-39.8%200-72-32.2-72-72l0-272c0-39.8%2032.2-72%2072-72l120%200%200-64c0-17.7%2014.3-32%2032-32zM208%20384c-8.8%200-16%207.2-16%2016s7.2%2016%2016%2016l32%200c8.8%200%2016-7.2%2016-16s-7.2-16-16-16l-32%200zm96%200c-8.8%200-16%207.2-16%2016s7.2%2016%2016%2016l32%200c8.8%200%2016-7.2%2016-16s-7.2-16-16-16l-32%200zm96%200c-8.8%200-16%207.2-16%2016s7.2%2016%2016%2016l32%200c8.8%200%2016-7.2%2016-16s-7.2-16-16-16l-32%200zM264%20256a40%2040%200%201%200%20-80%200%2040%2040%200%201%200%2080%200zm152%2040a40%2040%200%201%200%200-80%2040%2040%200%201%200%200%2080zM48%20224l16%200%200%20192-16%200c-26.5%200-48-21.5-48-48l0-96c0-26.5%2021.5-48%2048-48zm544%200c26.5%200%2048%2021.5%2048%2048l0%2096c0%2026.5-21.5%2048-48%2048l-16%200%200-192%2016%200z%22%2F%3E%3C%2Fsvg%3E;" vertex="1" parent="1">
-          <mxGeometry x="55" y="649" width="38" height="38" as="geometry"/>
-        </mxCell>
-        <mxCell id="fa_llm_decomposition" value="" style="shape=image;html=1;imageAspect=0;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20512%20512%22%3E%3C%21--%21%20Font%20Awesome%20Free%206.7.2%20by%20%40fontawesome%20-%20https%3A%2F%2Ffontawesome.com%20License%20-%20https%3A%2F%2Ffontawesome.com%2Flicense%2Ffree%20%28Icons%3A%20CC%20BY%204.0%2C%20Fonts%3A%20SIL%20OFL%201.1%2C%20Code%3A%20MIT%20License%29%20Copyright%202024%20Fonticons%2C%20Inc.%20--%3E%3Cpath%20fill%3D%22%239A7416%22%20d%3D%22M184%200c30.9%200%2056%2025.1%2056%2056l0%20400c0%2030.9-25.1%2056-56%2056c-28.9%200-52.7-21.9-55.7-50.1c-5.2%201.4-10.7%202.1-16.3%202.1c-35.3%200-64-28.7-64-64c0-7.4%201.3-14.6%203.6-21.2C21.4%20367.4%200%20338.2%200%20304c0-31.9%2018.7-59.5%2045.8-72.3C37.1%20220.8%2032%20207%2032%20192c0-30.7%2021.6-56.3%2050.4-62.6C80.8%20123.9%2080%20118%2080%20112c0-29.9%2020.6-55.1%2048.3-62.1C131.3%2021.9%20155.1%200%20184%200zM328%200c28.9%200%2052.6%2021.9%2055.7%2049.9c27.8%207%2048.3%2032.1%2048.3%2062.1c0%206-.8%2011.9-2.4%2017.4c28.8%206.2%2050.4%2031.9%2050.4%2062.6c0%2015-5.1%2028.8-13.8%2039.7C493.3%20244.5%20512%20272.1%20512%20304c0%2034.2-21.4%2063.4-51.6%2074.8c2.3%206.6%203.6%2013.8%203.6%2021.2c0%2035.3-28.7%2064-64%2064c-5.6%200-11.1-.7-16.3-2.1c-3%2028.2-26.8%2050.1-55.7%2050.1c-30.9%200-56-25.1-56-56l0-400c0-30.9%2025.1-56%2056-56z%22%2F%3E%3C%2Fsvg%3E;" vertex="1" parent="1">
-          <mxGeometry x="366" y="324" width="43" height="43" as="geometry"/>
-        </mxCell>
-        <mxCell id="fa_grounding" value="" style="shape=image;html=1;imageAspect=0;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20576%20512%22%3E%3C%21--%21%20Font%20Awesome%20Free%206.7.2%20by%20%40fontawesome%20-%20https%3A%2F%2Ffontawesome.com%20License%20-%20https%3A%2F%2Ffontawesome.com%2Flicense%2Ffree%20%28Icons%3A%20CC%20BY%204.0%2C%20Fonts%3A%20SIL%20OFL%201.1%2C%20Code%3A%20MIT%20License%29%20Copyright%202024%20Fonticons%2C%20Inc.%20--%3E%3Cpath%20fill%3D%22%234B7797%22%20d%3D%22M0%2080C0%2053.5%2021.5%2032%2048%2032l96%200c26.5%200%2048%2021.5%2048%2048l0%2016%20192%200%200-16c0-26.5%2021.5-48%2048-48l96%200c26.5%200%2048%2021.5%2048%2048l0%2096c0%2026.5-21.5%2048-48%2048l-96%200c-26.5%200-48-21.5-48-48l0-16-192%200%200%2016c0%201.7-.1%203.4-.3%205L272%20288l96%200c26.5%200%2048%2021.5%2048%2048l0%2096c0%2026.5-21.5%2048-48%2048l-96%200c-26.5%200-48-21.5-48-48l0-96c0-1.7%20.1-3.4%20.3-5L144%20224l-96%200c-26.5%200-48-21.5-48-48L0%2080z%22%2F%3E%3C%2Fsvg%3E;" vertex="1" parent="1">
-          <mxGeometry x="840" y="324" width="44" height="44" as="geometry"/>
-        </mxCell>
-        <mxCell id="fa_allocation" value="" style="shape=image;html=1;imageAspect=0;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20640%20512%22%3E%3C%21--%21%20Font%20Awesome%20Free%206.7.2%20by%20%40fontawesome%20-%20https%3A%2F%2Ffontawesome.com%20License%20-%20https%3A%2F%2Ffontawesome.com%2Flicense%2Ffree%20%28Icons%3A%20CC%20BY%204.0%2C%20Fonts%3A%20SIL%20OFL%201.1%2C%20Code%3A%20MIT%20License%29%20Copyright%202024%20Fonticons%2C%20Inc.%20--%3E%3Cpath%20fill%3D%22%239A7416%22%20d%3D%22M320%200c17.7%200%2032%2014.3%2032%2032l0%2064%20120%200c39.8%200%2072%2032.2%2072%2072l0%20272c0%2039.8-32.2%2072-72%2072l-304%200c-39.8%200-72-32.2-72-72l0-272c0-39.8%2032.2-72%2072-72l120%200%200-64c0-17.7%2014.3-32%2032-32zM208%20384c-8.8%200-16%207.2-16%2016s7.2%2016%2016%2016l32%200c8.8%200%2016-7.2%2016-16s-7.2-16-16-16l-32%200zm96%200c-8.8%200-16%207.2-16%2016s7.2%2016%2016%2016l32%200c8.8%200%2016-7.2%2016-16s-7.2-16-16-16l-32%200zm96%200c-8.8%200-16%207.2-16%2016s7.2%2016%2016%2016l32%200c8.8%200%2016-7.2%2016-16s-7.2-16-16-16l-32%200zM264%20256a40%2040%200%201%200%20-80%200%2040%2040%200%201%200%2080%200zm152%2040a40%2040%200%201%200%200-80%2040%2040%200%201%200%200%2080zM48%20224l16%200%200%20192-16%200c-26.5%200-48-21.5-48-48l0-96c0-26.5%2021.5-48%2048-48zm544%200c26.5%200%2048%2021.5%2048%2048l0%2096c0%2026.5-21.5%2048-48%2048l-16%200%200-192%2016%200z%22%2F%3E%3C%2Fsvg%3E;" vertex="1" parent="1">
-          <mxGeometry x="1135" y="324" width="43" height="43" as="geometry"/>
-        </mxCell>
-        <mxCell id="fa_problem_header" value="" style="shape=image;html=1;imageAspect=0;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20384%20512%22%3E%3C%21--%21%20Font%20Awesome%20Free%206.7.2%20by%20%40fontawesome%20-%20https%3A%2F%2Ffontawesome.com%20License%20-%20https%3A%2F%2Ffontawesome.com%2Flicense%2Ffree%20%28Icons%3A%20CC%20BY%204.0%2C%20Fonts%3A%20SIL%20OFL%201.1%2C%20Code%3A%20MIT%20License%29%20Copyright%202024%20Fonticons%2C%20Inc.%20--%3E%3Cpath%20fill%3D%22%239A7416%22%20d%3D%22M64%200C28.7%200%200%2028.7%200%2064L0%20448c0%2035.3%2028.7%2064%2064%2064l256%200c35.3%200%2064-28.7%2064-64l0-288-128%200c-17.7%200-32-14.3-32-32L224%200%2064%200zM256%200l0%20128%20128%200L256%200zM153%20289l-31%2031%2031%2031c9.4%209.4%209.4%2024.6%200%2033.9s-24.6%209.4-33.9%200L71%20337c-9.4-9.4-9.4-24.6%200-33.9l48-48c9.4-9.4%2024.6-9.4%2033.9%200s9.4%2024.6%200%2033.9zM265%20255l48%2048c9.4%209.4%209.4%2024.6%200%2033.9l-48%2048c-9.4%209.4-24.6%209.4-33.9%200s-9.4-24.6%200-33.9l31-31-31-31c-9.4-9.4-9.4-24.6%200-33.9s24.6-9.4%2033.9%200z%22%2F%3E%3C%2Fsvg%3E;" vertex="1" parent="1">
-          <mxGeometry x="1424" y="214" width="27" height="27" as="geometry"/>
-        </mxCell>
-        <mxCell id="fa_problem_1" value="" style="shape=image;html=1;imageAspect=0;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20384%20512%22%3E%3C%21--%21%20Font%20Awesome%20Free%206.7.2%20by%20%40fontawesome%20-%20https%3A%2F%2Ffontawesome.com%20License%20-%20https%3A%2F%2Ffontawesome.com%2Flicense%2Ffree%20%28Icons%3A%20CC%20BY%204.0%2C%20Fonts%3A%20SIL%20OFL%201.1%2C%20Code%3A%20MIT%20License%29%20Copyright%202024%20Fonticons%2C%20Inc.%20--%3E%3Cpath%20fill%3D%22%239A7416%22%20d%3D%22M64%200C28.7%200%200%2028.7%200%2064L0%20448c0%2035.3%2028.7%2064%2064%2064l256%200c35.3%200%2064-28.7%2064-64l0-288-128%200c-17.7%200-32-14.3-32-32L224%200%2064%200zM256%200l0%20128%20128%200L256%200zM153%20289l-31%2031%2031%2031c9.4%209.4%209.4%2024.6%200%2033.9s-24.6%209.4-33.9%200L71%20337c-9.4-9.4-9.4-24.6%200-33.9l48-48c9.4-9.4%2024.6-9.4%2033.9%200s9.4%2024.6%200%2033.9zM265%20255l48%2048c9.4%209.4%209.4%2024.6%200%2033.9l-48%2048c-9.4%209.4-24.6%209.4-33.9%200s-9.4-24.6%200-33.9l31-31-31-31c-9.4-9.4-9.4-24.6%200-33.9s24.6-9.4%2033.9%200z%22%2F%3E%3C%2Fsvg%3E;" vertex="1" parent="1">
-          <mxGeometry x="1548" y="302" width="30" height="30" as="geometry"/>
-        </mxCell>
-        <mxCell id="fa_problem_2" value="" style="shape=image;html=1;imageAspect=0;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20384%20512%22%3E%3C%21--%21%20Font%20Awesome%20Free%206.7.2%20by%20%40fontawesome%20-%20https%3A%2F%2Ffontawesome.com%20License%20-%20https%3A%2F%2Ffontawesome.com%2Flicense%2Ffree%20%28Icons%3A%20CC%20BY%204.0%2C%20Fonts%3A%20SIL%20OFL%201.1%2C%20Code%3A%20MIT%20License%29%20Copyright%202024%20Fonticons%2C%20Inc.%20--%3E%3Cpath%20fill%3D%22%239A7416%22%20d%3D%22M64%200C28.7%200%200%2028.7%200%2064L0%20448c0%2035.3%2028.7%2064%2064%2064l256%200c35.3%200%2064-28.7%2064-64l0-288-128%200c-17.7%200-32-14.3-32-32L224%200%2064%200zM256%200l0%20128%20128%200L256%200zM153%20289l-31%2031%2031%2031c9.4%209.4%209.4%2024.6%200%2033.9s-24.6%209.4-33.9%200L71%20337c-9.4-9.4-9.4-24.6%200-33.9l48-48c9.4-9.4%2024.6-9.4%2033.9%200s9.4%2024.6%200%2033.9zM265%20255l48%2048c9.4%209.4%209.4%2024.6%200%2033.9l-48%2048c-9.4%209.4-24.6%209.4-33.9%200s-9.4-24.6%200-33.9l31-31-31-31c-9.4-9.4-9.4-24.6%200-33.9s24.6-9.4%2033.9%200z%22%2F%3E%3C%2Fsvg%3E;" vertex="1" parent="1">
-          <mxGeometry x="1548" y="422" width="30" height="30" as="geometry"/>
-        </mxCell>
-        <mxCell id="fa_problem_n" value="" style="shape=image;html=1;imageAspect=0;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20384%20512%22%3E%3C%21--%21%20Font%20Awesome%20Free%206.7.2%20by%20%40fontawesome%20-%20https%3A%2F%2Ffontawesome.com%20License%20-%20https%3A%2F%2Ffontawesome.com%2Flicense%2Ffree%20%28Icons%3A%20CC%20BY%204.0%2C%20Fonts%3A%20SIL%20OFL%201.1%2C%20Code%3A%20MIT%20License%29%20Copyright%202024%20Fonticons%2C%20Inc.%20--%3E%3Cpath%20fill%3D%22%239A7416%22%20d%3D%22M64%200C28.7%200%200%2028.7%200%2064L0%20448c0%2035.3%2028.7%2064%2064%2064l256%200c35.3%200%2064-28.7%2064-64l0-288-128%200c-17.7%200-32-14.3-32-32L224%200%2064%200zM256%200l0%20128%20128%200L256%200zM153%20289l-31%2031%2031%2031c9.4%209.4%209.4%2024.6%200%2033.9s-24.6%209.4-33.9%200L71%20337c-9.4-9.4-9.4-24.6%200-33.9l48-48c9.4-9.4%2024.6-9.4%2033.9%200s9.4%2024.6%200%2033.9zM265%20255l48%2048c9.4%209.4%209.4%2024.6%200%2033.9l-48%2048c-9.4%209.4-24.6%209.4-33.9%200s-9.4-24.6%200-33.9l31-31-31-31c-9.4-9.4-9.4-24.6%200-33.9s24.6-9.4%2033.9%200z%22%2F%3E%3C%2Fsvg%3E;" vertex="1" parent="1">
-          <mxGeometry x="1548" y="542" width="30" height="30" as="geometry"/>
-        </mxCell>
-        <mxCell id="fa_planner" value="" style="shape=image;html=1;imageAspect=0;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20512%20512%22%3E%3C%21--%21%20Font%20Awesome%20Free%206.7.2%20by%20%40fontawesome%20-%20https%3A%2F%2Ffontawesome.com%20License%20-%20https%3A%2F%2Ffontawesome.com%2Flicense%2Ffree%20%28Icons%3A%20CC%20BY%204.0%2C%20Fonts%3A%20SIL%20OFL%201.1%2C%20Code%3A%20MIT%20License%29%20Copyright%202024%20Fonticons%2C%20Inc.%20--%3E%3Cpath%20fill%3D%22%234B7797%22%20d%3D%22M512%2096c0%2050.2-59.1%20125.1-84.6%20155c-3.8%204.4-9.4%206.1-14.5%205L320%20256c-17.7%200-32%2014.3-32%2032s14.3%2032%2032%2032l96%200c53%200%2096%2043%2096%2096s-43%2096-96%2096l-276.4%200c8.7-9.9%2019.3-22.6%2030-36.8c6.3-8.4%2012.8-17.6%2019-27.2L416%20448c17.7%200%2032-14.3%2032-32s-14.3-32-32-32l-96%200c-53%200-96-43-96-96s43-96%2096-96l39.8%200c-21-31.5-39.8-67.7-39.8-96c0-53%2043-96%2096-96s96%2043%2096%2096zM117.1%20489.1c-3.8%204.3-7.2%208.1-10.1%2011.3l-1.8%202-.2-.2c-6%204.6-14.6%204-20-1.8C59.8%20473%200%20402.5%200%20352c0-53%2043-96%2096-96s96%2043%2096%2096c0%2030-21.1%2067-43.5%2097.9c-10.7%2014.7-21.7%2028-30.8%2038.5l-.6%20.7zM128%20352a32%2032%200%201%200%20-64%200%2032%2032%200%201%200%2064%200zM416%20128a32%2032%200%201%200%200-64%2032%2032%200%201%200%200%2064z%22%2F%3E%3C%2Fsvg%3E;" vertex="1" parent="1">
-          <mxGeometry x="1990" y="374" width="43" height="43" as="geometry"/>
-        </mxCell>
-        <mxCell id="fa_val" value="" style="shape=image;html=1;imageAspect=0;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20512%20512%22%3E%3C%21--%21%20Font%20Awesome%20Free%206.7.2%20by%20%40fontawesome%20-%20https%3A%2F%2Ffontawesome.com%20License%20-%20https%3A%2F%2Ffontawesome.com%2Flicense%2Ffree%20%28Icons%3A%20CC%20BY%204.0%2C%20Fonts%3A%20SIL%20OFL%201.1%2C%20Code%3A%20MIT%20License%29%20Copyright%202024%20Fonticons%2C%20Inc.%20--%3E%3Cpath%20fill%3D%22%234F8A60%22%20d%3D%22M256%20512A256%20256%200%201%200%20256%200a256%20256%200%201%200%200%20512zM369%20209L241%20337c-9.4%209.4-24.6%209.4-33.9%200l-64-64c-9.4-9.4-9.4-24.6%200-33.9s24.6-9.4%2033.9%200l47%2047L335%20175c9.4-9.4%2024.6-9.4%2033.9%200s9.4%2024.6%200%2033.9z%22%2F%3E%3C%2Fsvg%3E;" vertex="1" parent="1">
-          <mxGeometry x="2385" y="374" width="43" height="43" as="geometry"/>
-        </mxCell>
-        <mxCell id="fa_output" value="" style="shape=image;html=1;imageAspect=0;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20512%20512%22%3E%3C%21--%21%20Font%20Awesome%20Free%206.7.2%20by%20%40fontawesome%20-%20https%3A%2F%2Ffontawesome.com%20License%20-%20https%3A%2F%2Ffontawesome.com%2Flicense%2Ffree%20%28Icons%3A%20CC%20BY%204.0%2C%20Fonts%3A%20SIL%20OFL%201.1%2C%20Code%3A%20MIT%20License%29%20Copyright%202024%20Fonticons%2C%20Inc.%20--%3E%3Cpath%20fill%3D%22%234F8A60%22%20d%3D%22M256%20512A256%20256%200%201%200%20256%200a256%20256%200%201%200%200%20512zM369%20209L241%20337c-9.4%209.4-24.6%209.4-33.9%200l-64-64c-9.4-9.4-9.4-24.6%200-33.9s24.6-9.4%2033.9%200l47%2047L335%20175c9.4-9.4%2024.6-9.4%2033.9%200s9.4%2024.6%200%2033.9z%22%2F%3E%3C%2Fsvg%3E;" vertex="1" parent="1">
-          <mxGeometry x="2635" y="365" width="43" height="43" as="geometry"/>
-        </mxCell>
-        <mxCell id="sketch_note_grounding" value="scene facts → symbolic predicates" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontStyle=2;fontColor=#5B7182;rotation=-2;" vertex="1" parent="1">
-          <mxGeometry x="835" y="510" width="225" height="30" as="geometry"/>
-        </mxCell>
-        <mxCell id="sketch_note_parallel" value="one lane per assigned subtask" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=12;fontStyle=2;fontColor=#846414;rotation=1;" vertex="1" parent="1">
-          <mxGeometry x="1515" y="650" width="300" height="30" as="geometry"/>
-        </mxCell>
-        <mxCell id="fontawesome_attribution" value="Icons: Font Awesome Free 6.7.2 · CC BY 4.0 · fontawesome.com" style="text;html=1;strokeColor=none;fillColor=none;align=right;verticalAlign=middle;fontFamily=Helvetica;fontSize=10;fontColor=#7A8793;" vertex="1" parent="1">
-          <mxGeometry x="2190" y="1040" width="635" height="35" as="geometry"/>
+        <mxCell id="llm_network_icon" value="" style="shape=image;html=1;imageAspect=0;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20512%20512%22%3E%3C%21--%21%20Font%20Awesome%20Free%207.3.1%20by%20%40fontawesome%20-%20https%3A%2F%2Ffontawesome.com%20License%20-%20https%3A%2F%2Ffontawesome.com%2Flicense%2Ffree%20%28Icons%3A%20CC%20BY%204.0%2C%20Fonts%3A%20SIL%20OFL%201.1%2C%20Code%3A%20MIT%20License%29%20Copyright%202026%20Fonticons%2C%20Inc.%20--%3E%3Cpath%20fill%3D%22%23D85B00%22%20d%3D%22M0%2080C0%2053.5%2021.5%2032%2048%2032l96%200c26.5%200%2048%2021.5%2048%2048l0%2016%20128%200%200-16c0-26.5%2021.5-48%2048-48l96%200c26.5%200%2048%2021.5%2048%2048l0%2096c0%2026.5-21.5%2048-48%2048l-96%200c-26.5%200-48-21.5-48-48l0-16-128%200%200%2016c0%207.3-1.7%2014.3-4.6%2020.5l68.6%2091.5%2080%200c26.5%200%2048%2021.5%2048%2048l0%2096c0%2026.5-21.5%2048-48%2048l-96%200c-26.5%200-48-21.5-48-48l0-96c0-7.3%201.7-14.3%204.6-20.5L128%20224%2048%20224c-26.5%200-48-21.5-48-48L0%2080z%22%2F%3E%3C%2Fsvg%3E;" vertex="1" parent="1">
+          <mxGeometry x="785" y="379" width="60" height="60" as="geometry"/>
         </mxCell>
 
-        <!-- Notes and legend -->
-        <mxCell id="hybrid_note" value="&lt;b&gt;Hybrid reasoning architecture:&lt;/b&gt; semantic decomposition and allocation → grounded PDDL generation → symbolic search → formal validation" style="rounded=1;sketch=1;curveFitting=1;jiggle=1;whiteSpace=wrap;html=1;fillColor=#FAFBFC;strokeColor=#C8D0D6;fontColor=#4A5862;fontFamily=Helvetica;fontSize=14;align=center;verticalAlign=middle;arcSize=8;" vertex="1" parent="1">
-          <mxGeometry x="760" y="1035" width="1320" height="55" as="geometry"/>
+        <!-- Decomposition and parsed subtasks -->
+        <mxCell id="decomposition" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F7FAFF;gradientColor=#EAF2FF;gradientDirection=south;strokeColor=#173F8F;strokeWidth=2;arcSize=12;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="640" y="115" width="350" height="80" as="geometry"/>
         </mxCell>
-        <mxCell id="legend_forward_line" value="" style="shape=line;sketch=1;curveFitting=1;jiggle=1;strokeColor=#536471;strokeWidth=2;" vertex="1" parent="1">
-          <mxGeometry x="70" y="1050" width="70" height="10" as="geometry"/>
+        <mxCell id="decomposition_icon" value="" style="shape=image;html=1;imageAspect=0;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20512%20512%22%3E%3C%21--%21%20Font%20Awesome%20Free%207.3.1%20by%20%40fontawesome%20-%20https%3A%2F%2Ffontawesome.com%20License%20-%20https%3A%2F%2Ffontawesome.com%2Flicense%2Ffree%20%28Icons%3A%20CC%20BY%204.0%2C%20Fonts%3A%20SIL%20OFL%201.1%2C%20Code%3A%20MIT%20License%29%20Copyright%202026%20Fonticons%2C%20Inc.%20--%3E%3Cpath%20fill%3D%22%23173F8F%22%20d%3D%22M192%2064c0-17.7%2014.3-32%2032-32l64%200c17.7%200%2032%2014.3%2032%2032l0%2064c0%2017.7-14.3%2032-32%2032l-8%200%200%2064%20120%200c39.8%200%2072%2032.2%2072%2072l0%2056%208%200c17.7%200%2032%2014.3%2032%2032l0%2064c0%2017.7-14.3%2032-32%2032l-64%200c-17.7%200-32-14.3-32-32l0-64c0-17.7%2014.3-32%2032-32l8%200%200-56c0-13.3-10.7-24-24-24l-120%200%200%2080%208%200c17.7%200%2032%2014.3%2032%2032l0%2064c0%2017.7-14.3%2032-32%2032l-64%200c-17.7%200-32-14.3-32-32l0-64c0-17.7%2014.3-32%2032-32l8%200%200-80-120%200c-13.3%200-24%2010.7-24%2024l0%2056%208%200c17.7%200%2032%2014.3%2032%2032l0%2064c0%2017.7-14.3%2032-32%2032l-64%200c-17.7%200-32-14.3-32-32l0-64c0-17.7%2014.3-32%2032-32l8%200%200-56c0-39.8%2032.2-72%2072-72l120%200%200-64-8%200c-17.7%200-32-14.3-32-32l0-64z%22%2F%3E%3C%2Fsvg%3E;" vertex="1" parent="1">
+          <mxGeometry x="668" y="132" width="55" height="48" as="geometry"/>
         </mxCell>
-        <mxCell id="legend_forward_text" value="Forward data flow" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=13;fontColor=#4A5862;" vertex="1" parent="1">
-          <mxGeometry x="150" y="1037" width="150" height="35" as="geometry"/>
+        <mxCell id="decomposition_text" value="&lt;b&gt;Task Decomposition&lt;/b&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=20;fontColor=#173F8F;" vertex="1" parent="1">
+          <mxGeometry x="730" y="133" width="230" height="44" as="geometry"/>
         </mxCell>
-        <mxCell id="legend_optional_line" value="" style="shape=line;sketch=1;curveFitting=1;jiggle=1;strokeColor=#9B8B4A;strokeWidth=2;dashed=1;dashPattern=1 4;" vertex="1" parent="1">
-          <mxGeometry x="320" y="1050" width="70" height="10" as="geometry"/>
+        <mxCell id="parsed_subtasks" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;gradientColor=#F7F9FC;strokeColor=#4D5562;strokeWidth=1.8;dashed=1;dashPattern=5 4;arcSize=12;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="635" y="18" width="360" height="74" as="geometry"/>
         </mxCell>
-        <mxCell id="legend_optional_text" value="Optional context / bypass" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=13;fontColor=#4A5862;" vertex="1" parent="1">
-          <mxGeometry x="400" y="1037" width="180" height="35" as="geometry"/>
+        <mxCell id="parsed_title" value="&lt;b&gt;Parsed Subtasks&lt;/b&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=18;fontColor=#222833;" vertex="1" parent="1">
+          <mxGeometry x="710" y="21" width="210" height="28" as="geometry"/>
         </mxCell>
-        <mxCell id="legend_feedback_line" value="" style="shape=line;sketch=1;curveFitting=1;jiggle=1;strokeColor=#C75B5B;strokeWidth=2;dashed=1;dashPattern=8 6;" vertex="1" parent="1">
-          <mxGeometry x="600" y="1050" width="70" height="10" as="geometry"/>
+        <mxCell id="subtask_s1" value="S1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#303744;strokeWidth=1.4;arcSize=10;fontFamily=Helvetica;fontSize=15;fontColor=#222833;" vertex="1" parent="1">
+          <mxGeometry x="660" y="53" width="56" height="28" as="geometry"/>
         </mxCell>
-        <mxCell id="legend_feedback_text" value="Feedback retry" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=13;fontColor=#4A5862;" vertex="1" parent="1">
-          <mxGeometry x="680" y="1037" width="130" height="35" as="geometry"/>
+        <mxCell id="subtask_s2" value="S2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#303744;strokeWidth=1.4;arcSize=10;fontFamily=Helvetica;fontSize=15;fontColor=#222833;" vertex="1" parent="1">
+          <mxGeometry x="754" y="53" width="56" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtask_ellipsis" value="···" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=18;fontColor=#222833;" vertex="1" parent="1">
+          <mxGeometry x="831" y="52" width="55" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtask_sn" value="Sn" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#303744;strokeWidth=1.4;arcSize=10;fontFamily=Helvetica;fontSize=15;fontColor=#222833;" vertex="1" parent="1">
+          <mxGeometry x="908" y="53" width="56" height="28" as="geometry"/>
         </mxCell>
 
-        <!-- Input dependency edges -->
-        <mxCell id="edge_task_decomposition" value="" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.6;strokeColor=#7A8793;" edge="1" parent="1" source="input_task" target="decomposition">
+        <!-- Allocation -->
+        <mxCell id="allocation" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F7FAFF;gradientColor=#EAF2FF;gradientDirection=south;strokeColor=#173F8F;strokeWidth=2;arcSize=12;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="410" y="535" width="235" height="150" as="geometry"/>
+        </mxCell>
+        <mxCell id="allocation_title" value="&lt;b&gt;Robot Allocation&lt;/b&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=18;fontColor=#173F8F;" vertex="1" parent="1">
+          <mxGeometry x="425" y="546" width="205" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="allocation_mapping" value="S1 &amp;nbsp; → &amp;nbsp; R1&lt;br&gt;S2 &amp;nbsp; → &amp;nbsp; R2&lt;br&gt;S3 &amp;nbsp; → &amp;nbsp; R1&lt;br&gt;···" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=16;fontColor=#222833;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="435" y="577" width="185" height="94" as="geometry"/>
+        </mxCell>
+
+        <!-- Problem generation -->
+        <mxCell id="problem_generation" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F7FAFF;gradientColor=#EAF2FF;gradientDirection=south;strokeColor=#173F8F;strokeWidth=2;arcSize=12;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="535" width="235" height="150" as="geometry"/>
+        </mxCell>
+        <mxCell id="problem_title" value="&lt;b&gt;PDDL Problem&lt;br&gt;Generation&lt;/b&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=18;fontColor=#173F8F;" vertex="1" parent="1">
+          <mxGeometry x="1055" y="546" width="205" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="problem_icon" value="" style="shape=image;html=1;imageAspect=0;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20384%20512%22%3E%3C%21--%21%20Font%20Awesome%20Free%207.3.1%20by%20%40fontawesome%20-%20https%3A%2F%2Ffontawesome.com%20License%20-%20https%3A%2F%2Ffontawesome.com%2Flicense%2Ffree%20%28Icons%3A%20CC%20BY%204.0%2C%20Fonts%3A%20SIL%20OFL%201.1%2C%20Code%3A%20MIT%20License%29%20Copyright%202026%20Fonticons%2C%20Inc.%20--%3E%3Cpath%20fill%3D%22%23173F8F%22%20d%3D%22M0%2064C0%2028.7%2028.7%200%2064%200L213.5%200c17%200%2033.3%206.7%2045.3%2018.7L365.3%20125.3c12%2012%2018.7%2028.3%2018.7%2045.3L384%20448c0%2035.3-28.7%2064-64%2064L64%20512c-35.3%200-64-28.7-64-64L0%2064zm208-5.5l0%2093.5c0%2013.3%2010.7%2024%2024%2024L325.5%20176%20208%2058.5zM154.2%20295.6c8.6-10.1%207.5-25.2-2.6-33.8s-25.2-7.5-33.8%202.6l-48%2056c-7.7%209-7.7%2022.2%200%2031.2l48%2056c8.6%2010.1%2023.8%2011.2%2033.8%202.6s11.2-23.8%202.6-33.8l-34.6-40.4%2034.6-40.4zm112-31.2c-8.6-10.1-23.8-11.2-33.8-2.6s-11.2%2023.8-2.6%2033.8l34.6%2040.4-34.6%2040.4c-8.6%2010.1-7.5%2025.2%202.6%2033.8s25.2%207.5%2033.8-2.6l48-56c7.7-9%207.7-22.2%200-31.2l-48-56z%22%2F%3E%3C%2Fsvg%3E;" vertex="1" parent="1">
+          <mxGeometry x="1118" y="598" width="78" height="74" as="geometry"/>
+        </mxCell>
+
+        <!-- Planning and validation tools -->
+        <mxCell id="planning_tools" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;gradientColor=#F1F3F7;gradientDirection=south;strokeColor=#303744;strokeWidth=2;arcSize=10;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="690" y="565" width="300" height="180" as="geometry"/>
+        </mxCell>
+        <mxCell id="tools_title" value="&lt;b&gt;Planning / Validation Tools&lt;/b&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#222833;" vertex="1" parent="1">
+          <mxGeometry x="710" y="575" width="260" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="planner_icon" value="" style="shape=image;html=1;imageAspect=0;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20512%20512%22%3E%3C%21--%21%20Font%20Awesome%20Free%207.3.1%20by%20%40fontawesome%20-%20https%3A%2F%2Ffontawesome.com%20License%20-%20https%3A%2F%2Ffontawesome.com%2Flicense%2Ffree%20%28Icons%3A%20CC%20BY%204.0%2C%20Fonts%3A%20SIL%20OFL%201.1%2C%20Code%3A%20MIT%20License%29%20Copyright%202026%20Fonticons%2C%20Inc.%20--%3E%3Cpath%20fill%3D%22%23303744%22%20d%3D%22M512%2096c0%2050.2-59.1%20125.1-84.6%20155-3.8%204.4-9.4%206.1-14.5%205L320%20256c-17.7%200-32%2014.3-32%2032s14.3%2032%2032%2032l96%200c53%200%2096%2043%2096%2096s-43%2096-96%2096l-276.4%200c8.7-9.9%2019.3-22.6%2030-36.8%206.3-8.4%2012.8-17.6%2019-27.2L416%20448c17.7%200%2032-14.3%2032-32s-14.3-32-32-32l-96%200c-53%200-96-43-96-96s43-96%2096-96l39.8%200c-21-31.5-39.8-67.7-39.8-96%200-53%2043-96%2096-96s96%2043%2096%2096zM117.1%20489.1c-3.8%204.3-7.2%208.1-10.1%2011.3l-1.8%202-.2-.2c-6%204.6-14.6%204-20-1.8-25.2-27.4-85-97.9-85-148.4%200-53%2043-96%2096-96s96%2043%2096%2096c0%2030-21.1%2067-43.5%2097.9-10.7%2014.7-21.7%2028-30.8%2038.5l-.6%20.7zM128%20352a32%2032%200%201%200%20-64%200%2032%2032%200%201%200%2064%200zM416%20128a32%2032%200%201%200%200-64%2032%2032%200%201%200%200%2064z%22%2F%3E%3C%2Fsvg%3E;" vertex="1" parent="1">
+          <mxGeometry x="720" y="616" width="48" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="planner_text" value="&lt;b&gt;Fast Downward&lt;/b&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#222833;" vertex="1" parent="1">
+          <mxGeometry x="785" y="620" width="175" height="38" as="geometry"/>
+        </mxCell>
+        <mxCell id="tool_internal_arrow" value="" style="shape=line;strokeColor=#303744;strokeWidth=1.8;endArrow=classic;endFill=1;" vertex="1" parent="1">
+          <mxGeometry x="838" y="660" width="1" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="val_icon" value="" style="shape=image;html=1;imageAspect=0;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20384%20512%22%3E%3C%21--%21%20Font%20Awesome%20Free%207.3.1%20by%20%40fontawesome%20-%20https%3A%2F%2Ffontawesome.com%20License%20-%20https%3A%2F%2Ffontawesome.com%2Flicense%2Ffree%20%28Icons%3A%20CC%20BY%204.0%2C%20Fonts%3A%20SIL%20OFL%201.1%2C%20Code%3A%20MIT%20License%29%20Copyright%202026%20Fonticons%2C%20Inc.%20--%3E%3Cpath%20fill%3D%22%23303744%22%20d%3D%22M256%200c23.7%200%2044.4%2012.9%2055.4%2032l8.6%200c35.3%200%2064%2028.7%2064%2064l0%20352c0%2035.3-28.7%2064-64%2064L64%20512c-35.3%200-64-28.7-64-64L0%2096C0%2060.7%2028.7%2032%2064%2032l8.6%200C83.6%2012.9%20104.3%200%20128%200L256%200zm26.9%20212.6c-10.7-7.8-25.7-5.4-33.5%205.3l-85.6%20117.7-26.5-27.4c-9.2-9.5-24.4-9.8-33.9-.6s-9.8%2024.4-.6%2033.9l46.4%2048c4.9%205.1%2011.8%207.8%2018.9%207.3s13.6-4.1%2017.8-9.8L288.2%20246.1c7.8-10.7%205.4-25.7-5.3-33.5zM136%2064c-13.3%200-24%2010.7-24%2024s10.7%2024%2024%2024l112%200c13.3%200%2024-10.7%2024-24s-10.7-24-24-24L136%2064z%22%2F%3E%3C%2Fsvg%3E;" vertex="1" parent="1">
+          <mxGeometry x="723" y="684" width="42" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="val_text" value="&lt;b&gt;VAL&lt;/b&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontColor=#222833;" vertex="1" parent="1">
+          <mxGeometry x="785" y="689" width="175" height="34" as="geometry"/>
+        </mxCell>
+
+        <!-- Per-subtask results -->
+        <mxCell id="results" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F7FFF7;gradientColor=#E8F7E8;gradientDirection=south;strokeColor=#21813A;strokeWidth=2;dashed=1;dashPattern=5 4;arcSize=12;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="650" y="770" width="380" height="112" as="geometry"/>
+        </mxCell>
+        <mxCell id="results_title" value="&lt;b&gt;Per-Subtask Planning Results&lt;/b&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=18;fontColor=#166B2B;" vertex="1" parent="1">
+          <mxGeometry x="675" y="776" width="330" height="27" as="geometry"/>
+        </mxCell>
+        <mxCell id="result_s1" value="S1 &amp;nbsp;&amp;nbsp;&amp;nbsp; Planner &lt;font color=&quot;#18843A&quot;&gt;&lt;b&gt;✓&lt;/b&gt;&lt;/font&gt; &amp;nbsp;&amp;nbsp;&amp;nbsp; VAL &lt;font color=&quot;#18843A&quot;&gt;&lt;b&gt;✓&lt;/b&gt;&lt;/font&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=15;fontColor=#222833;" vertex="1" parent="1">
+          <mxGeometry x="680" y="804" width="320" height="19" as="geometry"/>
+        </mxCell>
+        <mxCell id="result_s2" value="S2 &amp;nbsp;&amp;nbsp;&amp;nbsp; Planner &lt;font color=&quot;#18843A&quot;&gt;&lt;b&gt;✓&lt;/b&gt;&lt;/font&gt; &amp;nbsp;&amp;nbsp;&amp;nbsp; VAL &lt;font color=&quot;#D62828&quot;&gt;&lt;b&gt;✕&lt;/b&gt;&lt;/font&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=15;fontColor=#222833;" vertex="1" parent="1">
+          <mxGeometry x="680" y="823" width="320" height="19" as="geometry"/>
+        </mxCell>
+        <mxCell id="result_s3" value="S3 &amp;nbsp;&amp;nbsp;&amp;nbsp; Planner &lt;font color=&quot;#D62828&quot;&gt;&lt;b&gt;✕&lt;/b&gt;&lt;/font&gt; &amp;nbsp;&amp;nbsp;&amp;nbsp; VAL —" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=15;fontColor=#222833;" vertex="1" parent="1">
+          <mxGeometry x="680" y="842" width="320" height="19" as="geometry"/>
+        </mxCell>
+        <mxCell id="results_note" value="Planner-generated · VAL-valid where available" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=11;fontStyle=2;fontColor=#3A7447;" vertex="1" parent="1">
+          <mxGeometry x="680" y="862" width="320" height="15" as="geometry"/>
+        </mxCell>
+
+        <!-- Feedback labels and attribution -->
+        <mxCell id="planner_feedback_label" value="Planner feedback&lt;br&gt;≤ 2 retries" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=15;fontColor=#C62020;" vertex="1" parent="1">
+          <mxGeometry x="145" y="648" width="185" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="val_feedback_label" value="VAL-guided regeneration&lt;br&gt;failed subtask only&lt;br&gt;≤ 2 retries" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=15;fontColor=#C62020;" vertex="1" parent="1">
+          <mxGeometry x="1350" y="626" width="220" height="82" as="geometry"/>
+        </mxCell>
+        <mxCell id="fontawesome_attribution" value="Icons adapted from Font Awesome Free 7.3.1 · CC BY 4.0 · fontawesome.com" style="text;html=1;strokeColor=none;fillColor=none;align=right;verticalAlign=middle;fontFamily=Helvetica;fontSize=9;fontColor=#7D8794;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="878" width="490" height="18" as="geometry"/>
+        </mxCell>
+
+        <!-- Forward information flow -->
+        <mxCell id="edge_inputs_grounding" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#303744;strokeWidth=2;endArrow=classic;endFill=1;" edge="1" parent="1" source="inputs_group" target="grounding">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="edge_scene_decomposition" value="" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.6;strokeColor=#7A8793;entryX=0.2;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="input_scene" target="decomposition">
+        <mxCell id="edge_grounding_llm" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#303744;strokeWidth=2;endArrow=classic;endFill=1;" edge="1" parent="1" source="grounding" target="llm_core">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="edge_domain_decomposition" value="" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.6;strokeColor=#7A8793;entryX=0.8;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="input_domain" target="decomposition">
+        <mxCell id="edge_llm_decomposition" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#173F8F;strokeWidth=2.4;endArrow=classic;endFill=1;exitX=0.5;exitY=0;entryX=0.5;entryY=1;" edge="1" parent="1" source="llm_core" target="decomposition">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_decomposition_subtasks" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#173F8F;strokeWidth=2.4;endArrow=classic;endFill=1;exitX=0.5;exitY=0;entryX=0.5;entryY=1;" edge="1" parent="1" source="decomposition" target="parsed_subtasks">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_llm_allocation" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#173F8F;strokeWidth=2.2;endArrow=classic;endFill=1;exitX=0.22;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="llm_core" target="allocation">
           <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="300" y="540"/>
-              <mxPoint x="300" y="430"/>
-            </Array>
+            <Array as="points"><mxPoint x="695" y="510"/><mxPoint x="528" y="510"/></Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="edge_scene_grounding" value="scene objects" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.4;strokeColor=#8A98A3;fontColor=#64727D;fontFamily=Helvetica;fontSize=12;labelBackgroundColor=#FFFFFF;entryX=0.15;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="input_scene" target="grounding">
+        <mxCell id="edge_llm_problem" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#173F8F;strokeWidth=2.2;endArrow=classic;endFill=1;exitX=0.78;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="llm_core" target="problem_generation">
           <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="280" y="740"/>
-              <mxPoint x="860" y="740"/>
-            </Array>
+            <Array as="points"><mxPoint x="935" y="510"/><mxPoint x="1158" y="510"/></Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="edge_domain_grounding" value="supported predicates" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.4;strokeColor=#8A98A3;fontColor=#64727D;fontFamily=Helvetica;fontSize=12;labelBackgroundColor=#FFFFFF;entryX=0.8;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="input_domain" target="grounding">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="260" y="775"/>
-              <mxPoint x="1020" y="775"/>
-            </Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="edge_robots_allocation" value="skills, capacity, domain map" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.6;strokeColor=#7A8793;fontColor=#64727D;fontFamily=Helvetica;fontSize=12;labelBackgroundColor=#FFFFFF;entryX=0.25;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="input_robots" target="allocation">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="270" y="705"/>
-              <mxPoint x="1180" y="705"/>
-            </Array>
-          </mxGeometry>
-        </mxCell>
-
-        <!-- Main forward-flow edges -->
-        <mxCell id="edge_decomposition_subtasks" value="" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=2;strokeColor=#536471;" edge="1" parent="1" source="decomposition" target="subtasks">
+        <mxCell id="edge_allocation_tools" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#173F8F;strokeWidth=2.2;endArrow=classic;endFill=1;exitX=1;exitY=0.52;entryX=0;entryY=0.52;" edge="1" parent="1" source="allocation" target="planning_tools">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="edge_subtasks_grounding" value="" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=2;strokeColor=#536471;" edge="1" parent="1" source="subtasks" target="grounding">
+        <mxCell id="edge_problem_tools" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#173F8F;strokeWidth=2.2;endArrow=classic;endFill=1;exitX=0;exitY=0.52;entryX=1;entryY=0.52;" edge="1" parent="1" source="problem_generation" target="planning_tools">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="edge_grounding_output" value="" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.8;strokeColor=#5B8DB8;" edge="1" parent="1" source="grounding" target="grounding_output">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="edge_grounding_allocation" value="key objects" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=2;strokeColor=#536471;fontColor=#536471;fontFamily=Helvetica;fontSize=12;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="grounding" target="allocation">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="edge_subtasks_allocation" value="subtasks + dependencies" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#7A8793;fontColor=#64727D;fontFamily=Helvetica;fontSize=12;labelBackgroundColor=#FFFFFF;entryX=0.2;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="subtasks" target="allocation">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="700" y="225"/>
-              <mxPoint x="1170" y="225"/>
-            </Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="edge_allocation_output" value="" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=2;strokeColor=#C69214;" edge="1" parent="1" source="allocation" target="allocation_output">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="edge_grounded_context_problem" value="subtask-specific PDDL states" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.6;strokeColor=#5B8DB8;fontColor=#415B70;fontFamily=Helvetica;fontSize=12;labelBackgroundColor=#FFFFFF;entryX=0.2;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="grounding_output" target="problem_group">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="950" y="810"/>
-              <mxPoint x="1510" y="810"/>
-            </Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="edge_allocation_lane_1" value="" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.8;strokeColor=#536471;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="allocation_output" target="lane_1">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="edge_allocation_lane_2" value="parallel fan-out" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.8;strokeColor=#536471;fontColor=#536471;fontFamily=Helvetica;fontSize=12;labelBackgroundColor=#FFFFFF;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="allocation_output" target="lane_2">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="edge_allocation_lane_n" value="" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.8;strokeColor=#536471;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="allocation_output" target="lane_n">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="edge_lane_1_gen" value="" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.7;strokeColor=#536471;" edge="1" parent="1" source="lane_1" target="problem_gen_1">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="edge_lane_2_gen" value="" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.7;strokeColor=#536471;" edge="1" parent="1" source="lane_2" target="problem_gen_2">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="edge_lane_n_gen" value="" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.7;strokeColor=#536471;" edge="1" parent="1" source="lane_n" target="problem_gen_n">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="edge_gen_1_repair" value="" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.7;strokeColor=#536471;" edge="1" parent="1" source="problem_gen_1" target="repair_1">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="edge_gen_2_repair" value="" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.7;strokeColor=#536471;" edge="1" parent="1" source="problem_gen_2" target="repair_2">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="edge_gen_n_repair" value="" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.7;strokeColor=#536471;" edge="1" parent="1" source="problem_gen_n" target="repair_n">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="edge_repair_1_planner" value="" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.8;strokeColor=#536471;entryX=0;entryY=0.2;entryDx=0;entryDy=0;" edge="1" parent="1" source="repair_1" target="planner">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="edge_repair_2_planner" value="robot-specific problems" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.8;strokeColor=#536471;fontColor=#536471;fontFamily=Helvetica;fontSize=12;labelBackgroundColor=#FFFFFF;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="repair_2" target="planner">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="edge_repair_n_planner" value="" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.8;strokeColor=#536471;entryX=0;entryY=0.8;entryDx=0;entryDy=0;" edge="1" parent="1" source="repair_n" target="planner">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="edge_planner_decision" value="per-subtask plans" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=2;strokeColor=#536471;fontColor=#536471;fontFamily=Helvetica;fontSize=12;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="planner" target="plan_found">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="edge_decision_val" value="Yes · VAL enabled" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=2;strokeColor=#536471;fontColor=#536471;fontFamily=Helvetica;fontSize=12;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="plan_found" target="val">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="edge_val_output" value="Valid" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=2;strokeColor=#4F8A60;fontColor=#4F7658;fontFamily=Helvetica;fontSize=12;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="val" target="output">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="edge_val_bypass" value="VAL disabled" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#9B8B4A;dashed=1;dashPattern=1 4;fontColor=#716633;fontFamily=Helvetica;fontSize=12;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="plan_found" target="output">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="2270" y="240"/>
-              <mxPoint x="2720" y="240"/>
-            </Array>
-          </mxGeometry>
-        </mxCell>
-
-        <!-- Optional prompt augmentation edges -->
-        <mxCell id="edge_rag_decompose" value="optional context" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=0;strokeWidth=1.7;strokeColor=#9B8B4A;dashed=1;dashPattern=1 4;fontColor=#716633;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="rag_decompose" target="decomposition">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="edge_rag_allocate" value="optional context" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=0;strokeWidth=1.7;strokeColor=#9B8B4A;dashed=1;dashPattern=1 4;fontColor=#716633;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="rag_allocate" target="allocation">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="edge_rag_problem" value="optional context" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=0;strokeWidth=1.7;strokeColor=#9B8B4A;dashed=1;dashPattern=1 4;fontColor=#716633;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#FFFFFF;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="rag_problem" target="problem_group">
+        <mxCell id="edge_tools_results" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#18843A;strokeWidth=2.4;endArrow=classic;endFill=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="planning_tools" target="results">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
 
-        <!-- Feedback loops -->
-        <mxCell id="edge_planner_feedback" value="&lt;b&gt;Planner Feedback (optional)&lt;/b&gt;&lt;br&gt;retry from allocation" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=2.4;strokeColor=#C75B5B;dashed=1;dashPattern=8 6;fontColor=#A34444;fontFamily=Helvetica;fontSize=13;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="plan_found" target="allocation">
+        <!-- Planner and VAL feedback loops -->
+        <mxCell id="edge_planner_feedback" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#C62020;strokeWidth=2.2;dashed=1;dashPattern=7 5;endArrow=classic;endFill=1;exitX=0;exitY=0.82;entryX=0;entryY=0.5;" edge="1" parent="1" source="planning_tools" target="allocation">
           <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="2270" y="865"/>
-              <mxPoint x="1240" y="865"/>
-            </Array>
+            <Array as="points"><mxPoint x="350" y="712"/><mxPoint x="350" y="610"/></Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="edge_val_feedback" value="&lt;b&gt;VAL Feedback (optional)&lt;/b&gt;&lt;br&gt;regenerate failed subtasks only&lt;br&gt;robot assignments unchanged" style="edgeStyle=orthogonalEdgeStyle;sketch=1;curveFitting=1;jiggle=1;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeWidth=2.4;strokeColor=#C75B5B;dashed=1;dashPattern=8 6;fontColor=#A34444;fontFamily=Helvetica;fontSize=13;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.72;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="val" target="problem_group">
+        <mxCell id="edge_val_feedback" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#C62020;strokeWidth=2.2;dashed=1;dashPattern=7 5;endArrow=classic;endFill=1;exitX=1;exitY=0.82;entryX=1;entryY=0.5;" edge="1" parent="1" source="planning_tools" target="problem_generation">
           <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="2470" y="955"/>
-              <mxPoint x="1780" y="955"/>
-            </Array>
+            <Array as="points"><mxPoint x="1330" y="712"/><mxPoint x="1330" y="610"/></Array>
           </mxGeometry>
         </mxCell>
       </root>

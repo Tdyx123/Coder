@@ -1,257 +1,342 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<mxfile host="app.diagrams.net" modified="2026-07-31T00:00:00.000Z" agent="Codex" version="24.7.17" type="device" compressed="false">
+<mxfile host="app.diagrams.net" modified="2026-08-08T00:00:00.000Z" agent="Codex" version="24.7.17" type="device" compressed="false">
   <diagram id="task-data-engine-qa" name="Task Data Engine and QA Construction">
-    <mxGraphModel dx="1920" dy="1080" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1920" pageHeight="1080" math="0" shadow="0" background="#FFFFFF">
+    <mxGraphModel dx="1920" dy="1080" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1920" pageHeight="1080" math="0" shadow="0" background="#FFFFFF">
       <root>
         <mxCell id="0"/>
         <mxCell id="1" parent="0"/>
 
-        <!-- Page title and section backgrounds -->
-        <mxCell id="title" value="Task Data Engine and QA Pair Construction" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=28;fontStyle=1;fontColor=#243447;" vertex="1" parent="1">
-          <mxGeometry x="410" y="24" width="1100" height="42" as="geometry"/>
+        <!--
+          Adapted icon sources:
+          Tabler Icons (MIT), https://github.com/tabler/tabler-icons
+          Google Material Symbols reference (Apache-2.0), https://github.com/google/material-design-icons
+          All icon paths are embedded, recolored, and normalized for this figure.
+        -->
+
+        <!-- Section labels and boundary -->
+        <mxCell id="section_generation" value="(a) Task Data Generation" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontFamily=Arial;fontSize=25;fontStyle=1;fontColor=#252525;" vertex="1" parent="1">
+          <mxGeometry x="215" y="65" width="760" height="42" as="geometry"/>
         </mxCell>
-        <mxCell id="panel_a" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=#F8FAFC;strokeColor=#C7D2DE;strokeWidth=1.5;" vertex="1" parent="1">
-          <mxGeometry x="20" y="112" width="1240" height="920" as="geometry"/>
+        <mxCell id="section_qa" value="(b) QA Construction" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontFamily=Arial;fontSize=25;fontStyle=1;fontColor=#252525;" vertex="1" parent="1">
+          <mxGeometry x="1260" y="65" width="600" height="42" as="geometry"/>
         </mxCell>
-        <mxCell id="panel_b" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=#FCFCFD;strokeColor=#C7D2DE;strokeWidth=1.5;" vertex="1" parent="1">
-          <mxGeometry x="1280" y="112" width="620" height="920" as="geometry"/>
-        </mxCell>
-        <mxCell id="panel_a_label" value="(a) Task Data Generation" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=19;fontStyle=1;fontColor=#243447;" vertex="1" parent="1">
-          <mxGeometry x="40" y="126" width="360" height="30" as="geometry"/>
-        </mxCell>
-        <mxCell id="panel_b_label" value="(b) QA Pair Construction" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=19;fontStyle=1;fontColor=#243447;" vertex="1" parent="1">
-          <mxGeometry x="1300" y="126" width="340" height="30" as="geometry"/>
-        </mxCell>
-        <mxCell id="divider" value="" style="shape=line;html=1;strokeColor=#AEB9C5;strokeWidth=1.5;dashed=1;dashPattern=6 6;" vertex="1" parent="1">
-          <mxGeometry x="1268" y="128" width="1" height="886" as="geometry"/>
+        <mxCell id="section_divider" value="" style="shape=line;html=1;strokeColor=#B3BAC2;strokeWidth=1;dashed=1;dashPattern=7 7;" vertex="1" parent="1">
+          <mxGeometry x="1125" y="135" width="1" height="850" as="geometry"/>
         </mxCell>
 
-        <!-- Input resources -->
-        <mxCell id="input_panel" value="&lt;b&gt;Input Resources&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#EEF3F7;strokeColor=#7F96A8;strokeWidth=1.5;fontSize=16;fontColor=#243447;verticalAlign=top;spacingTop=12;" vertex="1" parent="1">
-          <mxGeometry x="42" y="176" width="196" height="772" as="geometry"/>
+        <!-- Environment resources -->
+        <mxCell id="resources" value="&lt;b&gt;Environment&lt;br&gt;Resources&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fillColor=#FFFFFF;strokeColor=#3B6FB6;strokeWidth=1.5;fontFamily=Arial;fontSize=20;fontStyle=1;fontColor=#3B6FB6;verticalAlign=top;spacingTop=20;" vertex="1" parent="1">
+          <mxGeometry x="30" y="200" width="250" height="600" as="geometry"/>
         </mxCell>
-        <mxCell id="input_scene" value="&lt;b&gt;AI2-THOR Scene&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#60788A&quot;&gt;Floor Plan&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#9DB1C1;strokeWidth=1.5;fontSize=15;fontColor=#243447;spacing=8;" vertex="1" parent="1">
-          <mxGeometry x="60" y="232" width="160" height="116" as="geometry"/>
+        <mxCell id="resource_sep_1" value="" style="shape=line;html=1;strokeColor=#8A8A8A;strokeWidth=0.7;dashed=1;dashPattern=4 4;" vertex="1" parent="1">
+          <mxGeometry x="48" y="355" width="214" height="1" as="geometry"/>
         </mxCell>
-        <mxCell id="scene_icon" value="" style="shape=image;html=1;imageAspect=0;aspect=fixed;image=data:image/svg+xml,%3Csvg%20fill%3D%22%2366869C%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20576%20512%22%3E%3C%21--%21%20Font%20Awesome%20Free%206.7.2%20by%20%40fontawesome%20-%20https%3A%2F%2Ffontawesome.com%20License%20-%20https%3A%2F%2Ffontawesome.com%2Flicense%2Ffree%20%28Icons%3A%20CC%20BY%204.0%2C%20Fonts%3A%20SIL%20OFL%201.1%2C%20Code%3A%20MIT%20License%29%20Copyright%202024%20Fonticons%2C%20Inc.%20--%3E%3Cpath%20d%3D%22M384%20476.1L192%20421.2l0-385.3L384%2090.8l0%20385.3zm32-1.2l0-386.5L543.1%2037.5c15.8-6.3%2032.9%205.3%2032.9%2022.3l0%20334.8c0%209.8-6%2018.6-15.1%2022.3L416%20474.8zM15.1%2095.1L160%2037.2l0%20386.5L32.9%20474.5C17.1%20480.8%200%20469.2%200%20452.2L0%20117.4c0-9.8%206-18.6%2015.1-22.3z%22%2F%3E%3C%2Fsvg%3E;" vertex="1" parent="1">
-          <mxGeometry x="78" y="250" width="40" height="34" as="geometry"/>
+        <mxCell id="resource_sep_2" value="" style="shape=line;html=1;strokeColor=#8A8A8A;strokeWidth=0.7;dashed=1;dashPattern=4 4;" vertex="1" parent="1">
+          <mxGeometry x="48" y="480" width="214" height="1" as="geometry"/>
         </mxCell>
-        <mxCell id="input_objects" value="&lt;b&gt;Object Metadata&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#60788A&quot;&gt;Name · Mass · Properties&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#9DB1C1;strokeWidth=1.5;fontSize=15;fontColor=#243447;spacing=8;" vertex="1" parent="1">
-          <mxGeometry x="60" y="380" width="160" height="116" as="geometry"/>
-        </mxCell>
-        <mxCell id="object_chip_1" value="" style="shape=image;html=1;imageAspect=0;aspect=fixed;image=data:image/svg+xml,%3Csvg%20fill%3D%22%2366869C%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20576%20512%22%3E%3C%21--%21%20Font%20Awesome%20Free%206.7.2%20by%20%40fontawesome%20-%20https%3A%2F%2Ffontawesome.com%20License%20-%20https%3A%2F%2Ffontawesome.com%2Flicense%2Ffree%20%28Icons%3A%20CC%20BY%204.0%2C%20Fonts%3A%20SIL%20OFL%201.1%2C%20Code%3A%20MIT%20License%29%20Copyright%202024%20Fonticons%2C%20Inc.%20--%3E%3Cpath%20d%3D%22M290.8%2048.6l78.4%2029.7L288%20109.5%20206.8%2078.3l78.4-29.7c1.8-.7%203.8-.7%205.7%200zM136%2092.5l0%20112.2c-1.3%20.4-2.6%20.8-3.9%201.3l-96%2036.4C14.4%20250.6%200%20271.5%200%20294.7L0%20413.9c0%2022.2%2013.1%2042.3%2033.5%2051.3l96%2042.2c14.4%206.3%2030.7%206.3%2045.1%200L288%20457.5l113.5%2049.9c14.4%206.3%2030.7%206.3%2045.1%200l96-42.2c20.3-8.9%2033.5-29.1%2033.5-51.3l0-119.1c0-23.3-14.4-44.1-36.1-52.4l-96-36.4c-1.3-.5-2.6-.9-3.9-1.3l0-112.2c0-23.3-14.4-44.1-36.1-52.4l-96-36.4c-12.8-4.8-26.9-4.8-39.7%200l-96%2036.4C150.4%2048.4%20136%2069.3%20136%2092.5zM392%20210.6l-82.4%2031.2%200-89.2L392%20121l0%2089.6zM154.8%20250.9l78.4%2029.7L152%20311.7%2070.8%20280.6l78.4-29.7c1.8-.7%203.8-.7%205.7%200zm18.8%20204.4l0-100.5L256%20323.2l0%2095.9-82.4%2036.2zM421.2%20250.9c1.8-.7%203.8-.7%205.7%200l78.4%2029.7L424%20311.7l-81.2-31.1%2078.4-29.7zM523.2%20421.2l-77.6%2034.1%200-100.5L528%20323.2l0%2090.7c0%203.2-1.9%206-4.8%207.3z%22%2F%3E%3C%2Fsvg%3E;" vertex="1" parent="1">
-          <mxGeometry x="78" y="398" width="44" height="34" as="geometry"/>
-        </mxCell>
-        <mxCell id="input_skills" value="&lt;b&gt;Skill Library&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#60788A&quot;&gt;Preconditions · Arity&lt;br&gt;Affordances&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#9DB1C1;strokeWidth=1.5;fontSize=15;fontColor=#243447;spacing=8;" vertex="1" parent="1">
-          <mxGeometry x="60" y="528" width="160" height="128" as="geometry"/>
-        </mxCell>
-        <mxCell id="skill_chip_1" value="" style="shape=image;html=1;imageAspect=0;aspect=fixed;image=data:image/svg+xml,%3Csvg%20fill%3D%22%2366869C%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20512%20512%22%3E%3C%21--%21%20Font%20Awesome%20Free%206.7.2%20by%20%40fontawesome%20-%20https%3A%2F%2Ffontawesome.com%20License%20-%20https%3A%2F%2Ffontawesome.com%2Flicense%2Ffree%20%28Icons%3A%20CC%20BY%204.0%2C%20Fonts%3A%20SIL%20OFL%201.1%2C%20Code%3A%20MIT%20License%29%20Copyright%202024%20Fonticons%2C%20Inc.%20--%3E%3Cpath%20d%3D%22M192%20104.8c0-9.2-5.8-17.3-13.2-22.8C167.2%2073.3%20160%2061.3%20160%2048c0-26.5%2028.7-48%2064-48s64%2021.5%2064%2048c0%2013.3-7.2%2025.3-18.8%2034c-7.4%205.5-13.2%2013.6-13.2%2022.8c0%2012.8%2010.4%2023.2%2023.2%2023.2l56.8%200c26.5%200%2048%2021.5%2048%2048l0%2056.8c0%2012.8%2010.4%2023.2%2023.2%2023.2c9.2%200%2017.3-5.8%2022.8-13.2c8.7-11.6%2020.7-18.8%2034-18.8c26.5%200%2048%2028.7%2048%2064s-21.5%2064-48%2064c-13.3%200-25.3-7.2-34-18.8c-5.5-7.4-13.6-13.2-22.8-13.2c-12.8%200-23.2%2010.4-23.2%2023.2L384%20464c0%2026.5-21.5%2048-48%2048l-56.8%200c-12.8%200-23.2-10.4-23.2-23.2c0-9.2%205.8-17.3%2013.2-22.8c11.6-8.7%2018.8-20.7%2018.8-34c0-26.5-28.7-48-64-48s-64%2021.5-64%2048c0%2013.3%207.2%2025.3%2018.8%2034c7.4%205.5%2013.2%2013.6%2013.2%2022.8c0%2012.8-10.4%2023.2-23.2%2023.2L48%20512c-26.5%200-48-21.5-48-48L0%20343.2C0%20330.4%2010.4%20320%2023.2%20320c9.2%200%2017.3%205.8%2022.8%2013.2C54.7%20344.8%2066.7%20352%2080%20352c26.5%200%2048-28.7%2048-64s-21.5-64-48-64c-13.3%200-25.3%207.2-34%2018.8C40.5%20250.2%2032.4%20256%2023.2%20256C10.4%20256%200%20245.6%200%20232.8L0%20176c0-26.5%2021.5-48%2048-48l120.8%200c12.8%200%2023.2-10.4%2023.2-23.2z%22%2F%3E%3C%2Fsvg%3E;" vertex="1" parent="1">
-          <mxGeometry x="78" y="550" width="28" height="28" as="geometry"/>
-        </mxCell>
-        <mxCell id="skill_chip_2" value="" style="shape=image;html=1;imageAspect=0;aspect=fixed;image=data:image/svg+xml,%3Csvg%20fill%3D%22%2366869C%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20512%20512%22%3E%3C%21--%21%20Font%20Awesome%20Free%206.7.2%20by%20%40fontawesome%20-%20https%3A%2F%2Ffontawesome.com%20License%20-%20https%3A%2F%2Ffontawesome.com%2Flicense%2Ffree%20%28Icons%3A%20CC%20BY%204.0%2C%20Fonts%3A%20SIL%20OFL%201.1%2C%20Code%3A%20MIT%20License%29%20Copyright%202024%20Fonticons%2C%20Inc.%20--%3E%3Cpath%20d%3D%22M192%20104.8c0-9.2-5.8-17.3-13.2-22.8C167.2%2073.3%20160%2061.3%20160%2048c0-26.5%2028.7-48%2064-48s64%2021.5%2064%2048c0%2013.3-7.2%2025.3-18.8%2034c-7.4%205.5-13.2%2013.6-13.2%2022.8c0%2012.8%2010.4%2023.2%2023.2%2023.2l56.8%200c26.5%200%2048%2021.5%2048%2048l0%2056.8c0%2012.8%2010.4%2023.2%2023.2%2023.2c9.2%200%2017.3-5.8%2022.8-13.2c8.7-11.6%2020.7-18.8%2034-18.8c26.5%200%2048%2028.7%2048%2064s-21.5%2064-48%2064c-13.3%200-25.3-7.2-34-18.8c-5.5-7.4-13.6-13.2-22.8-13.2c-12.8%200-23.2%2010.4-23.2%2023.2L384%20464c0%2026.5-21.5%2048-48%2048l-56.8%200c-12.8%200-23.2-10.4-23.2-23.2c0-9.2%205.8-17.3%2013.2-22.8c11.6-8.7%2018.8-20.7%2018.8-34c0-26.5-28.7-48-64-48s-64%2021.5-64%2048c0%2013.3%207.2%2025.3%2018.8%2034c7.4%205.5%2013.2%2013.6%2013.2%2022.8c0%2012.8-10.4%2023.2-23.2%2023.2L48%20512c-26.5%200-48-21.5-48-48L0%20343.2C0%20330.4%2010.4%20320%2023.2%20320c9.2%200%2017.3%205.8%2022.8%2013.2C54.7%20344.8%2066.7%20352%2080%20352c26.5%200%2048-28.7%2048-64s-21.5-64-48-64c-13.3%200-25.3%207.2-34%2018.8C40.5%20250.2%2032.4%20256%2023.2%20256C10.4%20256%200%20245.6%200%20232.8L0%20176c0-26.5%2021.5-48%2048-48l120.8%200c12.8%200%2023.2-10.4%2023.2-23.2z%22%2F%3E%3C%2Fsvg%3E;" vertex="1" parent="1">
-          <mxGeometry x="114" y="550" width="28" height="28" as="geometry"/>
-        </mxCell>
-        <mxCell id="input_robots" value="&lt;b&gt;Robot Profiles&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#60788A&quot;&gt;Skills · Mass Capacity&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#9DB1C1;strokeWidth=1.5;fontSize=15;fontColor=#243447;spacing=8;" vertex="1" parent="1">
-          <mxGeometry x="60" y="688" width="160" height="128" as="geometry"/>
-        </mxCell>
-        <mxCell id="robot_icon_1" value="" style="shape=image;html=1;imageAspect=0;aspect=fixed;image=data:image/svg+xml,%3Csvg%20fill%3D%22%2366869C%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20640%20512%22%3E%3C%21--%21%20Font%20Awesome%20Free%206.7.2%20by%20%40fontawesome%20-%20https%3A%2F%2Ffontawesome.com%20License%20-%20https%3A%2F%2Ffontawesome.com%2Flicense%2Ffree%20%28Icons%3A%20CC%20BY%204.0%2C%20Fonts%3A%20SIL%20OFL%201.1%2C%20Code%3A%20MIT%20License%29%20Copyright%202024%20Fonticons%2C%20Inc.%20--%3E%3Cpath%20d%3D%22M320%200c17.7%200%2032%2014.3%2032%2032l0%2064%20120%200c39.8%200%2072%2032.2%2072%2072l0%20272c0%2039.8-32.2%2072-72%2072l-304%200c-39.8%200-72-32.2-72-72l0-272c0-39.8%2032.2-72%2072-72l120%200%200-64c0-17.7%2014.3-32%2032-32zM208%20384c-8.8%200-16%207.2-16%2016s7.2%2016%2016%2016l32%200c8.8%200%2016-7.2%2016-16s-7.2-16-16-16l-32%200zm96%200c-8.8%200-16%207.2-16%2016s7.2%2016%2016%2016l32%200c8.8%200%2016-7.2%2016-16s-7.2-16-16-16l-32%200zm96%200c-8.8%200-16%207.2-16%2016s7.2%2016%2016%2016l32%200c8.8%200%2016-7.2%2016-16s-7.2-16-16-16l-32%200zM264%20256a40%2040%200%201%200%20-80%200%2040%2040%200%201%200%2080%200zm152%2040a40%2040%200%201%200%200-80%2040%2040%200%201%200%200%2080zM48%20224l16%200%200%20192-16%200c-26.5%200-48-21.5-48-48l0-96c0-26.5%2021.5-48%2048-48zm544%200c26.5%200%2048%2021.5%2048%2048l0%2096c0%2026.5-21.5%2048-48%2048l-16%200%200-192%2016%200z%22%2F%3E%3C%2Fsvg%3E;" vertex="1" parent="1">
-          <mxGeometry x="76" y="708" width="38" height="32" as="geometry"/>
-        </mxCell>
-        <mxCell id="robot_icon_2" value="" style="shape=image;html=1;imageAspect=0;aspect=fixed;image=data:image/svg+xml,%3Csvg%20fill%3D%22%2366869C%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20640%20512%22%3E%3C%21--%21%20Font%20Awesome%20Free%206.7.2%20by%20%40fontawesome%20-%20https%3A%2F%2Ffontawesome.com%20License%20-%20https%3A%2F%2Ffontawesome.com%2Flicense%2Ffree%20%28Icons%3A%20CC%20BY%204.0%2C%20Fonts%3A%20SIL%20OFL%201.1%2C%20Code%3A%20MIT%20License%29%20Copyright%202024%20Fonticons%2C%20Inc.%20--%3E%3Cpath%20d%3D%22M320%200c17.7%200%2032%2014.3%2032%2032l0%2064%20120%200c39.8%200%2072%2032.2%2072%2072l0%20272c0%2039.8-32.2%2072-72%2072l-304%200c-39.8%200-72-32.2-72-72l0-272c0-39.8%2032.2-72%2072-72l120%200%200-64c0-17.7%2014.3-32%2032-32zM208%20384c-8.8%200-16%207.2-16%2016s7.2%2016%2016%2016l32%200c8.8%200%2016-7.2%2016-16s-7.2-16-16-16l-32%200zm96%200c-8.8%200-16%207.2-16%2016s7.2%2016%2016%2016l32%200c8.8%200%2016-7.2%2016-16s-7.2-16-16-16l-32%200zm96%200c-8.8%200-16%207.2-16%2016s7.2%2016%2016%2016l32%200c8.8%200%2016-7.2%2016-16s-7.2-16-16-16l-32%200zM264%20256a40%2040%200%201%200%20-80%200%2040%2040%200%201%200%2080%200zm152%2040a40%2040%200%201%200%200-80%2040%2040%200%201%200%200%2080zM48%20224l16%200%200%20192-16%200c-26.5%200-48-21.5-48-48l0-96c0-26.5%2021.5-48%2048-48zm544%200c26.5%200%2048%2021.5%2048%2048l0%2096c0%2026.5-21.5%2048-48%2048l-16%200%200-192%2016%200z%22%2F%3E%3C%2Fsvg%3E;" vertex="1" parent="1">
-          <mxGeometry x="118" y="708" width="38" height="32" as="geometry"/>
+        <mxCell id="resource_sep_3" value="" style="shape=line;html=1;strokeColor=#8A8A8A;strokeWidth=0.7;dashed=1;dashPattern=4 4;" vertex="1" parent="1">
+          <mxGeometry x="48" y="605" width="214" height="1" as="geometry"/>
         </mxCell>
 
-        <!-- Data Engine container -->
-        <mxCell id="engine_panel" value="&lt;b&gt;Data Engine&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#E6F5F2;strokeColor=#2A9D8F;strokeWidth=2;fontSize=18;fontColor=#17695F;verticalAlign=top;spacingTop=12;" vertex="1" parent="1">
-          <mxGeometry x="270" y="176" width="818" height="772" as="geometry"/>
+        <mxCell id="icon_scene" value="" iconSource="Tabler Icons: building (MIT)" style="shape=image;html=1;imageAspect=1;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%233B6FB6%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M3%2021l18%200M9%208l1%200M9%2012l1%200M9%2016l1%200M14%208l1%200M14%2012l1%200M14%2016l1%200M5%2021v-16a2%202%200%200%201%202%20-2h10a2%202%200%200%201%202%202v16%22/%3E%3C/svg%3E;" vertex="1" parent="1">
+          <mxGeometry x="58" y="282" width="62" height="62" as="geometry"/>
+        </mxCell>
+        <mxCell id="label_scene" value="Scenes" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Arial;fontSize=19;fontColor=#252525;" vertex="1" parent="1">
+          <mxGeometry x="145" y="291" width="105" height="44" as="geometry"/>
         </mxCell>
 
-        <mxCell id="complexity" value="&lt;b&gt;Task Complexity&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#397B73&quot;&gt;Simple: 1–2 · Complex: 3–5&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=14;fillColor=#FFFFFF;strokeColor=#62B5A9;strokeWidth=1.5;fontSize=12;fontColor=#17695F;" vertex="1" parent="1">
-          <mxGeometry x="452" y="230" width="174" height="56" as="geometry"/>
+        <mxCell id="icon_objects" value="" iconSource="Tabler Icons: box (MIT)" style="shape=image;html=1;imageAspect=1;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%233B6FB6%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M12%203l8%204.5v9L12%2021l-8%20-4.5v-9L12%203M12%2012l8%20-4.5M12%2012v9M12%2012L4%207.5%22/%3E%3C/svg%3E;" vertex="1" parent="1">
+          <mxGeometry x="58" y="407" width="62" height="62" as="geometry"/>
+        </mxCell>
+        <mxCell id="label_objects" value="Objects" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Arial;fontSize=19;fontColor=#252525;" vertex="1" parent="1">
+          <mxGeometry x="145" y="416" width="105" height="44" as="geometry"/>
         </mxCell>
 
-        <mxCell id="object_skill" value="&lt;b&gt;Object–Skill&lt;br&gt;Matching&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#397B73&quot;&gt;Object Properties&lt;br&gt;Preconditions&lt;br&gt;Pair Compatibility&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#2A9D8F;strokeWidth=2;fontSize=14;fontColor=#17695F;spacing=8;" vertex="1" parent="1">
-          <mxGeometry x="294" y="330" width="118" height="190" as="geometry"/>
+        <mxCell id="icon_skills" value="" iconSource="Tabler Icons: hand-grab (MIT)" style="shape=image;html=1;imageAspect=1;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%233B6FB6%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M8%2011v-3.5a1.5%201.5%200%200%201%203%200V10M11%209.5v-3a1.5%201.5%200%200%201%203%200V10M14%207.5a1.5%201.5%200%200%201%203%200V10M17%209.5a1.5%201.5%200%200%201%203%200V14a6%206%200%200%201%20-6%206h-2.208a6%206%200%200%201%20-5.012%20-2.7l-.196%20-.3c-.312%20-.479%20-1.407%20-2.388%20-3.286%20-5.728a1.5%201.5%200%200%201%20.536%20-2.022a1.867%201.867%200%200%201%202.28%20.28L8%2011%22/%3E%3C/svg%3E;" vertex="1" parent="1">
+          <mxGeometry x="58" y="532" width="62" height="62" as="geometry"/>
         </mxCell>
-        <mxCell id="subtask_sampling" value="&lt;b&gt;Subtask&lt;br&gt;Sampling&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#397B73&quot;&gt;Applicable Skills&lt;br&gt;Probability Gate&lt;br&gt;Unary / Binary&lt;br&gt;Second Object&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#2A9D8F;strokeWidth=2;fontSize=14;fontColor=#17695F;spacing=8;" vertex="1" parent="1">
-          <mxGeometry x="438" y="330" width="128" height="190" as="geometry"/>
-        </mxCell>
-        <mxCell id="rule_filter" value="&lt;b&gt;Rule-based&lt;br&gt;Filtering&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#397B73&quot;&gt;Unique Sample&lt;br&gt;No Duplicates&lt;br&gt;No State Conflict&lt;br&gt;Valid Placement&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#2A9D8F;strokeWidth=2;fontSize=14;fontColor=#17695F;spacing=8;" vertex="1" parent="1">
-          <mxGeometry x="592" y="330" width="128" height="190" as="geometry"/>
-        </mxCell>
-        <mxCell id="feasibility" value="&lt;b&gt;Robot Feasibility&lt;br&gt;Check&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#397B73&quot;&gt;Required Skills&lt;br&gt;Mass Capacity&lt;br&gt;All Assignable?&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#2A9D8F;strokeWidth=2;fontSize=14;fontColor=#17695F;spacing=8;" vertex="1" parent="1">
-          <mxGeometry x="746" y="330" width="128" height="190" as="geometry"/>
-        </mxCell>
-        <mxCell id="verbalization" value="&lt;b&gt;Task&lt;br&gt;Verbalization&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#397B73&quot;&gt;Logical Validation&lt;br&gt;Natural-language Task&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#2A9D8F;strokeWidth=2;fontSize=14;fontColor=#17695F;spacing=8;" vertex="1" parent="1">
-          <mxGeometry x="900" y="330" width="128" height="190" as="geometry"/>
-        </mxCell>
-        <mxCell id="state_construction" value="&lt;b&gt;State Construction&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#397B73&quot;&gt;Goal State Aggregation&lt;br&gt;Pre-task Actions&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#2A9D8F;strokeWidth=2;fontSize=14;fontColor=#17695F;spacing=8;" vertex="1" parent="1">
-          <mxGeometry x="900" y="622" width="128" height="142" as="geometry"/>
-        </mxCell>
-        <mxCell id="robot_team" value="&lt;b&gt;Robot Team Sampling&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#397B73&quot;&gt;2–4 heterogeneous robots&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=14;fillColor=#FFFFFF;strokeColor=#62B5A9;strokeWidth=1.5;fontSize=12;fontColor=#17695F;" vertex="1" parent="1">
-          <mxGeometry x="728" y="618" width="164" height="64" as="geometry"/>
-        </mxCell>
-        <mxCell id="object_chain" value="Object Chaining" style="rounded=1;whiteSpace=wrap;html=1;arcSize=20;fillColor=#D7EFEA;strokeColor=#62B5A9;fontSize=11;fontColor=#397B73;" vertex="1" parent="1">
-          <mxGeometry x="447" y="550" width="110" height="34" as="geometry"/>
+        <mxCell id="label_skills" value="Skills" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Arial;fontSize=19;fontColor=#252525;" vertex="1" parent="1">
+          <mxGeometry x="145" y="541" width="105" height="44" as="geometry"/>
         </mxCell>
 
-        <!-- Structured task record -->
-        <mxCell id="record" value="&lt;b&gt;Structured&lt;br&gt;Task Record&lt;/b&gt;&lt;hr&gt;&lt;font color=&quot;#526779&quot;&gt;Task Description&lt;br&gt;Subtasks&lt;br&gt;Robot Set&lt;br&gt;Reference Assignment&lt;br&gt;Goal States&lt;br&gt;Pre-task Actions&lt;/font&gt;" style="shape=document;whiteSpace=wrap;html=1;boundedLbl=1;fillColor=#FFFFFF;strokeColor=#526779;strokeWidth=2;fontSize=13;fontColor=#243447;spacing=8;" vertex="1" parent="1">
-          <mxGeometry x="1106" y="378" width="136" height="286" as="geometry"/>
+        <mxCell id="icon_robots" value="" iconSource="Tabler Icons: robot (MIT), adapted with base" style="shape=image;html=1;imageAspect=1;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%233B6FB6%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M6%206a2%202%200%200%201%202%20-2h8a2%202%200%200%201%202%202v4a2%202%200%200%201%20-2%202H8a2%202%200%200%201%20-2%20-2V6M12%202v2M9%2012v7M15%2012v7M5%2016l4%20-2M15%2014l4%202M9%2018h6M10%208h.01M14%208h.01M6%2021h12%22/%3E%3C/svg%3E;" vertex="1" parent="1">
+          <mxGeometry x="58" y="657" width="62" height="62" as="geometry"/>
         </mxCell>
-        <mxCell id="record_caption" value="Validated Dataset Record" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=11;fontColor=#6B7E8E;fontStyle=2;" vertex="1" parent="1">
-          <mxGeometry x="1104" y="678" width="140" height="28" as="geometry"/>
-        </mxCell>
-
-        <!-- QA branch backgrounds -->
-        <mxCell id="qa_decomp_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=#F0EBF8;strokeColor=#B7A6D0;strokeWidth=1.5;" vertex="1" parent="1">
-          <mxGeometry x="1300" y="174" width="580" height="250" as="geometry"/>
-        </mxCell>
-        <mxCell id="qa_alloc_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=#FFF1DF;strokeColor=#E9B87E;strokeWidth=1.5;" vertex="1" parent="1">
-          <mxGeometry x="1300" y="448" width="580" height="250" as="geometry"/>
-        </mxCell>
-        <mxCell id="qa_problem_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=#E8F5EC;strokeColor=#8DC39E;strokeWidth=1.5;" vertex="1" parent="1">
-          <mxGeometry x="1300" y="722" width="580" height="282" as="geometry"/>
+        <mxCell id="label_robots" value="Robots" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Arial;fontSize=19;fontColor=#252525;" vertex="1" parent="1">
+          <mxGeometry x="145" y="666" width="105" height="44" as="geometry"/>
         </mxCell>
 
-        <!-- Decomposition QA -->
-        <mxCell id="decomp_title" value="Decomposition QA" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=17;fontStyle=1;fontColor=#5A3F86;" vertex="1" parent="1">
-          <mxGeometry x="1320" y="186" width="230" height="30" as="geometry"/>
+        <!-- Task Data Engine container and numbered labels -->
+        <mxCell id="engine" value="&lt;b&gt;Task Data Engine&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=5;fillColor=#FFFFFF;strokeColor=#16837A;strokeWidth=1.5;fontFamily=Arial;fontSize=22;fontStyle=1;fontColor=#16837A;verticalAlign=top;spacingTop=20;" vertex="1" parent="1">
+          <mxGeometry x="330" y="200" width="790" height="450" as="geometry"/>
         </mxCell>
-        <mxCell id="decomp_source" value="&lt;b&gt;Source Fields&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#68577F&quot;&gt;Task Description&lt;br&gt;Scene Objects&lt;br&gt;Robot Profiles&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#7B61A8;strokeWidth=1.7;fontSize=12;fontColor=#5A3F86;spacing=7;" vertex="1" parent="1">
-          <mxGeometry x="1320" y="228" width="132" height="154" as="geometry"/>
+        <mxCell id="stage_label_1" value="1. Object–Skill&lt;br&gt;Grounding" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontFamily=Arial;fontSize=16;fontColor=#252525;" vertex="1" parent="1">
+          <mxGeometry x="340" y="278" width="130" height="58" as="geometry"/>
         </mxCell>
-        <mxCell id="decomp_template" value="&lt;b&gt;QA Builder&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#68577F&quot;&gt;Select Fields&lt;br&gt;Apply Template&lt;br&gt;Write Answer&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#7B61A8;strokeWidth=1.7;fontSize=12;fontColor=#5A3F86;spacing=7;" vertex="1" parent="1">
-          <mxGeometry x="1474" y="228" width="120" height="154" as="geometry"/>
+        <mxCell id="stage_label_2" value="2. Task&lt;br&gt;Synthesis" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontFamily=Arial;fontSize=16;fontColor=#252525;" vertex="1" parent="1">
+          <mxGeometry x="495" y="278" width="130" height="58" as="geometry"/>
         </mxCell>
-        <mxCell id="decomp_qa" value="&lt;b&gt;Q&lt;/b&gt;  Decompose the task.&lt;hr&gt;&lt;b&gt;A&lt;/b&gt;  Ordered / Parallel Subtasks&lt;br&gt;&lt;font color=&quot;#68577F&quot;&gt;Dependencies · Parallelism&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#7B61A8;strokeWidth=2;fontSize=12;fontColor=#3D2C58;spacing=9;" vertex="1" parent="1">
-          <mxGeometry x="1616" y="228" width="240" height="154" as="geometry"/>
+        <mxCell id="stage_label_3" value="3. Constraint&lt;br&gt;Filtering" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontFamily=Arial;fontSize=16;fontColor=#252525;" vertex="1" parent="1">
+          <mxGeometry x="650" y="278" width="130" height="58" as="geometry"/>
         </mxCell>
-
-        <!-- Allocation QA -->
-        <mxCell id="alloc_title" value="Allocation QA" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=17;fontStyle=1;fontColor=#9B5A18;" vertex="1" parent="1">
-          <mxGeometry x="1320" y="460" width="230" height="30" as="geometry"/>
+        <mxCell id="stage_label_4" value="4. Robot&lt;br&gt;Assignment" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontFamily=Arial;fontSize=16;fontColor=#252525;" vertex="1" parent="1">
+          <mxGeometry x="805" y="278" width="130" height="58" as="geometry"/>
         </mxCell>
-        <mxCell id="alloc_source" value="&lt;b&gt;Source Fields&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#8A653D&quot;&gt;Subtasks&lt;br&gt;Robot Skills&lt;br&gt;Object Mass&lt;br&gt;Dependencies&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#E59038;strokeWidth=1.7;fontSize=12;fontColor=#9B5A18;spacing=7;" vertex="1" parent="1">
-          <mxGeometry x="1320" y="502" width="132" height="154" as="geometry"/>
-        </mxCell>
-        <mxCell id="alloc_template" value="&lt;b&gt;QA Builder&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#8A653D&quot;&gt;Select Fields&lt;br&gt;Apply Template&lt;br&gt;Write Answer&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#E59038;strokeWidth=1.7;fontSize=12;fontColor=#9B5A18;spacing=7;" vertex="1" parent="1">
-          <mxGeometry x="1474" y="502" width="120" height="154" as="geometry"/>
-        </mxCell>
-        <mxCell id="alloc_qa" value="&lt;b&gt;Q&lt;/b&gt;  Assign feasible robots.&lt;hr&gt;&lt;b&gt;A&lt;/b&gt;  Robot Assignment&lt;br&gt;Sequence of Operations&lt;br&gt;&lt;font color=&quot;#8A653D&quot;&gt;Parallel · Sequential&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#E59038;strokeWidth=2;fontSize=12;fontColor=#664015;spacing=9;" vertex="1" parent="1">
-          <mxGeometry x="1616" y="502" width="240" height="154" as="geometry"/>
+        <mxCell id="stage_label_5" value="5. State&lt;br&gt;Construction" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontFamily=Arial;fontSize=16;fontColor=#252525;" vertex="1" parent="1">
+          <mxGeometry x="960" y="278" width="130" height="58" as="geometry"/>
         </mxCell>
 
-        <!-- PDDL Problem QA -->
-        <mxCell id="problem_title" value="PDDL Problem QA" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=17;fontStyle=1;fontColor=#347147;" vertex="1" parent="1">
-          <mxGeometry x="1320" y="734" width="230" height="30" as="geometry"/>
+        <!-- Engine stage illustrations -->
+        <mxCell id="icon_grounding" value="" iconSource="Tabler Icons: link (MIT)" style="shape=image;html=1;imageAspect=1;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2316837A%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M9%2015l6%20-6M11%206l.463%20-.536a5%205%200%200%201%207.071%207.072L18%2013M13%2018l-.397%20.534a5.068%205.068%200%200%201%20-7.127%200a4.972%204.972%200%200%201%200%20-7.071L6%2011%22/%3E%3C/svg%3E;" vertex="1" parent="1">
+          <mxGeometry x="373" y="365" width="64" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="problem_source" value="&lt;b&gt;Planning Context&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#52775D&quot;&gt;One Subtask&lt;br&gt;Assigned Robot&lt;br&gt;Robot Domain&lt;br&gt;Initial State · Goal&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#4F9D69;strokeWidth=1.7;fontSize=12;fontColor=#347147;spacing=7;" vertex="1" parent="1">
-          <mxGeometry x="1320" y="780" width="132" height="178" as="geometry"/>
+        <mxCell id="icon_synthesis" value="" iconSource="Tabler Icons: list-details (MIT)" style="shape=image;html=1;imageAspect=1;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2316837A%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M13%205h8M13%209h5M13%2015h8M13%2019h5M3%205a1%201%200%200%201%201%20-1h4a1%201%200%200%201%201%201v4a1%201%200%200%201%20-1%201H4a1%201%200%200%201%20-1%20-1V5M3%2015a1%201%200%200%201%201%20-1h4a1%201%200%200%201%201%201v4a1%201%200%200%201%20-1%201H4a1%201%200%200%201%20-1%20-1v-4%22/%3E%3C/svg%3E;" vertex="1" parent="1">
+          <mxGeometry x="528" y="360" width="64" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="problem_template" value="&lt;b&gt;QA Builder&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#52775D&quot;&gt;Select Fields&lt;br&gt;Apply Problem Template&lt;br&gt;Write PDDL Answer&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#4F9D69;strokeWidth=1.7;fontSize=12;fontColor=#347147;spacing=7;" vertex="1" parent="1">
-          <mxGeometry x="1474" y="780" width="120" height="178" as="geometry"/>
+        <mxCell id="subtask_box" value="&lt;i&gt;1–5 subtasks&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=7;fillColor=#FFFFFF;strokeColor=#16837A;strokeWidth=1.1;dashed=1;dashPattern=5 4;fontFamily=Arial;fontSize=12;fontColor=#3F3F3F;verticalAlign=top;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="500" y="460" width="120" height="88" as="geometry"/>
         </mxCell>
-        <mxCell id="problem_qa" value="&lt;b&gt;Q&lt;/b&gt;  Construct the PDDL problem.&lt;hr&gt;&lt;b&gt;A&lt;/b&gt;  &lt;font face=&quot;Courier New&quot;&gt;(define (problem ...))&lt;br&gt;(:objects ...)&lt;br&gt;(:init ...)&lt;br&gt;(:goal (...))&lt;/font&gt;" style="shape=document;whiteSpace=wrap;html=1;boundedLbl=1;fillColor=#FFFFFF;strokeColor=#4F9D69;strokeWidth=2;fontSize=12;fontColor=#274D32;spacing=9;" vertex="1" parent="1">
-          <mxGeometry x="1616" y="780" width="240" height="178" as="geometry"/>
+        <mxCell id="subtask_s1" value="s₁" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#FFFFFF;strokeColor=#16837A;strokeWidth=1;fontFamily=Arial;fontSize=11;fontColor=#252525;" vertex="1" parent="1">
+          <mxGeometry x="512" y="500" width="28" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtask_s2" value="s₂" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#FFFFFF;strokeColor=#16837A;strokeWidth=1;fontFamily=Arial;fontSize=11;fontColor=#252525;" vertex="1" parent="1">
+          <mxGeometry x="548" y="500" width="28" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtask_dots" value="···" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontFamily=Arial;fontSize=13;fontColor=#252525;" vertex="1" parent="1">
+          <mxGeometry x="576" y="500" width="20" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtask_sk" value="s_k" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#FFFFFF;strokeColor=#16837A;strokeWidth=1;fontFamily=Arial;fontSize=11;fontColor=#252525;" vertex="1" parent="1">
+          <mxGeometry x="592" y="500" width="28" height="28" as="geometry"/>
         </mxCell>
 
-        <!-- Branch hub -->
-        <mxCell id="branch_hub" value="" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#34495E;strokeColor=#34495E;" vertex="1" parent="1">
-          <mxGeometry x="1282" y="558" width="12" height="12" as="geometry"/>
+        <mxCell id="icon_filtering" value="" iconSource="Adapted funnel, normalized to Tabler outline style" style="shape=image;html=1;imageAspect=1;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2316837A%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M4%205h16l-6.5%207.5V19l-3%202v-8.5L4%205z%22/%3E%3C/svg%3E;" vertex="1" parent="1">
+          <mxGeometry x="680" y="360" width="70" height="70" as="geometry"/>
         </mxCell>
 
-        <!-- Main pipeline edges -->
-        <mxCell id="edge_inputs_engine" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#34495E;strokeWidth=2;endArrow=block;endFill=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="input_panel" target="object_skill">
+        <mxCell id="annotation_robots" value="heterogeneous robots" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontFamily=Arial;fontSize=12;fontStyle=2;fontColor=#8A8A8A;" vertex="1" parent="1">
+          <mxGeometry x="795" y="334" width="150" height="25" as="geometry"/>
+        </mxCell>
+        <mxCell id="assign_robot_1" value="" iconSource="Tabler Icons: robot (MIT)" style="shape=image;html=1;imageAspect=1;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%233F3F3F%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M6%206a2%202%200%200%201%202%20-2h8a2%202%200%200%201%202%202v4a2%202%200%200%201%20-2%202H8a2%202%200%200%201%20-2%20-2V6M12%202v2M9%2012v9M15%2012v9M5%2016l4%20-2M15%2014l4%202M9%2018h6M10%208h.01M14%208h.01%22/%3E%3C/svg%3E;" vertex="1" parent="1">
+          <mxGeometry x="810" y="365" width="36" height="36" as="geometry"/>
+        </mxCell>
+        <mxCell id="assign_robot_2" value="" iconSource="Material Symbols precision_manufacturing reference (Apache-2.0), redrawn as outline" style="shape=image;html=1;imageAspect=1;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%233F3F3F%22%20stroke-width%3D%221.6%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M3%2021h14M5%2021v-3h10v3M7%2018l2%20-6l5%202l3%20-7M9%2012L6%209M14%2014l2%202M17%207l2%20-2M19%205l2%202l-2%202%22/%3E%3Ccircle%20cx%3D%226%22%20cy%3D%229%22%20r%3D%222%22/%3E%3Ccircle%20cx%3D%229%22%20cy%3D%2212%22%20r%3D%222%22/%3E%3Ccircle%20cx%3D%2217%22%20cy%3D%227%22%20r%3D%222%22/%3E%3C/svg%3E;" vertex="1" parent="1">
+          <mxGeometry x="810" y="423" width="36" height="36" as="geometry"/>
+        </mxCell>
+        <mxCell id="assign_robot_3" value="" iconSource="Tabler Icons: robot (MIT), compact variant" style="shape=image;html=1;imageAspect=1;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%233F3F3F%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M6%206a2%202%200%200%201%202%20-2h8a2%202%200%200%201%202%202v4a2%202%200%200%201%20-2%202H8a2%202%200%200%201%20-2%20-2V6M12%202v2M9%2012v9M15%2012v9M5%2016l4%20-2M15%2014l4%202M9%2018h6M10%208h.01M14%208h.01%22/%3E%3C/svg%3E;" vertex="1" parent="1">
+          <mxGeometry x="810" y="481" width="36" height="36" as="geometry"/>
+        </mxCell>
+        <mxCell id="assign_s1" value="s₁" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#FFFFFF;strokeColor=#16837A;strokeWidth=1;fontFamily=Arial;fontSize=11;fontColor=#252525;" vertex="1" parent="1">
+          <mxGeometry x="910" y="368" width="30" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="assign_s2" value="s₂" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#FFFFFF;strokeColor=#16837A;strokeWidth=1;fontFamily=Arial;fontSize=11;fontColor=#252525;" vertex="1" parent="1">
+          <mxGeometry x="910" y="426" width="30" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="assign_sk" value="s_k" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#FFFFFF;strokeColor=#16837A;strokeWidth=1;fontFamily=Arial;fontSize=11;fontColor=#252525;" vertex="1" parent="1">
+          <mxGeometry x="910" y="484" width="30" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="assign_dots" value="⋮" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontFamily=Arial;fontSize=14;fontColor=#252525;" vertex="1" parent="1">
+          <mxGeometry x="917" y="458" width="16" height="24" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="icon_state" value="" iconSource="Adapted braces, normalized to Tabler outline style" style="shape=image;html=1;imageAspect=1;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2316837A%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M8%204H6a2%202%200%200%200%20-2%202v3a2%202%200%200%201%20-2%202a2%202%200%200%201%202%202v3a2%202%200%200%200%202%202h2M16%204h2a2%202%200%200%201%202%202v3a2%202%200%200%200%202%202a2%202%200%200%200%20-2%202v3a2%202%200%200%201%20-2%202h-2%22/%3E%3Ccircle%20cx%3D%2210%22%20cy%3D%2211%22%20r%3D%22.6%22%20fill%3D%22%2316837A%22/%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2211%22%20r%3D%22.6%22%20fill%3D%22%2316837A%22/%3E%3Ccircle%20cx%3D%2214%22%20cy%3D%2211%22%20r%3D%22.6%22%20fill%3D%22%2316837A%22/%3E%3C/svg%3E;" vertex="1" parent="1">
+          <mxGeometry x="990" y="370" width="70" height="70" as="geometry"/>
+        </mxCell>
+
+        <!-- Invisible engine routing anchors -->
+        <mxCell id="assignment_in" value="" style="ellipse;html=1;opacity=0;fillOpacity=0;strokeOpacity=0;" vertex="1" parent="1">
+          <mxGeometry x="796" y="394" width="2" height="2" as="geometry"/>
+        </mxCell>
+        <mxCell id="assignment_out" value="" style="ellipse;html=1;opacity=0;fillOpacity=0;strokeOpacity=0;" vertex="1" parent="1">
+          <mxGeometry x="950" y="394" width="2" height="2" as="geometry"/>
+        </mxCell>
+
+        <!-- Structured Task Record -->
+        <mxCell id="record" value="" style="shape=note;size=16;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#16837A;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="610" y="690" width="400" height="290" as="geometry"/>
+        </mxCell>
+        <mxCell id="record_title" value="Structured Task Record" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Arial;fontSize=20;fontStyle=1;fontColor=#16837A;" vertex="1" parent="1">
+          <mxGeometry x="650" y="714" width="280" height="38" as="geometry"/>
+        </mxCell>
+        <mxCell id="record_doc_icon" value="" iconSource="Tabler Icons: list-details (MIT)" style="shape=image;html=1;imageAspect=1;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2316837A%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M13%205h8M13%209h5M13%2015h8M13%2019h5M3%205a1%201%200%200%201%201%20-1h4a1%201%200%200%201%201%201v4a1%201%200%200%201%20-1%201H4a1%201%200%200%201%20-1%20-1V5M3%2015a1%201%200%200%201%201%20-1h4a1%201%200%200%201%201%201v4a1%201%200%200%201%20-1%201H4a1%201%200%200%201%20-1%20-1v-4%22/%3E%3C/svg%3E;" vertex="1" parent="1">
+          <mxGeometry x="932" y="710" width="42" height="42" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="record_icon_instruction" value="" iconSource="Tabler Icons: message (MIT)" style="shape=image;html=1;imageAspect=1;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%233F3F3F%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M8%209h8M8%2013h6M18%204a3%203%200%200%201%203%203v8a3%203%200%200%201%20-3%203h-5l-5%203v-3H6a3%203%200%200%201%20-3%20-3V7a3%203%200%200%201%203%20-3h12%22/%3E%3C/svg%3E;" vertex="1" parent="1">
+          <mxGeometry x="650" y="768" width="28" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="record_text_instruction" value="Task instruction" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Arial;fontSize=17;fontColor=#252525;" vertex="1" parent="1">
+          <mxGeometry x="692" y="765" width="240" height="34" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="record_icon_subtasks" value="" iconSource="Tabler Icons: list-details (MIT)" style="shape=image;html=1;imageAspect=1;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%233F3F3F%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M13%205h8M13%209h5M13%2015h8M13%2019h5M3%205a1%201%200%200%201%201%20-1h4a1%201%200%200%201%201%201v4a1%201%200%200%201%20-1%201H4a1%201%200%200%201%20-1%20-1V5M3%2015a1%201%200%200%201%201%20-1h4a1%201%200%200%201%201%201v4a1%201%200%200%201%20-1%201H4a1%201%200%200%201%20-1%20-1v-4%22/%3E%3C/svg%3E;" vertex="1" parent="1">
+          <mxGeometry x="650" y="810" width="28" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="record_text_subtasks" value="Subtasks" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Arial;fontSize=17;fontColor=#252525;" vertex="1" parent="1">
+          <mxGeometry x="692" y="807" width="240" height="34" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="record_icon_assignment" value="" iconSource="Tabler Icons: robot (MIT)" style="shape=image;html=1;imageAspect=1;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%233F3F3F%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M6%206a2%202%200%200%201%202%20-2h8a2%202%200%200%201%202%202v4a2%202%200%200%201%20-2%202H8a2%202%200%200%201%20-2%20-2V6M12%202v2M9%2012v9M15%2012v9M5%2016l4%20-2M15%2014l4%202M9%2018h6M10%208h.01M14%208h.01%22/%3E%3C/svg%3E;" vertex="1" parent="1">
+          <mxGeometry x="650" y="852" width="28" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="record_text_assignment" value="Robot assignment" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Arial;fontSize=17;fontColor=#252525;" vertex="1" parent="1">
+          <mxGeometry x="692" y="849" width="240" height="34" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="record_icon_state" value="" iconSource="Tabler Icons: flag (MIT)" style="shape=image;html=1;imageAspect=1;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%233F3F3F%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M5%205a5%205%200%200%201%207%200a5%205%200%200%200%207%200v9a5%205%200%200%201%20-7%200a5%205%200%200%200%20-7%200V5M5%2021v-7%22/%3E%3C/svg%3E;" vertex="1" parent="1">
+          <mxGeometry x="650" y="894" width="28" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="record_text_state" value="Initial / goal state" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Arial;fontSize=17;fontColor=#252525;" vertex="1" parent="1">
+          <mxGeometry x="692" y="891" width="240" height="34" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="record_icon_actions" value="" iconSource="Tabler Icons: player-play (MIT)" style="shape=image;html=1;imageAspect=1;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%233F3F3F%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M7%204v16l13%20-8L7%204%22/%3E%3C/svg%3E;" vertex="1" parent="1">
+          <mxGeometry x="650" y="936" width="28" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="record_text_actions" value="Action sequence" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Arial;fontSize=17;fontColor=#252525;" vertex="1" parent="1">
+          <mxGeometry x="692" y="933" width="240" height="34" as="geometry"/>
+        </mxCell>
+
+        <!-- QA Generator: record + System Prompt -> LLM -->
+        <mxCell id="qa_generator" value="&lt;b&gt;QA Generator&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fillColor=#FFF8F1;strokeColor=#D97818;strokeWidth=1.3;fontFamily=Arial;fontSize=19;fontStyle=1;fontColor=#D97818;verticalAlign=top;spacingTop=18;" vertex="1" parent="1">
+          <mxGeometry x="1150" y="690" width="235" height="220" as="geometry"/>
+        </mxCell>
+        <mxCell id="icon_system_terminal" value="" iconSource="Tabler Icons: terminal-2 (MIT)" style="shape=image;html=1;imageAspect=1;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23D97818%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M8%209l3%203l-3%203M13%2015h3M3%206a2%202%200%200%201%202%20-2h14a2%202%200%200%201%202%202v12a2%202%200%200%201%20-2%202H5a2%202%200%200%201%20-2%20-2V6%22/%3E%3C/svg%3E;" vertex="1" parent="1">
+          <mxGeometry x="1175" y="775" width="46" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="icon_system_settings" value="" iconSource="Tabler Icons: settings (MIT), overlay" style="shape=image;html=1;imageAspect=1;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23D97818%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M10.3%204.3c.4%20-1.7%202.9%20-1.7%203.4%200a1.7%201.7%200%200%200%202.6%201.1c1.5%20-.9%203.3%20.8%202.3%202.4a1.7%201.7%200%200%200%201.1%202.6c1.8%20.4%201.8%202.9%200%203.4a1.7%201.7%200%200%200%20-1.1%202.6c.9%201.5%20-.8%203.3%20-2.4%202.3a1.7%201.7%200%200%200%20-2.6%201.1c-.4%201.8%20-2.9%201.8%20-3.4%200a1.7%201.7%200%200%200%20-2.6%20-1.1c-1.5%20.9%20-3.3%20-.8%20-2.3%20-2.4a1.7%201.7%200%200%200%20-1.1%20-2.6c-1.8%20-.4%20-1.8%20-2.9%200%20-3.4a1.7%201.7%200%200%200%201.1%20-2.6c-.9%20-1.5%20.8%20-3.3%202.4%20-2.3a1.7%201.7%200%200%200%202.6%20-1.1M9%2012a3%203%200%201%200%206%200a3%203%200%200%200%20-6%200%22/%3E%3C/svg%3E;" vertex="1" parent="1">
+          <mxGeometry x="1208" y="766" width="24" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="label_system_prompt" value="System Prompt" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontFamily=Arial;fontSize=14;fontColor=#252525;" vertex="1" parent="1">
+          <mxGeometry x="1158" y="830" width="94" height="40" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="icon_llm" value="" iconSource="Tabler Icons: brain (MIT)" style="shape=image;html=1;imageAspect=1;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23D97818%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M15.5%2013a3.5%203.5%200%200%200%20-3.5%203.5v1a3.5%203.5%200%200%200%207%200v-1.8M8.5%2013a3.5%203.5%200%200%201%203.5%203.5v1a3.5%203.5%200%200%201%20-7%200v-1.8M17.5%2016a3.5%203.5%200%200%200%200%20-7H17M19%209.3V6.5a3.5%203.5%200%200%200%20-7%200M6.5%2016a3.5%203.5%200%200%201%200%20-7H7M5%209.3V6.5a3.5%203.5%200%200%201%207%200v10%22/%3E%3C/svg%3E;" vertex="1" parent="1">
+          <mxGeometry x="1290" y="775" width="46" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="label_llm" value="LLM" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontFamily=Arial;fontSize=14;fontStyle=1;fontColor=#252525;" vertex="1" parent="1">
+          <mxGeometry x="1280" y="830" width="66" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_system_llm" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#D97818;strokeWidth=1.4;dashed=1;dashPattern=5 4;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="icon_system_terminal" target="icon_llm">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="edge_object_sampling" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#34495E;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="object_skill" target="subtask_sampling">
+
+        <!-- QA cards -->
+        <mxCell id="qa_decomposition" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fillColor=#FFFFFF;strokeColor=#D97818;strokeWidth=1.3;" vertex="1" parent="1">
+          <mxGeometry x="1450" y="180" width="420" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="icon_decomposition" value="" iconSource="Tabler Icons: hierarchy-3 (MIT)" style="shape=image;html=1;imageAspect=1;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23D97818%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M10%205a2%202%200%201%200%204%200a2%202%200%201%200%20-4%200M6%2012a2%202%200%201%200%204%200a2%202%200%201%200%20-4%200M10%2019a2%202%200%201%200%204%200a2%202%200%201%200%20-4%200M18%2019a2%202%200%201%200%204%200a2%202%200%201%200%20-4%200M2%2019a2%202%200%201%200%204%200a2%202%200%201%200%20-4%200M14%2012a2%202%200%201%200%204%200a2%202%200%201%200%20-4%200M5%2017l2%20-3M9%2010l2%20-3M13%207l2%203M17%2014l2%203M15%2014l-2%203M9%2014l2%203%22/%3E%3C/svg%3E;" vertex="1" parent="1">
+          <mxGeometry x="1480" y="235" width="80" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="title_decomposition" value="Decomposition QA" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Arial;fontSize=20;fontStyle=1;fontColor=#D97818;" vertex="1" parent="1">
+          <mxGeometry x="1585" y="220" width="245" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="map_decomposition" value="Task → Subtasks" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Arial;fontSize=16;fontColor=#252525;" vertex="1" parent="1">
+          <mxGeometry x="1585" y="275" width="245" height="40" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="qa_allocation" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fillColor=#FFFFFF;strokeColor=#D97818;strokeWidth=1.3;" vertex="1" parent="1">
+          <mxGeometry x="1450" y="440" width="420" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="alloc_robot_1" value="" iconSource="Tabler Icons: robot (MIT)" style="shape=image;html=1;imageAspect=1;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%233F3F3F%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M6%206a2%202%200%200%201%202%20-2h8a2%202%200%200%201%202%202v4a2%202%200%200%201%20-2%202H8a2%202%200%200%201%20-2%20-2V6M12%202v2M9%2012v9M15%2012v9M5%2016l4%20-2M15%2014l4%202M9%2018h6M10%208h.01M14%208h.01%22/%3E%3C/svg%3E;" vertex="1" parent="1">
+          <mxGeometry x="1480" y="466" width="32" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="alloc_robot_2" value="" iconSource="Tabler Icons: robot (MIT), compact variant" style="shape=image;html=1;imageAspect=1;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%233F3F3F%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M6%206a2%202%200%200%201%202%20-2h8a2%202%200%200%201%202%202v4a2%202%200%200%201%20-2%202H8a2%202%200%200%201%20-2%20-2V6M12%202v2M9%2012v9M15%2012v9M5%2016l4%20-2M15%2014l4%202M9%2018h6M10%208h.01M14%208h.01%22/%3E%3C/svg%3E;" vertex="1" parent="1">
+          <mxGeometry x="1480" y="518" width="32" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="alloc_robot_3" value="" iconSource="Material Symbols precision_manufacturing reference (Apache-2.0), redrawn as outline" style="shape=image;html=1;imageAspect=1;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%233F3F3F%22%20stroke-width%3D%221.6%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M3%2021h14M5%2021v-3h10v3M7%2018l2%20-6l5%202l3%20-7M9%2012L6%209M14%2014l2%202M17%207l2%20-2M19%205l2%202l-2%202%22/%3E%3Ccircle%20cx%3D%226%22%20cy%3D%229%22%20r%3D%222%22/%3E%3Ccircle%20cx%3D%229%22%20cy%3D%2212%22%20r%3D%222%22/%3E%3Ccircle%20cx%3D%2217%22%20cy%3D%227%22%20r%3D%222%22/%3E%3C/svg%3E;" vertex="1" parent="1">
+          <mxGeometry x="1480" y="570" width="32" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="alloc_target_1" value="" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#FFFFFF;strokeColor=#D97818;strokeWidth=1.2;" vertex="1" parent="1">
+          <mxGeometry x="1550" y="468" width="28" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="alloc_target_2" value="" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#FFFFFF;strokeColor=#D97818;strokeWidth=1.2;" vertex="1" parent="1">
+          <mxGeometry x="1550" y="520" width="28" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="alloc_target_3" value="" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#FFFFFF;strokeColor=#D97818;strokeWidth=1.2;" vertex="1" parent="1">
+          <mxGeometry x="1550" y="572" width="28" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="alloc_dots" value="⋮" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontFamily=Arial;fontSize=14;fontColor=#252525;" vertex="1" parent="1">
+          <mxGeometry x="1556" y="548" width="16" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="title_allocation" value="Allocation QA" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Arial;fontSize=20;fontStyle=1;fontColor=#D97818;" vertex="1" parent="1">
+          <mxGeometry x="1600" y="470" width="230" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="map_allocation" value="Subtasks + Robots →&lt;br&gt;Assignment" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Arial;fontSize=16;fontColor=#252525;" vertex="1" parent="1">
+          <mxGeometry x="1600" y="530" width="230" height="58" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="qa_pddl" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fillColor=#FFFFFF;strokeColor=#D97818;strokeWidth=1.3;" vertex="1" parent="1">
+          <mxGeometry x="1450" y="700" width="420" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="icon_pddl" value="" iconSource="Tabler Icons: file-code (MIT)" style="shape=image;html=1;imageAspect=1;aspect=fixed;image=data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23D97818%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M14%203v4a1%201%200%200%200%201%201h4M17%2021H7a2%202%200%200%201%20-2%20-2V5a2%202%200%200%201%202%20-2h7l5%205v11a2%202%200%200%201%20-2%202M10%2013l-1%202l1%202M14%2013l1%202l-1%202%22/%3E%3C/svg%3E;" vertex="1" parent="1">
+          <mxGeometry x="1480" y="755" width="80" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="title_pddl" value="PDDL QA" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Arial;fontSize=20;fontStyle=1;fontColor=#D97818;" vertex="1" parent="1">
+          <mxGeometry x="1585" y="740" width="245" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="map_pddl" value="State → PDDL Problem" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Arial;fontSize=16;fontColor=#252525;" vertex="1" parent="1">
+          <mxGeometry x="1585" y="795" width="245" height="40" as="geometry"/>
+        </mxCell>
+
+        <!-- QA branch routing points -->
+        <mxCell id="qa_branch_top" value="" style="ellipse;html=1;opacity=0;fillOpacity=0;strokeOpacity=0;" vertex="1" parent="1">
+          <mxGeometry x="1415" y="279" width="2" height="2" as="geometry"/>
+        </mxCell>
+        <mxCell id="qa_branch_middle" value="" style="ellipse;html=1;opacity=0;fillOpacity=0;strokeOpacity=0;" vertex="1" parent="1">
+          <mxGeometry x="1415" y="539" width="2" height="2" as="geometry"/>
+        </mxCell>
+        <mxCell id="qa_branch_bottom" value="" style="ellipse;html=1;opacity=0;fillOpacity=0;strokeOpacity=0;" vertex="1" parent="1">
+          <mxGeometry x="1415" y="799" width="2" height="2" as="geometry"/>
+        </mxCell>
+
+        <!-- Main data flow -->
+        <mxCell id="edge_resources_grounding" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#3F3F3F;strokeWidth=1.5;endArrow=block;endFill=1;exitX=1;exitY=0.33;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="resources" target="icon_grounding">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="edge_sampling_filter" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#34495E;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="subtask_sampling" target="rule_filter">
+        <mxCell id="edge_grounding_synthesis" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#3F3F3F;strokeWidth=1.5;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="icon_grounding" target="icon_synthesis">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="edge_filter_feasibility" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#34495E;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="rule_filter" target="feasibility">
+        <mxCell id="edge_synthesis_filtering" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#3F3F3F;strokeWidth=1.5;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="icon_synthesis" target="icon_filtering">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="edge_feasibility_verbal" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#34495E;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="feasibility" target="verbalization">
+        <mxCell id="edge_filtering_assignment" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#3F3F3F;strokeWidth=1.5;endArrow=block;endFill=1;exitX=1;exitY=0.5;" edge="1" parent="1" source="icon_filtering" target="assignment_in">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="edge_verbal_state" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#34495E;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="verbalization" target="state_construction">
+        <mxCell id="edge_assignment_state" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#3F3F3F;strokeWidth=1.5;endArrow=block;endFill=1;entryX=0;entryY=0.5;" edge="1" parent="1" source="assignment_out" target="icon_state">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="edge_state_record" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#34495E;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.75;entryDx=0;entryDy=0;" edge="1" parent="1" source="state_construction" target="record">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="1068" y="694"/>
-              <mxPoint x="1068" y="593"/>
-            </Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="edge_complexity_sampling" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#62B5A9;strokeWidth=1.5;endArrow=open;endFill=0;dashed=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="complexity" target="subtask_sampling">
+        <mxCell id="edge_engine_record" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#3F3F3F;strokeWidth=1.5;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.3;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="engine" target="record">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="edge_team_feasibility" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#62B5A9;strokeWidth=1.5;endArrow=open;endFill=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="robot_team" target="feasibility">
+        <mxCell id="edge_record_generator" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#3F3F3F;strokeWidth=1.5;endArrow=block;endFill=1;exitX=1;exitY=0.38;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="record" target="qa_generator">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="edge_chain_sampling" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#62B5A9;strokeWidth=1.3;endArrow=open;endFill=0;dashed=1;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="object_chain" target="subtask_sampling">
+        <mxCell id="edge_generator_branch" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#3F3F3F;strokeWidth=1.5;endArrow=none;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" edge="1" parent="1" source="qa_generator" target="qa_branch_bottom">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_branch_bottom_middle" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#3F3F3F;strokeWidth=1.5;endArrow=none;" edge="1" parent="1" source="qa_branch_bottom" target="qa_branch_middle">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_branch_middle_top" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#3F3F3F;strokeWidth=1.5;endArrow=none;" edge="1" parent="1" source="qa_branch_middle" target="qa_branch_top">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_branch_decomposition" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#3F3F3F;strokeWidth=1.5;endArrow=block;endFill=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="qa_branch_top" target="qa_decomposition">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_branch_allocation" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#3F3F3F;strokeWidth=1.5;endArrow=block;endFill=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="qa_branch_middle" target="qa_allocation">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_branch_pddl" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#3F3F3F;strokeWidth=1.5;endArrow=block;endFill=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="qa_branch_bottom" target="qa_pddl">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
 
-        <!-- Retry loops -->
-        <mxCell id="edge_filter_retry" value="Reject &amp;amp; Resample" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#C65D5D;strokeWidth=2;dashed=1;dashPattern=7 5;endArrow=block;endFill=1;fontColor=#A54646;fontSize=11;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.7;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="rule_filter" target="subtask_sampling">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="656" y="304"/>
-              <mxPoint x="528" y="304"/>
-            </Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="edge_feas_retry" value="Reject &amp;amp; Resample" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#C65D5D;strokeWidth=2;dashed=1;dashPattern=7 5;endArrow=block;endFill=1;fontColor=#A54646;fontSize=11;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.2;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="feasibility" target="subtask_sampling">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="810" y="590"/>
-              <mxPoint x="464" y="590"/>
-            </Array>
-          </mxGeometry>
-        </mxCell>
-
-        <!-- Record to QA branching -->
-        <mxCell id="edge_record_hub" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#34495E;strokeWidth=2;endArrow=none;exitX=1;exitY=0.65;exitDx=0;exitDy=0;" edge="1" parent="1" source="record" target="branch_hub">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="edge_hub_decomp" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#7B61A8;strokeWidth=2;endArrow=block;endFill=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="branch_hub" target="decomp_source">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points"><mxPoint x="1308" y="305"/></Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="edge_hub_alloc" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#E59038;strokeWidth=2;endArrow=block;endFill=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="branch_hub" target="alloc_source">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="edge_hub_problem" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#4F9D69;strokeWidth=2;endArrow=block;endFill=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="branch_hub" target="problem_source">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points"><mxPoint x="1308" y="869"/></Array>
-          </mxGeometry>
-        </mxCell>
-
-        <!-- QA lane edges -->
-        <mxCell id="edge_decomp_source_template" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#7B61A8;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="decomp_source" target="decomp_template"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="edge_decomp_template_qa" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#7B61A8;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="decomp_template" target="decomp_qa"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="edge_alloc_source_template" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#E59038;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="alloc_source" target="alloc_template"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="edge_alloc_template_qa" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#E59038;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="alloc_template" target="alloc_qa"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="edge_problem_source_template" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#4F9D69;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="problem_source" target="problem_template"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="edge_problem_template_qa" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#4F9D69;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="problem_template" target="problem_qa"><mxGeometry relative="1" as="geometry"/></mxCell>
-
-        <!-- Footer legend -->
-        <mxCell id="legend_generation" value="Data Generation" style="rounded=1;whiteSpace=wrap;html=1;arcSize=20;fillColor=#E6F5F2;strokeColor=#2A9D8F;fontColor=#17695F;fontSize=11;" vertex="1" parent="1">
-          <mxGeometry x="55" y="974" width="118" height="32" as="geometry"/>
-        </mxCell>
-        <mxCell id="legend_qa" value="QA Construction" style="rounded=1;whiteSpace=wrap;html=1;arcSize=20;fillColor=#F0EBF8;strokeColor=#7B61A8;fontColor=#5A3F86;fontSize=11;" vertex="1" parent="1">
-          <mxGeometry x="184" y="974" width="118" height="32" as="geometry"/>
-        </mxCell>
-        <mxCell id="legend_retry" value="Reject &amp;amp; Resample" style="rounded=1;whiteSpace=wrap;html=1;arcSize=20;fillColor=#FBEAEA;strokeColor=#C65D5D;dashed=1;fontColor=#A54646;fontSize=11;" vertex="1" parent="1">
-          <mxGeometry x="313" y="974" width="136" height="32" as="geometry"/>
-        </mxCell>
+        <!-- Local illustrative dashed mappings -->
+        <mxCell id="edge_assign_1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#16837A;strokeWidth=1.1;dashed=1;dashPattern=5 4;endArrow=block;endFill=1;" edge="1" parent="1" source="assign_robot_1" target="assign_s1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="edge_assign_2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#16837A;strokeWidth=1.1;dashed=1;dashPattern=5 4;endArrow=block;endFill=1;" edge="1" parent="1" source="assign_robot_2" target="assign_s2"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="edge_assign_3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#16837A;strokeWidth=1.1;dashed=1;dashPattern=5 4;endArrow=block;endFill=1;" edge="1" parent="1" source="assign_robot_3" target="assign_sk"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="edge_alloc_1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#D97818;strokeWidth=1.1;dashed=1;dashPattern=5 4;endArrow=block;endFill=1;" edge="1" parent="1" source="alloc_robot_1" target="alloc_target_1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="edge_alloc_2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#D97818;strokeWidth=1.1;dashed=1;dashPattern=5 4;endArrow=block;endFill=1;" edge="1" parent="1" source="alloc_robot_2" target="alloc_target_2"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="edge_alloc_3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#D97818;strokeWidth=1.1;dashed=1;dashPattern=5 4;endArrow=block;endFill=1;" edge="1" parent="1" source="alloc_robot_3" target="alloc_target_3"><mxGeometry relative="1" as="geometry"/></mxCell>
       </root>
     </mxGraphModel>
   </diagram>
