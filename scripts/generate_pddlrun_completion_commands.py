@@ -11,6 +11,13 @@ RUN_GLOB = "pddlrun_llmseparate_*"
 FLOOR_DIRECTORY_PATTERN = re.compile(r"FloorPlan([0-9]+)")
 DATASET_FILE_PATTERN = re.compile(r"FloorPlan([0-9]+)\.jsonl")
 RUNNER = "scripts/run_pddlrun_llmseparate_parallel.py"
+REQUIRED_AGGREGATE_COUNT_FIELDS = (
+    "task_count",
+    "success_count",
+    "failure_count",
+    "all_pass_count",
+    "pass_one_count",
+)
 
 
 class RunEvaluationError(ValueError):
@@ -54,11 +61,64 @@ def _required_text(record: Dict[str, object], field: str, source: Path) -> str:
 def _load_json_object(path: Path, description: str) -> Dict[str, object]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise RunEvaluationError(f"cannot read {description} {path}: {exc}") from exc
     if not isinstance(value, dict):
         raise RunEvaluationError(f"{description} is not a JSON object: {path}")
     return value
+
+
+def _normalized_numeric_floor_id(value: object, summary_path: Path) -> int:
+    floor_id = str(value).strip()
+    if floor_id.startswith("FloorPlan"):
+        floor_id = floor_id[len("FloorPlan") :]
+    if not floor_id.isdigit():
+        raise RunEvaluationError(
+            f"invalid floor_plan in floor summary {summary_path}: "
+            "expected a numeric floor id"
+        )
+    return int(floor_id)
+
+
+def _validate_floor_summary(
+    floor: int,
+    summary_path: Path,
+    summary: object,
+) -> Dict[str, object]:
+    if not isinstance(summary, dict):
+        raise RunEvaluationError(
+            f"invalid floor summary {summary_path}: expected a JSON object"
+        )
+    if "floor_plan" not in summary:
+        raise RunEvaluationError(
+            f"invalid floor summary {summary_path}: missing floor_plan"
+        )
+    summary_floor = _normalized_numeric_floor_id(summary["floor_plan"], summary_path)
+    if summary_floor != floor:
+        raise RunEvaluationError(
+            f"floor id {summary['floor_plan']!r} in {summary_path} "
+            f"does not match directory FloorPlan{floor}"
+        )
+
+    missing_fields = [
+        field for field in REQUIRED_AGGREGATE_COUNT_FIELDS if field not in summary
+    ]
+    if missing_fields:
+        raise RunEvaluationError(
+            f"floor summary {summary_path} is missing required aggregate count fields: "
+            f"{', '.join(missing_fields)}"
+        )
+    invalid_fields = [
+        field
+        for field in REQUIRED_AGGREGATE_COUNT_FIELDS
+        if type(summary[field]) is not int or summary[field] < 0
+    ]
+    if invalid_fields:
+        raise RunEvaluationError(
+            f"invalid aggregate count fields in floor summary {summary_path}: "
+            f"{', '.join(invalid_fields)} must be non-negative integers"
+        )
+    return summary
 
 
 def _parseable_floor_summaries(run_dir: Path) -> List[Tuple[int, Dict[str, object]]]:
@@ -72,12 +132,11 @@ def _parseable_floor_summaries(run_dir: Path) -> List[Tuple[int, Dict[str, objec
         if not summary_path.is_file():
             continue
         try:
-            summary = json.loads(summary_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        if not isinstance(summary, dict):
+            loaded_summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             continue
         floor = int(match.group(1))
+        summary = _validate_floor_summary(floor, summary_path, loaded_summary)
         if floor in seen_floors:
             raise RunEvaluationError(f"duplicate completed FloorPlan{floor} summaries")
         seen_floors.add(floor)
@@ -174,13 +233,35 @@ def _target_floors(repo_root: Path, test_set: str) -> Tuple[int, ...]:
         ) from exc
     if not dataset_dir.is_dir():
         raise RunEvaluationError(f"dataset directory not found: {dataset_dir}")
-    floors = {
-        int(match.group(1))
-        for path in dataset_dir.iterdir()
-        if path.is_file()
-        for match in [DATASET_FILE_PATTERN.fullmatch(path.name)]
-        if match is not None
-    }
+    floors = []
+    for path in dataset_dir.iterdir():
+        match = DATASET_FILE_PATTERN.fullmatch(path.name)
+        if match is None:
+            continue
+        floor = int(match.group(1))
+        canonical_name = f"FloorPlan{floor}.jsonl"
+        if path.name != canonical_name:
+            raise RunEvaluationError(
+                f"noncanonical dataset floor filename {path}: expected {canonical_name}"
+            )
+        try:
+            resolved_path = path.resolve(strict=True)
+        except (OSError, RuntimeError) as exc:
+            raise RunEvaluationError(
+                f"cannot resolve dataset floor file {path}: {exc}"
+            ) from exc
+        try:
+            resolved_path.relative_to(dataset_dir)
+            resolved_path.relative_to(data_root)
+        except ValueError as exc:
+            raise RunEvaluationError(
+                f"dataset floor file escapes dataset directory: {path} -> {resolved_path}"
+            ) from exc
+        if not resolved_path.is_file():
+            raise RunEvaluationError(
+                f"dataset floor path is not a regular file: {path}"
+            )
+        floors.append(floor)
     if not floors:
         raise RunEvaluationError(
             f"dataset has no exact FloorPlan<number>.jsonl files: {dataset_dir}"

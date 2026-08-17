@@ -222,6 +222,23 @@ class ParallelRunnerTests(unittest.TestCase):
                         merge_existing=True,
                     )
 
+    def test_main_wraps_invalid_utf8_floor_summary_with_its_path(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output_root = Path(tmp_dir) / "parallel"
+            summary_path = output_root / "FloorPlan1" / "summary.json"
+            summary_path.parent.mkdir(parents=True)
+            summary_path.write_bytes(b"\xff\xfe")
+
+            with self.assertRaisesRegex(
+                ValueError,
+                rf"Invalid UTF-8.*{summary_path}",
+            ):
+                self._run_main_with_args(
+                    output_root,
+                    floor_plans=[],
+                    merge_existing=True,
+                )
+
     def test_cli_accepts_allocate_model(self):
         args = parse_args([
             "--floor-plans",

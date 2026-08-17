@@ -10,6 +10,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MODULE_PATH = REPO_ROOT / "scripts" / "generate_pddlrun_completion_commands.py"
+RUNNER_MODULE_PATH = REPO_ROOT / "scripts" / "run_pddlrun_llmseparate_parallel.py"
 
 
 def load_generator_module():
@@ -17,6 +18,19 @@ def load_generator_module():
         raise AssertionError(f"completion command generator is missing: {MODULE_PATH}")
     module_name = "generate_pddlrun_completion_commands_under_test"
     spec = importlib.util.spec_from_file_location(module_name, MODULE_PATH)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_runner_module():
+    scripts_dir = str(REPO_ROOT / "scripts")
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    module_name = "run_pddlrun_llmseparate_parallel_contract_test"
+    spec = importlib.util.spec_from_file_location(module_name, RUNNER_MODULE_PATH)
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
     assert spec.loader is not None
@@ -65,6 +79,11 @@ def create_run(
             run_dir / f"FloorPlan{floor}" / "summary.json",
             {
                 "floor_plan": str(floor),
+                "task_count": 1,
+                "success_count": int(statuses.get(floor, "success") == "success"),
+                "failure_count": int(statuses.get(floor, "success") != "success"),
+                "all_pass_count": 0,
+                "pass_one_count": 0,
                 "results": [
                     {
                         "floor_plan": str(floor),
@@ -219,6 +238,97 @@ class CompletionCommandGeneratorTests(unittest.TestCase):
         self.assertEqual(return_code, 0)
         self.assertEqual(stderr, "")
         self.assertEqual(option_values(command_tokens(stdout)[0], "--floor-plans"), ["2"])
+
+    def test_structurally_incompatible_floor_summary_fails_only_its_run_closed(self):
+        cases = {
+            "non-object": [],
+            "directory mismatch": {"floor_plan": "9"},
+            "missing count": {"remove": "task_count"},
+            "boolean count": {"success_count": True},
+            "negative count": {"failure_count": -1},
+            "non-integer count": {"all_pass_count": "0"},
+        }
+
+        for index, (case_name, mutation) in enumerate(cases.items()):
+            with self.subTest(case=case_name), tempfile.TemporaryDirectory() as tmp_dir:
+                repo_root = Path(tmp_dir)
+                create_dataset(repo_root, "set-a", [1, 2, 3])
+                bad_run = create_run(
+                    repo_root,
+                    f"pddlrun_llmseparate_a_bad_{index}",
+                    "set-a",
+                    [1, 2],
+                )
+                valid_run = create_run(
+                    repo_root,
+                    f"pddlrun_llmseparate_z_valid_{index}",
+                    "set-a",
+                    [1, 2],
+                )
+                summary_path = bad_run / "FloorPlan1" / "summary.json"
+                if case_name == "non-object":
+                    write_json(summary_path, mutation)
+                else:
+                    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+                    if "remove" in mutation:
+                        del summary[mutation["remove"]]
+                    else:
+                        summary.update(mutation)
+                    write_json(summary_path, summary)
+
+                return_code, stdout, stderr = run_generator(self.module, repo_root)
+
+                self.assertEqual(return_code, 1)
+                self.assertEqual(len(command_tokens(stdout)), 1)
+                self.assertIn(str(valid_run), command_tokens(stdout)[0])
+                self.assertNotIn(str(bad_run), stdout)
+                self.assertIn(bad_run.name, stderr)
+                self.assertEqual(len(stderr.splitlines()), 1)
+
+    def test_invalid_utf8_floor_summary_is_missing_but_manifest_error_is_isolated(self):
+        create_dataset(self.repo_root, "set-a", [1, 2, 3])
+        missing_floor_run = create_run(
+            self.repo_root,
+            "pddlrun_llmseparate_a_invalid_floor_utf8",
+            "set-a",
+            [1, 3],
+        )
+        invalid_floor_path = missing_floor_run / "FloorPlan2" / "summary.json"
+        invalid_floor_path.parent.mkdir(parents=True)
+        invalid_floor_path.write_bytes(b"\xff\xfe")
+
+        bad_manifest_run = create_run(
+            self.repo_root,
+            "pddlrun_llmseparate_b_invalid_manifest_utf8",
+            "set-a",
+            [1, 2],
+        )
+        invalid_manifest_path = (
+            self.repo_root
+            / "task runs"
+            / bad_manifest_run.name
+            / "FloorPlan1"
+            / "run_manifest.json"
+        )
+        invalid_manifest_path.write_bytes(b"\xff\xfe")
+        valid_run = create_run(
+            self.repo_root,
+            "pddlrun_llmseparate_z_valid_after_utf8",
+            "set-a",
+            [1, 2],
+        )
+
+        return_code, stdout, stderr = run_generator(self.module, self.repo_root)
+
+        self.assertEqual(return_code, 1)
+        self.assertEqual(len(command_tokens(stdout)), 2)
+        emitted_runs = "\n".join(" ".join(tokens) for tokens in command_tokens(stdout))
+        self.assertIn(str(missing_floor_run), emitted_runs)
+        self.assertIn(str(valid_run), emitted_runs)
+        self.assertNotIn(str(bad_manifest_run), stdout)
+        self.assertIn(bad_manifest_run.name, stderr)
+        self.assertIn(str(invalid_manifest_path), stderr)
+        self.assertEqual(len(stderr.splitlines()), 1)
 
     def test_metadata_conflict_reports_run_error_but_keeps_valid_command(self):
         create_dataset(self.repo_root, "set-a", [1, 2, 3])
@@ -417,6 +527,87 @@ class CompletionCommandGeneratorTests(unittest.TestCase):
         self.assertNotIn(str(bad_run), stdout)
         self.assertIn(bad_run.name, stderr)
         self.assertEqual(len(stderr.splitlines()), 1)
+
+    def test_dataset_file_symlink_escape_and_loop_do_not_suppress_valid_run(self):
+        create_dataset(self.repo_root, "set-a", [1, 2, 3])
+        outside_file = self.repo_root / "outside.jsonl"
+        outside_file.write_text("{}\n", encoding="utf-8")
+
+        escape_dataset = create_dataset(self.repo_root, "escape-set", [1, 2])
+        (escape_dataset / "FloorPlan3.jsonl").symlink_to(outside_file)
+        escape_run = create_run(
+            self.repo_root,
+            "pddlrun_llmseparate_a_file_escape",
+            "escape-set",
+            [1, 2],
+        )
+
+        loop_dataset = create_dataset(self.repo_root, "loop-file-set", [1, 2])
+        (loop_dataset / "FloorPlan3.jsonl").symlink_to("FloorPlan3.jsonl")
+        loop_run = create_run(
+            self.repo_root,
+            "pddlrun_llmseparate_b_file_loop",
+            "loop-file-set",
+            [1, 2],
+        )
+        valid_run = create_run(
+            self.repo_root,
+            "pddlrun_llmseparate_z_valid_after_file_links",
+            "set-a",
+            [1, 2],
+        )
+
+        return_code, stdout, stderr = run_generator(self.module, self.repo_root)
+
+        self.assertEqual(return_code, 1)
+        self.assertEqual(len(command_tokens(stdout)), 1)
+        self.assertIn(str(valid_run), command_tokens(stdout)[0])
+        self.assertNotIn(str(escape_run), stdout)
+        self.assertNotIn(str(loop_run), stdout)
+        self.assertIn(escape_run.name, stderr)
+        self.assertIn(loop_run.name, stderr)
+        self.assertEqual(len(stderr.splitlines()), 2)
+
+    def test_noncanonical_dataset_floor_names_fail_closed_without_deduplication(self):
+        for case_name, canonical_present in (("alias-only", False), ("duplicate", True)):
+            with self.subTest(case=case_name), tempfile.TemporaryDirectory() as tmp_dir:
+                repo_root = Path(tmp_dir)
+                dataset_dir = create_dataset(repo_root, "set-a", [2, 3])
+                if canonical_present:
+                    (dataset_dir / "FloorPlan1.jsonl").write_text(
+                        "{}\n", encoding="utf-8"
+                    )
+                (dataset_dir / "FloorPlan01.jsonl").write_text(
+                    "{}\n", encoding="utf-8"
+                )
+                bad_run = create_run(
+                    repo_root,
+                    "pddlrun_llmseparate_bad_alias",
+                    "set-a",
+                    [2, 3],
+                )
+
+                return_code, stdout, stderr = run_generator(self.module, repo_root)
+
+                self.assertEqual(return_code, 1)
+                self.assertEqual(stdout, "")
+                self.assertIn(bad_run.name, stderr)
+                self.assertIn("FloorPlan01.jsonl", stderr)
+
+    def test_generator_accepted_summaries_satisfy_runner_merge_contract(self):
+        create_dataset(self.repo_root, "set-a", [1, 2, 3])
+        run_dir = create_run(
+            self.repo_root,
+            "pddlrun_llmseparate_contract",
+            "set-a",
+            [1, 2],
+        )
+
+        plan = self.module.evaluate_run(self.repo_root, run_dir)
+        loaded = load_runner_module().load_floor_plan_summaries(run_dir)
+
+        self.assertIsNotNone(plan)
+        self.assertEqual([summary["floor_plan"] for summary in loaded], ["1", "2"])
 
 
 if __name__ == "__main__":

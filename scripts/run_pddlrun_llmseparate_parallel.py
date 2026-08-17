@@ -212,7 +212,13 @@ def load_floor_plan_summaries(output_root: Path) -> List[Dict[str, Any]]:
 
         directory_floor_id = str(int(match.group(1)))
         try:
-            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            summary_text = summary_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError(
+                f"Invalid UTF-8 in floor summary {summary_path}: {exc}"
+            ) from exc
+        try:
+            summary = json.loads(summary_text)
         except json.JSONDecodeError as exc:
             raise ValueError(f"Malformed JSON in floor summary {summary_path}: {exc.msg}") from exc
 
