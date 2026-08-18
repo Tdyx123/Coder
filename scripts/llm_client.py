@@ -293,6 +293,7 @@ def complete_with_provider(
     messages = _normalize_messages(prompt)
     model_key = model.lower()
     is_qwen37 = model_key == "qwen3.7-max" or model_key == "qwen3.7-plus"
+    is_mimo_v25 = model_key == "mimo-v2.5"
     uses_max_completion_tokens = model_key in {"qwen3.7-max", "mimo-v2.5"}
     disables_thinking = model_key in {
         "deepseek-v4-flash",
@@ -329,6 +330,12 @@ def complete_with_provider(
             kwargs[key] = value
     if extra_body is not None:
         kwargs["extra_body"] = extra_body
+    if is_mimo_v25:
+        mimo_extra_body = dict(kwargs.get("extra_body") or {})
+        chat_template_kwargs = dict(mimo_extra_body.get("chat_template_kwargs") or {})
+        chat_template_kwargs["enable_thinking"] = False
+        mimo_extra_body["chat_template_kwargs"] = chat_template_kwargs
+        kwargs["extra_body"] = mimo_extra_body
     if is_qwen37:
         qwen_extra_body = dict(kwargs.get("extra_body") or {})
         qwen_extra_body["enable_thinking"] = False

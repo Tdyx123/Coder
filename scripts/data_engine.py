@@ -1518,7 +1518,7 @@ BROKEN_STATE = "BROKEN"
 
 class DataEngine:
 
-    def __init__(self, model: str = "deepseek-v4-flash"):
+    def __init__(self, model: str = "mimo-v2.5"):
         self.config = load_run_config(_repo_root(), error_cls=PDDLError)
         self.llm = LLMHandler(self.config)
         self.model = model
@@ -1963,7 +1963,7 @@ put sink on saltshaker, then put ladle on sinkbasin
                     if line:
                         created_set.add(line)
 
-        task_folder = f"data/final_test_new_0802_{complexity}"
+        task_folder = f"data/final_test_new_0818_{complexity}"
         task_folder_path = Path(task_folder)
         task_folder_path.mkdir(parents=True, exist_ok=True)
         TASK_FILE = task_folder_path.joinpath(f"FloorPlan{foor_plan}.jsonl")
@@ -2257,7 +2257,7 @@ if __name__ == "__main__":
 
     # [8, 6, 14, 201, 211, 218, 306, 310, 322, 405, 412, 428, 16, 203, 212, 28, 309, 312, 404, 408, 425]
     data_engine = DataEngine()
-    for base in [0]:   # [0, 200, 300, 400]
+    for base in [0, 200, 300, 400]:   # [0, 200, 300, 400]
         for floor_plan in range(23, 24):
             # data_engine.create_tasks(base + floor_plan, 5)
-            data_engine.create_tasks(base + floor_plan, 60, 1)
+            data_engine.create_tasks(base + floor_plan, 10, 1)

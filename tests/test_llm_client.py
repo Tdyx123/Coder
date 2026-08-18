@@ -219,7 +219,46 @@ class LLMClientTests(unittest.TestCase):
         self.assertEqual(seen_kwargs[0]["max_completion_tokens"], 16)
         self.assertEqual(
             seen_kwargs[0]["extra_body"],
-            {"request_id": "abc", "thinking": {"type": "disabled"}},
+            {
+                "request_id": "abc",
+                "thinking": {"type": "disabled"},
+                "chat_template_kwargs": {"enable_thinking": False},
+            },
+        )
+
+    def test_complete_with_provider_overrides_mimo_v25_chat_template_thinking(self):
+        seen_kwargs = []
+
+        def fake_completion(**kwargs):
+            seen_kwargs.append(kwargs)
+            return self._stream_response("ok")
+
+        with patch.object(llm_client, "completion", side_effect=fake_completion):
+            llm_client.complete_with_provider(
+                model="MiMo-V2.5",
+                prompt="hello",
+                provider=self.provider,
+                max_tokens=16,
+                temperature=0.1,
+                extra_body={
+                    "request_id": "abc",
+                    "chat_template_kwargs": {
+                        "enable_thinking": True,
+                        "custom_flag": "preserved",
+                    },
+                },
+            )
+
+        self.assertEqual(
+            seen_kwargs[0]["extra_body"],
+            {
+                "request_id": "abc",
+                "thinking": {"type": "disabled"},
+                "chat_template_kwargs": {
+                    "enable_thinking": False,
+                    "custom_flag": "preserved",
+                },
+            },
         )
 
     def test_complete_with_provider_disables_kimi_k26_thinking(self):
