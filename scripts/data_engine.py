@@ -1963,7 +1963,7 @@ put sink on saltshaker, then put ladle on sinkbasin
                     if line:
                         created_set.add(line)
 
-        task_folder = f"data/final_test_new_0818_{complexity}"
+        task_folder = f"data/final_test_new_0819_{complexity}"
         task_folder_path = Path(task_folder)
         task_folder_path.mkdir(parents=True, exist_ok=True)
         TASK_FILE = task_folder_path.joinpath(f"FloorPlan{foor_plan}.jsonl")
@@ -2258,6 +2258,6 @@ if __name__ == "__main__":
     # [8, 6, 14, 201, 211, 218, 306, 310, 322, 405, 412, 428, 16, 203, 212, 28, 309, 312, 404, 408, 425]
     data_engine = DataEngine()
     for base in [0, 200, 300, 400]:   # [0, 200, 300, 400]
-        for floor_plan in range(23, 24):
+        for floor_plan in range(1, 31):
             # data_engine.create_tasks(base + floor_plan, 5)
-            data_engine.create_tasks(base + floor_plan, 10, 1)
+            data_engine.create_tasks(base + floor_plan, 30, 1)

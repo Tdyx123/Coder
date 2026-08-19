@@ -4,42 +4,38 @@ import os.path
 import re
 
 from functools import wraps
-from typing import Dict, List, Optional, Sequence, Tuple, Union
+from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 from parsing_utils import ParsingUtils
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
-OUTPUT_PATH_BASE = "/data/dwb/datasets/new0622"
+OUTPUT_PATH_BASE = "/data/dwb/datasets/0819_others"
 MAIN_MODEL_FILTER = "deepseek-ai/DeepSeek-V3.2"
+# PDDLRUNS = [
+#     "pddlrun_llmseparate_20260523_152557",
+#     "pddlrun_llmseparate_20260524_195257",
+#     "pddlrun_llmseparate_20260525_141235",
+#     "pddlrun_llmseparate_20260526_143831",
+#     "pddlrun_llmseparate_20260527_220002",
+#     "pddlrun_llmseparate_20260529_190454",
+#     "pddlrun_llmseparate_20260623_152203",
+#     "pddlrun_llmseparate_20260626_012517",
+#     "pddlrun_llmseparate_20260628_013026",
+#     "pddlrun_llmseparate_20260629_155630",
+#     "pddlrun_llmseparate_20260630_152959",
+#     "pddlrun_llmseparate_20260705_232855",
+#     "pddlrun_llmseparate_20260709_003107",
+#     "pddlrun_llmseparate_20260709_154853",
+#     "pddlrun_llmseparate_20260713_194633",
+#     "pddlrun_llmseparate_20260714_211539"
+# ]
+
 PDDLRUNS = [
-    "pddlrun_llmseparate_20260506_160313",
-    "pddlrun_llmseparate_20260517_140101",
-    "pddlrun_llmseparate_20260520_225427",
-    "pddlrun_llmseparate_20260526_143831",
-    "pddlrun_llmseparate_20260529_190454",
-    "pddlrun_llmseparate_20260506_162101",
-    "pddlrun_llmseparate_20260518_145253",
-    "pddlrun_llmseparate_20260521_151830",
-    "pddlrun_llmseparate_20260526_194352",
-    "pddlrun_llmseparate_20260531_213941",
-    "pddlrun_llmseparate_20260506_180812",
-    "pddlrun_llmseparate_20260518_214413",
-    "pddlrun_llmseparate_20260522_102424",
-    "pddlrun_llmseparate_20260527_135853",
-    "pddlrun_llmseparate_20260507_145350",
-    "pddlrun_llmseparate_20260519_151717",
-    "pddlrun_llmseparate_20260523_152557",
-    "pddlrun_llmseparate_20260527_220002",
-    "pddlrun_llmseparate_20260516_145201",
-    "pddlrun_llmseparate_20260520_162612",
-    "pddlrun_llmseparate_20260524_195257",
-    "pddlrun_llmseparate_20260528_153620",
-    "pddlrun_llmseparate_20260516_164415",
-    "pddlrun_llmseparate_20260520_204726",
-    "pddlrun_llmseparate_20260525_141235",
-    "pddlrun_llmseparate_20260528_222518",
-    # "pddlrun_llmseparate_20260610_171423",
-    # "pddlrun_llmseparate_20260611_140720"
+    "pddlrun_llmseparate_20260818_160057",
+    "pddlrun_llmseparate_20260817_213952",
+    "pddlrun_llmseparate_20260817_002458",
+    "pddlrun_llmseparate_20260806_150652",
+    "pddlrun_llmseparate_20260818_233013"
 ]
 
 TaskKey = Tuple[str, str, int]
@@ -471,6 +467,24 @@ def _is_invalid_task_record(record: Dict) -> bool:
     return bool(record.get("invalid") or record.get("Invalid"))
 
 
+def _passes_all_subtasks(result: Dict) -> bool:
+    tc = result.get("tc")
+    total = result.get("total")
+    return (
+        isinstance(tc, int)
+        and not isinstance(tc, bool)
+        and isinstance(total, int)
+        and not isinstance(total, bool)
+        and total > 0
+        and tc == total
+    )
+
+
+def _passes_one_subtask(result: Dict) -> bool:
+    tc = result.get("tc")
+    return isinstance(tc, int) and not isinstance(tc, bool) and tc > 0
+
+
 def _passes_sft_checks(summary_path: str, index: int, data_root: str = "data") -> bool:
     checks = [
         check_decompose_subtask_count,
@@ -488,7 +502,11 @@ def _passes_sft_checks(summary_path: str, index: int, data_root: str = "data") -
     return True
 
 
-def _collect_valid_sft_candidates(summary_path: str, data_root: str = "data") -> List[Dict]:
+def _collect_valid_sft_candidates(
+    summary_path: str,
+    data_root: str = "data",
+    pass_check: Callable[[Dict], bool] = _passes_all_subtasks,
+) -> List[Dict]:
     if not os.path.exists(summary_path):
         return []
 
@@ -501,6 +519,9 @@ def _collect_valid_sft_candidates(summary_path: str, data_root: str = "data") ->
 
     for index, result in enumerate(flat_results):
         if not isinstance(result, dict):
+            continue
+
+        if not pass_check(result):
             continue
 
         task_key = _task_key_for_result(summary_data, result)
@@ -533,17 +554,29 @@ def _collect_valid_sft_candidates(summary_path: str, data_root: str = "data") ->
     return candidates
 
 
-def select_latest_unique_task_runs(summary_paths: Sequence[str], data_root: str = "data") -> List[Dict]:
+def _select_latest_unique_task_runs(
+    summary_paths: Sequence[str],
+    data_root: str,
+    pass_check: Callable[[Dict], bool],
+) -> List[Dict]:
     selected_by_task: Dict[TaskKey, Dict] = {}
 
     for summary_path in summary_paths:
-        for candidate in _collect_valid_sft_candidates(summary_path, data_root=data_root):
+        for candidate in _collect_valid_sft_candidates(
+            summary_path,
+            data_root=data_root,
+            pass_check=pass_check,
+        ):
             task_key = candidate["task_key"]
             selected = selected_by_task.get(task_key)
             if selected is None or candidate["pddlrun_timestamp"] > selected["pddlrun_timestamp"]:
                 selected_by_task[task_key] = candidate
 
     return [selected_by_task[task_key] for task_key in sorted(selected_by_task)]
+
+
+def select_latest_unique_task_runs(summary_paths: Sequence[str], data_root: str = "data") -> List[Dict]:
+    return _select_latest_unique_task_runs(summary_paths, data_root, _passes_all_subtasks)
 
 
 def _write_task_run_conversations(task_run_dir: str, output_path_base: str) -> None:
@@ -581,6 +614,23 @@ def output_latest_unique_tasks(
     return selected_candidates
 
 
+def output_latest_unique_pass_one_tasks(
+    summary_paths: Sequence[str],
+    output_path_base: str = OUTPUT_PATH_BASE,
+    data_root: str = "data",
+) -> List[Dict]:
+    selected_candidates = _select_latest_unique_task_runs(
+        summary_paths,
+        data_root,
+        _passes_one_subtask,
+    )
+
+    for candidate in selected_candidates:
+        _write_task_run_conversations(str(candidate["task_run_dir"]), output_path_base)
+
+    return selected_candidates
+
+
 def output(
     summary_path: str,
     output_path_base: str = OUTPUT_PATH_BASE,
@@ -594,7 +644,8 @@ if __name__ == "__main__":
         summary_path
         for pddlrun in PDDLRUNS
         for summary_path in [os.path.join(REPO_ROOT, "parallel_runs", pddlrun, "summary.json")]
-        if os.path.exists(summary_path) and get_model(summary_path) == MAIN_MODEL_FILTER
+        if os.path.exists(summary_path) # and get_model(summary_path) == MAIN_MODEL_FILTER
     ]
 
-    output_latest_unique_tasks(summary_paths)
+    # output_latest_unique_tasks(summary_paths)
+    output_latest_unique_pass_one_tasks(summary_paths)

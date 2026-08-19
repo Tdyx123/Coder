@@ -17,6 +17,7 @@ from sft_generator import (
     check_planner_plan_count,
     check_problem_output_count,
     get_model,
+    output_latest_unique_pass_one_tasks,
     select_latest_unique_task_runs,
 )
 
@@ -285,6 +286,8 @@ class TestSftGeneratorModelCheck(unittest.TestCase):
                         "task_index": 0,
                         "task": "same task",
                         "task_run_dir": str(old_task_run_dir),
+                        "tc": 1,
+                        "total": 1,
                     }
                 ],
             )
@@ -298,6 +301,8 @@ class TestSftGeneratorModelCheck(unittest.TestCase):
                         "task_index": 0,
                         "task": "same task",
                         "task_run_dir": str(new_task_run_dir),
+                        "tc": 1,
+                        "total": 1,
                     }
                 ],
             )
@@ -311,6 +316,219 @@ class TestSftGeneratorModelCheck(unittest.TestCase):
             self.assertEqual(selected[0]["task_key"], ("unit_set", "1", 0))
             self.assertEqual(selected[0]["task_run_dir"], str(new_task_run_dir))
             self.assertEqual(selected[0]["pddlrun_timestamp"], "20260502_000000")
+
+    def test_select_latest_unique_task_runs_requires_all_subtasks_to_pass(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self.write_dataset(
+                root,
+                "unit_set",
+                "1",
+                [
+                    {"subtasks": ["failed task"], "assigned_robots": [1]},
+                    {"subtasks": ["partial task"], "assigned_robots": [1]},
+                    {"subtasks": ["passed task"], "assigned_robots": [1]},
+                    {"subtasks": ["empty task"], "assigned_robots": [1]},
+                ],
+            )
+            failed_task_run_dir = self.make_valid_task_run(root, "failed", decompose_output="failed task")
+            partial_task_run_dir = self.make_valid_task_run(root, "partial", decompose_output="partial task")
+            passed_task_run_dir = self.make_valid_task_run(root, "passed", decompose_output="passed task")
+            empty_task_run_dir = self.make_valid_task_run(root, "empty", decompose_output="empty task")
+            summary_path = self.write_pddlrun_summary(
+                root,
+                "pddlrun_llmseparate_20260502_000000",
+                [
+                    {
+                        "floor_plan": "1",
+                        "task_index": 0,
+                        "task_run_dir": str(failed_task_run_dir),
+                        "tc": 0,
+                        "total": 1,
+                    },
+                    {
+                        "floor_plan": "1",
+                        "task_index": 1,
+                        "task_run_dir": str(partial_task_run_dir),
+                        "tc": 1,
+                        "total": 2,
+                    },
+                    {
+                        "floor_plan": "1",
+                        "task_index": 2,
+                        "task_run_dir": str(passed_task_run_dir),
+                        "tc": 1,
+                        "total": 1,
+                    },
+                    {
+                        "floor_plan": "1",
+                        "task_index": 3,
+                        "task_run_dir": str(empty_task_run_dir),
+                        "tc": 0,
+                        "total": 0,
+                    },
+                ],
+            )
+
+            selected = select_latest_unique_task_runs([str(summary_path)])
+
+            self.assertEqual(
+                [candidate["task_key"] for candidate in selected],
+                [("unit_set", "1", 2)],
+            )
+
+    def test_output_latest_unique_pass_one_tasks_writes_partial_and_full_passes(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self.write_dataset(
+                root,
+                "unit_set",
+                "1",
+                [
+                    {"subtasks": ["failed task"], "assigned_robots": [1]},
+                    {"subtasks": ["partial task"], "assigned_robots": [1]},
+                    {"subtasks": ["full task"], "assigned_robots": [1]},
+                    {"subtasks": ["no total task"], "assigned_robots": [1]},
+                ],
+            )
+            task_run_dirs = [
+                self.make_valid_task_run(root, name, decompose_output=f"{name} task")
+                for name in ("failed", "partial", "full", "no total")
+            ]
+            summary_path = self.write_pddlrun_summary(
+                root,
+                "pddlrun_llmseparate_20260502_000000",
+                [
+                    {
+                        "floor_plan": "1",
+                        "task_index": 0,
+                        "task_run_dir": str(task_run_dirs[0]),
+                        "tc": 0,
+                        "total": 1,
+                    },
+                    {
+                        "floor_plan": "1",
+                        "task_index": 1,
+                        "task_run_dir": str(task_run_dirs[1]),
+                        "tc": 1,
+                        "total": 2,
+                    },
+                    {
+                        "floor_plan": "1",
+                        "task_index": 2,
+                        "task_run_dir": str(task_run_dirs[2]),
+                        "tc": 1,
+                        "total": 1,
+                    },
+                    {
+                        "floor_plan": "1",
+                        "task_index": 3,
+                        "task_run_dir": str(task_run_dirs[3]),
+                        "tc": 1,
+                    },
+                ],
+            )
+            output_path = root / "sft"
+            selected = output_latest_unique_pass_one_tasks(
+                [str(summary_path)],
+                output_path_base=str(output_path),
+            )
+
+            self.assertEqual(
+                [candidate["task_key"] for candidate in selected],
+                [("unit_set", "1", 1), ("unit_set", "1", 2), ("unit_set", "1", 3)],
+            )
+            for filename in (
+                "01_decompose.jsonl",
+                "02_allocate.jsonl",
+                "05_problem_generation.jsonl",
+            ):
+                records = (output_path / filename).read_text(encoding="utf-8").splitlines()
+                self.assertEqual(len(records), 3)
+
+    def test_output_latest_unique_pass_one_tasks_rejects_invalid_tc_values(self):
+        for case_name, tc in (
+            ("missing", None),
+            ("boolean", True),
+            ("string", "1"),
+            ("zero", 0),
+        ):
+            with self.subTest(case=case_name), tempfile.TemporaryDirectory() as tmp_dir:
+                root = Path(tmp_dir)
+                self.write_dataset(
+                    root,
+                    "unit_set",
+                    "1",
+                    [{"subtasks": ["do task"], "assigned_robots": [1]}],
+                )
+                task_run_dir = self.make_valid_task_run(root, case_name)
+                result = {
+                    "floor_plan": "1",
+                    "task_index": 0,
+                    "task_run_dir": str(task_run_dir),
+                    "total": 1,
+                }
+                if tc is not None:
+                    result["tc"] = tc
+                summary_path = self.write_pddlrun_summary(
+                    root,
+                    "pddlrun_llmseparate_20260502_000000",
+                    [result],
+                )
+
+                selected = output_latest_unique_pass_one_tasks(
+                    [str(summary_path)],
+                    output_path_base=str(root / "sft"),
+                )
+
+                self.assertEqual(selected, [])
+
+    def test_output_latest_unique_pass_one_tasks_keeps_latest_qualifying_run(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            self.write_dataset(
+                root,
+                "unit_set",
+                "1",
+                [{"subtasks": ["do task"], "assigned_robots": [1]}],
+            )
+            old_task_run_dir = self.make_valid_task_run(root, "old")
+            new_task_run_dir = self.make_valid_task_run(root, "new")
+            old_summary_path = self.write_pddlrun_summary(
+                root,
+                "pddlrun_llmseparate_20260501_000000",
+                [
+                    {
+                        "floor_plan": "1",
+                        "task_index": 0,
+                        "task_run_dir": str(old_task_run_dir),
+                        "tc": 1,
+                        "total": 2,
+                    }
+                ],
+            )
+            new_summary_path = self.write_pddlrun_summary(
+                root,
+                "pddlrun_llmseparate_20260502_000000",
+                [
+                    {
+                        "floor_plan": "1",
+                        "task_index": 0,
+                        "task_run_dir": str(new_task_run_dir),
+                        "tc": 0,
+                        "total": 1,
+                    }
+                ],
+            )
+
+            selected = output_latest_unique_pass_one_tasks(
+                [str(old_summary_path), str(new_summary_path)],
+                output_path_base=str(root / "sft"),
+            )
+
+            self.assertEqual(len(selected), 1)
+            self.assertEqual(selected[0]["task_run_dir"], str(old_task_run_dir))
+            self.assertEqual(selected[0]["pddlrun_timestamp"], "20260501_000000")
 
     def test_select_latest_unique_task_runs_keeps_distinct_keys_with_same_task_text(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -337,6 +555,8 @@ class TestSftGeneratorModelCheck(unittest.TestCase):
                         "task_index": 0,
                         "task": "same visible task text",
                         "task_run_dir": str(first_task_run_dir),
+                        "tc": 1,
+                        "total": 1,
                     },
                     {
                         "floor_plan": "1",
@@ -344,6 +564,8 @@ class TestSftGeneratorModelCheck(unittest.TestCase):
                         "task_index": 1,
                         "task": "same visible task text",
                         "task_run_dir": str(second_task_run_dir),
+                        "tc": 1,
+                        "total": 1,
                     },
                 ],
             )
@@ -390,6 +612,8 @@ class TestSftGeneratorModelCheck(unittest.TestCase):
                         "task": "summary marked invalid but source valid",
                         "task_run_dir": str(task_run_dirs[0]),
                         "invalid": True,
+                        "tc": 1,
+                        "total": 1,
                     },
                     {
                         "floor_plan": "1",
@@ -397,6 +621,8 @@ class TestSftGeneratorModelCheck(unittest.TestCase):
                         "task_index": 1,
                         "task": "source lowercase invalid",
                         "task_run_dir": str(task_run_dirs[1]),
+                        "tc": 1,
+                        "total": 1,
                     },
                     {
                         "floor_plan": "1",
@@ -404,6 +630,8 @@ class TestSftGeneratorModelCheck(unittest.TestCase):
                         "task_index": 2,
                         "task": "source explicitly valid",
                         "task_run_dir": str(task_run_dirs[2]),
+                        "tc": 1,
+                        "total": 1,
                     },
                     {
                         "floor_plan": "1",
@@ -412,6 +640,8 @@ class TestSftGeneratorModelCheck(unittest.TestCase):
                         "task": "source uppercase invalid",
                         "task_run_dir": str(task_run_dirs[3]),
                         "Invalid": False,
+                        "tc": 1,
+                        "total": 1,
                     },
                 ],
             )
