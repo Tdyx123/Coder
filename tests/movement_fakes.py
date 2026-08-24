@@ -34,6 +34,7 @@ class GridThorRuntime:
         self.position_overrides = {}
         self.walkable_after_successful_moves = {}
         self.object_visibility_by_position = {}
+        self.scene_bounds = []
         self.successful_move_count = 0
 
     def physical_agent_id(self, robot):
@@ -107,4 +108,4 @@ class GridThorRuntime:
         return obj
 
     def scene_object_bounds(self, agent_id=None):
-        return []
+        return list(self.scene_bounds)

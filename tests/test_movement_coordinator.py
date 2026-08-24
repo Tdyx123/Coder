@@ -19,6 +19,7 @@ from executor_system.movement import (
     NavigationMetrics,
     NavigationRequest,
     NavigationResult,
+    StepNavigationError,
 )
 from executor_system.parallel_runner import PlanExecutionTimeout
 from executor_system.step_movement import StepMovementStrategy
@@ -424,6 +425,97 @@ class JointMovementWaveTest(unittest.TestCase):
             runtime.successful_edges[1:],
         ):
             self.assertNotEqual(previous, (current[1], current[0]))
+
+
+class CompletedRobotParkingTest(unittest.TestCase):
+    def parking_case(self):
+        walkable = [thor_position(x, 0) for x in range(1, 7)] + [
+            thor_position(3, 1),
+            thor_position(3, 2),
+        ]
+        destination = {
+            "objectId": "Target|parking",
+            "objectType": "Target",
+            "visible": True,
+            "position": thor_position(6, 0),
+        }
+        runtime = GridThorRuntime(
+            positions={0: thor_position(1, 0), 1: thor_position(3, 0)},
+            walkable_by_agent={0: walkable, 1: walkable},
+            objects=[destination],
+        )
+        request = NavigationRequest(
+            robot="robot1",
+            agent_id=0,
+            dest_obj=destination["objectId"],
+            destination=dict(destination),
+            center=dict(destination["position"]),
+            candidate_positions=(dict(destination["position"]),),
+            object_resource=destination["objectId"],
+            next_action=None,
+            phase_coordinator=None,
+        )
+        config = MovementConfig.resolve("step", environ={})
+        metrics = NavigationMetrics(config.mode)
+        strategy = StepMovementStrategy(runtime, config, metrics)
+        return runtime, request, strategy, metrics
+
+    def test_completed_blocker_moves_into_side_pocket_without_teleport(self):
+        runtime, request, strategy, metrics = self.parking_case()
+
+        result = strategy.coordinator.execute_batch(
+            (request,),
+            completed_agent_ids=frozenset({1}),
+        )[0]
+
+        self.assertEqual(position_to_grid_key(result.position), (6, 0))
+        self.assertEqual(position_to_grid_key(runtime.positions[1]), (3, 2))
+        move_actions = [action for action in runtime.actions if action[0] == "MoveAhead"]
+        self.assertEqual(move_actions[0][1], 1)
+        self.assertNotIn("Teleport", [action[0] for action in runtime.actions])
+        self.assertGreater(metrics.to_dict()["parking_moves"], 0)
+        self.assertTrue(
+            any(
+                event.get("event") == "parking_assignment"
+                for event in result.decision_trace
+            )
+        )
+        conflict_model = GeometryConflictModel(0.25, 0.35)
+        for positions in runtime.position_history:
+            left = GridPoint(*position_to_grid_key(positions[0]))
+            right = GridPoint(*position_to_grid_key(positions[1]))
+            self.assertFalse(conflict_model.conflicts(left, right))
+
+    def test_unfinished_blocker_is_never_moved(self):
+        runtime, request, strategy, _metrics = self.parking_case()
+
+        with self.assertRaises(StepNavigationError):
+            strategy.coordinator.execute_batch(
+                (request,),
+                completed_agent_ids=frozenset(),
+            )
+
+        self.assertEqual(position_to_grid_key(runtime.positions[1]), (3, 0))
+        self.assertEqual(runtime.actions, [])
+
+    def test_parking_candidate_inside_object_footprint_is_filtered(self):
+        runtime, request, strategy, _metrics = self.parking_case()
+        runtime.scene_bounds = [
+            (
+                "CounterTop|1",
+                (0.70, 0.80, 0.0, 1.0, 0.45, 0.55),
+                0.0,
+            )
+        ]
+        snapshot = strategy.coordinator.refresh_world()
+
+        candidates = strategy.coordinator.parking_candidates(
+            1,
+            (request,),
+            snapshot,
+        )
+
+        self.assertEqual(candidates, ())
 
 
 if __name__ == "__main__":

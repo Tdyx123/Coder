@@ -19,6 +19,7 @@ from typing import (
 
 from multi_robot_avoidance import (
     Candidate,
+    GeometryConflictModel,
     GlobalWalkableMap,
     GridPoint,
     RobotIntent,
@@ -34,6 +35,7 @@ from .movement import (
     NavigationResult,
     StepNavigationError,
 )
+from .utils import position_inside_aabb_footprint
 
 
 @dataclass(frozen=True)
@@ -141,19 +143,202 @@ class StepMovementCoordinator:
             walkable_map=self.walkable_map.copy(),
         )
 
+    def _shortest_grid_path(
+        self,
+        start: GridPoint,
+        goal: GridPoint,
+        walkable: FrozenSet[GridPoint],
+    ) -> Tuple[GridPoint, ...]:
+        if start == goal:
+            return (start,)
+        frontier = [start]
+        frontier_index = 0
+        parents: Dict[GridPoint, Optional[GridPoint]] = {start: None}
+        while frontier_index < len(frontier):
+            current = frontier[frontier_index]
+            frontier_index += 1
+            neighbors = sorted(
+                (
+                    GridPoint(current.x - 1, current.z),
+                    GridPoint(current.x + 1, current.z),
+                    GridPoint(current.x, current.z - 1),
+                    GridPoint(current.x, current.z + 1),
+                )
+            )
+            for neighbor in neighbors:
+                if neighbor not in walkable or neighbor in parents:
+                    continue
+                parents[neighbor] = current
+                if neighbor == goal:
+                    path = [goal]
+                    cursor = goal
+                    while parents[cursor] is not None:
+                        cursor = parents[cursor]
+                        path.append(cursor)
+                    return tuple(reversed(path))
+                frontier.append(neighbor)
+        return ()
+
+    def _active_corridor(
+        self,
+        active_requests: Sequence[NavigationRequest],
+        snapshot: RuntimeWorldSnapshot,
+    ) -> FrozenSet[GridPoint]:
+        corridor = set()
+        walkable = snapshot.walkable_map.walkable
+        for request in sorted(active_requests, key=lambda item: item.agent_id):
+            start = snapshot.positions[request.agent_id]
+            for position in request.candidate_positions:
+                goal = self._grid_point(position)
+                if goal not in walkable:
+                    continue
+                corridor.update(self._shortest_grid_path(start, goal, walkable))
+        return frozenset(corridor)
+
+    def parking_candidates(
+        self,
+        agent_id: int,
+        active_requests: Sequence[NavigationRequest],
+        snapshot: RuntimeWorldSnapshot,
+    ) -> Tuple[Dict[str, float], ...]:
+        """Return up to three deterministic, physically clear parking points."""
+
+        current_agent_id = int(agent_id)
+        current = snapshot.positions[current_agent_id]
+        active_targets = frozenset(
+            self._grid_point(position)
+            for request in active_requests
+            for position in request.candidate_positions
+            if self._grid_point(position) in snapshot.walkable_map.walkable
+        )
+        active_corridor = self._active_corridor(active_requests, snapshot)
+        other_positions = tuple(
+            position
+            for other_agent_id, position in sorted(snapshot.positions.items())
+            if other_agent_id != current_agent_id
+        )
+        conflict_model = GeometryConflictModel(
+            self.config.grid_size_m,
+            self.config.hard_clearance_m,
+        )
+        object_bounds = tuple(self.runtime.scene_object_bounds(current_agent_id))
+
+        def conflicts_any(point: GridPoint, others: Sequence[GridPoint]) -> bool:
+            return any(conflict_model.conflicts(point, other) for other in others)
+
+        eligible = []
+        for point in sorted(snapshot.walkable_map.walkable):
+            if point == current:
+                continue
+            if conflicts_any(point, tuple(active_targets)):
+                continue
+            if conflicts_any(point, tuple(active_corridor)):
+                continue
+            if conflicts_any(point, other_positions):
+                continue
+            thor_position = snapshot.thor_positions.get(point)
+            if thor_position is None:
+                continue
+            if any(
+                position_inside_aabb_footprint(
+                    thor_position,
+                    bounds,
+                    clearance=clearance,
+                )
+                for _object_id, bounds, clearance in object_bounds
+            ):
+                continue
+            minimum_target_distance = min(
+                (
+                    math.hypot(point.x - target.x, point.z - target.z)
+                    * self.config.grid_size_m
+                    for target in active_targets
+                ),
+                default=999999.0,
+            )
+            minimum_agent_distance = min(
+                (
+                    math.hypot(point.x - other.x, point.z - other.z)
+                    * self.config.grid_size_m
+                    for other in other_positions
+                ),
+                default=999999.0,
+            )
+            eligible.append(
+                (
+                    (
+                        -minimum_target_distance,
+                        -minimum_agent_distance,
+                        (point.x, point.z),
+                    ),
+                    dict(thor_position),
+                )
+            )
+        eligible.sort(key=lambda item: item[0])
+        return tuple(position for _key, position in eligible[:3])
+
+    def _parking_candidate_map(
+        self,
+        completed_agent_ids: FrozenSet[int],
+        active_requests: Sequence[NavigationRequest],
+        snapshot: RuntimeWorldSnapshot,
+    ) -> Dict[int, Tuple[Dict[str, float], ...]]:
+        active_agent_ids = {request.agent_id for request in active_requests}
+        corridor = self._active_corridor(active_requests, snapshot)
+        conflict_model = GeometryConflictModel(
+            self.config.grid_size_m,
+            self.config.hard_clearance_m,
+        )
+        parking = {}
+        for agent_id in sorted(completed_agent_ids - active_agent_ids):
+            if agent_id not in snapshot.positions:
+                continue
+            current = snapshot.positions[agent_id]
+            if not any(
+                conflict_model.conflicts(current, corridor_point)
+                for corridor_point in corridor
+            ):
+                continue
+            candidates = self.parking_candidates(
+                agent_id,
+                active_requests,
+                snapshot,
+            )
+            if candidates:
+                parking[agent_id] = candidates
+        return parking
+
     def _build_scenario(
         self,
         active_states: Mapping[int, ActiveNavigationState],
         snapshot: RuntimeWorldSnapshot,
         blocked_transitions: FrozenSet[Tuple[GridPoint, GridPoint]],
+        parking_candidates: Optional[
+            Mapping[int, Sequence[Mapping[str, float]]]
+        ] = None,
     ) -> Scenario:
         robots = []
         for agent_id, start in sorted(snapshot.positions.items()):
             state = active_states.get(agent_id)
             if state is None or state.result is not None:
-                candidates = (
-                    Candidate(f"{agent_id}:static", start, 0.0),
-                )
+                parking = (parking_candidates or {}).get(agent_id, ())
+                if parking:
+                    candidates = tuple(
+                        Candidate(
+                            f"{agent_id}:parking:{index}",
+                            self._grid_point(position),
+                            float(index)
+                            + math.hypot(
+                                self._grid_point(position).x - start.x,
+                                self._grid_point(position).z - start.z,
+                            ),
+                        )
+                        for index, position in enumerate(parking)
+                    )
+                else:
+                    candidates = (
+                        Candidate(f"{agent_id}:static", start, 0.0),
+                    )
             else:
                 request = state.request
                 seen = set()
@@ -205,11 +390,15 @@ class StepMovementCoordinator:
         active_states: Mapping[int, ActiveNavigationState],
         snapshot: RuntimeWorldSnapshot,
         blocked_transitions: FrozenSet[Tuple[GridPoint, GridPoint]],
+        parking_candidates: Optional[
+            Mapping[int, Sequence[Mapping[str, float]]]
+        ] = None,
     ):
         scenario = self._build_scenario(
             active_states,
             snapshot,
             blocked_transitions,
+            parking_candidates,
         )
         world_state = WorldState(
             version=snapshot.version,
@@ -282,6 +471,7 @@ class StepMovementCoordinator:
         plan,
         snapshot: RuntimeWorldSnapshot,
         active_states: Mapping[int, ActiveNavigationState],
+        parking_agent_ids: FrozenSet[int] = frozenset(),
     ) -> _ExecutionBoundary:
         latest = snapshot
         for index, micro_step in enumerate(plan.micro_steps):
@@ -343,6 +533,8 @@ class StepMovementCoordinator:
                 )
 
             self.metrics.increment("micro_steps")
+            if agent_id in parking_agent_ids:
+                self.metrics.increment("parking_moves")
             latest = self.refresh_world()
             actual_target = self._authoritative_grid_point(
                 agent_id,
@@ -445,7 +637,6 @@ class StepMovementCoordinator:
         requests: Sequence[NavigationRequest],
         completed_agent_ids: FrozenSet[int] = frozenset(),
     ) -> Dict[int, NavigationResult]:
-        del completed_agent_ids
         ordered = tuple(sorted(requests, key=lambda request: request.agent_id))
         if not ordered:
             return {}
@@ -462,6 +653,8 @@ class StepMovementCoordinator:
             for request in ordered
         }
         blocked_transitions: Set[Tuple[GridPoint, GridPoint]] = set()
+        parking_candidates: Dict[int, Tuple[Dict[str, float], ...]] = {}
+        parking_attempted = False
         replan_count = 0
         current_plan = None
         try:
@@ -471,6 +664,7 @@ class StepMovementCoordinator:
                     active_states,
                     snapshot,
                     frozenset(blocked_transitions),
+                    parking_candidates,
                 )
                 if planning.plan is None:
                     snapshot = self.refresh_world()
@@ -478,18 +672,63 @@ class StepMovementCoordinator:
                         active_states,
                         snapshot,
                         frozenset(blocked_transitions),
+                        parking_candidates,
                     )
+                if planning.plan is None and not parking_attempted:
+                    parking_attempted = True
+                    parking_candidates = self._parking_candidate_map(
+                        frozenset(completed_agent_ids),
+                        tuple(
+                            state.request
+                            for state in active_states.values()
+                            if state.result is None
+                        ),
+                        snapshot,
+                    )
+                    event = {
+                        "event": "parking_recovery_attempted",
+                        "parking_agent_ids": sorted(parking_candidates),
+                    }
+                    for state in active_states.values():
+                        if state.result is None:
+                            state.decision_trace.append(dict(event))
+                    if parking_candidates:
+                        planning = self._plan(
+                            active_states,
+                            snapshot,
+                            frozenset(blocked_transitions),
+                            parking_candidates,
+                        )
                 if planning.plan is None:
+                    parking_context = (
+                        "; parking recovery found no safe joint plan"
+                        if parking_attempted
+                        else ""
+                    )
                     raise StepNavigationError(
                         "step navigation planning failed after full refresh "
-                        f"with status {planning.status}"
+                        f"with status {planning.status}{parking_context}"
                     )
 
                 current_plan = planning.plan
+                if parking_candidates:
+                    parking_assignment = {
+                        agent_id: current_plan.assignment[str(agent_id)]
+                        .position.to_list()
+                        for agent_id in sorted(parking_candidates)
+                    }
+                    event = {
+                        "event": "parking_assignment",
+                        "assignments": parking_assignment,
+                    }
+                    for state in active_states.values():
+                        if state.result is None:
+                            state.decision_trace.append(dict(event))
                 boundary = self._execute_until_boundary(
                     current_plan,
                     snapshot,
                     active_states,
+                    frozenset(parking_candidates),
                 )
                 if boundary.kind != "arrived":
                     self._release_plan(
