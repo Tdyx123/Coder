@@ -183,6 +183,7 @@ class PhaseCoordinatorTest(unittest.TestCase):
 
     def test_navigate_to_object_notifies_phase_coordinator_after_move(self):
         runtime = object.__new__(ThorRuntime)
+        runtime.configure_movement("teleport", environ={})
         order = []
         destination = {
             "objectId": "Apple|+01.00|+00.90|+00.00",
@@ -222,7 +223,7 @@ class PhaseCoordinatorTest(unittest.TestCase):
             phase_coordinator=RecordingCoordinator(),
         )
 
-        self.assertIs(result, destination)
+        self.assertEqual(result, destination)
         self.assertEqual(
             order,
             [
@@ -235,6 +236,7 @@ class PhaseCoordinatorTest(unittest.TestCase):
 
     def test_navigate_to_object_recomputes_candidates_after_coordinator_wait(self):
         runtime = object.__new__(ThorRuntime)
+        runtime.configure_movement("teleport", environ={})
         first_destination = {
             "objectId": "Apple|+01.00|+00.90|+00.00",
             "objectType": "Apple",
@@ -296,7 +298,7 @@ class PhaseCoordinatorTest(unittest.TestCase):
             phase_coordinator=WaitingCoordinator(),
         )
 
-        self.assertIs(result, second_destination)
+        self.assertEqual(result, second_destination)
         self.assertEqual(refresh_calls, [0, 0])
         self.assertEqual(len(find_calls), 2)
         self.assertEqual(len(candidate_calls), 2)

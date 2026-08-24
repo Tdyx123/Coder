@@ -9,7 +9,7 @@ import subprocess
 import threading
 from collections import deque
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from .action_plan import PlannedAction
 from .config import (
@@ -39,6 +39,13 @@ from .goals import (
     goal_states,
     record_verified_goal_state,
     state_satisfied,
+)
+from .movement import (
+    ActionWave,
+    MovementConfig,
+    NavigationMetrics,
+    NavigationRequest,
+    create_movement_strategy,
 )
 from .utils import (
     RobotRef,
@@ -142,6 +149,7 @@ class ThorRuntime:
         floor: str,
         cloud_rendering: bool,
         render_image: bool,
+        movement_mode: Optional[str] = None,
     ) -> None:
         require_dependencies()
         self.robots = list(robot_defs)
@@ -177,6 +185,7 @@ class ThorRuntime:
         self.object_alias_lock = threading.Lock()
         self.reachable_positions: List[Dict[str, float]] = []
         self.global_reachable_positions: List[Dict[str, float]] = []
+        self.configure_movement(movement_mode)
 
         if self.show_windows:
             log("OpenCV camera preview windows enabled.")
@@ -2744,21 +2753,37 @@ class ThorRuntime:
             return False
         return "rotateright failed" in message or "rotateleft failed" in message
 
-    def navigate_to_object(
+    def configure_movement(
+        self,
+        movement_mode: Optional[str] = None,
+        *,
+        environ: Optional[Mapping[str, str]] = None,
+    ) -> None:
+        self.movement_config = MovementConfig.resolve(movement_mode, environ)
+        self.navigation_metrics = NavigationMetrics(self.movement_config.mode)
+        self.movement_strategy = create_movement_strategy(
+            self,
+            self.movement_config,
+            self.navigation_metrics,
+        )
+
+    def build_navigation_request(
         self,
         robot: RobotRef,
         dest_obj: Any,
         *,
-        allow_hand_preparation: bool = True,
         next_action: Optional[PlannedAction] = None,
         phase_coordinator: Optional[Any] = None,
-    ) -> Dict[str, Any]:
+        action_wave: Optional[ActionWave] = None,
+    ) -> NavigationRequest:
         agent_id = self.physical_agent_id(robot)
-        if allow_hand_preparation:
-            self.prepare_hand_for_goto_if_needed(robot, next_action)
         self.refresh_reachable_positions(agent_id)
-        dest = self.find_object(dest_obj, agent_id=agent_id, require_center=True)
-        center = object_center(dest)
+        destination = self.find_object(
+            dest_obj,
+            agent_id=agent_id,
+            require_center=True,
+        )
+        center = object_center(destination)
         if not center:
             raise RuntimeError(f"Object {dest_obj!r} has no usable center.")
 
@@ -2767,48 +2792,55 @@ class ThorRuntime:
             agent_id=agent_id,
             include_agent_positions=False,
         )[:TELEPORT_CANDIDATE_LIMIT]
-        if phase_coordinator is not None:
-            candidate_waited = phase_coordinator.wait_until_goto_candidates_clear(
-                agent_id,
-                candidate_positions[:1],
-            )
-            if candidate_waited:
-                self.refresh_reachable_positions(agent_id)
-                dest = self.find_object(dest_obj, agent_id=agent_id, require_center=True)
-                center = object_center(dest)
-                if not center:
-                    raise RuntimeError(f"Object {dest_obj!r} has no usable center.")
-                candidate_positions = self.teleport_candidate_positions(
-                    center,
-                    agent_id=agent_id,
-                    include_agent_positions=False,
-                )[:TELEPORT_CANDIDATE_LIMIT]
-        target_position = candidate_positions[0]
-        object_resource = str(dest.get("objectId")) if dest.get("objectId") else None
-        log(
-            f"Going to {dest_obj} {dest.get('objectId')} "
-            f"at reachable position {target_position}."
+        object_resource = (
+            str(destination.get("objectId"))
+            if destination.get("objectId")
+            else None
         )
-        self.teleport_and_face_candidate_positions(
-            agent_id,
-            candidate_positions,
-            face_target=center,
+        return NavigationRequest(
+            robot=robot,
+            agent_id=agent_id,
+            dest_obj=dest_obj,
+            destination=dict(destination),
+            center=dict(center),
+            candidate_positions=tuple(
+                dict(position) for position in candidate_positions
+            ),
             object_resource=object_resource,
-            search_center=center,
-            restrict_to_candidate_positions=True,
+            next_action=next_action,
+            phase_coordinator=phase_coordinator,
+            action_wave=action_wave,
         )
-        if phase_coordinator is not None:
-            notify_position_changed = getattr(
-                phase_coordinator,
-                "notify_agent_position_changed",
-                None,
-            )
-            if callable(notify_position_changed):
-                notify_position_changed(agent_id)
 
-        log(f"Reached: {dest_obj}")
-        self.record_operated_object_name(dest)
-        return dest
+    def navigate_to_object(
+        self,
+        robot: RobotRef,
+        dest_obj: Any,
+        *,
+        allow_hand_preparation: bool = True,
+        next_action: Optional[PlannedAction] = None,
+        phase_coordinator: Optional[Any] = None,
+        action_wave: Optional[ActionWave] = None,
+    ) -> Dict[str, Any]:
+        self.navigation_metrics.record_request_started()
+        try:
+            if allow_hand_preparation:
+                self.prepare_hand_for_goto_if_needed(robot, next_action)
+            request = self.build_navigation_request(
+                robot,
+                dest_obj,
+                next_action=next_action,
+                phase_coordinator=phase_coordinator,
+                action_wave=action_wave,
+            )
+            result = self.movement_strategy.navigate(request)
+            log(f"Reached: {dest_obj}")
+            self.record_operated_object_name(result.destination)
+        except Exception:
+            self.navigation_metrics.record_request_failed()
+            raise
+        self.navigation_metrics.record_request_succeeded()
+        return dict(result.destination)
 
     def face_position(
         self,

@@ -164,3 +164,18 @@ class NavigationMetrics:
 class MovementStrategy(Protocol):
     def navigate(self, request: NavigationRequest) -> NavigationResult:
         raise NotImplementedError
+
+
+def create_movement_strategy(
+    runtime: Any,
+    config: MovementConfig,
+    metrics: NavigationMetrics,
+) -> MovementStrategy:
+    if config.mode is MovementMode.TELEPORT:
+        from .teleport_movement import TeleportMovementStrategy
+
+        return TeleportMovementStrategy(runtime, metrics)
+
+    from .step_movement import StepMovementStrategy
+
+    return StepMovementStrategy(runtime, config, metrics)
