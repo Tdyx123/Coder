@@ -300,6 +300,7 @@ Minimal input shape:
   "max_assignment_trials": 256,
   "walkable": [[0, 0], [1, 0], [2, 0], [0, 2], [1, 2], [2, 2]],
   "conflicts": [],
+  "blocked_transitions": [[[0, 0], [1, 0]]],
   "robots": [
     {
       "id": "A",
@@ -319,6 +320,12 @@ Minimal input shape:
   }
 }
 ```
+
+`robots` accepts one to four entries. `blocked_transitions` is optional and
+contains directed `[source, target]` grid pairs that the planner must not
+traverse in this planning batch. The reverse direction remains available
+unless it is listed separately. Both endpoints must be distinct members of
+`walkable`; wait transitions cannot be blocked.
 
 `walkable_events` enables strict dynamic-walkable execution in `FakeRuntime`.
 The first event must be a full refresh at committed step 0. Every successful
@@ -407,6 +414,9 @@ AI2-THOR alignment and limitations:
   0.25 m grid keys. The static scenario uses integer grid keys, while dynamic
   reachable-position events accept AI2-THOR-style `{x, y, z}` objects. This
   prototype still does not model floating-point drift or real colliders.
+- Scenarios accept one to four robots. Directed `blocked_transitions` are
+  batch-local evidence about failed movement edges; they are not persisted
+  between independent scenario loads.
 - `GetReachablePositions` alone does not prove that an object is interactable
   from a point. A future adapter must also account for rotation, camera horizon,
   visibility, held objects, and interactable poses.

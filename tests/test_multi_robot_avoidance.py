@@ -137,12 +137,49 @@ class ScenarioModelTest(unittest.TestCase):
         self.assertTrue(model.conflicts(GridPoint(0, 0), GridPoint(1, 0)))
         self.assertFalse(model.conflicts(GridPoint(0, 0), GridPoint(1, 1)))
 
-    def test_load_scenario_rejects_robot_count_outside_two_to_four(self):
+    def test_load_scenario_accepts_one_robot(self):
         data = basic_scenario_data()
         data["robots"] = data["robots"][:1]
 
-        with self.assertRaisesRegex(ScenarioValidationError, "2 to 4 robots"):
-            load_scenario(data)
+        scenario = load_scenario(data)
+        result = plan_scenario(scenario, WorldState.from_scenario(scenario))
+
+        self.assertEqual([robot.robot_id for robot in scenario.robots], ["A"])
+        self.assertEqual(result.status, "PLANNED")
+        self.assertEqual(
+            result.plan.paths["A"],
+            (
+                GridPoint(0, 0),
+                GridPoint(1, 0),
+                GridPoint(2, 0),
+                GridPoint(3, 0),
+                GridPoint(4, 0),
+            ),
+        )
+
+    def test_load_scenario_rejects_robot_count_outside_one_to_four(self):
+        for robots in ([], basic_scenario_data()["robots"] * 3):
+            with self.subTest(robot_count=len(robots)):
+                data = basic_scenario_data()
+                data["robots"] = robots
+
+                with self.assertRaisesRegex(
+                    ScenarioValidationError,
+                    "1 to 4 robots",
+                ):
+                    load_scenario(data)
+
+    def test_load_scenario_rejects_invalid_blocked_transitions(self):
+        for blocked_transitions in (
+            [[[0, 0], [0, 0]]],
+            [[[0, 0], [99, 99]]],
+        ):
+            with self.subTest(blocked_transitions=blocked_transitions):
+                data = basic_scenario_data()
+                data["blocked_transitions"] = blocked_transitions
+
+                with self.assertRaises(ScenarioValidationError):
+                    load_scenario(data)
 
     def test_composite_conflict_model_includes_explicit_point_pairs(self):
         geometry = GeometryConflictModel(grid_size_m=0.25, hard_clearance_m=0.1)
@@ -320,6 +357,71 @@ class JointAssignmentTest(unittest.TestCase):
 
 
 class SpaceTimePlanningTest(unittest.TestCase):
+    def test_directed_blocked_transition_forces_detour(self):
+        scenario = load_scenario(
+            {
+                "grid_size_m": 0.25,
+                "hard_clearance_m": 0.1,
+                "walkable": [
+                    [0, 0],
+                    [1, 0],
+                    [2, 0],
+                    [0, 1],
+                    [1, 1],
+                    [2, 1],
+                ],
+                "blocked_transitions": [[[0, 0], [1, 0]]],
+                "robots": [
+                    {
+                        "id": "A",
+                        "start": [0, 0],
+                        "candidates": [
+                            {"id": "A1", "position": [2, 0], "cost": 0}
+                        ],
+                    }
+                ],
+            }
+        )
+
+        result = plan_scenario(scenario, WorldState.from_scenario(scenario))
+
+        self.assertEqual(result.status, "PLANNED")
+        path = result.plan.paths["A"]
+        self.assertEqual(path[0], GridPoint(0, 0))
+        self.assertEqual(path[-1], GridPoint(2, 0))
+        self.assertEqual(len(path), 5)
+        self.assertNotIn(
+            (GridPoint(0, 0), GridPoint(1, 0)),
+            tuple(zip(path, path[1:])),
+        )
+
+    def test_directed_blocked_transition_keeps_reverse_direction_open(self):
+        scenario = load_scenario(
+            {
+                "grid_size_m": 0.25,
+                "hard_clearance_m": 0.1,
+                "walkable": [[0, 0], [1, 0]],
+                "blocked_transitions": [[[0, 0], [1, 0]]],
+                "robots": [
+                    {
+                        "id": "A",
+                        "start": [1, 0],
+                        "candidates": [
+                            {"id": "A1", "position": [0, 0], "cost": 0}
+                        ],
+                    }
+                ],
+            }
+        )
+
+        result = plan_scenario(scenario, WorldState.from_scenario(scenario))
+
+        self.assertEqual(result.status, "PLANNED")
+        self.assertEqual(
+            result.plan.paths["A"],
+            (GridPoint(1, 0), GridPoint(0, 0)),
+        )
+
     def test_vertex_conflict_is_resolved_with_a_wait(self):
         data = {
             "grid_size_m": 0.25,
@@ -1073,7 +1175,7 @@ class ResultAndCliTest(unittest.TestCase):
 
     def test_cli_returns_invalid_scenario_exit_code(self):
         data = basic_scenario_data()
-        data["robots"] = data["robots"][:1]
+        data["robots"] = []
         with tempfile.TemporaryDirectory() as temp_dir:
             scenario_path = Path(temp_dir) / "invalid.json"
             scenario_path.write_text(json.dumps(data), encoding="utf-8")

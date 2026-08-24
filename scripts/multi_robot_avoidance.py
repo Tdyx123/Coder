@@ -240,6 +240,7 @@ class Scenario:
     walkable: FrozenSet[GridPoint]
     conflicts: FrozenSet[Tuple[GridPoint, GridPoint]]
     robots: Tuple[RobotIntent, ...]
+    blocked_transitions: FrozenSet[Tuple[GridPoint, GridPoint]] = frozenset()
     execution: ExecutionConfig = field(default_factory=ExecutionConfig)
 
 
@@ -1026,6 +1027,8 @@ def _space_time_a_star(
             continue
 
         for neighbor in _neighbors(point, scenario.walkable):
+            if (point, neighbor) in scenario.blocked_transitions:
+                continue
             next_tick = tick + 1
             next_state = (neighbor, next_tick)
             if next_state in parents:
@@ -1614,9 +1617,33 @@ def load_scenario(data: Mapping[str, Any]) -> Scenario:
             raise ScenarioValidationError("conflict points must be walkable.")
         conflict_pairs.add(tuple(sorted((left, right))))
 
+    raw_blocked_transitions = data.get("blocked_transitions", [])
+    if not isinstance(raw_blocked_transitions, list):
+        raise ScenarioValidationError(
+            "blocked_transitions must be a list of directed point pairs."
+        )
+    blocked_transitions = set()
+    for index, pair in enumerate(raw_blocked_transitions):
+        field_name = f"blocked_transitions[{index}]"
+        if not isinstance(pair, (list, tuple)) or len(pair) != 2:
+            raise ScenarioValidationError(
+                f"{field_name} must contain two points."
+            )
+        source = GridPoint.from_value(pair[0], f"{field_name}[0]")
+        target = GridPoint.from_value(pair[1], f"{field_name}[1]")
+        if source == target:
+            raise ScenarioValidationError(
+                f"{field_name} must contain two different points."
+            )
+        if source not in walkable or target not in walkable:
+            raise ScenarioValidationError(
+                "blocked transition points must be walkable."
+            )
+        blocked_transitions.add((source, target))
+
     raw_robots = data.get("robots")
-    if not isinstance(raw_robots, list) or not 2 <= len(raw_robots) <= 4:
-        raise ScenarioValidationError("Scenario must define 2 to 4 robots.")
+    if not isinstance(raw_robots, list) or not 1 <= len(raw_robots) <= 4:
+        raise ScenarioValidationError("Scenario must define 1 to 4 robots.")
 
     robot_ids = set()
     candidate_ids = set()
@@ -1714,6 +1741,7 @@ def load_scenario(data: Mapping[str, Any]) -> Scenario:
         walkable=walkable,
         conflicts=frozenset(conflict_pairs),
         robots=tuple(robots),
+        blocked_transitions=frozenset(blocked_transitions),
         execution=execution,
     )
 
