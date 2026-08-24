@@ -1998,10 +1998,30 @@ class ThorRuntime:
         delta = shortest_yaw_delta(target_yaw, current_yaw)
         if abs(delta) > 1e-3:
             action = "RotateRight" if delta > 0 else "RotateLeft"
-            self._step_direct(
-                {"action": action, "degrees": abs(delta), "agentId": agent_id},
-                check_success=True,
-            )
+            try:
+                self._step_direct(
+                    {"action": action, "degrees": abs(delta), "agentId": agent_id},
+                    check_success=True,
+                )
+            except RuntimeError as exc:
+                if not self.held_item_rotation_failure(exc):
+                    raise
+                opposite_action = (
+                    "RotateLeft" if action == "RotateRight" else "RotateRight"
+                )
+                opposite_degrees = 360.0 - abs(delta)
+                log(
+                    f"{action} was blocked by a held item for agent {agent_id}; "
+                    f"trying equivalent {opposite_action} rotation."
+                )
+                self._step_direct(
+                    {
+                        "action": opposite_action,
+                        "degrees": opposite_degrees,
+                        "agentId": agent_id,
+                    },
+                    check_success=True,
+                )
 
         move_payload = {
             "action": "MoveAhead",

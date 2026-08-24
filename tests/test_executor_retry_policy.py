@@ -288,6 +288,42 @@ def run_emptyliquid_with_runtime(runtime):
 
 
 class ExecutorRetryPolicyTest(unittest.TestCase):
+    def test_move_uses_opposite_rotation_when_held_item_blocks_shortest_turn(self):
+        runtime = runtime_without_init()
+        current_position = {"x": 0.0, "y": 0.9, "z": 0.0}
+        target_position = {"x": 0.25, "y": 0.9, "z": 0.0}
+        calls = []
+
+        runtime.current_agent_position = lambda _agent_id: dict(current_position)
+        runtime.agent_event = lambda _agent_id: FakeEvent(
+            metadata={
+                "lastActionSuccess": True,
+                "agent": {"rotation": {"y": 197.978759765625}},
+            }
+        )
+
+        def step_direct(payload, **_kwargs):
+            calls.append(dict(payload))
+            if payload["action"] == "RotateLeft":
+                raise RuntimeError(
+                    "RotateLeft failed for agent 0: a held item: "
+                    "PaperTowelRoll_6a22a21e with something if agent rotates "
+                    "Left 107.9788 degrees"
+                )
+            return FakeEvent(True)
+
+        runtime._step_direct = step_direct
+
+        moved = runtime.move_to_adjacent_position_direct(0, target_position)
+
+        self.assertTrue(moved)
+        self.assertEqual(
+            [payload["action"] for payload in calls],
+            ["RotateLeft", "RotateRight", "MoveAhead"],
+        )
+        self.assertAlmostEqual(calls[0]["degrees"], 107.978759765625)
+        self.assertAlmostEqual(calls[1]["degrees"], 252.021240234375)
+
     def test_move_retries_past_open_object_blocker_and_restores_it(self):
         runtime = runtime_without_init()
         current_position = {"x": 0.0, "y": 0.9, "z": 0.0}
