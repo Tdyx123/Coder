@@ -30,9 +30,14 @@ from executor_system.parallel_runner import (
     DEFAULT_TIMEOUT_SECONDS,
     PlanExecutionTimeout,
     cleanup_gpu_processes,
+    effective_timeout_seconds,
     main as parallel_runner_main,
     parse_gpu_cleanup_pids,
     run_action_plan_tolerant,
+    run_generated_executable,
+)
+from executor_system.generated_plan_runtime import (
+    parse_arguments as parse_generated_arguments,
 )
 from executor_system import executor as executor_module
 from executor_system.demo_state import (
@@ -464,6 +469,7 @@ def write_fake_generated_script(
                 "parser.add_argument('--runner-mode', action='store_true')",
                 "parser.add_argument('--metrics-output', required=True)",
                 "parser.add_argument('--timeout-seconds', type=float, default=30.0)",
+                "parser.add_argument('--movement-mode', choices=('teleport', 'step'))",
                 "args = parser.parse_args()",
                 f"time.sleep({sleep_seconds!r})",
                 f"print({stdout_text!r})" if stdout_text else "pass",
@@ -515,6 +521,7 @@ def write_attempt_sequence_script(path: Path, attempts):
                 "parser.add_argument('--runner-mode', action='store_true')",
                 "parser.add_argument('--metrics-output', required=True)",
                 "parser.add_argument('--timeout-seconds', type=float, default=30.0)",
+                "parser.add_argument('--movement-mode', choices=('teleport', 'step'))",
                 "args = parser.parse_args()",
                 "time.sleep(float(config.get('sleep_seconds', 0.0)))",
                 "returncode = int(config.get('returncode', 0))",
@@ -569,6 +576,37 @@ def load_only_summary(output_dir: Path):
 class ParallelRunnerCliTest(unittest.TestCase):
     def test_default_timeout_seconds_is_30(self):
         self.assertEqual(DEFAULT_TIMEOUT_SECONDS, 30.0)
+
+    def test_movement_mode_defaults_choose_mode_specific_timeout(self):
+        self.assertEqual(effective_timeout_seconds("teleport", None), 30.0)
+        self.assertEqual(effective_timeout_seconds("step", None), 120.0)
+        self.assertEqual(effective_timeout_seconds("step", 45.0), 45.0)
+
+    def test_run_generated_executable_passes_movement_mode(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            executable_path = root / "executable_plan.py"
+            metrics_path = root / "metrics.json"
+            with patch(
+                "executor_system.parallel_runner.subprocess.run",
+                return_value=SimpleNamespace(returncode=0, stdout="", stderr=""),
+            ) as run:
+                run_generated_executable(
+                    executable_path,
+                    metrics_output=metrics_path,
+                    timeout_seconds=120.0,
+                    movement_mode="step",
+                )
+
+        command = run.call_args.args[0]
+        self.assertIn("--movement-mode", command)
+        self.assertEqual(command[command.index("--movement-mode") + 1], "step")
+
+    def test_generated_runtime_rejects_invalid_movement_mode(self):
+        with self.assertRaises(SystemExit) as exc:
+            parse_generated_arguments(["--movement-mode", "warp"])
+
+        self.assertEqual(exc.exception.code, 2)
 
     def test_runs_multiple_generated_files_and_writes_summary(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

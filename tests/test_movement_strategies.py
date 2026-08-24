@@ -1,4 +1,5 @@
 import sys
+import threading
 import unittest
 from pathlib import Path
 
@@ -142,6 +143,52 @@ class TeleportMovementStrategyTest(unittest.TestCase):
         )
         self.assertEqual(result.destination, second_destination)
         self.assertEqual(result.position, second_candidate)
+
+
+class NavigationActionScopeTest(unittest.TestCase):
+    def test_only_actions_inside_navigation_scope_are_counted(self):
+        class RecordingController:
+            def step(self, payload):
+                return type(
+                    "Event",
+                    (),
+                    {
+                        "metadata": {
+                            "lastActionSuccess": True,
+                            "lastAction": payload.get("action"),
+                        }
+                    },
+                )()
+
+        runtime = object.__new__(ThorRuntime)
+        runtime.physical_agent_count = 1
+        runtime.configure_movement("step", environ={})
+        runtime.controller = RecordingController()
+        runtime.controller_lock = threading.RLock()
+        runtime.save_frames = lambda _event: None
+        runtime.assert_success = lambda _event, _payload: None
+
+        runtime._step_direct(
+            {"action": "Initialize", "agentId": 0},
+            check_success=False,
+            save_frame=False,
+        )
+        runtime._step_direct(
+            {"action": "Teleport", "agentId": 0},
+            check_success=False,
+            save_frame=False,
+        )
+        with runtime.navigation_action_scope():
+            runtime._step_direct(
+                {"action": "MoveAhead", "agentId": 0},
+                check_success=False,
+                save_frame=False,
+            )
+
+        self.assertEqual(
+            runtime.navigation_metrics.to_dict()["action_counts"],
+            {"MoveAhead": 1},
+        )
 
 
 if __name__ == "__main__":

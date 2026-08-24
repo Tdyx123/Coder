@@ -45,6 +45,7 @@ from executor_system.action_plan import (  # noqa: E402
     action_allows_failure_retry,
 )
 from executor_system.executor import Executor, PhaseCoordinator  # noqa: E402
+from executor_system.movement import MovementConfig  # noqa: E402
 from executor_system.runtime import is_pickup_object_clip_error  # noqa: E402
 from baseline_converters import pddlrun  # noqa: E402
 
@@ -54,6 +55,16 @@ MAX_TIMEOUT_RETRIES = 2
 GPU_CLEANUP_PROCESS_SUFFIX = "0d69f666c7f282e54abfe58f1e917"
 IGNORED_FAILURE_ACTION_TYPES = {"Teleport", "TeleportObjectToHand"}
 BASE_LINE_CHOICES = ("LaMMA-P", "SMART-LLM", "Scale-Plan", "KGLAMP")
+
+
+def effective_timeout_seconds(
+    movement_mode: Optional[str],
+    explicit_timeout: Optional[float],
+) -> float:
+    if explicit_timeout is not None:
+        return float(explicit_timeout)
+    resolved_mode = MovementConfig.resolve(movement_mode).mode.value
+    return 120.0 if resolved_mode == "step" else DEFAULT_TIMEOUT_SECONDS
 
 
 def failure_ignored_for_ratio(action: Action, exc: BaseException) -> bool:
@@ -809,7 +820,11 @@ def gpu_cleanup_error_event(round_index: int, exc: BaseException) -> Dict[str, A
     }
 
 
-def failed_result_for_exception(executable_path: Path, exc: BaseException) -> Dict[str, Any]:
+def failed_result_for_exception(
+    executable_path: Path,
+    exc: BaseException,
+    movement_mode: str = "teleport",
+) -> Dict[str, Any]:
     result = {
         "status": "failed",
         "timed_out": False,
@@ -822,6 +837,8 @@ def failed_result_for_exception(executable_path: Path, exc: BaseException) -> Di
         "robot_failures": [],
         "returncode": 1,
         "executable_path": str(executable_path),
+        "movement_mode": str(movement_mode),
+        "navigation_metrics": {},
         "error": str(exc),
     }
     return normalize_result_metrics(result)
@@ -847,6 +864,7 @@ def run_generated_executable(
     *,
     metrics_output: Path,
     timeout_seconds: float,
+    movement_mode: str = "teleport",
     save_all_stdout: bool = False,
 ) -> Dict[str, Any]:
     start_time = time.monotonic()
@@ -859,6 +877,8 @@ def run_generated_executable(
         str(metrics_output),
         "--timeout-seconds",
         str(timeout_seconds),
+        "--movement-mode",
+        str(movement_mode),
     ]
     try:
         completed = subprocess.run(
@@ -883,6 +903,8 @@ def run_generated_executable(
             "robot_failures": [],
             "returncode": 124,
             "executable_path": str(executable_path),
+            "movement_mode": str(movement_mode),
+            "navigation_metrics": {},
             "stdout": exc.stdout or "",
             "stderr": exc.stderr or "",
         }
@@ -910,6 +932,8 @@ def run_generated_executable(
     result.setdefault("failed_actions", 0)
     result.setdefault("failure_action_ratio", 0.0)
     result.setdefault("robot_failures", [])
+    result.setdefault("movement_mode", str(movement_mode))
+    result.setdefault("navigation_metrics", {})
     normalize_result_metrics(result)
     result["returncode"] = completed.returncode
     result["executable_path"] = str(executable_path)
@@ -926,6 +950,7 @@ def run_executable_round(
     temp_metrics_dir: Path,
     round_index: int,
     timeout_seconds: float,
+    movement_mode: str,
     save_all_stdout: bool,
 ) -> Dict[Path, Dict[str, Any]]:
     future_to_path = {}
@@ -938,6 +963,7 @@ def run_executable_round(
             executable_path,
             metrics_output=metrics_output,
             timeout_seconds=timeout_seconds,
+            movement_mode=movement_mode,
             save_all_stdout=save_all_stdout,
         )
         future_to_path[future] = executable_path
@@ -948,7 +974,11 @@ def run_executable_round(
         try:
             result = future.result()
         except Exception as exc:
-            result = failed_result_for_exception(executable_path, exc)
+            result = failed_result_for_exception(
+                executable_path,
+                exc,
+                movement_mode,
+            )
             prune_stdout_for_result(
                 result,
                 save_all_stdout=save_all_stdout,
@@ -979,6 +1009,7 @@ def run_executables_with_retries(
     max_workers: int,
     temp_metrics_dir: Path,
     timeout_seconds: float,
+    movement_mode: str = "teleport",
     save_all_stdout: bool,
 ) -> tuple[List[Dict[str, Any]], List[str], List[Dict[str, Any]]]:
     attempts_by_path: Dict[Path, List[Dict[str, Any]]] = {
@@ -998,6 +1029,7 @@ def run_executables_with_retries(
                 temp_metrics_dir=temp_metrics_dir,
                 round_index=round_index,
                 timeout_seconds=timeout_seconds,
+                movement_mode=movement_mode,
                 save_all_stdout=save_all_stdout,
             )
 
@@ -1044,6 +1076,7 @@ def build_summary(
     base_line: Optional[str] = None,
     discovery_root: Optional[Path] = None,
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    movement_mode: str = "teleport",
     timeout_retry_tasks: Optional[Iterable[str]] = None,
     gpu_cleanup_events: Optional[Sequence[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
@@ -1065,6 +1098,8 @@ def build_summary(
             "max_retries": MAX_TIMEOUT_RETRIES,
             "timeout_seconds": float(timeout_seconds),
         },
+        "movement_mode": str(movement_mode),
+        "effective_timeout_seconds": float(timeout_seconds),
         "timeout_retry_tasks": list(timeout_retry_tasks or []),
         "gpu_cleanup_events": [
             dict(event) for event in (gpu_cleanup_events or [])
@@ -1122,8 +1157,14 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--timeout-seconds",
         type=float,
-        default=DEFAULT_TIMEOUT_SECONDS,
-        help="Per-executable timeout in seconds.",
+        default=None,
+        help="Per-executable timeout; defaults to 30s for teleport and 120s for step.",
+    )
+    parser.add_argument(
+        "--movement-mode",
+        choices=("teleport", "step"),
+        default=None,
+        help="Robot movement mode; otherwise LAMMAP_MOVEMENT_MODE or teleport.",
     )
     parser.add_argument(
         "--output-dir",
@@ -1140,10 +1181,19 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_arguments(argv)
+    try:
+        movement_mode = MovementConfig.resolve(args.movement_mode).mode.value
+    except RuntimeError as exc:
+        print(f"ERROR: {exc}")
+        return 1
+    timeout_seconds = effective_timeout_seconds(
+        movement_mode,
+        args.timeout_seconds,
+    )
     if args.max_workers < 1:
         print("ERROR: --max-workers must be at least 1")
         return 1
-    if args.timeout_seconds <= 0:
+    if timeout_seconds <= 0:
         print("ERROR: --timeout-seconds must be positive")
         return 1
     if args.parallel_run and (
@@ -1184,7 +1234,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             executable_paths,
             max_workers=args.max_workers,
             temp_metrics_dir=temp_metrics_dir,
-            timeout_seconds=float(args.timeout_seconds),
+            timeout_seconds=timeout_seconds,
+            movement_mode=movement_mode,
             save_all_stdout=args.save_all_stdout,
         )
 
@@ -1201,7 +1252,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         start_time,
         base_line=args.base_line,
         discovery_root=discovery_root,
-        timeout_seconds=float(args.timeout_seconds),
+        timeout_seconds=timeout_seconds,
+        movement_mode=movement_mode,
         timeout_retry_tasks=timeout_retry_tasks,
         gpu_cleanup_events=gpu_cleanup_events,
     )

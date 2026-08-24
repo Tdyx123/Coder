@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
+
 from .movement import (
     MovementConfig,
     NavigationMetrics,
@@ -24,6 +26,11 @@ class StepMovementStrategy:
         self.coordinator = StepMovementCoordinator(runtime, config, metrics)
 
     def navigate(self, request: NavigationRequest) -> NavigationResult:
+        scope = getattr(self.runtime, "navigation_action_scope", None)
+        with scope() if callable(scope) else nullcontext():
+            return self._navigate(request)
+
+    def _navigate(self, request: NavigationRequest) -> NavigationResult:
         if request.phase_coordinator is not None and request.action_wave is not None:
             return request.phase_coordinator.submit_step_navigation(
                 request.action_wave,

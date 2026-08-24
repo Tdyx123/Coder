@@ -15,7 +15,12 @@ from executor_system import context as _context
 from executor_system import demo_state as _demo_state
 from executor_system.action_plan import TaskPlan
 from executor_system.config import CLOUD_RENDERING, RENDER_IMAGE
-from executor_system.parallel_runner import run_action_plan_tolerant, write_result_json
+from executor_system.movement import MovementConfig
+from executor_system.parallel_runner import (
+    effective_timeout_seconds,
+    run_action_plan_tolerant,
+    write_result_json,
+)
 from executor_system.runtime import ThorRuntime
 from executor_system.task_plan import run_action_plan
 
@@ -110,8 +115,14 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--timeout-seconds",
         type=float,
-        default=DEFAULT_RUNNER_TIMEOUT_SECONDS,
-        help="Runner-mode total timeout in seconds.",
+        default=None,
+        help="Runner timeout; defaults to 30s for teleport and 120s for step.",
+    )
+    parser.add_argument(
+        "--movement-mode",
+        choices=("teleport", "step"),
+        default=None,
+        help="Robot movement mode; otherwise LAMMAP_MOVEMENT_MODE or teleport.",
     )
     return parser.parse_args(argv)
 
@@ -157,6 +168,7 @@ def run_standalone(
     bundle_data: Dict[str, Any],
     task_file: str,
     task_index: int,
+    movement_mode: Optional[str] = None,
 ) -> int:
     task_record, floor_no, robots, ground_truth, bundle = _runtime_inputs(
         bundle_data,
@@ -173,6 +185,7 @@ def run_standalone(
         floor_no,
         CLOUD_RENDERING,
         RENDER_IMAGE,
+        movement_mode=movement_mode,
     )
     runtime.register_object_id_bindings(bundle.object_id_bindings)
     _context.runtime = runtime
@@ -217,6 +230,9 @@ def run_runner_mode(
     runtime = None
 
     try:
+        resolved_movement = MovementConfig.resolve(args.movement_mode)
+        result["movement_mode"] = resolved_movement.mode.value
+        result["navigation_metrics"] = {}
         task_record, floor_no, robots, ground_truth, bundle = _runtime_inputs(
             bundle_data,
             task_file,
@@ -230,14 +246,20 @@ def run_runner_mode(
             floor_no,
             CLOUD_RENDERING,
             False,
+            movement_mode=args.movement_mode,
         )
+        result["movement_mode"] = runtime.movement_config.mode.value
+        result["navigation_metrics"] = runtime.navigation_metrics.to_dict()
         runtime.register_object_id_bindings(bundle.object_id_bindings)
         _context.runtime = runtime
 
         execution_report = run_action_plan_tolerant(
             runtime,
             bundle.task_plan,
-            timeout_seconds=args.timeout_seconds,
+            timeout_seconds=effective_timeout_seconds(
+                runtime.movement_config.mode.value,
+                args.timeout_seconds,
+            ),
         )
         result.update(execution_report)
         try:
@@ -270,6 +292,8 @@ def run_runner_mode(
         return_code = 1
     finally:
         if runtime is not None:
+            result["movement_mode"] = runtime.movement_config.mode.value
+            result["navigation_metrics"] = runtime.navigation_metrics.to_dict()
             runtime.stop()
         _context.runtime = None
         result["run_time_seconds"] = time.monotonic() - start_time
@@ -289,4 +313,9 @@ def main(
     args = parse_arguments(argv)
     if args.runner_mode:
         return run_runner_mode(args, bundle_data, task_file, task_index, script_file)
-    return run_standalone(bundle_data, task_file, task_index)
+    return run_standalone(
+        bundle_data,
+        task_file,
+        task_index,
+        movement_mode=args.movement_mode,
+    )

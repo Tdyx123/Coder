@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
+
 from .movement import NavigationMetrics, NavigationRequest, NavigationResult
 from .utils import log
 
@@ -12,6 +14,11 @@ class TeleportMovementStrategy:
         self.metrics = metrics
 
     def navigate(self, request: NavigationRequest) -> NavigationResult:
+        scope = getattr(self.runtime, "navigation_action_scope", None)
+        with scope() if callable(scope) else nullcontext():
+            return self._navigate(request)
+
+    def _navigate(self, request: NavigationRequest) -> NavigationResult:
         active = request
         coordinator = active.phase_coordinator
         if coordinator is not None:

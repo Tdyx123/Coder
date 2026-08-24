@@ -1,0 +1,131 @@
+{
+  "cases": [
+    {
+      "category": "kitchen",
+      "path": "logs/intermediate_runs/final_test_new_0609_1___1/break_the_window,_then_cool_the_pot_and_the_bottle_in_the_fridge/20260716_004/plan_to_code/executable_plan.py",
+      "robot_count": 2,
+      "stratum": "single_navigation",
+      "task_id": "FloorPlan1_task_2"
+    },
+    {
+      "category": "kitchen",
+      "path": "logs/intermediate_runs/final_test_new_0609_1___1/break_the_vase,_then_open_the_drawer,_then_cool_the_tomato_in_the_fridge/20260628_001/plan_to_code/executable_plan.py",
+      "robot_count": 2,
+      "stratum": "concurrent_goto",
+      "task_id": "FloorPlan1_task_13"
+    },
+    {
+      "category": "kitchen",
+      "path": "logs/intermediate_runs/final_test_new_0609_1___1/open_the_drawer,_fill_the_mug_with_water,_prepare_the_egg_in_the_pot,_then_put_t/20260628_001/plan_to_code/executable_plan.py",
+      "robot_count": 3,
+      "stratum": "multiple_waves",
+      "task_id": "FloorPlan1_task_0"
+    },
+    {
+      "category": "living_room",
+      "path": "logs/intermediate_runs/final_test_new_0609_1___201/switch_on_the_floorlamp,_then_break_the_bowl,_then_switch_on_the_television/20260716_002/plan_to_code/executable_plan.py",
+      "robot_count": 4,
+      "stratum": "single_navigation",
+      "task_id": "FloorPlan201_task_16"
+    },
+    {
+      "category": "living_room",
+      "path": "logs/intermediate_runs/final_test_new_0609_1___201/break_the_window,_then_put_the_pen_in_the_box,_then_break_the_television/20260716_001/plan_to_code/executable_plan.py",
+      "robot_count": 2,
+      "stratum": "concurrent_goto",
+      "task_id": "FloorPlan201_task_13"
+    },
+    {
+      "category": "living_room",
+      "path": "logs/intermediate_runs/final_test_new_0609_1___201/break_the_vase,_then_put_the_pen_on_the_chair_and_put_the_newspaper_in_the_drawe/20260628_001/plan_to_code/executable_plan.py",
+      "robot_count": 4,
+      "stratum": "multiple_waves",
+      "task_id": "FloorPlan201_task_1"
+    },
+    {
+      "category": "bedroom",
+      "path": "logs/intermediate_runs/final_test_new_0609_1___301/open_the_laptop,_put_the_box_on_the_floor,_open_the_book,_then_put_the_mug_in_th/20260716_001/plan_to_code/executable_plan.py",
+      "robot_count": 3,
+      "stratum": "single_navigation",
+      "task_id": "FloorPlan301_task_12"
+    },
+    {
+      "category": "bedroom",
+      "path": "logs/intermediate_runs/final_test_new_0609_1___301/break_the_bowl,_then_open_the_book,_then_put_the_credit_card_on_the_drawer/20260628_001/plan_to_code/executable_plan.py",
+      "robot_count": 4,
+      "stratum": "concurrent_goto",
+      "task_id": "FloorPlan301_task_10"
+    },
+    {
+      "category": "bedroom",
+      "path": "logs/intermediate_runs/final_test_new_0609_1___301/break_the_mirror,_then_put_the_creditcard_in_the_drawer,_then_put_the_cellphone_/20260716_002/plan_to_code/executable_plan.py",
+      "robot_count": 4,
+      "stratum": "multiple_waves",
+      "task_id": "FloorPlan301_task_0"
+    },
+    {
+      "category": "bathroom",
+      "path": "logs/intermediate_runs/final_test_new_0609_1___401/put_the_toilet_paper_in_the_garbage_can,_then_put_the_dish_sponge_on_the_garbage/20260716_003/plan_to_code/executable_plan.py",
+      "robot_count": 3,
+      "stratum": "single_navigation",
+      "task_id": "FloorPlan401_task_22"
+    },
+    {
+      "category": "bathroom",
+      "path": "logs/intermediate_runs/final_test_new_0609_1___401/put_the_cloth_on_the_bathtub_basin,_put_the_dish_sponge_in_the_bathtub_basin,_pu/20260628_001/plan_to_code/executable_plan.py",
+      "robot_count": 2,
+      "stratum": "concurrent_goto",
+      "task_id": "FloorPlan401_task_1"
+    },
+    {
+      "category": "bathroom",
+      "path": "logs/intermediate_runs/final_test_new_0609_1___401/wash_the_cloth,_then_put_it_in_the_sink,_and_put_the_paper_towel_roll_in_the_gar/20260628_001/plan_to_code/executable_plan.py",
+      "robot_count": 3,
+      "stratum": "multiple_waves",
+      "task_id": "FloorPlan401_task_10"
+    }
+  ],
+  "selection": {
+    "eligible_candidates": 851,
+    "excluded": [
+      {
+        "path": "logs/intermediate_runs/final_test_new_0525_1___6/break_the_window,_then_open_the_cabinet_and_the_drawer/20260526_001/plan_to_code/executable_plan.py",
+        "reason": "does not import executor_system.generated_plan_runtime"
+      },
+      {
+        "path": "logs/intermediate_runs/final_test_new_0609_1___1/First,_put_the_butterknife_in_the_cup,_then_fill_the_pot_with_water,_then_microw/20260610_002/plan_to_code/executable_plan.py",
+        "reason": "does not import executor_system.generated_plan_runtime"
+      },
+      {
+        "path": "logs/intermediate_runs/final_test_new_0609_1___1/break_the_statue,_then_open_the_cabinet,_then_put_the_apple_in_the_fridge,_then_/20260610_002/plan_to_code/executable_plan.py",
+        "reason": "does not import executor_system.generated_plan_runtime"
+      },
+      {
+        "path": "logs/intermediate_runs/final_test_new_0609_1___1/heat_the_pan_on_the_stoveburner,_cook_the_egg_in_the_pan,_then_put_the_egg_in_th/20260610_002/plan_to_code/executable_plan.py",
+        "reason": "does not import executor_system.generated_plan_runtime"
+      },
+      {
+        "path": "logs/intermediate_runs/final_test_new_0609_1___1/open_the_drawer,_then_put_the_book_in_the_drawer,_then_open_the_cabinet/20260610_002/plan_to_code/executable_plan.py",
+        "reason": "does not import executor_system.generated_plan_runtime"
+      },
+      {
+        "path": "logs/intermediate_runs/final_test_new_0609_1___1/switch_on_the_stoveknob,_open_the_cabinet,_put_book_on_stool,_then_make_coffee_i/20260610_002/plan_to_code/executable_plan.py",
+        "reason": "does not import executor_system.generated_plan_runtime"
+      },
+      {
+        "path": "logs/intermediate_runs/final_test_new_0609_1___3/open_the_drawer,_then_put_the_tomato_on_the_countertop,_then_slice_the_tomato/20260622_001/plan_to_code/executable_plan.py",
+        "reason": "does not import executor_system.generated_plan_runtime"
+      },
+      {
+        "path": "logs/intermediate_runs/final_test_new_0610_1___1/break_the_bottle,_open_the_cabinet,_microwave_the_cup_in_the_microwave,_then_bre/20260614_001/plan_to_code/executable_plan.py",
+        "reason": "does not import executor_system.generated_plan_runtime"
+      },
+      {
+        "path": "logs/intermediate_runs/final_test_new_1___6/slice_the_bread,_then_open_the_drawer_and_the_cabinet,_then_break_the_window/20260523_003/plan_to_code/executable_plan.py",
+        "reason": "does not import executor_system.generated_plan_runtime"
+      }
+    ],
+    "root": "logs/intermediate_runs"
+  },
+  "version": 1
+}

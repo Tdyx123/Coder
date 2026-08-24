@@ -202,7 +202,7 @@ files concurrently.
 python scripts/executor_system/parallel_runner.py \
   --root ./logs/task_manager_runs \
   --max-workers 4 \
-  --timeout-seconds 30 \
+  --movement-mode step \
   --output-dir ./parallel_runner_results
 ```
 
@@ -241,13 +241,61 @@ Behavior worth knowing:
 - `--parallel-run` cannot be combined with `--root`, `--base-line`, `--py-dir`,
   or positional executable paths
 - runner mode sets `renderImage=False` and skips video/metadata output
-- each subprocess has a 30 second timeout by default
+- `--movement-mode` accepts `teleport` or `step`; when omitted, the runner uses
+  `LAMMAP_MOVEMENT_MODE`, then defaults to `teleport`
+- default subprocess timeouts are 30 seconds for `teleport` and 120 seconds for
+  `step`; an explicit `--timeout-seconds` overrides either default
 - timed-out tasks are retried up to two times after each full round completes
 - each completed round cleans up matching GPU processes before the next retry round
 - summary metrics are written to a dated JSON filename, such as `0628_01.json`
   or `LaMMA-P_0628_01.json`
 - `stdout` is kept only for results with `robot_failures` by default; pass
   `--save-all-stdout` to keep it for every result
+- the summary records the effective movement mode, timeout, and each generated
+  runtime's `navigation_metrics`
+
+### Pluggable `GoToObject` movement
+
+Generated plans keep the same `GoToObject(robot, object)` action format. The
+runtime selects one of two movement plugins:
+
+- `teleport` is the compatibility default and retains candidate teleport plus
+  target-facing behavior
+- `step` converts current THOR reachable positions to the 0.25 m grid, jointly
+  plans same-wave robot requests through `multi_robot_avoidance.py`, and submits
+  real rotate/`MoveAhead` microsteps with 0.35 m clearance, dynamic replanning,
+  failed-edge recovery, visibility confirmation, and completed-robot parking
+
+Enable step mode for a generated executable or for the parallel runner:
+
+```bash
+python path/to/plan_to_code/executable_plan.py --movement-mode step
+
+python scripts/executor_system/parallel_runner.py \
+  --root logs/intermediate_runs \
+  --movement-mode step \
+  --output-dir ./parallel_runner_results
+```
+
+`--movement-mode` has priority over `LAMMAP_MOVEMENT_MODE`; the environment
+variable has priority over the `teleport` default. Step navigation never falls
+back to `Teleport`. Initialization teleports and explicit plan `Teleport`
+actions remain available but are outside the navigation action metrics scope.
+
+Select the deterministic 12-case manifest, then run and validate both modes:
+
+```bash
+python scripts/benchmark_movement_modes.py \
+  --select-manifest \
+  --root logs/intermediate_runs \
+  --manifest tests/fixtures/movement_benchmark_plans.json
+
+python scripts/benchmark_movement_modes.py \
+  --manifest tests/fixtures/movement_benchmark_plans.json \
+  --output-json reports/movement_modes_benchmark.json \
+  --output-md reports/movement_modes_benchmark.md \
+  --check
+```
 
 ### `execute_plan.py`
 
@@ -418,18 +466,19 @@ AI2-THOR alignment and limitations:
   batch-local evidence about failed movement edges; they are not persisted
   between independent scenario loads.
 - `GetReachablePositions` alone does not prove that an object is interactable
-  from a point. A future adapter must also account for rotation, camera horizon,
-  visibility, held objects, and interactable poses.
-- Current `GoToObject` uses candidate `Teleport` attempts, while
-  `MoveToPosition` performs incremental movement. A future adapter must keep
-  endpoint-only reservations separate from path reservations.
+  from a point. The runtime adapter therefore rotates toward the target and
+  verifies visibility after reaching an assigned candidate; held-object
+  collider geometry is still delegated to THOR action results.
+- `GoToObject` uses the selected movement plugin. Teleport mode reserves its
+  endpoint candidate; step mode uses time-indexed paths and serial microsteps.
 - The world version is synthetic. A real adapter would have to increment it
   after every relevant simulator state change.
 - Prioritized space-time A* is intentionally bounded and incomplete. A
   `NO_PLAN_FOUND` result means this planner found no plan; it is not a proof
   that the MAPF instance is unsatisfiable.
-- Starvation, online wait-for deadlocks, done-robot parking, rotations, and
-  held-object footprints remain L2/runtime concerns.
+- Action-wave deadlock handling, completed-robot parking, rotations, and
+  dynamic recovery are runtime concerns implemented outside this pure planner;
+  detailed held-object footprints remain a THOR-level limitation.
 
 ## Dataset Format
 

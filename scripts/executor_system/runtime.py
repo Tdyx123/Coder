@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import threading
 from collections import deque
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
@@ -553,6 +554,11 @@ class ThorRuntime:
         check_success: bool = True,
         save_frame: bool = True,
     ):
+        scope_state = getattr(self, "_navigation_action_scope_state", None)
+        if scope_state is not None and getattr(scope_state, "depth", 0) > 0:
+            action = payload.get("action")
+            if action:
+                self.navigation_metrics.record_action(str(action))
         with self.controller_lock: 
             event = self.controller.step(dict(payload))
             if check_success:
@@ -2759,6 +2765,8 @@ class ThorRuntime:
         *,
         environ: Optional[Mapping[str, str]] = None,
     ) -> None:
+        if not hasattr(self, "_navigation_action_scope_state"):
+            self._navigation_action_scope_state = threading.local()
         self.movement_config = MovementConfig.resolve(movement_mode, environ)
         self.navigation_metrics = NavigationMetrics(self.movement_config.mode)
         self.movement_strategy = create_movement_strategy(
@@ -2766,6 +2774,16 @@ class ThorRuntime:
             self.movement_config,
             self.navigation_metrics,
         )
+
+    @contextmanager
+    def navigation_action_scope(self):
+        state = self._navigation_action_scope_state
+        previous_depth = int(getattr(state, "depth", 0))
+        state.depth = previous_depth + 1
+        try:
+            yield
+        finally:
+            state.depth = previous_depth
 
     def build_navigation_request(
         self,
