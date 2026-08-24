@@ -24,4 +24,13 @@ class StepMovementStrategy:
         self.coordinator = StepMovementCoordinator(runtime, config, metrics)
 
     def navigate(self, request: NavigationRequest) -> NavigationResult:
+        if request.phase_coordinator is not None and request.action_wave is not None:
+            return request.phase_coordinator.submit_step_navigation(
+                request.action_wave,
+                request,
+                lambda requests, completed_agent_ids: self.coordinator.execute_batch(
+                    requests,
+                    completed_agent_ids=completed_agent_ids,
+                ),
+            )
         return self.coordinator.execute_batch((request,))[request.agent_id]

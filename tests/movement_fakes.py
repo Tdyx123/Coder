@@ -21,6 +21,12 @@ class GridThorRuntime:
             for obj in objects
         }
         self.actions = []
+        self.position_history = [
+            {
+                agent_id: dict(position)
+                for agent_id, position in sorted(self.positions.items())
+            }
+        ]
         self.failed_edges = set()
         self.edge_errors = {}
         self.edge_attempts = Counter()
@@ -69,6 +75,12 @@ class GridThorRuntime:
         actual_target = self.position_overrides.pop(edge, target)
         self.positions[agent_id] = dict(actual_target)
         self.successful_edges.append(edge)
+        self.position_history.append(
+            {
+                current_agent_id: dict(position)
+                for current_agent_id, position in sorted(self.positions.items())
+            }
+        )
         self.successful_move_count += 1
         replacement = self.walkable_after_successful_moves.get(
             self.successful_move_count

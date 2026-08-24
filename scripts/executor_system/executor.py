@@ -7,6 +7,7 @@ the actual controller.step boundary with its controller lock.
 
 import threading
 import time
+from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 from .action_plan import (
@@ -29,10 +30,33 @@ from .action_plan import (
     action_allows_failure_retry,
 )
 from .goals import record_satisfied_temperature_goal_states
+from .movement import (
+    ActionWave,
+    MovementMode,
+    NavigationBatchAborted,
+    NavigationRequest,
+    NavigationResult,
+)
 from .utils import log
 
 
 GOTO_CANDIDATE_WAIT_SECONDS = 0.1
+
+
+@dataclass
+class _ActionWaveState:
+    wave_id: int
+    announced: Dict[int, Tuple[str, int]] = field(default_factory=dict)
+    participant_agent_ids: Optional[Tuple[int, ...]] = None
+    navigation_agent_ids: Tuple[int, ...] = ()
+    completed_agent_ids: frozenset = frozenset()
+    requests: Dict[int, NavigationRequest] = field(default_factory=dict)
+    results: Dict[int, NavigationResult] = field(default_factory=dict)
+    batch_started: bool = False
+    navigation_complete: bool = False
+    root_exception: Optional[BaseException] = None
+    root_agent_id: Optional[int] = None
+    departed_agent_ids: Set[int] = field(default_factory=set)
 
 
 class PhaseCoordinator:
@@ -59,20 +83,223 @@ class PhaseCoordinator:
         self.relocating_agent_ids: Set[int] = set()
         self.deadline = deadline
         self.timeout_error_factory = timeout_error_factory
+        movement_config = getattr(runtime, "movement_config", None)
+        movement_mode = getattr(movement_config, "mode", None)
+        self.action_waves_enabled = movement_mode in {
+            MovementMode.STEP,
+            MovementMode.STEP.value,
+        }
+        self._action_wave = _ActionWaveState(wave_id=0)
 
     def mark_agent_done(self, agent_id: int) -> None:
         with self.condition:
             self.completed_agent_ids.add(int(agent_id))
+            self._freeze_action_wave_if_ready_locked()
             self.condition.notify_all()
 
     def mark_agent_failed(self, agent_id: int, exc: BaseException) -> None:
         with self.condition:
             self.failed_agent_errors[int(agent_id)] = exc
+            self._freeze_action_wave_if_ready_locked()
             self.condition.notify_all()
 
     def notify_agent_position_changed(self, agent_id: int) -> None:
         with self.condition:
             self.condition.notify_all()
+
+    def before_action(
+        self,
+        agent_id: int,
+        action_type: str,
+        action_cursor: int,
+    ) -> Optional[ActionWave]:
+        """Join the deterministic action wave for one logical plan action."""
+
+        if not self.action_waves_enabled:
+            return None
+
+        current_agent_id = int(agent_id)
+        with self.condition:
+            self._raise_if_deadline_expired()
+            while current_agent_id in self._action_wave.announced:
+                self._raise_if_deadline_expired()
+                self.condition.wait(timeout=self._condition_wait_seconds())
+
+            state = self._action_wave
+            state.announced[current_agent_id] = (
+                str(action_type),
+                int(action_cursor),
+            )
+            self._freeze_action_wave_if_ready_locked()
+            self.condition.notify_all()
+
+            while state.participant_agent_ids is None:
+                self._raise_if_deadline_expired()
+                self.condition.wait(timeout=self._condition_wait_seconds())
+
+            wave = ActionWave(
+                wave_id=state.wave_id,
+                navigation_agent_ids=state.navigation_agent_ids,
+            )
+            if current_agent_id in state.navigation_agent_ids:
+                return wave
+
+            while not state.navigation_complete:
+                self._raise_if_deadline_expired()
+                self.condition.wait(timeout=self._condition_wait_seconds())
+
+            root_exception = state.root_exception
+            root_agent_id = state.root_agent_id
+            self._depart_action_wave_locked(state, current_agent_id)
+            if root_exception is not None:
+                raise NavigationBatchAborted(
+                    f"action wave {state.wave_id} was aborted by navigation "
+                    f"agent {root_agent_id}: {root_exception}"
+                ) from root_exception
+            return None
+
+    def submit_step_navigation(
+        self,
+        wave: ActionWave,
+        request: NavigationRequest,
+        execute_batch: Callable[
+            [Sequence[NavigationRequest], frozenset],
+            Dict[int, NavigationResult],
+        ],
+    ) -> NavigationResult:
+        """Collect a wave's GoTo requests and execute exactly one joint batch."""
+
+        agent_id = int(request.agent_id)
+        batch = None
+        completed_agent_ids = frozenset()
+        state: _ActionWaveState
+        with self.condition:
+            state = self._action_wave
+            if state.wave_id != wave.wave_id:
+                raise RuntimeError(f"action wave {wave.wave_id} is no longer active")
+            if agent_id not in state.navigation_agent_ids:
+                raise RuntimeError(
+                    f"agent {agent_id} is not a navigator in action wave {wave.wave_id}"
+                )
+            state.requests[agent_id] = request
+            self.condition.notify_all()
+
+            while not state.navigation_complete:
+                self._raise_if_deadline_expired()
+                all_requests_ready = set(state.navigation_agent_ids) <= set(
+                    state.requests
+                )
+                is_batch_leader = agent_id == min(state.navigation_agent_ids)
+                if all_requests_ready and is_batch_leader and not state.batch_started:
+                    state.batch_started = True
+                    batch = tuple(
+                        state.requests[item]
+                        for item in state.navigation_agent_ids
+                    )
+                    completed_agent_ids = frozenset(self.completed_agent_ids)
+                    break
+                self.condition.wait(timeout=self._condition_wait_seconds())
+
+        if batch is not None:
+            try:
+                batch_results = execute_batch(batch, completed_agent_ids)
+            except BaseException as exc:
+                with self.condition:
+                    state.root_exception = exc
+                    state.root_agent_id = agent_id
+                    state.navigation_complete = True
+                    self.condition.notify_all()
+            else:
+                with self.condition:
+                    missing = set(state.navigation_agent_ids) - set(batch_results)
+                    if missing:
+                        state.root_exception = RuntimeError(
+                            "joint navigation batch omitted result(s) for agent(s): "
+                            + ", ".join(str(item) for item in sorted(missing))
+                        )
+                        state.root_agent_id = agent_id
+                    else:
+                        state.results = dict(batch_results)
+                    state.navigation_complete = True
+                    self.condition.notify_all()
+
+        with self.condition:
+            while not state.navigation_complete:
+                self._raise_if_deadline_expired()
+                self.condition.wait(timeout=self._condition_wait_seconds())
+
+            root_exception = state.root_exception
+            root_agent_id = state.root_agent_id
+            result = state.results.get(agent_id)
+            self._depart_action_wave_locked(state, agent_id)
+            if root_exception is not None:
+                if agent_id == root_agent_id:
+                    raise root_exception
+                raise NavigationBatchAborted(
+                    f"action wave {state.wave_id} was aborted by navigation "
+                    f"agent {root_agent_id}: {root_exception}"
+                ) from root_exception
+            if result is None:
+                raise RuntimeError(
+                    f"action wave {state.wave_id} has no result for agent {agent_id}"
+                )
+            return result
+
+    def abort_action_wave(
+        self,
+        wave: ActionWave,
+        agent_id: int,
+        exc: BaseException,
+    ) -> None:
+        """Wake a joint wave when navigation fails before batch submission."""
+
+        with self.condition:
+            state = self._action_wave
+            current_agent_id = int(agent_id)
+            if (
+                state.wave_id != wave.wave_id
+                or current_agent_id in state.departed_agent_ids
+                or state.navigation_complete
+            ):
+                return
+            state.root_exception = exc
+            state.root_agent_id = current_agent_id
+            state.navigation_complete = True
+            self._depart_action_wave_locked(state, current_agent_id)
+
+    def _active_action_wave_agent_ids_locked(self) -> Set[int]:
+        return (
+            self.active_agent_ids
+            - self.completed_agent_ids
+            - set(self.failed_agent_errors)
+        )
+
+    def _freeze_action_wave_if_ready_locked(self) -> None:
+        state = self._action_wave
+        if state.participant_agent_ids is not None:
+            return
+        active_agent_ids = self._active_action_wave_agent_ids_locked()
+        if not active_agent_ids or not active_agent_ids <= set(state.announced):
+            return
+        state.participant_agent_ids = tuple(sorted(active_agent_ids))
+        state.navigation_agent_ids = tuple(
+            agent_id
+            for agent_id in state.participant_agent_ids
+            if state.announced[agent_id][0] == "GoToObject"
+        )
+        state.completed_agent_ids = frozenset(self.completed_agent_ids)
+        state.navigation_complete = not state.navigation_agent_ids
+
+    def _depart_action_wave_locked(
+        self,
+        state: _ActionWaveState,
+        agent_id: int,
+    ) -> None:
+        state.departed_agent_ids.add(int(agent_id))
+        participant_agent_ids = set(state.participant_agent_ids or ())
+        if participant_agent_ids <= state.departed_agent_ids:
+            self._action_wave = _ActionWaveState(wave_id=state.wave_id + 1)
+        self.condition.notify_all()
 
     def wait_until_goto_candidates_clear(
         self,
@@ -218,12 +445,20 @@ class Executor:
 
             self.world_state.tick = tick
             self.world_state.refresh([self.state])
+            action_wave = None
             try:
                 self.wait_for_condition(action)
                 self.state.status = ROBOT_EXECUTING
-                event = self.execute_action(action)
+                action_wave = self.before_action(action)
+                event = self.execute_action(action, action_wave=action_wave)
                 self.record_temperature_goal_progress()
             except BaseException as exc:
+                if self.phase_coordinator is not None and action_wave is not None:
+                    self.phase_coordinator.abort_action_wave(
+                        action_wave,
+                        self.runtime.physical_agent_id(self.robot_id),
+                        exc,
+                    )
                 if self.handle_failure(action, exc, tick):
                     tick += 1
                 continue
@@ -271,13 +506,28 @@ class Executor:
                 check_success=False,
             )
 
-    def execute_action(self, action: Action) -> Any:
+    def before_action(self, action: Action) -> Optional[ActionWave]:
+        if self.phase_coordinator is None:
+            return None
+        return self.phase_coordinator.before_action(
+            self.runtime.physical_agent_id(self.robot_id),
+            action.action_type,
+            self.state.action_cursor,
+        )
+
+    def execute_action(
+        self,
+        action: Action,
+        *,
+        action_wave: Optional[ActionWave] = None,
+    ) -> Any:
         return self.adapter.execute(
             self.robot_id,
             action,
             next_action=self.state.peek_after_current(),
             world_state=self.world_state,
             phase_coordinator=self.phase_coordinator,
+            action_wave=action_wave,
         )
 
     def record_temperature_goal_progress(self) -> None:

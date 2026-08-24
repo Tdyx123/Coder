@@ -230,12 +230,20 @@ class TolerantExecutor(Executor):
                 self.world_state.refresh([self.state])
                 self.state.status = ROBOT_EXECUTING
                 self.stats.record_started()
+                action_wave = None
                 try:
                     self.wait_for_condition(action)
                     _check_deadline(self.deadline)
-                    event = self.execute_action(action)
+                    action_wave = self.before_action(action)
+                    event = self.execute_action(action, action_wave=action_wave)
                     self.record_temperature_goal_progress()
                 except PlanExecutionTimeout as exc:
+                    if self.phase_coordinator is not None and action_wave is not None:
+                        self.phase_coordinator.abort_action_wave(
+                            action_wave,
+                            self.runtime.physical_agent_id(self.robot_id),
+                            exc,
+                        )
                     self.stats.record_failure(
                         self.state.current_stage_id,
                         self.robot_id,
@@ -245,6 +253,12 @@ class TolerantExecutor(Executor):
                     )
                     raise
                 except Exception as exc:
+                    if self.phase_coordinator is not None and action_wave is not None:
+                        self.phase_coordinator.abort_action_wave(
+                            action_wave,
+                            self.runtime.physical_agent_id(self.robot_id),
+                            exc,
+                        )
                     if self.handle_failure(action, action_index, exc, tick):
                         tick += 1
                     continue

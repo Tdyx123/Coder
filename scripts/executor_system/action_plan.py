@@ -930,6 +930,7 @@ class AI2ThorAdapter:
         next_action: Optional[Action] = None,
         world_state: Optional[WorldState] = None,
         phase_coordinator: Optional[Any] = None,
+        action_wave: Optional[Any] = None,
     ) -> Any:
         if action.wait_until is not None and world_state is not None:
             if not action.wait_until(world_state):
@@ -948,6 +949,7 @@ class AI2ThorAdapter:
                 args[0],
                 next_action=self.to_planned_action(next_action),
                 phase_coordinator=phase_coordinator,
+                action_wave=action_wave,
             )
         if action.action_type == "PickupObject":
             return self.runtime.object_action("PickupObject", robot_id, args[0])
