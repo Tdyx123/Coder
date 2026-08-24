@@ -38,6 +38,7 @@ class MovementConfig:
     max_replans: int = 8
     max_failed_transitions: int = 8
     max_assignment_trials: int = 256
+    max_invisible_candidate_replans: int = 1
 
     @classmethod
     def resolve(

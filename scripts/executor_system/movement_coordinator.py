@@ -318,6 +318,7 @@ class StepMovementCoordinator:
         ] = None,
     ) -> Scenario:
         robots = []
+        fixed_robot_ids = set()
         for agent_id, start in sorted(snapshot.positions.items()):
             state = active_states.get(agent_id)
             if state is None or state.result is not None:
@@ -339,6 +340,7 @@ class StepMovementCoordinator:
                     candidates = (
                         Candidate(f"{agent_id}:static", start, 0.0),
                     )
+                    fixed_robot_ids.add(str(agent_id))
             else:
                 request = state.request
                 seen = set()
@@ -383,6 +385,7 @@ class StepMovementCoordinator:
             conflicts=frozenset(),
             robots=tuple(robots),
             blocked_transitions=blocked_transitions,
+            fixed_robot_ids=frozenset(fixed_robot_ids),
         )
 
     def _plan(
@@ -587,17 +590,34 @@ class StepMovementCoordinator:
             )
             assigned = plan.assignment[str(agent_id)].position
             if not bool(destination.get("visible", False)):
-                state.excluded_candidate_keys.add(assigned)
+                self.metrics.increment("invisible_candidates")
+                remaining_candidate_exists = any(
+                    self._grid_point(position) != assigned
+                    and self._grid_point(position) not in state.excluded_candidate_keys
+                    for position in request.candidate_positions
+                )
+                if (
+                    remaining_candidate_exists
+                    and len(state.excluded_candidate_keys)
+                    < self.config.max_invisible_candidate_replans
+                ):
+                    state.excluded_candidate_keys.add(assigned)
+                    state.decision_trace.append(
+                        {
+                            "event": "candidate_excluded",
+                            "reason": "target_not_visible",
+                            "candidate": assigned.to_list(),
+                        }
+                    )
+                    needs_replan = True
+                    continue
                 state.decision_trace.append(
                     {
-                        "event": "candidate_excluded",
+                        "event": "candidate_visibility_fallback",
                         "reason": "target_not_visible",
                         "candidate": assigned.to_list(),
                     }
                 )
-                self.metrics.increment("invisible_candidates")
-                needs_replan = True
-                continue
             state.result = NavigationResult(
                 destination=dict(destination),
                 position=self.runtime.current_agent_position(agent_id),

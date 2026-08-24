@@ -237,6 +237,30 @@ class StepMovementRecoveryTest(unittest.TestCase):
         self.assertEqual(metrics.to_dict()["replans"], 1)
         self.assertEqual([action[0] for action in runtime.actions].count("Face"), 2)
 
+    def test_all_invisible_candidates_fall_back_to_reachable_endpoint(self):
+        runtime, request = navigation_case(
+            walkable=[(0, 0), (1, 0), (2, 0)],
+            candidates=[(1, 0), (2, 0)],
+        )
+        runtime.object_visibility_by_position["Apple|1"] = {
+            (1, 0): False,
+            (2, 0): False,
+        }
+        config = MovementConfig.resolve("step", environ={})
+        metrics = NavigationMetrics(config.mode)
+
+        result = StepMovementStrategy(runtime, config, metrics).navigate(request)
+
+        self.assertEqual(position_to_grid_key(result.position), (2, 0))
+        self.assertEqual(metrics.to_dict()["invisible_candidates"], 2)
+        self.assertEqual(metrics.to_dict()["replans"], 1)
+        self.assertTrue(
+            any(
+                event.get("event") == "candidate_visibility_fallback"
+                for event in result.decision_trace
+            )
+        )
+
     def test_replan_budget_exhaustion_stops_deterministically(self):
         runtime, request = navigation_case(
             walkable=[(0, 0), (1, 0), (0, 1), (1, 1)],

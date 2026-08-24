@@ -987,6 +987,47 @@ class FakeRuntimeTest(unittest.TestCase):
 
 
 class ResultAndCliTest(unittest.TestCase):
+    def test_fixed_robots_are_reserved_before_moving_robots(self):
+        data = {
+            "grid_size_m": 0.25,
+            "hard_clearance_m": 0.1,
+            "max_ticks": 32,
+            "walkable": [[x, z] for x in range(5) for z in range(5)],
+            "robots": [
+                {
+                    "id": "A",
+                    "start": [0, 0],
+                    "candidates": [
+                        {"id": "A1", "position": [0, 4], "cost": 1.0}
+                    ],
+                },
+                {
+                    "id": "B",
+                    "start": [4, 4],
+                    "candidates": [
+                        {"id": "B1", "position": [4, 4], "cost": 0.0}
+                    ],
+                },
+                {
+                    "id": "C",
+                    "start": [4, 0],
+                    "candidates": [
+                        {"id": "C1", "position": [4, 0], "cost": 0.0}
+                    ],
+                },
+            ],
+        }
+        scenario = replace(
+            load_scenario(data),
+            fixed_robot_ids=frozenset({"B", "C"}),
+        )
+
+        result = plan_scenario(scenario, WorldState.from_scenario(scenario))
+
+        self.assertEqual(result.status, "PLANNED")
+        self.assertEqual(result.plan.priority_order, ("B", "C", "A"))
+        self.assertEqual(result.plan.metrics["priority_attempts"], 1)
+
     def test_planning_result_serialization_is_deterministic(self):
         scenario = load_scenario(basic_scenario_data())
 

@@ -241,6 +241,7 @@ class Scenario:
     conflicts: FrozenSet[Tuple[GridPoint, GridPoint]]
     robots: Tuple[RobotIntent, ...]
     blocked_transitions: FrozenSet[Tuple[GridPoint, GridPoint]] = frozenset()
+    fixed_robot_ids: FrozenSet[str] = frozenset()
     execution: ExecutionConfig = field(default_factory=ExecutionConfig)
 
 
@@ -1001,6 +1002,20 @@ def _space_time_a_star(
     planned_paths: Mapping[str, Tuple[GridPoint, ...]],
     conflict_model: CompositeConflictModel,
 ) -> Optional[Tuple[GridPoint, ...]]:
+    permanent_obstacles = tuple(
+        path[0]
+        for path in planned_paths.values()
+        if len(set(path)) == 1
+    )
+    if permanent_obstacles and not _static_grid_path_exists(
+        start,
+        goal,
+        scenario,
+        permanent_obstacles,
+        conflict_model,
+    ):
+        return None
+
     start_state = (start, 0)
     parents: Dict[
         Tuple[GridPoint, int], Optional[Tuple[GridPoint, int]]
@@ -1055,6 +1070,36 @@ def _space_time_a_star(
                 ),
             )
     return None
+
+
+def _static_grid_path_exists(
+    start: GridPoint,
+    goal: GridPoint,
+    scenario: Scenario,
+    permanent_obstacles: Sequence[GridPoint],
+    conflict_model: CompositeConflictModel,
+) -> bool:
+    """Quickly reject routes blocked by robots that never leave their start."""
+
+    frontier = [start]
+    visited = {start}
+    while frontier:
+        current = frontier.pop()
+        if current == goal:
+            return True
+        for neighbor in _neighbors(current, scenario.walkable)[1:]:
+            if neighbor in visited:
+                continue
+            if (current, neighbor) in scenario.blocked_transitions:
+                continue
+            if any(
+                conflict_model.conflicts(neighbor, obstacle)
+                for obstacle in permanent_obstacles
+            ):
+                continue
+            visited.add(neighbor)
+            frontier.append(neighbor)
+    return False
 
 
 def _segment_distance_m(
@@ -1198,7 +1243,17 @@ def plan_scenario(scenario: Scenario, world_state: WorldState) -> PlanningResult
             candidate_cost=candidate_cost,
             candidates=list(candidate_ids),
         )
-        for priority_order in itertools.permutations(expected_ids):
+        stationary_ids = tuple(
+            robot_id for robot_id in expected_ids if robot_id in scenario.fixed_robot_ids
+        )
+        moving_ids = tuple(
+            robot_id for robot_id in expected_ids if robot_id not in stationary_ids
+        )
+        priority_orders = (
+            stationary_ids + moving_order
+            for moving_order in itertools.permutations(moving_ids)
+        )
+        for priority_order in priority_orders:
             priority_attempts += 1
             planned = _plan_for_priority_order(
                 scenario,
