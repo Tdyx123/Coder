@@ -4,6 +4,7 @@ import json
 import math
 import os
 import random
+import re
 import shutil
 import subprocess
 import threading
@@ -82,6 +83,9 @@ from .utils import (
 )
 
 LOOK_ACTIONS = {"LookUp", "LookDown"}
+MOVE_BLOCKER_PATTERN = re.compile(
+    r"^(?P<object_name>.+?) is blocking Agent \d+ from moving by \("
+)
 LOOK_DEGREES_INCREMENT = 0.1
 PUT_OBJECT_FORCE_ACTION = True
 OPEN_OBJECT_FORCE_ACTION = True
@@ -1999,15 +2003,71 @@ class ThorRuntime:
                 check_success=True,
             )
 
-        event = self._step_direct(
+        move_payload = {
+            "action": "MoveAhead",
+            "moveMagnitude": NAVIGATION_GRID_SIZE,
+            "agentId": agent_id,
+        }
+        event = self._step_direct(move_payload, check_success=False)
+        if not step_event_failed(event):
+            return True
+        recovered = self.retry_move_past_open_object_blocker(
+            agent_id,
+            move_payload,
+            event,
+        )
+        return bool(recovered)
+
+    def retry_move_past_open_object_blocker(
+        self,
+        agent_id: int,
+        move_payload: Dict[str, Any],
+        failed_event: Any,
+    ) -> Optional[bool]:
+        match = MOVE_BLOCKER_PATTERN.match(event_error_message(failed_event))
+        if match is None:
+            return None
+        try:
+            blocker = self.find_object(match.group("object_name"), agent_id=agent_id)
+        except RuntimeError:
+            return None
+        if not blocker.get("openable") or not blocker.get("isOpen"):
+            return None
+
+        object_id = str(blocker.get("objectId") or "")
+        if not object_id:
+            return None
+        close_event = self._step_direct(
             {
-                "action": "MoveAhead",
-                "moveMagnitude": NAVIGATION_GRID_SIZE,
+                "action": "CloseObject",
+                "objectId": object_id,
                 "agentId": agent_id,
+                "forceAction": CLOSE_OBJECT_FORCE_ACTION,
             },
             check_success=False,
         )
-        return not step_event_failed(event)
+        if step_event_failed(close_event):
+            return None
+
+        retry_event = None
+        try:
+            retry_event = self._step_direct(move_payload, check_success=False)
+        finally:
+            reopen_event = self._step_direct(
+                {
+                    "action": "OpenObject",
+                    "objectId": object_id,
+                    "agentId": agent_id,
+                    "forceAction": OPEN_OBJECT_FORCE_ACTION,
+                },
+                check_success=False,
+            )
+            if step_event_failed(reopen_event):
+                raise RuntimeError(
+                    f"Could not restore open navigation blocker {object_id!r}: "
+                    f"{event_error_message(reopen_event) or 'no error message returned'}"
+                )
+        return retry_event is not None and not step_event_failed(retry_event)
 
     def teleport_completed_agent_to_free_position(
         self,

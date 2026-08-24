@@ -288,6 +288,54 @@ def run_emptyliquid_with_runtime(runtime):
 
 
 class ExecutorRetryPolicyTest(unittest.TestCase):
+    def test_move_retries_past_open_object_blocker_and_restores_it(self):
+        runtime = runtime_without_init()
+        current_position = {"x": 0.0, "y": 0.9, "z": 0.0}
+        target_position = {"x": 0.25, "y": 0.9, "z": 0.0}
+        drawer = {
+            "objectId": "Drawer|+00.20|+00.80|+00.00",
+            "objectType": "Drawer",
+            "name": "Drawer_454fdaaf",
+            "openable": True,
+            "isOpen": True,
+        }
+        calls = []
+        move_attempts = 0
+
+        runtime.current_agent_position = lambda _agent_id: dict(current_position)
+        runtime.agent_event = lambda _agent_id: FakeEvent(
+            metadata={
+                "lastActionSuccess": True,
+                "agent": {"rotation": {"y": 90.0}},
+            }
+        )
+        runtime.find_object = lambda *_args, **_kwargs: dict(drawer)
+
+        def step_direct(payload, **_kwargs):
+            nonlocal move_attempts
+            calls.append(dict(payload))
+            if payload["action"] == "MoveAhead":
+                move_attempts += 1
+                if move_attempts == 1:
+                    return FakeEvent(
+                        False,
+                        "Drawer_454fdaaf is blocking Agent 0 from moving by "
+                        "(0.2500, 0.0000, 0.0000).",
+                    )
+            return FakeEvent(True)
+
+        runtime._step_direct = step_direct
+
+        moved = runtime.move_to_adjacent_position_direct(0, target_position)
+
+        self.assertTrue(moved)
+        self.assertEqual(
+            [payload["action"] for payload in calls],
+            ["MoveAhead", "CloseObject", "MoveAhead", "OpenObject"],
+        )
+        self.assertEqual(calls[1]["objectId"], drawer["objectId"])
+        self.assertEqual(calls[-1]["objectId"], drawer["objectId"])
+
     def setUp(self):
         with ground_truth_lock:
             verified_ground_truth_goal_signatures.clear()
