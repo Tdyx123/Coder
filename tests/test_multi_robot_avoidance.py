@@ -3,6 +3,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 
@@ -14,10 +15,12 @@ if str(SCRIPTS_DIR) not in sys.path:
 from multi_robot_avoidance import (  # noqa: E402
     CompositeConflictModel,
     FakeRuntime,
+    GlobalWalkableMap,
     GeometryConflictModel,
     GridPoint,
     ScenarioValidationError,
     TableConflictModel,
+    WalkableUpdateError,
     WorldState,
     load_scenario,
     plan_scenario,
@@ -49,6 +52,74 @@ def basic_scenario_data():
             },
         ],
     }
+
+
+class GlobalWalkableMapTest(unittest.TestCase):
+    def test_single_robot_update_replaces_snapshot_and_recomputes_union(self):
+        walkable_map = GlobalWalkableMap(("A", "B"), grid_size_m=0.25)
+        initial = walkable_map.replace_all(
+            {
+                "A": [
+                    {"x": 0.0, "y": 0.0, "z": 0.0},
+                    {"x": 0.25, "y": 0.0, "z": 0.0},
+                ],
+                "B": [{"x": 1.0, "y": 0.0, "z": 0.0}],
+            }
+        )
+
+        updated = walkable_map.update_robot(
+            "A",
+            [
+                {"x": -0.25, "y": 0.0, "z": 0.0},
+                {"x": -0.25, "y": 1.0, "z": 0.0},
+            ],
+        )
+
+        self.assertEqual(initial.version, 1)
+        self.assertEqual(updated.version, 2)
+        self.assertTrue(updated.changed)
+        self.assertEqual(updated.walkable, frozenset({GridPoint(-1, 0), GridPoint(4, 0)}))
+        self.assertEqual(updated.added, frozenset({GridPoint(-1, 0)}))
+        self.assertEqual(updated.removed, frozenset({GridPoint(0, 0), GridPoint(1, 0)}))
+
+    def test_invalid_full_refresh_is_atomic(self):
+        walkable_map = GlobalWalkableMap(("A", "B"), grid_size_m=0.25)
+        walkable_map.replace_all(
+            {
+                "A": [{"x": 0.0, "z": 0.0}],
+                "B": [{"x": 1.0, "z": 0.0}],
+            }
+        )
+
+        with self.assertRaisesRegex(WalkableUpdateError, "non-empty"):
+            walkable_map.replace_all(
+                {
+                    "A": [{"x": -0.25, "z": 0.0}],
+                    "B": [],
+                }
+            )
+
+        self.assertEqual(walkable_map.version, 1)
+        self.assertEqual(
+            walkable_map.walkable,
+            frozenset({GridPoint(0, 0), GridPoint(4, 0)}),
+        )
+
+    def test_rejects_nonfinite_coordinates_and_unknown_robots(self):
+        walkable_map = GlobalWalkableMap(("A", "B"), grid_size_m=0.25)
+        walkable_map.replace_all(
+            {
+                "A": [{"x": 0.0, "z": 0.0}],
+                "B": [{"x": 1.0, "z": 0.0}],
+            }
+        )
+
+        with self.assertRaisesRegex(WalkableUpdateError, "finite numbers"):
+            walkable_map.update_robot("A", [{"x": float("nan"), "z": 0.0}])
+        with self.assertRaisesRegex(WalkableUpdateError, "Unknown robot"):
+            walkable_map.update_robot("C", [{"x": 0.0, "z": 0.0}])
+
+        self.assertEqual(walkable_map.version, 1)
 
 
 class ScenarioModelTest(unittest.TestCase):
@@ -86,6 +157,67 @@ class ScenarioModelTest(unittest.TestCase):
         data["conflicts"] = [[[0, 0], [0, 4]]]
 
         with self.assertRaisesRegex(ScenarioValidationError, "initial conflict"):
+            load_scenario(data)
+
+    def test_load_scenario_normalizes_dynamic_walkable_events(self):
+        data = basic_scenario_data()
+        all_positions = [
+            {"x": x * 0.25, "y": 0.0, "z": z * 0.25}
+            for x in range(5)
+            for z in range(5)
+        ]
+        data["execution"] = {
+            "walkable_events": [
+                {
+                    "at_committed_step": 0,
+                    "type": "active_refresh",
+                    "reachable_positions_by_robot": {
+                        "A": all_positions,
+                        "B": all_positions,
+                    },
+                },
+                {
+                    "at_committed_step": 1,
+                    "type": "robot_step",
+                    "robot_id": "A",
+                    "reachable_positions": all_positions,
+                },
+                {
+                    "at_committed_step": 1,
+                    "type": "active_refresh",
+                    "reachable_positions_by_robot": {
+                        "A": all_positions,
+                        "B": all_positions,
+                    },
+                },
+            ]
+        }
+
+        scenario = load_scenario(data)
+
+        events = scenario.execution.walkable_events
+        self.assertEqual(
+            [(event.at_committed_step, event.event_type) for event in events],
+            [(0, "active_refresh"), (1, "robot_step"), (1, "active_refresh")],
+        )
+        self.assertEqual(events[1].robot_id, "A")
+        self.assertEqual(len(events[1].reachable_positions), 25)
+        self.assertEqual(set(events[2].reachable_positions_by_robot), {"A", "B"})
+
+    def test_dynamic_walkable_requires_initial_active_refresh(self):
+        data = basic_scenario_data()
+        data["execution"] = {
+            "walkable_events": [
+                {
+                    "at_committed_step": 1,
+                    "type": "robot_step",
+                    "robot_id": "A",
+                    "reachable_positions": [{"x": 0.0, "z": 0.0}],
+                }
+            ]
+        }
+
+        with self.assertRaisesRegex(ScenarioValidationError, "active_refresh"):
             load_scenario(data)
 
 
@@ -156,6 +288,35 @@ class JointAssignmentTest(unittest.TestCase):
             },
             {"A": "A2", "B": "B1"},
         )
+
+    def test_planner_skips_candidate_removed_from_dynamic_walkable(self):
+        data = basic_scenario_data()
+        data["robots"][0]["candidates"] = [
+            {"id": "A1", "position": [4, 0], "cost": 1.0},
+            {"id": "A2", "position": [4, 1], "cost": 2.0},
+        ]
+        scenario = load_scenario(data)
+        dynamic_scenario = replace(
+            scenario,
+            walkable=frozenset(
+                point for point in scenario.walkable if point != GridPoint(4, 0)
+            ),
+        )
+
+        result = plan_scenario(
+            dynamic_scenario,
+            WorldState.from_scenario(dynamic_scenario),
+        )
+
+        self.assertEqual(result.status, "PLANNED")
+        self.assertEqual(result.plan.assignment["A"].candidate_id, "A2")
+        rejected = [
+            entry
+            for entry in result.decision_trace.entries
+            if entry.get("reason") == "candidate_not_walkable"
+        ]
+        self.assertEqual(rejected[0]["candidates"], ["A1", "B1"])
+        self.assertEqual(rejected[0]["invalid_candidates"], ["A1"])
 
 
 class SpaceTimePlanningTest(unittest.TestCase):
@@ -284,6 +445,392 @@ class FakeRuntimeTest(unittest.TestCase):
         )
         self.assertEqual(set(result.world_state.statuses.values()), {"DONE"})
         self.assertEqual(result.world_state.version, len(plan.micro_steps))
+
+    def test_dynamic_walkable_updates_after_every_step_without_replanning_when_unchanged(self):
+        static_scenario = load_scenario(basic_scenario_data())
+        static_plan = plan_scenario(
+            static_scenario,
+            WorldState.from_scenario(static_scenario),
+        ).plan
+        all_positions = [
+            {"x": x * 0.25, "y": 0.0, "z": z * 0.25}
+            for x in range(5)
+            for z in range(5)
+        ]
+        data = basic_scenario_data()
+        data["execution"] = {
+            "walkable_events": [
+                {
+                    "at_committed_step": 0,
+                    "type": "active_refresh",
+                    "reachable_positions_by_robot": {
+                        "A": all_positions,
+                        "B": all_positions,
+                    },
+                },
+                *[
+                    {
+                        "at_committed_step": index,
+                        "type": "robot_step",
+                        "robot_id": step.robot_id,
+                        "reachable_positions": all_positions,
+                    }
+                    for index, step in enumerate(static_plan.micro_steps, start=1)
+                ],
+            ]
+        }
+        scenario = load_scenario(data)
+        world = WorldState.from_scenario(scenario)
+        plan = plan_scenario(scenario, world).plan
+        runtime = FakeRuntime(world, scenario=scenario)
+
+        result = runtime.execute(plan)
+
+        self.assertEqual(result.status, "EXECUTED")
+        self.assertEqual(result.walkable_version, len(plan.micro_steps) + 1)
+        self.assertEqual(result.walkable, scenario.walkable)
+        self.assertEqual(result.replan_count, 0)
+
+    def test_removed_future_path_point_triggers_replan_and_detour(self):
+        all_positions = [
+            {"x": x * 0.25, "y": 0.0, "z": z * 0.25}
+            for x in range(5)
+            for z in range(5)
+        ]
+        detour_positions = [
+            position
+            for position in all_positions
+            if not (position["x"] == 0.5 and position["z"] == 0.0)
+        ]
+        expected_actors = ["A", "A", "B", "A", "B", "A", "B", "A", "B", "A"]
+        data = basic_scenario_data()
+        data["execution"] = {
+            "walkable_events": [
+                {
+                    "at_committed_step": 0,
+                    "type": "active_refresh",
+                    "reachable_positions_by_robot": {
+                        "A": all_positions,
+                        "B": detour_positions,
+                    },
+                },
+                *[
+                    {
+                        "at_committed_step": index,
+                        "type": "robot_step",
+                        "robot_id": robot_id,
+                        "reachable_positions": detour_positions,
+                    }
+                    for index, robot_id in enumerate(expected_actors, start=1)
+                ],
+            ]
+        }
+        scenario = load_scenario(data)
+        world = WorldState.from_scenario(scenario)
+        plan = plan_scenario(scenario, world).plan
+        runtime = FakeRuntime(world, scenario=scenario)
+
+        result = runtime.execute(plan)
+
+        self.assertEqual(result.status, "EXECUTED")
+        self.assertEqual(result.replan_count, 1)
+        self.assertEqual(result.committed_micro_steps, 10)
+        self.assertEqual(result.world_state.positions["A"], GridPoint(4, 0))
+        committed_positions = [
+            entry["position"]
+            for entry in result.decision_trace.entries
+            if entry["event"] == "micro_step_committed" and entry["robot_id"] == "A"
+        ]
+        self.assertIn([1, 1], committed_positions)
+        self.assertIn(
+            "plan_invalidated",
+            [entry["event"] for entry in result.decision_trace.entries],
+        )
+
+    def test_missing_step_update_aborts_dynamic_execution(self):
+        all_positions = [
+            {"x": x * 0.25, "y": 0.0, "z": z * 0.25}
+            for x in range(5)
+            for z in range(5)
+        ]
+        data = basic_scenario_data()
+        data["execution"] = {
+            "walkable_events": [
+                {
+                    "at_committed_step": 0,
+                    "type": "active_refresh",
+                    "reachable_positions_by_robot": {
+                        "A": all_positions,
+                        "B": all_positions,
+                    },
+                }
+            ]
+        }
+        scenario = load_scenario(data)
+        world = WorldState.from_scenario(scenario)
+        plan = plan_scenario(scenario, world).plan
+
+        result = FakeRuntime(world, scenario=scenario).execute(plan)
+
+        self.assertEqual(result.status, "INVALID_WALKABLE_UPDATE")
+        self.assertEqual(result.committed_micro_steps, 1)
+        self.assertIn("requires exactly one robot_step", result.message)
+        self.assertEqual(result.walkable_version, 1)
+
+    def test_update_omitting_current_robot_position_rolls_back_boundary(self):
+        all_positions = [
+            {"x": x * 0.25, "y": 0.0, "z": z * 0.25}
+            for x in range(5)
+            for z in range(5)
+        ]
+        without_first_target = [
+            position
+            for position in all_positions
+            if not (position["x"] == 0.25 and position["z"] == 0.0)
+        ]
+        data = basic_scenario_data()
+        data["execution"] = {
+            "walkable_events": [
+                {
+                    "at_committed_step": 0,
+                    "type": "active_refresh",
+                    "reachable_positions_by_robot": {
+                        "A": all_positions,
+                        "B": without_first_target,
+                    },
+                },
+                {
+                    "at_committed_step": 1,
+                    "type": "robot_step",
+                    "robot_id": "A",
+                    "reachable_positions": without_first_target,
+                },
+            ]
+        }
+        scenario = load_scenario(data)
+        world = WorldState.from_scenario(scenario)
+        plan = plan_scenario(scenario, world).plan
+
+        result = FakeRuntime(world, scenario=scenario).execute(plan)
+
+        self.assertEqual(result.status, "INVALID_WALKABLE_UPDATE")
+        self.assertIn("omits robot positions", result.message)
+        self.assertEqual(result.walkable_version, 1)
+        self.assertIn(GridPoint(1, 0), result.walkable)
+
+    def test_removed_only_endpoint_returns_replan_failed(self):
+        all_positions = [
+            {"x": x * 0.25, "y": 0.0, "z": z * 0.25}
+            for x in range(5)
+            for z in range(5)
+        ]
+        without_endpoint = [
+            position
+            for position in all_positions
+            if not (position["x"] == 1.0 and position["z"] == 0.0)
+        ]
+        data = basic_scenario_data()
+        data["execution"] = {
+            "walkable_events": [
+                {
+                    "at_committed_step": 0,
+                    "type": "active_refresh",
+                    "reachable_positions_by_robot": {
+                        "A": all_positions,
+                        "B": without_endpoint,
+                    },
+                },
+                {
+                    "at_committed_step": 1,
+                    "type": "robot_step",
+                    "robot_id": "A",
+                    "reachable_positions": without_endpoint,
+                },
+            ]
+        }
+        scenario = load_scenario(data)
+        world = WorldState.from_scenario(scenario)
+        plan = plan_scenario(scenario, world).plan
+
+        result = FakeRuntime(world, scenario=scenario).execute(plan)
+
+        self.assertEqual(result.status, "REPLAN_FAILED")
+        self.assertEqual(result.replan_count, 1)
+        self.assertEqual(result.committed_micro_steps, 1)
+        self.assertEqual(set(result.world_state.statuses.values()), {"ABORTED"})
+        self.assertEqual(plan.reservations.released_from_tick, 0)
+
+    def test_active_refresh_after_robot_update_uses_final_union_without_replan(self):
+        static_scenario = load_scenario(basic_scenario_data())
+        static_plan = plan_scenario(
+            static_scenario,
+            WorldState.from_scenario(static_scenario),
+        ).plan
+        all_positions = [
+            {"x": x * 0.25, "y": 0.0, "z": z * 0.25}
+            for x in range(5)
+            for z in range(5)
+        ]
+        without_off_path_point = [
+            position
+            for position in all_positions
+            if not (position["x"] == 0.5 and position["z"] == 0.5)
+        ]
+        step_events = [
+            {
+                "at_committed_step": index,
+                "type": "robot_step",
+                "robot_id": step.robot_id,
+                "reachable_positions": without_off_path_point,
+            }
+            for index, step in enumerate(static_plan.micro_steps, start=1)
+        ]
+        step_events.insert(
+            1,
+            {
+                "at_committed_step": 1,
+                "type": "active_refresh",
+                "reachable_positions_by_robot": {
+                    "A": without_off_path_point,
+                    "B": without_off_path_point,
+                },
+            },
+        )
+        data = basic_scenario_data()
+        data["execution"] = {
+            "walkable_events": [
+                {
+                    "at_committed_step": 0,
+                    "type": "active_refresh",
+                    "reachable_positions_by_robot": {
+                        "A": all_positions,
+                        "B": all_positions,
+                    },
+                },
+                *step_events,
+            ]
+        }
+        scenario = load_scenario(data)
+        world = WorldState.from_scenario(scenario)
+        plan = plan_scenario(scenario, world).plan
+
+        result = FakeRuntime(world, scenario=scenario).execute(plan)
+
+        self.assertEqual(result.status, "EXECUTED")
+        self.assertEqual(result.replan_count, 0)
+        self.assertEqual(result.walkable_version, len(plan.micro_steps) + 2)
+        updates_at_one = [
+            entry["update_type"]
+            for entry in result.decision_trace.entries
+            if entry["event"] == "walkable_updated"
+            and entry["at_committed_step"] == 1
+        ]
+        self.assertEqual(updates_at_one, ["robot_step", "active_refresh"])
+
+    def test_invalid_active_refresh_rolls_back_same_boundary_robot_update(self):
+        all_positions = [
+            {"x": x * 0.25, "y": 0.0, "z": z * 0.25}
+            for x in range(5)
+            for z in range(5)
+        ]
+        without_first_target = [
+            position
+            for position in all_positions
+            if not (position["x"] == 0.25 and position["z"] == 0.0)
+        ]
+        data = basic_scenario_data()
+        data["execution"] = {
+            "walkable_events": [
+                {
+                    "at_committed_step": 0,
+                    "type": "active_refresh",
+                    "reachable_positions_by_robot": {
+                        "A": all_positions,
+                        "B": all_positions,
+                    },
+                },
+                {
+                    "at_committed_step": 1,
+                    "type": "robot_step",
+                    "robot_id": "A",
+                    "reachable_positions": all_positions,
+                },
+                {
+                    "at_committed_step": 1,
+                    "type": "active_refresh",
+                    "reachable_positions_by_robot": {
+                        "A": without_first_target,
+                        "B": without_first_target,
+                    },
+                },
+            ]
+        }
+        scenario = load_scenario(data)
+        world = WorldState.from_scenario(scenario)
+        plan = plan_scenario(scenario, world).plan
+
+        result = FakeRuntime(world, scenario=scenario).execute(plan)
+
+        self.assertEqual(result.status, "INVALID_WALKABLE_UPDATE")
+        self.assertEqual(result.walkable_version, 1)
+        self.assertIn(GridPoint(1, 0), result.walkable)
+        self.assertEqual(
+            [
+                entry
+                for entry in result.decision_trace.entries
+                if entry["event"] == "walkable_updated"
+                and entry["at_committed_step"] == 1
+            ],
+            [],
+        )
+
+    def test_removed_endpoint_replans_to_alternate_candidate(self):
+        all_positions = [
+            {"x": x * 0.25, "y": 0.0, "z": z * 0.25}
+            for x in range(5)
+            for z in range(5)
+        ]
+        without_primary_endpoint = [
+            position
+            for position in all_positions
+            if not (position["x"] == 1.0 and position["z"] == 0.0)
+        ]
+        expected_actors = ["A", "A", "B", "A", "B", "A", "B", "A", "B"]
+        data = basic_scenario_data()
+        data["robots"][0]["candidates"] = [
+            {"id": "A1", "position": [4, 0], "cost": 1.0},
+            {"id": "A2", "position": [4, 1], "cost": 2.0},
+        ]
+        data["execution"] = {
+            "walkable_events": [
+                {
+                    "at_committed_step": 0,
+                    "type": "active_refresh",
+                    "reachable_positions_by_robot": {
+                        "A": all_positions,
+                        "B": without_primary_endpoint,
+                    },
+                },
+                *[
+                    {
+                        "at_committed_step": index,
+                        "type": "robot_step",
+                        "robot_id": robot_id,
+                        "reachable_positions": without_primary_endpoint,
+                    }
+                    for index, robot_id in enumerate(expected_actors, start=1)
+                ],
+            ]
+        }
+        scenario = load_scenario(data)
+        world = WorldState.from_scenario(scenario)
+        plan = plan_scenario(scenario, world).plan
+
+        result = FakeRuntime(world, scenario=scenario).execute(plan)
+
+        self.assertEqual(result.status, "EXECUTED")
+        self.assertEqual(result.replan_count, 1)
+        self.assertEqual(result.world_state.positions["A"], GridPoint(4, 1))
 
     def test_external_version_change_rejects_stale_plan_before_first_step(self):
         scenario = load_scenario(basic_scenario_data())
@@ -424,6 +971,105 @@ class ResultAndCliTest(unittest.TestCase):
         output = json.loads(completed.stdout)
         self.assertEqual(output["status"], "EXECUTED")
         self.assertEqual(output["execution"]["committed_micro_steps"], 8)
+        self.assertEqual(len(output["execution"]["walkable"]), 25)
+        self.assertEqual(output["execution"]["walkable_version"], 0)
+
+    def test_cli_consumes_dynamic_walkable_events(self):
+        static_scenario = load_scenario(basic_scenario_data())
+        static_plan = plan_scenario(
+            static_scenario,
+            WorldState.from_scenario(static_scenario),
+        ).plan
+        all_positions = [
+            {"x": x * 0.25, "y": 0.0, "z": z * 0.25}
+            for x in range(5)
+            for z in range(5)
+        ]
+        data = basic_scenario_data()
+        data["execution"] = {
+            "walkable_events": [
+                {
+                    "at_committed_step": 0,
+                    "type": "active_refresh",
+                    "reachable_positions_by_robot": {
+                        "A": all_positions,
+                        "B": all_positions,
+                    },
+                },
+                *[
+                    {
+                        "at_committed_step": index,
+                        "type": "robot_step",
+                        "robot_id": step.robot_id,
+                        "reachable_positions": all_positions,
+                    }
+                    for index, step in enumerate(static_plan.micro_steps, start=1)
+                ],
+            ]
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            scenario_path = Path(temp_dir) / "dynamic.json"
+            scenario_path.write_text(json.dumps(data), encoding="utf-8")
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS_DIR / "multi_robot_avoidance.py"),
+                    "--scenario-file",
+                    str(scenario_path),
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        output = json.loads(completed.stdout)
+        self.assertEqual(output["execution"]["walkable_version"], 9)
+        self.assertEqual(output["execution"]["replan_count"], 0)
+
+    def test_cli_returns_exit_four_for_missing_dynamic_step_update(self):
+        all_positions = [
+            {"x": x * 0.25, "y": 0.0, "z": z * 0.25}
+            for x in range(5)
+            for z in range(5)
+        ]
+        data = basic_scenario_data()
+        data["execution"] = {
+            "walkable_events": [
+                {
+                    "at_committed_step": 0,
+                    "type": "active_refresh",
+                    "reachable_positions_by_robot": {
+                        "A": all_positions,
+                        "B": all_positions,
+                    },
+                }
+            ]
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            scenario_path = Path(temp_dir) / "missing-step-update.json"
+            scenario_path.write_text(json.dumps(data), encoding="utf-8")
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS_DIR / "multi_robot_avoidance.py"),
+                    "--scenario-file",
+                    str(scenario_path),
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        self.assertEqual(completed.returncode, 4, completed.stderr)
+        self.assertEqual(
+            json.loads(completed.stdout)["status"],
+            "INVALID_WALKABLE_UPDATE",
+        )
 
     def test_cli_returns_invalid_scenario_exit_code(self):
         data = basic_scenario_data()

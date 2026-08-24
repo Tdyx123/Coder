@@ -1,4 +1,5 @@
 litellm>=1.0.0
+tokenizers>=0.22.0
 ai2thor
 scipy
 ortools

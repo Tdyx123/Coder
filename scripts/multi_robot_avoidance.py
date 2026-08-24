@@ -14,13 +14,28 @@ import math
 import heapq
 import itertools
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Dict, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import (
+    Any,
+    Dict,
+    FrozenSet,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+)
 
 
 class ScenarioValidationError(ValueError):
     """Raised when a scenario does not satisfy the public JSON contract."""
+
+
+class WalkableUpdateError(ValueError):
+    """Raised when a reachable-position update cannot be applied atomically."""
 
 
 @dataclass(frozen=True, order=True)
@@ -48,6 +63,154 @@ class GridPoint:
 
 
 @dataclass(frozen=True)
+class WalkableUpdate:
+    version: int
+    walkable: FrozenSet[GridPoint]
+    changed: bool
+    added: FrozenSet[GridPoint]
+    removed: FrozenSet[GridPoint]
+
+
+class GlobalWalkableMap:
+    """Aggregate the latest per-robot reachable-position snapshots."""
+
+    def __init__(self, robot_ids: Sequence[str], grid_size_m: float) -> None:
+        normalized_ids = tuple(str(robot_id) for robot_id in robot_ids)
+        if not normalized_ids or len(set(normalized_ids)) != len(normalized_ids):
+            raise WalkableUpdateError("robot_ids must be non-empty and unique.")
+        if not math.isfinite(float(grid_size_m)) or float(grid_size_m) <= 0:
+            raise WalkableUpdateError("grid_size_m must be a positive finite number.")
+        self.robot_ids = normalized_ids
+        self.grid_size_m = float(grid_size_m)
+        self._snapshots: Dict[str, FrozenSet[GridPoint]] = {}
+        self._walkable: FrozenSet[GridPoint] = frozenset()
+        self._version = 0
+
+    @property
+    def walkable(self) -> FrozenSet[GridPoint]:
+        return self._walkable
+
+    @property
+    def version(self) -> int:
+        return self._version
+
+    def copy(self) -> "GlobalWalkableMap":
+        copied = GlobalWalkableMap(self.robot_ids, self.grid_size_m)
+        copied._snapshots = dict(self._snapshots)
+        copied._walkable = self._walkable
+        copied._version = self._version
+        return copied
+
+    def _normalize_positions(
+        self,
+        positions: Sequence[Mapping[str, Any]],
+        field_name: str,
+    ) -> FrozenSet[GridPoint]:
+        if not isinstance(positions, (list, tuple)) or not positions:
+            raise WalkableUpdateError(f"{field_name} must be a non-empty list of positions.")
+        normalized = set()
+        for index, position in enumerate(positions):
+            item_name = f"{field_name}[{index}]"
+            if not isinstance(position, Mapping):
+                raise WalkableUpdateError(f"{item_name} must be a position object.")
+            x = position.get("x")
+            z = position.get("z")
+            if (
+                isinstance(x, bool)
+                or isinstance(z, bool)
+                or not isinstance(x, (int, float))
+                or not isinstance(z, (int, float))
+                or not math.isfinite(float(x))
+                or not math.isfinite(float(z))
+            ):
+                raise WalkableUpdateError(
+                    f"{item_name}.x and {item_name}.z must be finite numbers."
+                )
+            normalized.add(
+                GridPoint(
+                    round(float(x) / self.grid_size_m),
+                    round(float(z) / self.grid_size_m),
+                )
+            )
+        return frozenset(normalized)
+
+    def _commit(
+        self,
+        snapshots: Mapping[str, FrozenSet[GridPoint]],
+    ) -> WalkableUpdate:
+        next_walkable = frozenset(
+            point for snapshot in snapshots.values() for point in snapshot
+        )
+        previous_walkable = self._walkable
+        self._snapshots = dict(snapshots)
+        self._walkable = next_walkable
+        self._version += 1
+        return WalkableUpdate(
+            version=self._version,
+            walkable=next_walkable,
+            changed=next_walkable != previous_walkable,
+            added=frozenset(next_walkable - previous_walkable),
+            removed=frozenset(previous_walkable - next_walkable),
+        )
+
+    def update_robot(
+        self,
+        robot_id: str,
+        reachable_positions: Sequence[Mapping[str, Any]],
+    ) -> WalkableUpdate:
+        if robot_id not in self.robot_ids:
+            raise WalkableUpdateError(f"Unknown robot id: {robot_id!r}.")
+        if set(self._snapshots) != set(self.robot_ids):
+            raise WalkableUpdateError(
+                "All robot snapshots must be initialized before a single-robot update."
+            )
+        normalized = self._normalize_positions(
+            reachable_positions,
+            f"reachable_positions[{robot_id!r}]",
+        )
+        snapshots = dict(self._snapshots)
+        snapshots[robot_id] = normalized
+        return self._commit(snapshots)
+
+    def replace_all(
+        self,
+        reachable_positions_by_robot: Mapping[
+            str, Sequence[Mapping[str, Any]]
+        ],
+    ) -> WalkableUpdate:
+        if not isinstance(reachable_positions_by_robot, Mapping):
+            raise WalkableUpdateError("reachable_positions_by_robot must be an object.")
+        expected = set(self.robot_ids)
+        actual = set(reachable_positions_by_robot)
+        if actual != expected:
+            missing = sorted(expected - actual)
+            unknown = sorted(actual - expected)
+            raise WalkableUpdateError(
+                "Full refresh must contain exactly all robots; "
+                f"missing={missing}, unknown={unknown}."
+            )
+        snapshots = {
+            robot_id: self._normalize_positions(
+                reachable_positions_by_robot[robot_id],
+                f"reachable_positions_by_robot[{robot_id!r}]",
+            )
+            for robot_id in self.robot_ids
+        }
+        return self._commit(snapshots)
+
+
+@dataclass(frozen=True)
+class WalkableEvent:
+    at_committed_step: int
+    event_type: str
+    robot_id: Optional[str] = None
+    reachable_positions: Tuple[Mapping[str, Any], ...] = ()
+    reachable_positions_by_robot: Mapping[
+        str, Tuple[Mapping[str, Any], ...]
+    ] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class Candidate:
     candidate_id: str
     position: GridPoint
@@ -65,6 +228,7 @@ class RobotIntent:
 class ExecutionConfig:
     failure_at_micro_step: Optional[int] = None
     external_version_bump_before_micro_step: Optional[int] = None
+    walkable_events: Tuple[WalkableEvent, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -268,6 +432,9 @@ class ExecutionResult:
     decision_trace: DecisionTrace
     failed_robot_id: Optional[str] = None
     message: str = ""
+    walkable: FrozenSet[GridPoint] = frozenset()
+    walkable_version: int = 0
+    replan_count: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -276,14 +443,189 @@ class ExecutionResult:
             "committed_micro_steps": self.committed_micro_steps,
             "failed_robot_id": self.failed_robot_id,
             "world_state": self.world_state.to_dict(),
+            "walkable": [point.to_list() for point in sorted(self.walkable)],
+            "walkable_version": self.walkable_version,
+            "replan_count": self.replan_count,
         }
 
 
 class FakeRuntime:
     """Executes a JointPlan without AI2-THOR or thread timing."""
 
-    def __init__(self, world_state: WorldState) -> None:
+    def __init__(
+        self,
+        world_state: WorldState,
+        *,
+        scenario: Optional[Scenario] = None,
+    ) -> None:
         self.world_state = world_state.copy()
+        self.scenario = scenario
+        self.walkable_map: Optional[GlobalWalkableMap] = None
+        self.replan_count = 0
+        self._walkable_events_by_step: Dict[int, Tuple[WalkableEvent, ...]] = {}
+        if scenario is not None and scenario.execution.walkable_events:
+            robot_ids = tuple(robot.robot_id for robot in scenario.robots)
+            self.walkable_map = GlobalWalkableMap(robot_ids, scenario.grid_size_m)
+            grouped: Dict[int, List[WalkableEvent]] = {}
+            for event in scenario.execution.walkable_events:
+                grouped.setdefault(event.at_committed_step, []).append(event)
+            self._walkable_events_by_step = {
+                step: tuple(events) for step, events in grouped.items()
+            }
+
+    def _walkable_result_fields(self) -> Dict[str, Any]:
+        if self.walkable_map is None:
+            return {
+                "walkable": (
+                    frozenset()
+                    if self.scenario is None
+                    else self.scenario.walkable
+                ),
+                "walkable_version": 0,
+                "replan_count": self.replan_count,
+            }
+        return {
+            "walkable": self.walkable_map.walkable,
+            "walkable_version": self.walkable_map.version,
+            "replan_count": self.replan_count,
+        }
+
+    def _invalid_walkable_result(
+        self,
+        plan: JointPlan,
+        trace: DecisionTrace,
+        committed: int,
+        message: str,
+    ) -> ExecutionResult:
+        plan.reservations.release_from(0)
+        trace.add("reservations_released", from_tick=0)
+        self._abort_active_robots()
+        trace.add(
+            "execution_finished",
+            status="INVALID_WALKABLE_UPDATE",
+            committed_micro_steps=committed,
+            message=message,
+        )
+        return ExecutionResult(
+            status="INVALID_WALKABLE_UPDATE",
+            world_state=self.world_state.copy(),
+            committed_micro_steps=committed,
+            decision_trace=trace,
+            message=message,
+            **self._walkable_result_fields(),
+        )
+
+    def _apply_walkable_events(
+        self,
+        committed: int,
+        moved_robot_id: Optional[str],
+        trace: DecisionTrace,
+    ) -> Optional[str]:
+        if self.walkable_map is None:
+            return None
+        events = self._walkable_events_by_step.get(committed, ())
+        robot_events = [event for event in events if event.event_type == "robot_step"]
+        if committed == 0:
+            if robot_events:
+                return "A robot_step event cannot occur before the first committed move."
+        elif len(robot_events) != 1:
+            return f"Committed step {committed} requires exactly one robot_step event."
+        elif robot_events[0].robot_id != moved_robot_id:
+            return (
+                f"Committed step {committed} moved robot {moved_robot_id!r}, but its "
+                f"walkable event targets {robot_events[0].robot_id!r}."
+            )
+
+        candidate = self.walkable_map.copy()
+        applied = []
+        try:
+            for event in events:
+                if event.event_type == "robot_step":
+                    update = candidate.update_robot(
+                        str(event.robot_id),
+                        event.reachable_positions,
+                    )
+                else:
+                    update = candidate.replace_all(
+                        event.reachable_positions_by_robot
+                    )
+                applied.append((event, update))
+            missing_positions = {
+                robot_id: position
+                for robot_id, position in self.world_state.positions.items()
+                if position not in candidate.walkable
+            }
+            if missing_positions:
+                rendered = {
+                    robot_id: position.to_list()
+                    for robot_id, position in sorted(missing_positions.items())
+                }
+                raise WalkableUpdateError(
+                    f"Updated global walkable omits robot positions: {rendered}."
+                )
+        except WalkableUpdateError as exc:
+            return str(exc)
+
+        self.walkable_map = candidate
+        for event, update in applied:
+            trace.add(
+                "walkable_updated",
+                at_committed_step=committed,
+                update_type=event.event_type,
+                robot_id=event.robot_id,
+                walkable_version=update.version,
+                changed=update.changed,
+                added=[point.to_list() for point in sorted(update.added)],
+                removed=[point.to_list() for point in sorted(update.removed)],
+            )
+        return None
+
+    def _invalidated_plan_points(
+        self,
+        plan: JointPlan,
+        next_step_index: int,
+    ) -> FrozenSet[GridPoint]:
+        if self.walkable_map is None:
+            return frozenset()
+        required = {
+            candidate.position for candidate in plan.assignment.values()
+        }
+        required.update(
+            step.target for step in plan.micro_steps[next_step_index:]
+        )
+        return frozenset(required - self.walkable_map.walkable)
+
+    def _replan_failed_result(
+        self,
+        trace: DecisionTrace,
+        committed: int,
+        planning_result: PlanningResult,
+    ) -> ExecutionResult:
+        self._abort_active_robots()
+        message = (
+            "Dynamic walkable update invalidated the active plan, and replanning "
+            f"finished with {planning_result.status}."
+        )
+        trace.add(
+            "replanning_finished",
+            status=planning_result.status,
+            replan_count=self.replan_count,
+            message=planning_result.message,
+        )
+        trace.add(
+            "execution_finished",
+            status="REPLAN_FAILED",
+            committed_micro_steps=committed,
+            message=message,
+        )
+        return ExecutionResult(
+            status="REPLAN_FAILED",
+            world_state=self.world_state.copy(),
+            committed_micro_steps=committed,
+            decision_trace=trace,
+            message=message,
+            **self._walkable_result_fields(),
+        )
 
     def _abort_active_robots(self, failed_robot_id: Optional[str] = None) -> None:
         for robot_id in sorted(self.world_state.statuses):
@@ -314,6 +656,7 @@ class FakeRuntime:
             committed_micro_steps=committed,
             decision_trace=trace,
             message=message,
+            **self._walkable_result_fields(),
         )
 
     def execute(
@@ -337,18 +680,87 @@ class FakeRuntime:
             )
 
         committed = 0
-        for step in plan.micro_steps:
-            if external_version_bump_before_micro_step == step.index:
+        attempted = 0
+        active_plan = plan
+        next_step_index = 0
+
+        walkable_error = self._apply_walkable_events(0, None, trace)
+        if walkable_error is not None:
+            return self._invalid_walkable_result(
+                active_plan,
+                trace,
+                committed,
+                walkable_error,
+            )
+
+        while True:
+            invalidated = self._invalidated_plan_points(
+                active_plan,
+                next_step_index,
+            )
+            if invalidated:
+                release_from_tick = (
+                    0
+                    if next_step_index == 0
+                    else active_plan.micro_steps[next_step_index - 1].tick
+                )
+                active_plan.reservations.release_from(release_from_tick)
+                trace.add("reservations_released", from_tick=release_from_tick)
+                trace.add(
+                    "plan_invalidated",
+                    at_committed_step=committed,
+                    missing_points=[point.to_list() for point in sorted(invalidated)],
+                )
+                if self.scenario is None or self.walkable_map is None:
+                    return self._invalid_walkable_result(
+                        active_plan,
+                        trace,
+                        committed,
+                        "Dynamic replanning requires a scenario and global walkable map.",
+                    )
+                self.replan_count += 1
+                trace.add(
+                    "replanning_started",
+                    replan_count=self.replan_count,
+                    world_version=self.world_state.version,
+                )
+                self.scenario = replace(
+                    self.scenario,
+                    walkable=self.walkable_map.walkable,
+                )
+                planning_result = plan_scenario(self.scenario, self.world_state)
+                if planning_result.status != "PLANNED" or planning_result.plan is None:
+                    return self._replan_failed_result(
+                        trace,
+                        committed,
+                        planning_result,
+                    )
+                active_plan = planning_result.plan
+                next_step_index = 0
+                trace.add(
+                    "replanning_finished",
+                    status="PLANNED",
+                    replan_count=self.replan_count,
+                    base_world_version=active_plan.base_world_version,
+                    micro_steps=len(active_plan.micro_steps),
+                )
+                continue
+
+            if next_step_index >= len(active_plan.micro_steps):
+                break
+
+            step = active_plan.micro_steps[next_step_index]
+            if external_version_bump_before_micro_step == attempted:
                 self.world_state.version += 1
                 trace.add(
                     "external_world_change",
-                    before_micro_step=step.index,
+                    before_micro_step=attempted,
                     world_version=self.world_state.version,
                 )
 
             if self.world_state.version != step.expected_world_version:
                 return self._stale_result(
-                    plan,
+                    active_plan,
                     trace,
                     committed,
                     step.tick + 1,
@@ -356,28 +768,30 @@ class FakeRuntime:
                 )
             if self.world_state.positions.get(step.robot_id) != step.source:
                 return self._stale_result(
-                    plan,
+                    active_plan,
                     trace,
                     committed,
                     step.tick + 1,
                     f"Robot {step.robot_id!r} is not at its reserved source position.",
                 )
 
-            expected_tick_positions = plan.reservations.positions_by_tick.get(step.tick + 1)
+            expected_tick_positions = active_plan.reservations.positions_by_tick.get(
+                step.tick + 1
+            )
             if (
                 expected_tick_positions is None
                 or expected_tick_positions.get(step.robot_id) != step.target
             ):
                 return self._stale_result(
-                    plan,
+                    active_plan,
                     trace,
                     committed,
                     step.tick + 1,
                     "Target position is no longer reserved for this micro-step.",
                 )
 
-            if failure_at_micro_step == step.index:
-                plan.reservations.release_from(step.tick + 1)
+            if failure_at_micro_step == attempted:
+                active_plan.reservations.release_from(step.tick + 1)
                 trace.add("reservations_released", from_tick=step.tick + 1)
                 self._abort_active_robots(step.robot_id)
                 trace.add(
@@ -399,7 +813,8 @@ class FakeRuntime:
                     committed_micro_steps=committed,
                     decision_trace=trace,
                     failed_robot_id=step.robot_id,
-                    message=f"Injected failure at micro-step {step.index}.",
+                    message=f"Injected failure at micro-step {attempted}.",
+                    **self._walkable_result_fields(),
                 )
 
             self.world_state.positions[step.robot_id] = step.target
@@ -408,11 +823,26 @@ class FakeRuntime:
             trace.add(
                 "micro_step_committed",
                 index=step.index,
+                execution_index=attempted,
                 tick=step.tick,
                 robot_id=step.robot_id,
                 position=step.target.to_list(),
                 world_version=self.world_state.version,
             )
+            attempted += 1
+            next_step_index += 1
+            walkable_error = self._apply_walkable_events(
+                committed,
+                step.robot_id,
+                trace,
+            )
+            if walkable_error is not None:
+                return self._invalid_walkable_result(
+                    active_plan,
+                    trace,
+                    committed,
+                    walkable_error,
+                )
 
         for robot_id in sorted(self.world_state.statuses):
             self.world_state.statuses[robot_id] = "DONE"
@@ -426,6 +856,7 @@ class FakeRuntime:
             world_state=self.world_state.copy(),
             committed_micro_steps=committed,
             decision_trace=trace,
+            **self._walkable_result_fields(),
         )
 
 
@@ -462,8 +893,21 @@ def _candidate_assignments(
     for candidate_tuple in itertools.product(
         *(robot.candidates for robot in scenario.robots)
     ):
-        conflict = _assignment_conflict(candidate_tuple, conflict_model)
         candidate_ids = tuple(candidate.candidate_id for candidate in candidate_tuple)
+        invalid_candidates = [
+            candidate.candidate_id
+            for candidate in candidate_tuple
+            if candidate.position not in scenario.walkable
+        ]
+        if invalid_candidates:
+            trace.add(
+                "assignment_rejected",
+                candidates=list(candidate_ids),
+                reason="candidate_not_walkable",
+                invalid_candidates=invalid_candidates,
+            )
+            continue
+        conflict = _assignment_conflict(candidate_tuple, conflict_model)
         if conflict is not None:
             trace.add(
                 "assignment_rejected",
@@ -998,7 +1442,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         _write_output(planning_result.to_dict(), args.pretty)
         return 0
 
-    runtime = FakeRuntime(world_state)
+    runtime = FakeRuntime(world_state, scenario=scenario)
     execution_result = runtime.execute(
         planning_result.plan,
         failure_at_micro_step=scenario.execution.failure_at_micro_step,
@@ -1033,6 +1477,106 @@ def _optional_step(value: Any, field_name: str) -> Optional[int]:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise ScenarioValidationError(f"{field_name} must be null or a non-negative integer.")
     return value
+
+
+def _parse_walkable_events(
+    raw_events: Any,
+    robot_ids: Sequence[str],
+    grid_size_m: float,
+) -> Tuple[WalkableEvent, ...]:
+    if raw_events is None:
+        return ()
+    if not isinstance(raw_events, list):
+        raise ScenarioValidationError("execution.walkable_events must be a list.")
+    if not raw_events:
+        return ()
+
+    expected_robot_ids = set(robot_ids)
+    events = []
+    seen_by_step: Dict[int, Set[str]] = {}
+    previous_step = -1
+    for index, raw_event in enumerate(raw_events):
+        field_name = f"execution.walkable_events[{index}]"
+        if not isinstance(raw_event, Mapping):
+            raise ScenarioValidationError(f"{field_name} must be an object.")
+        committed_step = _optional_step(
+            raw_event.get("at_committed_step"),
+            f"{field_name}.at_committed_step",
+        )
+        if committed_step is None:
+            raise ScenarioValidationError(
+                f"{field_name}.at_committed_step must be a non-negative integer."
+            )
+        if committed_step < previous_step:
+            raise ScenarioValidationError(
+                "execution.walkable_events must be ordered by at_committed_step."
+            )
+        previous_step = committed_step
+
+        event_type = raw_event.get("type")
+        if event_type not in {"robot_step", "active_refresh"}:
+            raise ScenarioValidationError(
+                f"{field_name}.type must be 'robot_step' or 'active_refresh'."
+            )
+        seen_types = seen_by_step.setdefault(committed_step, set())
+        if event_type in seen_types:
+            raise ScenarioValidationError(
+                f"Duplicate {event_type!r} event at committed step {committed_step}."
+            )
+        if event_type == "robot_step" and "active_refresh" in seen_types:
+            raise ScenarioValidationError(
+                "robot_step must precede active_refresh at the same committed step."
+            )
+        seen_types.add(event_type)
+
+        try:
+            if event_type == "robot_step":
+                if committed_step == 0:
+                    raise ScenarioValidationError(
+                        "robot_step cannot occur before any movement is committed."
+                    )
+                robot_id = raw_event.get("robot_id")
+                if robot_id not in expected_robot_ids:
+                    raise ScenarioValidationError(
+                        f"{field_name}.robot_id must identify a configured robot."
+                    )
+                positions = raw_event.get("reachable_positions")
+                validator = GlobalWalkableMap((str(robot_id),), grid_size_m)
+                validator.replace_all({str(robot_id): positions})
+                events.append(
+                    WalkableEvent(
+                        at_committed_step=committed_step,
+                        event_type=event_type,
+                        robot_id=str(robot_id),
+                        reachable_positions=tuple(dict(position) for position in positions),
+                    )
+                )
+            else:
+                positions_by_robot = raw_event.get("reachable_positions_by_robot")
+                validator = GlobalWalkableMap(tuple(robot_ids), grid_size_m)
+                validator.replace_all(positions_by_robot)
+                events.append(
+                    WalkableEvent(
+                        at_committed_step=committed_step,
+                        event_type=event_type,
+                        reachable_positions_by_robot={
+                            robot_id: tuple(
+                                dict(position)
+                                for position in positions_by_robot[robot_id]
+                            )
+                            for robot_id in robot_ids
+                        },
+                    )
+                )
+        except WalkableUpdateError as exc:
+            raise ScenarioValidationError(f"{field_name}: {exc}") from exc
+
+    first = events[0]
+    if first.at_committed_step != 0 or first.event_type != "active_refresh":
+        raise ScenarioValidationError(
+            "Dynamic walkable mode requires an active_refresh at committed step 0."
+        )
+    return tuple(events)
 
 
 def load_scenario(data: Mapping[str, Any]) -> Scenario:
@@ -1154,6 +1698,11 @@ def load_scenario(data: Mapping[str, Any]) -> Scenario:
         external_version_bump_before_micro_step=_optional_step(
             raw_execution.get("external_version_bump_before_micro_step"),
             "execution.external_version_bump_before_micro_step",
+        ),
+        walkable_events=_parse_walkable_events(
+            raw_execution.get("walkable_events"),
+            [robot.robot_id for robot in robots],
+            grid_size_m,
         ),
     )
 

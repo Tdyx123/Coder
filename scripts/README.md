@@ -314,17 +314,89 @@ Minimal input shape:
   ],
   "execution": {
     "failure_at_micro_step": null,
-    "external_version_bump_before_micro_step": null
+    "external_version_bump_before_micro_step": null,
+    "walkable_events": []
   }
 }
 ```
+
+`walkable_events` enables strict dynamic-walkable execution in `FakeRuntime`.
+The first event must be a full refresh at committed step 0. Every successful
+robot movement must then have exactly one matching `robot_step` event. An
+optional `active_refresh` may follow the robot event at the same boundary:
+
+```json
+{
+  "execution": {
+    "walkable_events": [
+      {
+        "at_committed_step": 0,
+        "type": "active_refresh",
+        "reachable_positions_by_robot": {
+          "A": [
+            {"x": 0.0, "y": 0.0, "z": 0.0},
+            {"x": 0.25, "y": 0.0, "z": 0.0},
+            {"x": 0.5, "y": 0.0, "z": 0.0}
+          ],
+          "B": [
+            {"x": 0.0, "y": 0.0, "z": 0.5},
+            {"x": 0.25, "y": 0.0, "z": 0.5},
+            {"x": 0.5, "y": 0.0, "z": 0.5}
+          ]
+        }
+      },
+      {
+        "at_committed_step": 1,
+        "type": "robot_step",
+        "robot_id": "A",
+        "reachable_positions": [
+          {"x": 0.0, "y": 0.0, "z": 0.0},
+          {"x": 0.25, "y": 0.0, "z": 0.0},
+          {"x": 0.5, "y": 0.0, "z": 0.0}
+        ]
+      },
+      {
+        "at_committed_step": 1,
+        "type": "active_refresh",
+        "reachable_positions_by_robot": {
+          "A": [
+            {"x": 0.0, "y": 0.0, "z": 0.0},
+            {"x": 0.25, "y": 0.0, "z": 0.0},
+            {"x": 0.5, "y": 0.0, "z": 0.0}
+          ],
+          "B": [
+            {"x": 0.0, "y": 0.0, "z": 0.5},
+            {"x": 0.25, "y": 0.0, "z": 0.5},
+            {"x": 0.5, "y": 0.0, "z": 0.5}
+          ]
+        }
+      }
+    ]
+  }
+}
+```
+
+Each robot's newest snapshot replaces its previous snapshot. Global
+`walkable` is the union of those newest snapshots, not an accumulated history.
+Coordinates are converted to integer grid keys with
+`round(coordinate / grid_size_m)`; `y` is ignored. Same-boundary updates are
+atomic. Missing updates, malformed snapshots, or a union that omits a current
+robot position stop execution with `INVALID_WALKABLE_UPDATE`.
+Event step numbers always refer to global successful commits, including commits
+made by a replacement plan after replanning.
+
+When an update removes a remaining path point or assigned endpoint,
+`FakeRuntime` releases the old reservations and replans from the current world
+state. Failure to find a replacement plan returns `REPLAN_FAILED`. Execution
+JSON includes the final `walkable`, `walkable_version`, and `replan_count`.
 
 Process exit codes:
 
 - `0`: `PLANNED` or `EXECUTED`
 - `2`: `INVALID_SCENARIO`
 - `3`: `NO_PLAN_FOUND` or `SEARCH_LIMIT_REACHED`
-- `4`: `COMMIT_REJECTED_STALE_WORLD` or `EXECUTION_FAILED`
+- `4`: `COMMIT_REJECTED_STALE_WORLD`, `EXECUTION_FAILED`,
+  `INVALID_WALKABLE_UPDATE`, or `REPLAN_FAILED`
 
 AI2-THOR alignment and limitations:
 
@@ -332,8 +404,9 @@ AI2-THOR alignment and limitations:
   center-clearance policy. The latter is an application constraint, not a
   guarantee from Unity's collision geometry.
 - The current runtime uses `snapToGrid=False` and rounds world coordinates to
-  0.25 m grid keys. This prototype accepts integer grid keys and therefore does
-  not model floating-point drift or real colliders.
+  0.25 m grid keys. The static scenario uses integer grid keys, while dynamic
+  reachable-position events accept AI2-THOR-style `{x, y, z}` objects. This
+  prototype still does not model floating-point drift or real colliders.
 - `GetReachablePositions` alone does not prove that an object is interactable
   from a point. A future adapter must also account for rotation, camera horizon,
   visibility, held objects, and interactable poses.
