@@ -22,8 +22,13 @@ class GridThorRuntime:
         }
         self.actions = []
         self.failed_edges = set()
+        self.edge_errors = {}
         self.edge_attempts = Counter()
         self.successful_edges = []
+        self.position_overrides = {}
+        self.walkable_after_successful_moves = {}
+        self.object_visibility_by_position = {}
+        self.successful_move_count = 0
 
     def physical_agent_id(self, robot):
         if isinstance(robot, dict):
@@ -53,10 +58,26 @@ class GridThorRuntime:
         edge = (source_key, target_key)
         self.actions.append(("MoveAhead", agent_id, source_key, target_key))
         self.edge_attempts[edge] += 1
-        if edge in self.failed_edges:
+        if edge in self.edge_errors:
+            raise self.edge_errors[edge]
+        reachable_keys = {
+            position_to_grid_key(position)
+            for position in self.walkable_by_agent[agent_id]
+        }
+        if edge in self.failed_edges or target_key not in reachable_keys:
             return False
-        self.positions[agent_id] = dict(target)
+        actual_target = self.position_overrides.pop(edge, target)
+        self.positions[agent_id] = dict(actual_target)
         self.successful_edges.append(edge)
+        self.successful_move_count += 1
+        replacement = self.walkable_after_successful_moves.get(
+            self.successful_move_count
+        )
+        if replacement is not None:
+            self.walkable_by_agent = {
+                int(current_agent_id): [dict(position) for position in positions]
+                for current_agent_id, positions in replacement.items()
+            }
         return True
 
     def face_position_direct(self, agent_id, target):
@@ -64,6 +85,11 @@ class GridThorRuntime:
 
     def find_object(self, object_id, *, agent_id=None, require_center=False):
         obj = dict(self.objects[str(object_id)])
+        if agent_id is not None:
+            visibility = self.object_visibility_by_position.get(str(object_id), {})
+            current_key = position_to_grid_key(self.positions[int(agent_id)])
+            if current_key in visibility:
+                obj["visible"] = bool(visibility[current_key])
         if require_center and not obj.get("position"):
             raise RuntimeError(f"Object {object_id!r} has no usable center.")
         return obj
