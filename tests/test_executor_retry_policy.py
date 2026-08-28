@@ -1365,7 +1365,7 @@ class ExecutorRetryPolicyTest(unittest.TestCase):
             [0.25, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 3.25],
         )
 
-    def test_open_object_skips_physical_action_for_blinds(self):
+    def test_open_object_uses_force_action_for_blinds(self):
         object_id = "Blinds|-00.40|+02.16|-01.92"
         runtime, calls = object_action_runtime(
             [
@@ -1384,11 +1384,13 @@ class ExecutorRetryPolicyTest(unittest.TestCase):
 
         runtime.object_action("OpenObject", "robot1", "Blinds")
 
-        self.assertEqual(calls, [])
+        self.assertEqual([call["action"] for call in calls], ["OpenObject"])
+        self.assertEqual(calls[0]["objectId"], object_id)
+        self.assertIs(calls[0]["forceAction"], True)
+        self.assertEqual(runtime._test_state["objects"][0]["openness"], 1.0)
         self.assertEqual(runtime.total_exec, 1)
         self.assertEqual(runtime.success_exec, 1)
         self.assertIn("blinds", runtime.operated_object_names)
-        self.assertTrue(goal_state_verified("Blinds", "OPENED"))
 
     def test_open_object_visible_target_does_not_scan_view(self):
         object_id = "Drawer|+00.00|+00.80|+01.00"
@@ -1417,7 +1419,7 @@ class ExecutorRetryPolicyTest(unittest.TestCase):
             logs,
         )
 
-    def test_open_object_scan_failure_does_not_call_openobject(self):
+    def test_open_object_invisible_target_uses_force_action_without_scan(self):
         object_id = "Cabinet|-00.40|+02.16|-01.92"
         runtime, calls = object_action_runtime(
             [
@@ -1433,13 +1435,15 @@ class ExecutorRetryPolicyTest(unittest.TestCase):
             ],
         )
 
-        with self.assertRaisesRegex(
-            RuntimeError,
-            f"OpenObject target {re.escape(object_id)} is not visible",
-        ):
-            runtime.object_action("OpenObject", "robot1", "Cabinet")
+        runtime.object_action("OpenObject", "robot1", "Cabinet")
 
-        self.assertNotIn("OpenObject", [call["action"] for call in calls])
+        self.assertEqual([call["action"] for call in calls], ["OpenObject"])
+        self.assertEqual(calls[0]["objectId"], object_id)
+        self.assertIs(calls[0]["forceAction"], True)
+        self.assertEqual(runtime._test_state["objects"][0]["openness"], 1.0)
+        self.assertEqual(runtime.total_exec, 1)
+        self.assertEqual(runtime.success_exec, 1)
+        self.assertIn("cabinet", runtime.operated_object_names)
 
     def test_non_open_object_does_not_run_visibility_scan(self):
         object_id = "Blinds|-00.40|+02.16|-01.92"
