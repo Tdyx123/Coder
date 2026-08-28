@@ -122,7 +122,7 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "--movement-mode",
         choices=("teleport", "step"),
         default=None,
-        help="Robot movement mode; otherwise LAMMAP_MOVEMENT_MODE or teleport.",
+        help="Robot movement mode; otherwise LAMMAP_MOVEMENT_MODE or step.",
     )
     return parser.parse_args(argv)
 

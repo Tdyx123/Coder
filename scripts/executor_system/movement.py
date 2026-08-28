@@ -48,7 +48,7 @@ class MovementConfig:
     ) -> "MovementConfig":
         source = os.environ if environ is None else environ
         raw = (
-            source.get("LAMMAP_MOVEMENT_MODE", MovementMode.TELEPORT.value)
+            source.get("LAMMAP_MOVEMENT_MODE", MovementMode.STEP.value)
             if explicit_mode is None
             else explicit_mode
         )

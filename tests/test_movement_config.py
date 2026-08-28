@@ -18,10 +18,10 @@ from executor_system.movement import (
 
 
 class MovementConfigTest(unittest.TestCase):
-    def test_default_mode_is_teleport(self):
+    def test_default_mode_is_step(self):
         config = MovementConfig.resolve(environ={})
 
-        self.assertIs(config.mode, MovementMode.TELEPORT)
+        self.assertIs(config.mode, MovementMode.STEP)
         self.assertEqual(config.grid_size_m, 0.25)
         self.assertEqual(config.hard_clearance_m, 0.35)
         self.assertEqual(config.grid_snap_tolerance_m, 0.125001)
@@ -29,12 +29,12 @@ class MovementConfigTest(unittest.TestCase):
         self.assertEqual(config.max_failed_transitions, 8)
         self.assertEqual(config.max_assignment_trials, 256)
 
-    def test_environment_selects_step_mode(self):
+    def test_environment_selects_teleport_mode(self):
         config = MovementConfig.resolve(
-            environ={"LAMMAP_MOVEMENT_MODE": "step"},
+            environ={"LAMMAP_MOVEMENT_MODE": "teleport"},
         )
 
-        self.assertIs(config.mode, MovementMode.STEP)
+        self.assertIs(config.mode, MovementMode.TELEPORT)
 
     def test_explicit_mode_overrides_environment(self):
         config = MovementConfig.resolve(

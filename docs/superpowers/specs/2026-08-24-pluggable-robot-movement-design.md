@@ -91,7 +91,7 @@
 - 命令行：`--movement-mode teleport|step`
 - 环境变量：`LAMMAP_MOVEMENT_MODE=teleport|step`
 
-优先级固定为：显式构造参数高于命令行解析结果，命令行高于环境变量，环境变量高于默认值。默认值为 `teleport`。任何其他值都在创建 `ThorRuntime` 前失败，并列出允许值。
+优先级固定为：显式构造参数高于命令行解析结果，命令行高于环境变量，环境变量高于默认值。默认值为 `step`。任何其他值都在创建 `ThorRuntime` 前失败，并列出允许值。
 
 单步模式的默认生成脚本总超时为 120 秒；传送模式保持 30 秒。显式 `--timeout-seconds` 始终覆盖模式默认值。
 

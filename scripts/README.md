@@ -242,7 +242,7 @@ Behavior worth knowing:
   or positional executable paths
 - runner mode sets `renderImage=False` and skips video/metadata output
 - `--movement-mode` accepts `teleport` or `step`; when omitted, the runner uses
-  `LAMMAP_MOVEMENT_MODE`, then defaults to `teleport`
+  `LAMMAP_MOVEMENT_MODE`, then defaults to `step`
 - default subprocess timeouts are 30 seconds for `teleport` and 120 seconds for
   `step`; an explicit `--timeout-seconds` overrides either default
 - timed-out tasks are retried up to two times after each full round completes
@@ -259,17 +259,18 @@ Behavior worth knowing:
 Generated plans keep the same `GoToObject(robot, object)` action format. The
 runtime selects one of two movement plugins:
 
-- `teleport` is the compatibility default and retains candidate teleport plus
-  target-facing behavior
-- `step` converts current THOR reachable positions to the 0.25 m grid, jointly
-  plans same-wave robot requests through `multi_robot_avoidance.py`, and submits
-  real rotate/`MoveAhead` microsteps with 0.35 m clearance, dynamic replanning,
-  failed-edge recovery, visibility confirmation, and completed-robot parking
+- `teleport` retains candidate teleport plus target-facing behavior
+- `step` is the default and converts current THOR reachable positions to the
+  0.25 m grid, jointly plans same-wave robot requests through
+  `multi_robot_avoidance.py`, and submits real rotate/`MoveAhead` microsteps
+  with 0.35 m clearance, dynamic replanning, failed-edge recovery, visibility
+  confirmation, and completed-robot parking
 
-Enable step mode for a generated executable or for the parallel runner:
+Select the movement mode explicitly for a generated executable or for the
+parallel runner:
 
 ```bash
-python path/to/plan_to_code/executable_plan.py --movement-mode step
+python path/to/plan_to_code/executable_plan.py --movement-mode teleport
 
 python scripts/executor_system/parallel_runner.py \
   --root logs/intermediate_runs \
@@ -278,7 +279,7 @@ python scripts/executor_system/parallel_runner.py \
 ```
 
 `--movement-mode` has priority over `LAMMAP_MOVEMENT_MODE`; the environment
-variable has priority over the `teleport` default. Step navigation never falls
+variable has priority over the `step` default. Step navigation never falls
 back to `Teleport`. Initialization teleports and explicit plan `Teleport`
 actions remain available but are outside the navigation action metrics scope.
 

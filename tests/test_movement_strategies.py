@@ -16,6 +16,7 @@ from executor_system.movement import (
     NavigationRequest,
 )
 from executor_system.runtime import ThorRuntime
+from executor_system.step_movement import StepMovementStrategy
 from executor_system.teleport_movement import TeleportMovementStrategy
 
 
@@ -39,15 +40,18 @@ def navigation_request(
     )
 
 
-class TeleportMovementStrategyTest(unittest.TestCase):
-    def test_runtime_defaults_to_teleport_strategy(self):
+class MovementStrategySelectionTest(unittest.TestCase):
+    def test_runtime_defaults_to_step_strategy(self):
         runtime = object.__new__(ThorRuntime)
+        runtime.physical_agent_count = 1
 
         runtime.configure_movement(None, environ={})
 
-        self.assertIs(runtime.movement_config.mode, MovementMode.TELEPORT)
-        self.assertIsInstance(runtime.movement_strategy, TeleportMovementStrategy)
+        self.assertIs(runtime.movement_config.mode, MovementMode.STEP)
+        self.assertIsInstance(runtime.movement_strategy, StepMovementStrategy)
 
+
+class TeleportMovementStrategyTest(unittest.TestCase):
     def test_wait_rebuild_move_notify_order_uses_rebuilt_destination(self):
         order = []
         first_destination = {

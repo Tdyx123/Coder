@@ -29,11 +29,15 @@ from executor_system.action_plan import (
 from executor_system.parallel_runner import (
     DEFAULT_TIMEOUT_SECONDS,
     PlanExecutionTimeout,
+    build_summary,
     cleanup_gpu_processes,
     effective_timeout_seconds,
+    failed_result_for_exception,
     main as parallel_runner_main,
+    parse_arguments as parse_parallel_arguments,
     parse_gpu_cleanup_pids,
     run_action_plan_tolerant,
+    run_executables_with_retries,
     run_generated_executable,
 )
 from executor_system.generated_plan_runtime import (
@@ -578,11 +582,26 @@ class ParallelRunnerCliTest(unittest.TestCase):
         self.assertEqual(DEFAULT_TIMEOUT_SECONDS, 30.0)
 
     def test_movement_mode_defaults_choose_mode_specific_timeout(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(effective_timeout_seconds(None, None), 120.0)
         self.assertEqual(effective_timeout_seconds("teleport", None), 30.0)
         self.assertEqual(effective_timeout_seconds("step", None), 120.0)
         self.assertEqual(effective_timeout_seconds("step", 45.0), 45.0)
+        self.assertEqual(effective_timeout_seconds("teleport", 45.0), 45.0)
 
-    def test_run_generated_executable_passes_movement_mode(self):
+    def test_environment_can_select_teleport_timeout(self):
+        with patch.dict(
+            os.environ,
+            {"LAMMAP_MOVEMENT_MODE": "teleport"},
+            clear=True,
+        ):
+            self.assertEqual(effective_timeout_seconds(None, None), 30.0)
+
+    def test_cli_parsers_preserve_none_as_the_movement_mode_sentinel(self):
+        self.assertIsNone(parse_generated_arguments([]).movement_mode)
+        self.assertIsNone(parse_parallel_arguments([]).movement_mode)
+
+    def test_run_generated_executable_defaults_to_step_movement_mode(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             executable_path = root / "executable_plan.py"
@@ -595,12 +614,66 @@ class ParallelRunnerCliTest(unittest.TestCase):
                     executable_path,
                     metrics_output=metrics_path,
                     timeout_seconds=120.0,
-                    movement_mode="step",
                 )
 
         command = run.call_args.args[0]
         self.assertIn("--movement-mode", command)
         self.assertEqual(command[command.index("--movement-mode") + 1], "step")
+
+    def test_failed_result_defaults_to_step_movement_mode(self):
+        result = failed_result_for_exception(Path("plan.py"), RuntimeError("boom"))
+
+        self.assertEqual(result["movement_mode"], "step")
+
+    def test_retry_runner_defaults_to_step_movement_mode(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            executable_path = root / "plan_to_code" / "executable_plan.py"
+            metrics_dir = root / "metrics"
+            write_fake_generated_script(executable_path)
+            metrics_dir.mkdir()
+
+            with patch(
+                "executor_system.parallel_runner.cleanup_gpu_processes",
+                return_value={
+                    "round": 0,
+                    "matched_pids": [],
+                    "killed_pids": [],
+                    "error": "",
+                },
+            ):
+                results, _retry_tasks, _cleanup_events = run_executables_with_retries(
+                    [executable_path],
+                    max_workers=1,
+                    temp_metrics_dir=metrics_dir,
+                    timeout_seconds=5.0,
+                    save_all_stdout=False,
+                )
+
+        self.assertEqual(results[0]["movement_mode"], "step")
+
+    def test_summary_defaults_to_step_movement_mode(self):
+        summary = build_summary([], time.monotonic())
+
+        self.assertEqual(summary["movement_mode"], "step")
+        self.assertEqual(summary["effective_timeout_seconds"], 120.0)
+        self.assertEqual(summary["timeout_retry_policy"]["timeout_seconds"], 120.0)
+
+    def test_summary_uses_mode_specific_or_explicit_timeout(self):
+        teleport_summary = build_summary(
+            [],
+            time.monotonic(),
+            movement_mode="teleport",
+        )
+        explicit_summary = build_summary(
+            [],
+            time.monotonic(),
+            timeout_seconds=45.0,
+            movement_mode="teleport",
+        )
+
+        self.assertEqual(teleport_summary["effective_timeout_seconds"], 30.0)
+        self.assertEqual(explicit_summary["effective_timeout_seconds"], 45.0)
 
     def test_generated_runtime_rejects_invalid_movement_mode(self):
         with self.assertRaises(SystemExit) as exc:
@@ -672,6 +745,8 @@ class ParallelRunnerCliTest(unittest.TestCase):
             result = summary["results"][0]
             self.assertNotIn("gpu_id", result)
             self.assertNotIn("cuda_visible_devices", result)
+            self.assertEqual(summary["movement_mode"], "step")
+            self.assertEqual(result["movement_mode"], "step")
             self.assertEqual(
                 result["observed_env"],
                 {
