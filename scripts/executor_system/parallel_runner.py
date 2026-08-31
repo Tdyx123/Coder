@@ -54,7 +54,7 @@ DEFAULT_TIMEOUT_SECONDS = 30.0
 MAX_TIMEOUT_RETRIES = 2
 GPU_CLEANUP_PROCESS_SUFFIX = "0d69f666c7f282e54abfe58f1e917"
 IGNORED_FAILURE_ACTION_TYPES = {"Teleport", "TeleportObjectToHand"}
-BASE_LINE_CHOICES = ("LaMMA-P", "SMART-LLM", "Scale-Plan", "KGLAMP")
+BASE_LINE_CHOICES = ("LaMMA-P", "SMART-LLM", "Scale-Plan", "KGLAMP", "COT")
 
 
 def effective_timeout_seconds(
@@ -484,7 +484,7 @@ def default_baseline_root(base_line: str) -> Path:
 
 
 def baseline_summary_paths(base_line: str, root: Path) -> List[Path]:
-    if base_line in {"LaMMA-P", "Scale-Plan", "KGLAMP"}:
+    if base_line in {"LaMMA-P", "Scale-Plan", "KGLAMP", "COT"}:
         return [root / "plan_to_code_results" / "plan_to_code_results.json"]
     if base_line == "SMART-LLM":
         return [root / "plan_to_code_results.json"]
@@ -494,6 +494,8 @@ def baseline_summary_paths(base_line: str, root: Path) -> List[Path]:
 def baseline_fallback_search_root(base_line: str, root: Path) -> Path:
     if base_line in {"LaMMA-P", "Scale-Plan", "KGLAMP"}:
         preferred = root / "logs" / "intermediate_runs"
+    elif base_line == "COT":
+        return root / "parallel_runs"
     elif base_line == "SMART-LLM":
         preferred = root / "logs"
     else:
@@ -612,6 +614,10 @@ def discover_baseline_executable_plans(
     )
     if summary_candidates:
         return summary_candidates
+    if base_line == "COT" and any(
+        path.is_file() for path in baseline_summary_paths(base_line, discovery_root)
+    ):
+        return []
     return discover_baseline_fallback_executables(base_line, discovery_root)
 
 

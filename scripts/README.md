@@ -110,8 +110,11 @@ python scripts/baselines/SMART-LLM.py \
 
 python scripts/baselines/Scale-Plan.py --root ./baselines/Scale-Plan
 
+python scripts/baselines/COT.py --root ./baselines/COT
+
 python scripts/executor_system/parallel_runner.py \
-  --base-line LaMMA-P \
+  --base-line COT \
+  --root ./baselines/COT \
   --max-workers 4 \
   --timeout-seconds 30 \
   --output-dir ./parallel_runner_results
@@ -121,7 +124,10 @@ Arguments:
 
 - `--logs-dir`
 - `--parallel-run`
+- `--summary-root`
 - `--floor-plan`
+- `--limit`
+- `--dry-run`
 - `--output-dir`
 - `--validate-code`
 - `--no-validate-code`
@@ -137,6 +143,8 @@ Behavior worth knowing:
   `conversion_kind` and record recovery confidence, rules, and line-level events
 - the script recursively scans complete pddlrun task folders
 - `--parallel-run` accepts a `parallel_runs/...` directory or its `summary.json`
+- COT follows the floor-summary references in its top-level `summary.json`; source
+  tasks whose status is not `success` are reported as skipped and do not produce code
 - `--floor-plan` restricts conversion to one floor, e.g. `6` or `FloorPlan6`
 - it writes summary files to `--output-dir`
 - it writes `plan_to_code/executable_plan.py` into each original log folder
@@ -153,6 +161,9 @@ Baseline entrypoint defaults:
 - `scripts/baselines/Scale-Plan.py --root ./baselines/Scale-Plan` reads
   `baselines/Scale-Plan/logs/intermediate_runs` and writes
   `baselines/Scale-Plan/plan_to_code_results`
+- `scripts/baselines/COT.py --root ./baselines/COT` reads top-level summaries
+  under `baselines/COT/parallel_runs` and writes
+  `baselines/COT/plan_to_code_results`
 
 ### `generate_single_subtask_code.py`
 

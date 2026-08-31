@@ -31,6 +31,7 @@ from executor_system.parallel_runner import (
     PlanExecutionTimeout,
     build_summary,
     cleanup_gpu_processes,
+    discover_baseline_executable_plans,
     effective_timeout_seconds,
     failed_result_for_exception,
     main as parallel_runner_main,
@@ -1300,6 +1301,118 @@ class ParallelRunnerCliTest(unittest.TestCase):
             self.assertEqual(summary["discovery_root"], str(root.resolve()))
             self.assertEqual(summary["total_results"], 1)
             self.assertEqual(summary["results"][0]["executable_path"], str(script.resolve()))
+
+    def test_cot_baseline_discovers_successful_summary_entries(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "baselines" / "COT"
+            script = (
+                root
+                / "parallel_runs"
+                / "pddlrun_cot_fixture"
+                / "FloorPlan1"
+                / "task_001"
+                / "unit_set"
+                / "task"
+                / "run"
+                / "plan_to_code"
+                / "executable_plan.py"
+            )
+            skipped = script.parents[5] / "task_002" / "plan_to_code" / "executable_plan.py"
+            write_fake_generated_script(script, gcr=0.8)
+            write_fake_generated_script(skipped, gcr=0.0)
+            write_json(
+                root / "plan_to_code_results" / "plan_to_code_results.json",
+                [
+                    {
+                        "status": "success",
+                        "success": True,
+                        "generated": {"executable_plan": str(script)},
+                    },
+                    {
+                        "status": "skipped",
+                        "success": False,
+                        "generated": {"executable_plan": str(skipped)},
+                    },
+                ],
+            )
+
+            try:
+                discovered = discover_baseline_executable_plans("COT", str(root))
+            except RuntimeError as exc:
+                self.fail(f"COT baseline discovery should be supported: {exc}")
+
+            self.assertEqual(discovered, [script.resolve()])
+
+    def test_cot_baseline_fallback_scans_parallel_runs(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "baselines" / "COT"
+            first = (
+                root
+                / "parallel_runs"
+                / "pddlrun_cot_fixture"
+                / "FloorPlan1"
+                / "task_001"
+                / "plan_to_code"
+                / "executable_plan.py"
+            )
+            outside_parallel_runs = (
+                root / "other" / "task" / "plan_to_code" / "executable_plan.py"
+            )
+            write_fake_generated_script(first, gcr=0.4)
+            write_fake_generated_script(outside_parallel_runs, gcr=0.9)
+
+            try:
+                discovered = discover_baseline_executable_plans("COT", str(root))
+            except RuntimeError as exc:
+                self.fail(f"COT fallback discovery should be supported: {exc}")
+
+            self.assertEqual(discovered, [first.resolve()])
+
+    def test_cot_baseline_does_not_fallback_when_summary_has_no_successes(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "baselines" / "COT"
+            stale = (
+                root
+                / "parallel_runs"
+                / "pddlrun_cot_fixture"
+                / "FloorPlan1"
+                / "task_001"
+                / "plan_to_code"
+                / "executable_plan.py"
+            )
+            write_fake_generated_script(stale, gcr=0.0)
+            write_json(
+                root / "plan_to_code_results" / "plan_to_code_results.json",
+                [
+                    {
+                        "status": "skipped",
+                        "success": False,
+                        "generated": {"executable_plan": str(stale)},
+                    }
+                ],
+            )
+
+            discovered = discover_baseline_executable_plans("COT", str(root))
+
+            self.assertEqual(discovered, [])
+
+    def test_cot_baseline_does_not_scan_root_when_parallel_runs_is_missing(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "baselines" / "COT"
+            outside = root / "other" / "plan_to_code" / "executable_plan.py"
+            write_fake_generated_script(outside, gcr=0.0)
+
+            discovered = discover_baseline_executable_plans("COT", str(root))
+
+            self.assertEqual(discovered, [])
+
+    def test_parallel_runner_parser_accepts_cot_baseline(self):
+        try:
+            args = parse_parallel_arguments(["--base-line", "COT"])
+        except SystemExit as exc:
+            self.fail(f"--base-line COT should be accepted: {exc}")
+
+        self.assertEqual(args.base_line, "COT")
 
     def test_baseline_fallback_discovers_compatible_log_executables(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
