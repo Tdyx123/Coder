@@ -30,6 +30,10 @@ from baseline_converters.common import (
 )
 from executor_system.pddlrun_adapter import ObjectNameResolver
 from run_config import normalize_floor_plan
+from baseline_converters.generation_validation import (
+    GenerationValidationError, generation_failure_result, prepare_generation_robots,
+    validate_generation_plan,
+)
 
 
 DEFAULT_BASELINE_ROOT = REPO_ROOT / "baselines" / "Scale-Plan"
@@ -386,6 +390,7 @@ def process_indexed_run(
         "task_index": parse_int(metadata.get("task_index")),
         "status": "failed",
         "success": False,
+        "failure_reason": None,
         "action_count": 0,
         "stage_count": 0,
         "no_trans": 0,
@@ -409,15 +414,12 @@ def process_indexed_run(
         if task_index is None:
             raise ScalePlanConversionError("Could not determine task_index for Scale-Plan run.")
 
-        robots = task_context.get("robots")
-        if not isinstance(robots, list) or not robots:
-            raise ScalePlanConversionError("inputs/task_context.json is missing a robot list.")
-
         task_file = dataset_path_for_run(
             str(floor_plan) if floor_plan is not None else None,
             test_set,
         )
         task_record = load_task_record(task_file, task_index)
+        robots = prepare_generation_robots(task_context.get("robots"), task_record, use_source_names=True)
         gcr = task_record_gcr(task_record)
         robot_id_map = build_robot_id_map(task_record.get("robot list"))
 
@@ -437,6 +439,11 @@ def process_indexed_run(
             robot_id_map=robot_id_map,
         )
 
+        validate_generation_plan(
+            task_plan_data, robots=robots, task_record=task_record, task_context=task_context,
+            repo_root=REPO_ROOT, floor_plan=floor_plan, object_mappings=resolver.mappings,
+            robot_id_map=robot_id_map,
+        )
         bundle_data = common_build_bundle_data(
             task=task,
             task_plan_data=task_plan_data,
@@ -479,6 +486,9 @@ def process_indexed_run(
                 },
             }
         )
+        return result
+    except GenerationValidationError as exc:
+        result.update(generation_failure_result(exc, task_run_dir / "plan_to_code/executable_plan.py", dry_run=dry_run))
         return result
     except Exception as exc:
         result["error"] = str(exc)

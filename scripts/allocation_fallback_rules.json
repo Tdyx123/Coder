@@ -1,0 +1,403 @@
+{
+  "version": 1,
+  "description": "Offline snapshot of core action matching for pddlrun_llmseparate.py only. Higher priority wins; ties follow text order.",
+  "sources": {
+    "files": [
+      {
+        "path": "scripts/data_engine.py",
+        "sha256": "4ab765ac5885b33661728a1cb8ee2f007ecbcc20a8beca68a64f8f2b4c1ee867"
+      },
+      {
+        "path": "scripts/special_task_skills.py",
+        "sha256": "581b76c1699e8b2b160cea16b6556dc0246329c73ad6f0975e2f863b1a67892f"
+      },
+      {
+        "path": "resources/robots.py",
+        "sha256": "8c465cf18aaac2bd58dc5235471b03f199d633573c6b7f9c9a5f3bbbd55c7897"
+      }
+    ],
+    "dataset": {
+      "path": "data/final_test_new_0819_1",
+      "file_count": 120,
+      "record_count": 3600,
+      "sha256": "430306e2e813b49ad158fb79fb06c69dd33e73a0752e35e9f1114ddd029cba8a",
+      "subtask_counts": {
+        "Break": 1884,
+        "ColdObject": 300,
+        "CookByStoveBurner": 84,
+        "CookEgg": 12,
+        "FillWater": 182,
+        "HeatByStoveBurner": 149,
+        "Open": 2197,
+        "PrepareEgg": 29,
+        "PutIn": 1162,
+        "PutOn": 3648,
+        "RunCoffeeMachine": 42,
+        "RunMicrowave": 219,
+        "RunToaster": 30,
+        "Slice": 160,
+        "SwitchOn": 1857,
+        "Wash": 189
+      }
+    },
+    "special_skill_overrides": {
+      "PrepareEgg": "BreakEgg"
+    },
+    "action_templates": {
+      "Open": {
+        "template": "open the object_a",
+        "core_skill": "OpenObject"
+      },
+      "Close": {
+        "template": "close the object_a",
+        "core_skill": "CloseObject"
+      },
+      "SwitchOn": {
+        "template": "switch on the object_a",
+        "core_skill": "SwitchOn"
+      },
+      "SwitchOff": {
+        "template": "switch off the object_a",
+        "core_skill": "SwitchOff"
+      },
+      "Wash": {
+        "template": "wash the object_a",
+        "core_skill": "CleanObject"
+      },
+      "Break": {
+        "template": "break the object_a",
+        "core_skill": "BreakObject"
+      },
+      "Slice": {
+        "template": "slice the object_a",
+        "core_skill": "SliceObject"
+      },
+      "PutOn": {
+        "template": "put object_a on object_b",
+        "core_skill": "PutObject"
+      },
+      "PutIn": {
+        "template": "put object_a in object_b",
+        "core_skill": "PutObject"
+      },
+      "RunMicrowave": {
+        "template": "microwave the object_a in the object_b",
+        "core_skill": "RunMicrowave"
+      },
+      "RunCoffeeMachine": {
+        "template": "make coffee in the object_a using the object_b",
+        "core_skill": "RunCoffeeMachine"
+      },
+      "RunToaster": {
+        "template": "toast the object_a in the object_b",
+        "core_skill": "RunToaster"
+      },
+      "CookByStoveBurner": {
+        "template": "cook the object_a on the object_b",
+        "core_skill": "CookByStoveBurner"
+      },
+      "PrepareEgg": {
+        "template": "prepare the object_a in the object_b",
+        "core_skill": "BreakEgg"
+      },
+      "CookEgg": {
+        "template": "cook the object_a in the object_b",
+        "core_skill": "BreakEgg"
+      },
+      "HeatByStoveBurner": {
+        "template": "heat the object_a on the object_b",
+        "core_skill": "HeatByStoveBurner"
+      },
+      "FillWater": {
+        "template": "fill the object_a with water",
+        "core_skill": "FillWater"
+      },
+      "ColdObject": {
+        "template": "cool the object_a in the object_b",
+        "core_skill": "ColdObject"
+      }
+    },
+    "pattern_notes": "Patterns materialized offline from current action templates, with verb variants for decomposition text and Chinese action phrases. Robot IDs are always selected from the runtime task team."
+  },
+  "priorities": {
+    "specialized": 500,
+    "state_change": 400,
+    "placement": 300,
+    "pickup": 200,
+    "navigation": 100
+  },
+  "robot_skills": [
+    "BreakEgg",
+    "BreakObject",
+    "CleanObject",
+    "CloseObject",
+    "ColdObject",
+    "CookByStoveBurner",
+    "FillWater",
+    "GoToObject",
+    "HeatByStoveBurner",
+    "OpenObject",
+    "PickupObject",
+    "PutObject",
+    "RunCoffeeMachine",
+    "RunMicrowave",
+    "RunToaster",
+    "SliceObject",
+    "SwitchOff",
+    "SwitchOn"
+  ],
+  "rules": [
+    {
+      "skill": "BreakEgg",
+      "priority_group": "specialized",
+      "aliases": [
+        "BreakEgg",
+        "PrepareEgg",
+        "CookEgg"
+      ],
+      "patterns": [
+        "\\bBreakEgg\\b",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)(?:prepare|cook|crack)\\s+(?:the\\s+|an?\\s+)?egg\\b",
+        "准备鸡蛋|打鸡蛋|打蛋",
+        "\\bPrepareEgg\\b",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)prepare\\ the\\ egg\\ in\\ the\\ [^.;\\n]+",
+        "\\bCookEgg\\b",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)cook\\ the\\ egg\\ in\\ the\\ [^.;\\n]+"
+      ]
+    },
+    {
+      "skill": "BreakObject",
+      "priority_group": "state_change",
+      "aliases": [
+        "BreakObject",
+        "Break"
+      ],
+      "patterns": [
+        "\\bBreakObject\\b",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)break(?:s|ing)?\\s+(?:the\\s+|an?\\s+)?\\w+",
+        "打碎|打破",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)break\\ the\\ [^.;\\n]+?"
+      ]
+    },
+    {
+      "skill": "CleanObject",
+      "priority_group": "state_change",
+      "aliases": [
+        "CleanObject",
+        "Wash"
+      ],
+      "patterns": [
+        "\\bCleanObject\\b",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)(?:wash(?:es|ing)?|clean(?:s|ing)?)\\s+(?:the\\s+|an?\\s+)?\\w+",
+        "(?:^|[，。；]|然后|并且|并)(?:清洗|洗净|洗涤)",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)wash\\ the\\ [^.;\\n]+?"
+      ]
+    },
+    {
+      "skill": "CloseObject",
+      "priority_group": "state_change",
+      "aliases": [
+        "CloseObject",
+        "Close"
+      ],
+      "patterns": [
+        "\\bCloseObject\\b",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)clos(?:e|es|ing)\\s+(?:the\\s+|an?\\s+)?\\w+",
+        "关闭(?!.*(?:电源|开关))|关上",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)close\\ the\\ [^.;\\n]+?"
+      ]
+    },
+    {
+      "skill": "ColdObject",
+      "priority_group": "specialized",
+      "aliases": [
+        "ColdObject"
+      ],
+      "patterns": [
+        "\\bColdObject\\b",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)(?:cool(?:s|ing)?|chill(?:s|ing)?|refrigerate)\\s+(?:the\\s+|an?\\s+)?\\w+",
+        "冷藏|冷却",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)cool\\ the\\ [^.;\\n]+?\\ in\\ the\\ [^.;\\n]+"
+      ]
+    },
+    {
+      "skill": "CookByStoveBurner",
+      "priority_group": "specialized",
+      "aliases": [
+        "CookByStoveBurner"
+      ],
+      "patterns": [
+        "\\bCookByStoveBurner\\b",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)cook(?:s|ing)?\\b[^.;\\n]*\\b(?:stove\\s*burner|stove|burner)\\b",
+        "用炉灶.*(?:烹饪|煮熟)",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)cook\\ the\\ [^.;\\n]+?\\ on\\ the\\ [^.;\\n]+"
+      ]
+    },
+    {
+      "skill": "FillWater",
+      "priority_group": "specialized",
+      "aliases": [
+        "FillWater"
+      ],
+      "patterns": [
+        "\\bFillWater\\b",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)fill(?:s|ing)?\\b[^.;\\n]*\\bwater\\b",
+        "装水|接水|注水",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)fill\\ the\\ [^.;\\n]+?\\ with\\ water"
+      ]
+    },
+    {
+      "skill": "GoToObject",
+      "priority_group": "navigation",
+      "aliases": [
+        "GoToObject"
+      ],
+      "patterns": [
+        "\\bGoToObject\\b",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)(?:go(?:es|ing)?|walk(?:s|ing)?|navigate)\\s+to\\b",
+        "走到|前往|导航到"
+      ]
+    },
+    {
+      "skill": "HeatByStoveBurner",
+      "priority_group": "specialized",
+      "aliases": [
+        "HeatByStoveBurner"
+      ],
+      "patterns": [
+        "\\bHeatByStoveBurner\\b",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)heat(?:s|ing)?\\b[^.;\\n]*\\b(?:stove\\s*burner|stove|burner)\\b",
+        "用炉灶.*加热",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)heat\\ the\\ [^.;\\n]+?\\ on\\ the\\ [^.;\\n]+"
+      ]
+    },
+    {
+      "skill": "OpenObject",
+      "priority_group": "state_change",
+      "aliases": [
+        "OpenObject",
+        "Open"
+      ],
+      "patterns": [
+        "\\bOpenObject\\b",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)open(?:s|ing)?\\s+(?:the\\s+|an?\\s+)?\\w+",
+        "打开(?![^，。；]*?(?:电源|开关))",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)open\\ the\\ [^.;\\n]+?"
+      ]
+    },
+    {
+      "skill": "PickupObject",
+      "priority_group": "pickup",
+      "aliases": [
+        "PickupObject"
+      ],
+      "patterns": [
+        "\\bPickupObject\\b",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)pick(?:s|ing)?\\s+up\\b",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)(?:take|grab)\\s+(?:the\\s+|an?\\s+)?\\w+",
+        "拿起|拾取"
+      ]
+    },
+    {
+      "skill": "PutObject",
+      "priority_group": "placement",
+      "aliases": [
+        "PutObject",
+        "PutOn",
+        "PutIn"
+      ],
+      "patterns": [
+        "\\bPutObject\\b",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)(?:put(?:s|ting)?|plac(?:e|es|ing)|mov(?:e|es|ing))\\s+(?:the\\s+|an?\\s+)?\\w+",
+        "放入|放进|放到|放置",
+        "\\bPutOn\\b",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)put\\ [^.;\\n]+?\\ on\\ [^.;\\n]+",
+        "\\bPutIn\\b",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)put\\ [^.;\\n]+?\\ in\\ [^.;\\n]+"
+      ]
+    },
+    {
+      "skill": "RunCoffeeMachine",
+      "priority_group": "specialized",
+      "aliases": [
+        "RunCoffeeMachine"
+      ],
+      "patterns": [
+        "\\bRunCoffeeMachine\\b",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)(?:make|brew|prepare)\\s+(?:the\\s+|some\\s+)?coffee\\b",
+        "制作咖啡|煮咖啡|冲咖啡",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)make\\ coffee\\ in\\ the\\ [^.;\\n]+?\\ using\\ the\\ [^.;\\n]+"
+      ]
+    },
+    {
+      "skill": "RunMicrowave",
+      "priority_group": "specialized",
+      "aliases": [
+        "RunMicrowave"
+      ],
+      "patterns": [
+        "\\bRunMicrowave\\b",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)microwav(?:e|es|ing)\\s+(?:the\\s+|an?\\s+)?\\w+",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)(?:heat|warm|cook)\\b[^.;\\n]*\\b(?:in|using|with)\\s+(?:the\\s+|a\\s+)?microwave\\b",
+        "微波加热|用微波炉.*(?:加热|烹饪)",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)microwave\\ the\\ [^.;\\n]+?\\ in\\ the\\ [^.;\\n]+"
+      ]
+    },
+    {
+      "skill": "RunToaster",
+      "priority_group": "specialized",
+      "aliases": [
+        "RunToaster"
+      ],
+      "patterns": [
+        "\\bRunToaster\\b",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)toast(?:s|ing)?\\s+(?:the\\s+|an?\\s+)?\\w+",
+        "烤面包",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)toast\\ the\\ [^.;\\n]+?\\ in\\ the\\ [^.;\\n]+"
+      ]
+    },
+    {
+      "skill": "SliceObject",
+      "priority_group": "state_change",
+      "aliases": [
+        "SliceObject",
+        "Slice"
+      ],
+      "patterns": [
+        "\\bSliceObject\\b",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)slic(?:e|es|ing)\\s+(?:the\\s+|an?\\s+)?\\w+",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)(?:prepare|cut)\\b[^.;\\n]*\\bslices\\b",
+        "(?:^|[，。；]|然后|并且|并)(?:切片|切开)|切成片",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)slice\\ the\\ [^.;\\n]+?"
+      ]
+    },
+    {
+      "skill": "SwitchOff",
+      "priority_group": "state_change",
+      "aliases": [
+        "SwitchOff"
+      ],
+      "patterns": [
+        "\\bSwitchOff\\b",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)(?:switch(?:es|ing)?|turn(?:s|ing)?)\\s+off\\b",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)turn\\b[^.;\\n]*\\boff\\b",
+        "关闭.*(?:电源|开关)",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)switch\\ off\\ the\\ [^.;\\n]+?"
+      ]
+    },
+    {
+      "skill": "SwitchOn",
+      "priority_group": "state_change",
+      "aliases": [
+        "SwitchOn"
+      ],
+      "patterns": [
+        "\\bSwitchOn\\b",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)(?:switch(?:es|ing)?|turn(?:s|ing)?)\\s+on\\b",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)turn\\b[^.;\\n]*\\bon\\b",
+        "开启|打开.*(?:电源|开关)",
+        "(?:^|[.;:]\\s*|\\b(?:and|then|to|must|should|robot)\\s+)switch\\ on\\ the\\ [^.;\\n]+?"
+      ]
+    }
+  ]
+}

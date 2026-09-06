@@ -204,6 +204,7 @@ def build_key_object_evidence(
     supported = {str(predicate).casefold() for predicate in supported_predicates}
     source_by_predicate = {
         "at-location": "parentReceptacles",
+        "is-openable": "openable",
         "object-open": "isOpen",
         "switch-on": "isToggled",
     }

@@ -211,7 +211,11 @@ def canonical_action_name(action_name: str) -> str:
     return ACTION_ALIASES.get(key, str(action_name).strip())
 
 
-def parse_allocation_phases(allocation_text: str) -> List[List[SubtaskAssignment]]:
+def parse_allocation_phases(
+    allocation_text: str,
+    *,
+    validate_plan: bool = True,
+) -> List[List[SubtaskAssignment]]:
     sections = ParsingUtils.extract_sequence_sections(allocation_text)
     if not sections:
         sections = [allocation_text.strip().splitlines()]
@@ -245,21 +249,32 @@ def parse_allocation_phases(allocation_text: str) -> List[List[SubtaskAssignment
             if raw_assignment_ids.count(subtask_id) > 1
         }
     )
-    if duplicate_ids:
+    if validate_plan and duplicate_ids:
         raise PddlRunAdapterError(
             "Allocation output contains duplicate subtask assignment(s): "
             f"{duplicate_ids}"
         )
     phases: List[List[SubtaskAssignment]] = []
 
+    if not validate_plan:
+        # The shared normalizer keeps the last assignment. Conversion instead
+        # keeps the first occurrence, retaining the original phase ordering.
+        selected_lines = ParsingUtils.merge_sequence_lines(sections[selected_index])
+        assignment_re = ParsingUtils.sequence_assignment_re()
+    seen_subtasks: Set[int] = set()
     for line in selected_lines:
-        phase = [
-            SubtaskAssignment(
-                subtask_id=int(match.group(1)),
-                robot_number=int(match.group(2)),
+        phase: List[SubtaskAssignment] = []
+        for match in assignment_re.finditer(line):
+            subtask_id = int(match.group(1))
+            if not validate_plan and subtask_id in seen_subtasks:
+                continue
+            seen_subtasks.add(subtask_id)
+            phase.append(
+                SubtaskAssignment(
+                    subtask_id=subtask_id,
+                    robot_number=int(match.group(2)),
+                )
             )
-            for match in assignment_re.finditer(line)
-        ]
         if phase:
             phases.append(phase)
 
@@ -470,7 +485,11 @@ def load_allocation_text(allocate_file: Any) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def load_plan_texts(plan_files: Sequence[Any]) -> Dict[int, Tuple[Path, str]]:
+def load_plan_texts(
+    plan_files: Sequence[Any],
+    *,
+    validate_plan: bool = True,
+) -> Dict[int, Tuple[Path, str]]:
     plan_texts: Dict[int, Tuple[Path, str]] = {}
     for raw_path in plan_files:
         path = Path(str(raw_path)).expanduser()
@@ -480,6 +499,8 @@ def load_plan_texts(plan_files: Sequence[Any]) -> Dict[int, Tuple[Path, str]]:
                 f"Could not infer subtask id from planner output file: {path}"
             )
         if subtask_id in plan_texts:
+            if not validate_plan:
+                continue
             raise PddlRunAdapterError(
                 f"Duplicate planner output for subtask {subtask_id}: {path}"
             )
@@ -650,13 +671,15 @@ def build_task_plan_from_pddlrun_outputs(
     noop_subtasks: Optional[Sequence[Dict[str, Any]]] = None,
     expected_subtask_ids: Optional[Iterable[int]] = None,
     task_id: str = "pddlrun",
+    validate_plan: bool = True,
 ) -> PddlRunPlanBundle:
-    plan_texts = load_plan_texts(plan_files)
+    """Encode available actions, optionally checking subtask and no-op validity."""
+    plan_texts = load_plan_texts(plan_files, validate_plan=validate_plan)
     artifact_expected_subtasks = {
         int(subtask_id) for subtask_id in (expected_subtask_ids or ())
-    }
+    } if validate_plan else set()
     try:
-        phases = parse_allocation_phases(allocation_text)
+        phases = parse_allocation_phases(allocation_text, validate_plan=validate_plan)
     except PddlRunAdapterError as exc:
         if str(exc) != NO_ALLOCATION_ASSIGNMENTS_ERROR:
             raise
@@ -678,7 +701,7 @@ def build_task_plan_from_pddlrun_outputs(
             if assigned_subtask_sequence.count(subtask_id) > 1
         }
     )
-    if duplicate_assignments:
+    if validate_plan and duplicate_assignments:
         raise PddlRunAdapterError(
             "Subtask conservation failed: duplicate subtask assignment(s): "
             f"{duplicate_assignments}"
@@ -727,82 +750,84 @@ def build_task_plan_from_pddlrun_outputs(
         for subtask_id, actions in encoded_by_subtask.items()
         if actions
     }
-    if artifact_expected_subtasks:
-        unexpected_assignments = sorted(
-            assigned_subtasks - artifact_expected_subtasks
-        )
-        if unexpected_assignments:
-            raise PddlRunAdapterError(
-                "Subtask conservation failed: unexpected allocation subtask(s): "
-                f"{unexpected_assignments}"
+    verified_noops_by_id: Dict[int, Dict[str, Any]] = {}
+    if validate_plan:
+        if artifact_expected_subtasks:
+            unexpected_assignments = sorted(
+                assigned_subtasks - artifact_expected_subtasks
             )
-        expected_subtasks = set(artifact_expected_subtasks)
-    else:
-        expected_subtasks = assigned_subtasks | planned_subtasks
-    missing_plans = sorted(expected_subtasks - planned_subtasks)
-    if missing_plans:
-        raise PddlRunAdapterError(
-            "Subtask conservation failed: missing planner output for allocated "
-            f"subtask(s): {missing_plans}"
-        )
-    unexpected_plans = sorted(planned_subtasks - expected_subtasks)
-    if unexpected_plans:
-        raise PddlRunAdapterError(
-            "Subtask conservation failed: unexpected planner output for subtask(s): "
-            f"{unexpected_plans}"
-        )
+            if unexpected_assignments:
+                raise PddlRunAdapterError(
+                    "Subtask conservation failed: unexpected allocation subtask(s): "
+                    f"{unexpected_assignments}"
+                )
+            expected_subtasks = set(artifact_expected_subtasks)
+        else:
+            expected_subtasks = assigned_subtasks | planned_subtasks
+        missing_plans = sorted(expected_subtasks - planned_subtasks)
+        if missing_plans:
+            raise PddlRunAdapterError(
+                "Subtask conservation failed: missing planner output for allocated "
+                f"subtask(s): {missing_plans}"
+            )
+        unexpected_plans = sorted(planned_subtasks - expected_subtasks)
+        if unexpected_plans:
+            raise PddlRunAdapterError(
+                "Subtask conservation failed: unexpected planner output for subtask(s): "
+                f"{unexpected_plans}"
+            )
 
-    supplied_noops = [
-        dict(item)
-        for item in (noop_subtasks or [])
-        if isinstance(item, dict)
-    ]
-    supplied_noop_ids = [
-        int(item["subtask_id"])
-        for item in supplied_noops
-        if str(item.get("subtask_id", "")).isdigit()
-    ]
-    duplicate_noop_ids = sorted(
-        {
-            subtask_id
-            for subtask_id in supplied_noop_ids
-            if supplied_noop_ids.count(subtask_id) > 1
+        supplied_noops = [
+            dict(item)
+            for item in (noop_subtasks or [])
+            if isinstance(item, dict)
+        ]
+        supplied_noop_ids = [
+            int(item["subtask_id"])
+            for item in supplied_noops
+            if str(item.get("subtask_id", "")).isdigit()
+        ]
+        duplicate_noop_ids = sorted(
+            {
+                subtask_id
+                for subtask_id in supplied_noop_ids
+                if supplied_noop_ids.count(subtask_id) > 1
+            }
+        )
+        if duplicate_noop_ids:
+            raise PddlRunAdapterError(
+                "Subtask conservation failed: duplicate no-op proof(s): "
+                f"{duplicate_noop_ids}"
+            )
+        verified_noops_by_id = {
+            int(item["subtask_id"]): item
+            for item in supplied_noops
+            if str(item.get("subtask_id", "")).isdigit()
+            and bool(item.get("verified"))
         }
-    )
-    if duplicate_noop_ids:
-        raise PddlRunAdapterError(
-            "Subtask conservation failed: duplicate no-op proof(s): "
-            f"{duplicate_noop_ids}"
+        zero_action_subtasks = planned_subtasks - executable_subtasks
+        unverified_zero_action = sorted(
+            zero_action_subtasks - set(verified_noops_by_id)
         )
-    verified_noops_by_id = {
-        int(item["subtask_id"]): item
-        for item in supplied_noops
-        if str(item.get("subtask_id", "")).isdigit()
-        and bool(item.get("verified"))
-    }
-    zero_action_subtasks = planned_subtasks - executable_subtasks
-    unverified_zero_action = sorted(
-        zero_action_subtasks - set(verified_noops_by_id)
-    )
-    if unverified_zero_action:
-        raise PddlRunAdapterError(
-            "Subtask conservation failed: unverified zero-action planner output "
-            f"for subtask(s): {unverified_zero_action}"
-        )
-    orphan_noops = sorted(set(verified_noops_by_id) - zero_action_subtasks)
-    if orphan_noops:
-        raise PddlRunAdapterError(
-            "Subtask conservation failed: verified no-op does not match a zero-action "
-            f"planner output for subtask(s): {orphan_noops}"
-        )
+        if unverified_zero_action:
+            raise PddlRunAdapterError(
+                "Subtask conservation failed: unverified zero-action planner output "
+                f"for subtask(s): {unverified_zero_action}"
+            )
+        orphan_noops = sorted(set(verified_noops_by_id) - zero_action_subtasks)
+        if orphan_noops:
+            raise PddlRunAdapterError(
+                "Subtask conservation failed: verified no-op does not match a zero-action "
+                f"planner output for subtask(s): {orphan_noops}"
+            )
 
-    covered_subtasks = executable_subtasks | set(verified_noops_by_id)
-    if expected_subtasks != covered_subtasks or executable_subtasks & set(verified_noops_by_id):
-        raise PddlRunAdapterError(
-            "Subtask conservation failed: expected subtask IDs "
-            f"{sorted(expected_subtasks)}, executable {sorted(executable_subtasks)}, "
-            f"verified no-op {sorted(verified_noops_by_id)}"
-        )
+        covered_subtasks = executable_subtasks | set(verified_noops_by_id)
+        if expected_subtasks != covered_subtasks or executable_subtasks & set(verified_noops_by_id):
+            raise PddlRunAdapterError(
+                "Subtask conservation failed: expected subtask IDs "
+                f"{sorted(expected_subtasks)}, executable {sorted(executable_subtasks)}, "
+                f"verified no-op {sorted(verified_noops_by_id)}"
+            )
     unassigned_plans = sorted(executable_subtasks - assigned_subtasks)
     filtered_phases: List[List[SubtaskAssignment]] = []
     for phase in phases:
@@ -891,54 +916,61 @@ def build_task_plan_from_pddlrun_paths(
     object_id_bindings_by_subtask: Optional[Any] = None,
     noop_subtasks: Optional[Sequence[Dict[str, Any]]] = None,
     task_id: str = "pddlrun",
+    validate_plan: bool = True,
 ) -> PddlRunPlanBundle:
+    """Load conversion inputs; skip validation artifacts when requested."""
     allocation_text = load_allocation_text(allocate_file)
     resolved_plan_files = resolve_plan_files(plan_folder, plan_files)
     allocation_path = Path(allocate_file).expanduser()
     task_run_dir = allocation_path.parent.parent
-    expected_subtask_ids = _expected_subtask_ids_from_artifacts(task_run_dir)
+    expected_subtask_ids = (
+        _expected_subtask_ids_from_artifacts(task_run_dir) if validate_plan else None
+    )
     if object_id_bindings is None and object_id_bindings_by_subtask is None:
         discovered_bindings, discovered_bindings_by_subtask = (
             discover_object_id_binding_artifacts(allocate_file)
         )
         object_id_bindings = discovered_bindings
         object_id_bindings_by_subtask = discovered_bindings_by_subtask
-    reported_noops: Sequence[Dict[str, Any]] = noop_subtasks or ()
-    if noop_subtasks is None:
-        noop_path = task_run_dir / "08_planner" / "noop_subtasks.json"
-        raw_report = _read_json_if_exists(noop_path)
-        if raw_report is not None and not isinstance(raw_report, list):
-            raise PddlRunAdapterError(
-                f"No-op audit artifact must be a list: {noop_path}"
-            )
-        reported_noops = raw_report or ()
-    reported_noop_ids = [
-        int(item["subtask_id"])
-        for item in reported_noops
-        if isinstance(item, dict)
-        and str(item.get("subtask_id", "")).isdigit()
-    ]
-    duplicate_reported_ids = sorted(
-        {
-            subtask_id
-            for subtask_id in reported_noop_ids
-            if reported_noop_ids.count(subtask_id) > 1
-        }
-    )
-    if duplicate_reported_ids:
-        raise PddlRunAdapterError(
-            "Subtask conservation failed: duplicate no-op proof(s): "
-            f"{duplicate_reported_ids}"
+    if validate_plan:
+        reported_noops: Sequence[Dict[str, Any]] = noop_subtasks or ()
+        if noop_subtasks is None:
+            noop_path = task_run_dir / "08_planner" / "noop_subtasks.json"
+            raw_report = _read_json_if_exists(noop_path)
+            if raw_report is not None and not isinstance(raw_report, list):
+                raise PddlRunAdapterError(
+                    f"No-op audit artifact must be a list: {noop_path}"
+                )
+            reported_noops = raw_report or ()
+        reported_noop_ids = [
+            int(item["subtask_id"])
+            for item in reported_noops
+            if isinstance(item, dict)
+            and str(item.get("subtask_id", "")).isdigit()
+        ]
+        duplicate_reported_ids = sorted(
+            {
+                subtask_id
+                for subtask_id in reported_noop_ids
+                if reported_noop_ids.count(subtask_id) > 1
+            }
         )
-    # A saved noop_subtasks.json record is an audit report, not an authority:
-    # its fixed schema does not bind it cryptographically to the current
-    # problem, plan or planner/VAL manifests.  Always rebuild zero-action
-    # proofs from the exact artifacts being converted so an interrupted or
-    # partial rerun cannot reuse a stale ``verified=true`` record.
-    noop_subtasks = _derive_legacy_noop_proofs(
-        task_run_dir,
-        resolved_plan_files,
-    )
+        if duplicate_reported_ids:
+            raise PddlRunAdapterError(
+                "Subtask conservation failed: duplicate no-op proof(s): "
+                f"{duplicate_reported_ids}"
+            )
+        # A saved noop_subtasks.json record is an audit report, not an authority:
+        # its fixed schema does not bind it cryptographically to the current
+        # problem, plan or planner/VAL manifests.  Always rebuild zero-action
+        # proofs from the exact artifacts being converted so an interrupted or
+        # partial rerun cannot reuse a stale ``verified=true`` record.
+        noop_subtasks = _derive_legacy_noop_proofs(
+            task_run_dir,
+            resolved_plan_files,
+        )
+    else:
+        noop_subtasks = []
     return build_task_plan_from_pddlrun_outputs(
         task=task,
         robots=robots,
@@ -950,6 +982,7 @@ def build_task_plan_from_pddlrun_paths(
         noop_subtasks=noop_subtasks,
         expected_subtask_ids=expected_subtask_ids,
         task_id=task_id,
+        validate_plan=validate_plan,
     )
 
 

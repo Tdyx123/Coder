@@ -102,7 +102,7 @@ def write_success_run(parallel_run: Path) -> tuple[Path, dict]:
             "robots": robots,
             "objects": [
                 {"symbol": "drawer", "label": "Drawer"},
-                {"symbol": "mug", "label": "Mug"},
+                {"symbol": "mug", "label": "Mug", "mass": 1.0},
                 {"symbol": "sinkbasin", "label": "SinkBasin"},
             ],
         },

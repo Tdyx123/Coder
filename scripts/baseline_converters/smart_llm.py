@@ -12,7 +12,7 @@ import sys
 import textwrap
 import time
 from collections import Counter
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
@@ -25,8 +25,13 @@ for _path in (SCRIPTS_DIR, REPO_ROOT):
         sys.path.insert(0, _path_str)
 
 from executor_system.pddlrun_adapter import ObjectNameResolver
+from baseline_converters.generation_validation import (
+    GenerationValidationError, generation_failure_counts, generation_failure_result,
+    finite_nonnegative_number, prepare_generation_robots, validate_generation_plan,
+)
 from baseline_converters.common import (
     build_bundle_data as common_build_bundle_data,
+    load_task_record,
     render_bundle_literal as common_render_bundle_literal,
     render_executable_plan as common_render_executable_plan,
 )
@@ -133,6 +138,7 @@ class LogMetadata:
     test_set: Optional[str]
     robots: List[Any] = field(default_factory=list)
     objects: List[Any] = field(default_factory=list)
+    objects_literal: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -244,6 +250,9 @@ class ConversionResult:
     recovery_confidence: Optional[str] = None
     recovery_rules: List[str] = field(default_factory=list)
     recovery_events: List[Dict[str, Any]] = field(default_factory=list)
+    failure_reason: Optional[str] = None
+    validation_error: Optional[Dict[str, Any]] = None
+    cleanup_error: Optional[str] = None
 
 
 RobotBinding = Tuple[str, ...]
@@ -584,15 +593,26 @@ def read_log_text(task_run_dir: Path) -> str:
     return log_path.read_text(encoding="utf-8", errors="replace")
 
 
-def read_log_assignment_from_text(text: str, name: str, default: Any = None) -> Any:
-    pattern = re.compile(rf"(?m)^{re.escape(name)}\s*=\s*(.+)$")
+def _log_assignment_literal(text: str, name: str) -> Optional[str]:
+    pattern = re.compile(rf"(?m)^[ \t]*{re.escape(name)}[ \t]*=[ \t]*(.*)$")
     match = pattern.search(text)
-    if not match:
+    return match.group(1).strip() if match else None
+
+
+def read_log_assignment_from_text(
+    text: str, name: str, default: Any = None, *, strict: bool = False,
+) -> Any:
+    literal = _log_assignment_literal(text, name)
+    if literal is None:
         return default
 
     try:
-        return ast.literal_eval(match.group(1).strip())
-    except (SyntaxError, ValueError):
+        return ast.literal_eval(literal)
+    except (SyntaxError, ValueError) as exc:
+        if strict:
+            raise GenerationValidationError(
+                "validation_data_missing", f"Invalid {name} assignment in log.txt.", {"field": name},
+            ) from exc
         return default
 
 
@@ -619,10 +639,8 @@ def read_task_from_log(task_run_dir: Path) -> str:
 
 def read_log_metadata(task_run_dir: Path) -> LogMetadata:
     text = read_log_text(task_run_dir)
-    robots = read_log_assignment_from_text(text, "robots", default=[])
+    robots = read_log_assignment_from_text(text, "robots", default=[], strict=True)
     objects = read_log_assignment_from_text(text, "objects", default=[])
-    if not isinstance(robots, list):
-        robots = []
     if not isinstance(objects, list):
         objects = []
     return LogMetadata(
@@ -631,6 +649,7 @@ def read_log_metadata(task_run_dir: Path) -> LogMetadata:
         test_set=read_log_field(text, "test-set"),
         robots=robots,
         objects=objects,
+        objects_literal=_log_assignment_literal(text, "objects"),
     )
 
 
@@ -1358,11 +1377,13 @@ class RecoveryRobotAllocator:
         for index, item in enumerate(robots):
             name = self.robot_names[index] if index < len(self.robot_names) else f"robot{index + 1}"
             self.robot_data[name] = dict(item) if isinstance(item, dict) else {}
-        self.object_masses = {
-            str(item.get("name")): float(item.get("mass", 0) or 0)
-            for item in objects
-            if isinstance(item, dict) and item.get("name")
-        }
+        self.object_masses = {}
+        for item in objects:
+            if not isinstance(item, dict) or not item.get("name"):
+                continue
+            mass = finite_nonnegative_number(item.get("mass"))
+            if mass is not None:
+                self.object_masses[str(item["name"])] = mass
 
     def _requirements(self, function: ast.FunctionDef) -> Tuple[set[str], float]:
         skills: set[str] = set()
@@ -1384,8 +1405,13 @@ class RecoveryRobotAllocator:
         eligible: List[str] = []
         for name in self.robot_names:
             data = self.robot_data.get(name, {})
-            available = set(str(item) for item in data.get("skills", []) if item)
-            capacity = float(data.get("mass_capacity", float("inf")) or 0)
+            raw_skills = data.get("skills")
+            available = set(item for item in raw_skills if isinstance(item, str)) if isinstance(raw_skills, list) else set()
+            capacity = finite_nonnegative_number(data.get("mass_capacity"))
+            # Allocation remains a heuristic. Invalid/missing metadata is retained
+            # for the final validator, which checks only used actions in order.
+            if capacity is None:
+                capacity = float("inf")
             if (not available or skills.issubset(available)) and capacity >= max_mass:
                 eligible.append(name)
 
@@ -2378,6 +2404,15 @@ def mark_failed(result: ConversionResult, message: str) -> None:
     result.generated["executable_plan"] = None
 
 
+def mark_generation_failed(
+    result: ConversionResult, exc: GenerationValidationError, executable_path: Path, *, dry_run: bool,
+) -> None:
+    mark_failed(result, str(exc))
+    result.skip_reason = None
+    for key, value in generation_failure_result(exc, executable_path, dry_run=dry_run).items():
+        setattr(result, key, value)
+
+
 def prepare_conversion_context(
     source_path: Path,
 ) -> Tuple[LogMetadata, Path, int, Sequence[Any], List[str], ObjectNameResolver]:
@@ -2385,6 +2420,9 @@ def prepare_conversion_context(
     task_file = dataset_path_for_metadata(metadata)
     task_index = find_task_index(task_file, metadata.task)
     gcr = read_task_record_gcr(task_file, task_index)
+    metadata = replace(metadata, robots=prepare_generation_robots(
+        metadata.robots, load_task_record(task_file, task_index),
+    ))
     robot_names = robot_names_from_log(metadata.robots)
     resolver = ObjectNameResolver(object_names_from_log(metadata.objects))
     return metadata, task_file, task_index, gcr, robot_names, resolver
@@ -2414,6 +2452,13 @@ def finish_conversion_result(
     task_plan_data = build_task_plan_data(
         f"smart_llm_{result.floor_plan or 'unknown'}_{task_index}",
         stages,
+    )
+    validate_generation_plan(
+        task_plan_data, robots=metadata.robots, objects=metadata.objects, repo_root=REPO_ROOT,
+        task_context={"objects_ai": f"objects = {metadata.objects_literal}"}
+        if metadata.objects_literal is not None else {},
+        floor_plan=metadata.floor_plan, object_mappings=resolver.mappings,
+        task_record=load_task_record(task_file, task_index),
     )
     bundle_data = build_bundle_data(
         task=metadata.task,
@@ -2518,10 +2563,14 @@ def convert_one(
                     recovery.action_count,
                 )
                 compile(executable_plan, "executable_plan.py", "exec")
+            except GenerationValidationError as recovery_exc:
+                mark_generation_failed(result, recovery_exc, executable_path, dry_run=dry_run)
             except SmartLLMConversionError as recovery_exc:
                 mark_skipped(result, recovery_exc.skip_reason, str(recovery_exc))
             except (SyntaxError, OSError, py_compile.PyCompileError) as recovery_exc:
                 mark_failed(result, str(recovery_exc))
+    except GenerationValidationError as exc:
+        mark_generation_failed(result, exc, executable_path, dry_run=dry_run)
     except (SyntaxError, OSError, py_compile.PyCompileError) as exc:
         mark_failed(result, str(exc))
     finally:
@@ -2575,6 +2624,7 @@ def build_global_summary(
         "recovery_confidence_counts": dict(sorted(recovery_confidence_counts.items())),
         "recovery_rule_counts": dict(sorted(recovery_rule_counts.items())),
         "total_generation_time": sum(float(result.generation_time) for result in results),
+        **generation_failure_counts(asdict(result) for result in results),
         "dry_run": dry_run,
         "recovery_mode": recovery_mode,
         "input_root": str(input_root),
@@ -2624,7 +2674,8 @@ def convert(
         duration_seconds=duration,
         recovery_mode=recovery_mode,
     )
-    write_global_summary(results, output_root, global_summary)
+    if not dry_run:
+        write_global_summary(results, output_root, global_summary)
 
     print(
         "\n=== SMART-LLM PLAN-TO-CODE BUNDLE GENERATION SUMMARY ===\n"
@@ -2658,7 +2709,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--limit", type=int, help="Maximum number of source code_plan.py files to process.")
     parser.add_argument("--floor-plan", help="Optional floor/log folder filter, e.g. 2 or FloorPlan2.")
-    parser.add_argument("--dry-run", action="store_true", help="Classify and summarize without writing code.")
+    parser.add_argument("--dry-run", action="store_true", help="Classify and validate without writing files.")
     parser.add_argument(
         "--recovery-mode",
         choices=sorted(RECOVERY_MODES),

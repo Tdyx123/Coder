@@ -60,6 +60,9 @@ import resources.actions as actions
 import resources.robots as robots
 
 
+ALLOCATION_FALLBACK_RULES_PATH = Path(__file__).with_name("allocation_fallback_rules.json")
+
+
 def _repo_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
@@ -1853,6 +1856,8 @@ class TaskManager:
         feedback_text: Optional[str] = None,
         planner_feedback_by_subtask: Optional[Dict[int, str]] = None,
     ) -> Dict[str, Any]:
+        if not robots:
+            raise PDDLError("No robots available for task allocation")
         allocation_result = self._generate_allocation_plan(
             decomposed_plan,
             robots,
@@ -1861,9 +1866,10 @@ class TaskManager:
             key_objects_by_subtask=key_objects_by_subtask,
             feedback_text=feedback_text,
         )
+        allocation_result = self._recover_allocation_plan(allocation_result, subtasks, robots)
         self._write_allocation_generation_artifacts(
             allocation_result,
-            attempt_index=attempt_index if self.feedback_enabled else None,
+            attempt_index=attempt_index,
         )
         allocated_plan = allocation_result["text"]
         print(f"✓ Allocation plan generated (attempt {attempt_index})")
@@ -2929,6 +2935,8 @@ class TaskManager:
         object_type_key = self._object_match_key(item.get("objectType", ""))
         if parent_token:
             add_fact("at-location", f"(at-location {object_token} {parent_token})")
+        if bool(item.get("openable")):
+            add_fact("is-openable", f"(is-openable {object_token})")
         if bool(item.get("isOpen")):
             add_fact("object-open", f"(object-open {object_token})")
         if bool(item.get("isToggled")):
@@ -3299,9 +3307,246 @@ class TaskManager:
         except Exception as e:
             raise PDDLError(f"Error generating allocation plan: {str(e)}")
 
+    def _allocation_validation_errors(
+        self, text: str, subtask_count: int, robot_count: int,
+    ) -> List[str]:
+        assignments = self._extract_robot_assignments(self._extract_sequence_operations(text))
+        expected = set(range(1, subtask_count + 1))
+        errors = []
+        if not assignments:
+            errors.append("No assignments could be extracted.")
+        missing = sorted(expected - assignments.keys())
+        unexpected = sorted(assignments.keys() - expected)
+        invalid_robots = {task: robot for task, robot in assignments.items()
+                          if robot not in range(1, robot_count + 1)}
+        if missing:
+            errors.append(f"Missing subtask IDs: {missing}")
+        if unexpected:
+            errors.append(f"Unexpected subtask IDs: {unexpected}")
+        if invalid_robots:
+            errors.append(f"Invalid robot IDs (subtask: robot): {invalid_robots}")
+        # The shared tolerant parser can truncate "Robot 1.5" or strip a minus
+        # sign. Check raw IDs in the same selected section before accepting it.
+        sections = self._extract_sequence_sections(text) or [text.splitlines()]
+        _, selected = max(enumerate(sections), key=lambda item: (
+            len(self._parse_sequence_section(item[1])[1]), item[0],
+        ))
+        invalid_numeric_ids = re.findall(
+            r"\b(?:Sub\s*Task|Robot)[#_\s]*([+-]\s*\d+(?:\.\d+)?|\d+\.\d+)\b",
+            "\n".join(selected), flags=re.IGNORECASE,
+        )
+        if invalid_numeric_ids:
+            errors.append(f"Invalid numeric IDs: {invalid_numeric_ids}; use positive integers")
+        return errors
+
+    def _recover_allocation_plan(
+        self, result: Dict[str, str], subtasks: List[str], robots: List[dict],
+    ) -> Dict[str, Any]:
+        """Repair an unusable allocation once, then resolve it entirely offline."""
+        errors = self._allocation_validation_errors(result["text"], len(subtasks), len(robots))
+        recovery: Dict[str, Any] = {"source": "initial_llm", "initial_errors": errors}
+        resolved: Dict[str, Any] = {**result, "initial_text": result["text"], "recovery": recovery}
+        if not errors:
+            return resolved
+
+        repair_prompt = (
+            "Your previous allocation could not be used.\n"
+            f"Validation errors: {'; '.join(errors)}\n\n"
+            "Return a corrected, complete allocation for the existing subtasks.\n"
+            f"Required subtask IDs: {list(range(1, len(subtasks) + 1))}\n"
+            f"Allowed task-local robot IDs: {list(range(1, len(robots) + 1))}\n\n"
+            "Assign every required subtask exactly once. Do not add, remove,\n"
+            "merge, or renumber subtasks. Use only the listed robots and their\n"
+            "actual skills. Follow the original capability and pickup-capacity\n"
+            "constraints.\n\n"
+            "Preserve task dependencies. Put independent subtasks on the same\n"
+            "line only when their assigned robots can execute them in parallel.\n\n"
+            "Output only one block headed exactly:\n"
+            "# Sequence of Operations:\n\n"
+            "Write every assignment as:\n"
+            "Subtask <numeric_id>: Robot <numeric_id>;\n\n"
+            "Separate parallel assignments with semicolons on the same line.\n"
+            "Put sequential steps on separate lines.\n"
+            "Do not include placeholders, Markdown fences, reasoning, or text\n"
+            "after this block.\n"
+        )
+        messages = [
+            {"role": "user", "content": result["prompt"]},
+            {"role": "assistant", "content": result["text"]},
+            {"role": "user", "content": repair_prompt},
+        ]
+        resolved.update(repair_prompt=repair_prompt, repair_messages=messages)
+        print("Allocation validation failed; retrying once with format feedback")
+        call_config = self.config.llm_call("allocate")
+        try:
+            _, repair_text = self.llm.query_model(
+                messages, self.allocate_model,
+                frequency_penalty=call_config.get("frequency_penalty", 0.69),
+            )
+        except Exception as exc:
+            recovery["retry_error"] = str(exc)
+        else:
+            resolved["repair_text"] = repair_text
+            retry_errors = self._allocation_validation_errors(repair_text, len(subtasks), len(robots))
+            recovery["retry_errors"] = retry_errors
+            if not retry_errors:
+                recovery["source"] = "repair_llm"
+                resolved["text"] = repair_text
+                return resolved
+
+        fallback_text, fallback_details = self._fallback_allocation_plan(subtasks, robots)
+        recovery.update(fallback_details, source="skill_fallback")
+        resolved["text"] = fallback_text
+        print("Allocation repair failed; using offline core-skill allocation")
+        return resolved
+
+    @staticmethod
+    def _allocation_skill_key(value: str) -> str:
+        return re.sub(r"[^a-z0-9]", "", value.lower())
+
+    @classmethod
+    def _load_allocation_fallback_rules(cls) -> List[Dict[str, Any]]:
+        """Load the checked-in snapshot; never import data generation code here."""
+        with ALLOCATION_FALLBACK_RULES_PATH.open(encoding="utf-8") as handle:
+            config = json.load(handle)
+        if not isinstance(config, dict) or config.get("version") != 1:
+            raise ValueError("Unsupported allocation fallback configuration")
+        priorities = config.get("priorities")
+        rules = config.get("rules")
+        known_skills = config.get("robot_skills")
+        if (not isinstance(priorities, dict) or not priorities
+                or not all(type(value) is int for value in priorities.values())
+                or not isinstance(known_skills, list) or not known_skills
+                or not all(isinstance(skill, str) and skill for skill in known_skills)
+                or not isinstance(rules, list) or not rules):
+            raise ValueError("Missing or invalid allocation fallback tables")
+        compiled = []
+        seen_aliases: Set[str] = set()
+        for rule in rules:
+            if (not isinstance(rule, dict) or rule.get("skill") not in known_skills
+                    or not isinstance(rule.get("priority_group"), str)
+                    or rule["priority_group"] not in priorities):
+                raise ValueError("Invalid allocation skill or priority group")
+            for key in ("aliases", "patterns"):
+                if (not isinstance(rule.get(key), list) or not rule[key]
+                        or not all(isinstance(value, str) and value for value in rule[key])):
+                    raise ValueError(f"Invalid allocation rule {key}")
+            aliases = {cls._allocation_skill_key(alias) for alias in rule["aliases"]}
+            if "" in aliases or seen_aliases.intersection(aliases):
+                raise ValueError("Empty or ambiguous allocation skill alias")
+            seen_aliases.update(aliases)
+            compiled.append({
+                "skill": rule["skill"], "priority": priorities[rule["priority_group"]],
+                "aliases": aliases,
+                "patterns": [re.compile(pattern, re.IGNORECASE | re.MULTILINE)
+                             for pattern in rule["patterns"]],
+            })
+        return compiled
+
+    @classmethod
+    def _allocation_key_skill(cls, subtask: str, rules: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Prefer the task's goal over the support actions used to achieve it."""
+        def phrase_match(text: str, source: str) -> Optional[Dict[str, Any]]:
+            candidates = [
+                (-rule["priority"], match.start(), index, match.group())
+                for index, rule in enumerate(rules)
+                for pattern in rule["patterns"]
+                for match in pattern.finditer(text)
+            ]
+            if not candidates:
+                return None
+            _, _, index, matched = min(candidates)
+            return {"skill": rules[index]["skill"], "match_source": source, "matched_text": matched}
+
+        lines = subtask.strip().splitlines()
+        first_line = lines[0].strip() if lines else ""
+        header = _match_subtask_header_line(first_line, allow_bare=True)
+        # A leading action/metadata label is not a task title.
+        title = header.group("title") if header else (first_line if ":" not in first_line else "")
+        title = re.split(r"\(?Skills?\s+Required\s*:", title, flags=re.IGNORECASE)[0].strip()
+        match = phrase_match(title, "title")
+        if match:
+            return match
+
+        aliases = {alias: rule for rule in rules for alias in rule["aliases"]}
+        action_lines = []
+        in_state_section = False
+        for line in lines:
+            clean = re.sub(r"^(?:[#*\-]+\s*|\d+[.)]\s*)+", "", line.strip()).strip()
+            if re.match(r"(?:initial\b|preconditions?\b|effects?\b|parameters?\b|states?\b)",
+                        clean, re.IGNORECASE):
+                in_state_section = True
+                continue
+            if re.match(r"(?:actions?\b|steps?\b|instructions?\b)", clean, re.IGNORECASE):
+                in_state_section = False
+                continue
+            action_label = re.match(r"([A-Za-z][A-Za-z0-9_]*)\s*:\s*(.*)", clean)
+            # A recognized action declaration starts a new action after the
+            # preceding action's Preconditions/Effects. State labels do not.
+            if action_label and cls._allocation_skill_key(action_label[1]) in aliases:
+                if not re.match(r"(?:true|false|none|null)\b|[({]", action_label[2], re.IGNORECASE):
+                    in_state_section = False
+            if re.search(r"Skills?\s+Required\s*:", clean, re.IGNORECASE):
+                in_state_section = False
+            if not in_state_section:
+                action_lines.append(clean)
+        action_text = "\n".join(action_lines)
+        candidates = []
+        # Preserve document positions so equal priorities follow text order.
+        for match in re.finditer(
+            r"Skills?\s+Required\s*:\s*(?P<skills>[^\n#.)]+)|"
+            r"^[ \t]*(?:[#*\-]+\s*)?(?P<action>[A-Za-z][A-Za-z0-9_]*)\s*:",
+            action_text, flags=re.IGNORECASE | re.MULTILINE,
+        ):
+            group = "skills" if match.group("skills") is not None else "action"
+            for token in re.finditer(r"[A-Za-z][A-Za-z0-9_]*", match.group(group)):
+                rule = aliases.get(cls._allocation_skill_key(token.group()))
+                if rule:
+                    candidates.append((-rule["priority"], match.start(group) + token.start(),
+                                       rule["skill"], token.group()))
+        if candidates:
+            _, _, skill, matched = min(candidates)
+            return {"skill": skill, "match_source": "structured_skills", "matched_text": matched}
+
+        return phrase_match(action_text, "body") or {
+            "skill": None, "match_source": None, "matched_text": None,
+        }
+
+    def _fallback_allocation_plan(
+        self, subtasks: List[str], robots: List[dict],
+    ) -> Tuple[str, Dict[str, Any]]:
+        if not robots:
+            raise PDDLError("No robots available for task allocation")
+        details: Dict[str, Any] = {"config_path": str(ALLOCATION_FALLBACK_RULES_PATH)}
+        try:
+            rules = self._load_allocation_fallback_rules()
+        except (OSError, ValueError, TypeError, re.error) as exc:
+            rules = []
+            details["config_error"] = str(exc)
+        robot_skills = [
+            {self._allocation_skill_key(str(skill)) for skill in robot.get("skills", [])}
+            for robot in robots
+        ]
+        assignments = []
+        for subtask_id, subtask in enumerate(subtasks, start=1):
+            match = self._allocation_key_skill(subtask, rules)
+            skill = match["skill"]
+            robot_id = next((index for index, skills in enumerate(robot_skills, start=1)
+                             if skill and self._allocation_skill_key(skill) in skills), None)
+            reason = ("skill_match" if robot_id else "skill_unavailable") if skill else "unrecognized_action"
+            assignments.append({
+                "subtask_id": subtask_id, **match, "robot_id": robot_id or 1,
+                "reason": "config_error" if "config_error" in details else reason,
+            })
+        details["fallback_assignments"] = assignments
+        text = "# Sequence of Operations:\n" + "".join(
+            f"Subtask {row['subtask_id']}: Robot {row['robot_id']};\n" for row in assignments
+        )
+        return text, details
+
     def _write_allocation_generation_artifacts(
         self,
-        result: Dict[str, str],
+        result: Dict[str, Any],
         attempt_index: Optional[int] = None,
     ) -> None:
         """Persist allocation prompt/output artifacts produced by allocation generation."""
@@ -3318,6 +3563,22 @@ class TaskManager:
             self._write_text_artifact(attempt_output_artifact, result["text"])
             self._record_artifact("allocate", f"attempt_{attempt_index:02d}_prompt", attempt_prompt_artifact)
             self._record_artifact("allocate", f"attempt_{attempt_index:02d}_output", attempt_output_artifact)
+        if "recovery" in result:
+            index = attempt_index if attempt_index is not None else 1
+            directory = f"02_allocate/attempt_{index:02d}"
+            artifacts = [
+                ("initial_text", "initial_output", "03_initial_output.txt", False),
+                ("repair_prompt", "repair_prompt", "04_repair_prompt.txt", False),
+                ("repair_messages", "repair_messages", "04_repair_messages.json", True),
+                ("repair_text", "repair_output", "05_repair_output.txt", False),
+                ("recovery", "recovery", "06_recovery.json", True),
+            ]
+            for field, key, filename, is_json in artifacts:
+                if field in result:
+                    path = f"{directory}/{filename}"
+                    writer = self._write_json_artifact if is_json else self._write_text_artifact
+                    writer(path, result[field])
+                    self._record_artifact("allocate", f"attempt_{index:02d}_{key}", path)
         self._persist_manifest()
 
     def _generate_problem_summary(self, decomposed_plans: Union[str, List[str]], allocated_plans: Union[str, List[str]], available_robots: Union[List[dict], List[List[dict]]]) -> List[str]:

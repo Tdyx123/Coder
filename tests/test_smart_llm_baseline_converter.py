@@ -207,7 +207,7 @@ def open_drawer(robot):
             self.assertFalse((output_root / "logs" / "2" / "bad_task" / "plan_to_code" / "executable_plan.py").exists())
             self.assertTrue((output_root / "logs" / "2" / "bad_task" / "plan_to_code" / "conversion_summary.json").exists())
 
-    def test_dry_run_writes_plantocode_summary_without_executable_plan(self):
+    def test_dry_run_does_not_write_summaries_or_executable_plan(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             input_root = root / "input" / "logs"
@@ -234,17 +234,7 @@ def open_drawer(robot):
                     )
 
             self.assertEqual(status, 0)
-            summary = json.loads((output_root / "plan_to_code_summary.json").read_text(encoding="utf-8"))
-            details = json.loads((output_root / "plan_to_code_results.json").read_text(encoding="utf-8"))
-            self.assertEqual(summary["successful_generations"], 1)
-            self.assertEqual(summary["direct_successful_generations"], 1)
-            self.assertEqual(summary["recovered_generations"], 0)
-            self.assertEqual(summary["recovery_mode"], "aggressive")
-            self.assertTrue(summary["dry_run"])
-            self.assertEqual(details[0]["status"], "success")
-            self.assertEqual(details[0]["conversion_kind"], "direct")
-            self.assertEqual(details[0]["recovery_events"], [])
-            self.assertFalse((output_root / "logs" / "2" / "task" / "plan_to_code" / "executable_plan.py").exists())
+            self.assertFalse(output_root.exists())
 
     def test_successful_conversion_writes_clean_bundle_executable(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -329,6 +319,7 @@ def open_drawer(robot):
             self.write_log(
                 source_path,
                 task_text="prepare the egg",
+                robots=[{"name": "robot1", "skills": ["BreakEgg"]}],
                 objects=[{"name": "Egg"}, {"name": "Pan"}],
             )
             self.write_dataset(root, tasks=["prepare the egg"])
@@ -380,7 +371,7 @@ def open_drawer(robot):
             self.write_log(
                 source_path,
                 robots=[{"name": "robot1"}, {"name": "robot2"}],
-                objects=[{"name": "Drawer"}, {"name": "Apple"}],
+                objects=[{"name": "Drawer"}, {"name": "Apple", "mass": 0.2}],
             )
             self.write_dataset(root, robot_count=2)
 
@@ -430,7 +421,7 @@ def open_drawer(robot):
             self.write_log(
                 source_path,
                 robots=[{"name": "robot1"}, {"name": "robot2"}],
-                objects=[{"name": "Drawer"}, {"name": "Apple"}],
+                objects=[{"name": "Drawer"}, {"name": "Apple", "mass": 0.2}],
             )
             self.write_dataset(root, robot_count=2)
 

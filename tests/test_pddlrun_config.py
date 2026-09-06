@@ -3802,6 +3802,7 @@ class PDDLRunConfigTests(unittest.TestCase):
                 "  (:types robot object knife microwave toaster coffee_machine fridge stove_burner sink mug bread egg - object)\n"
                 "  (:predicates\n"
                 "    (at-location ?object - object ?location - object)\n"
+                "    (is-openable ?object - object)\n"
                 "    (object-open ?object - object)\n"
                 "    (switch-on ?object - object)\n"
                 "    (placable_on_stove_burner ?object - object)\n"
@@ -3833,6 +3834,7 @@ class PDDLRunConfigTests(unittest.TestCase):
                         "scene": "FloorPlan1",
                         "objectType": "LightSwitch",
                         "objectId": "LightSwitch|+00.10|+01.20|+00.30",
+                        "openable": False,
                         "toggleable": True,
                         "isToggled": True,
                     },
@@ -3900,6 +3902,7 @@ class PDDLRunConfigTests(unittest.TestCase):
                 "(define (domain robot1)\n"
                 "  (:predicates\n"
                 "    (at-location ?object - object ?location - object)\n"
+                "    (is-openable ?object - object)\n"
                 "    (object-open ?object - object)\n"
                 "    (switch-on ?object - object)\n"
                 "    (placable_on_stove_burner ?object - object)\n"
@@ -3926,6 +3929,11 @@ class PDDLRunConfigTests(unittest.TestCase):
                 item["literal"]: item
                 for item in context["evidence"]
             }
+            for literal in ("(is-openable Drawer_1)", "(is-openable Drawer_2)"):
+                with self.subTest(literal=literal):
+                    self.assertIn(literal, evidence_by_literal)
+                    self.assertEqual(evidence_by_literal[literal]["source_field"], "openable")
+                    self.assertIs(evidence_by_literal[literal]["observed_value"], True)
             self.assertEqual(
                 evidence_by_literal["(object-open Drawer_1)"]["observed_value"],
                 True,
@@ -4013,6 +4021,23 @@ class PDDLRunConfigTests(unittest.TestCase):
             closed_drawer = next(item for item in states if item["object"] == "Drawer_2")
             self.assertIn("(object-open Drawer_1)", "\n".join(open_drawer["facts"]))
             self.assertNotIn("(object-open", "\n".join(closed_drawer["facts"]))
+            self.assertIn("(is-openable Drawer_1)", facts_by_object["Drawer_1"])
+            self.assertIn("(is-openable Drawer_2)", facts_by_object["Drawer_2"])
+            self.assertNotIn("is-openable", facts_by_object["LightSwitch"])
+            self.assertNotIn("is-openable", facts_by_object["Mug"])
+
+            domain_without_openable = domain.replace(
+                "    (is-openable ?object - object)\n", ""
+            )
+            context_without_openable = manager._build_key_object_pddl_context(
+                key_object_inputs, domain_without_openable
+            )
+            for state in context_without_openable["states"]:
+                self.assertNotIn("is-openable", "\n".join(state["facts"]))
+            self.assertNotIn(
+                "is-openable",
+                "\n".join(item["literal"] for item in context_without_openable["evidence"]),
+            )
 
     def test_allocation_prompt_includes_key_objects_without_pddl_domain(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

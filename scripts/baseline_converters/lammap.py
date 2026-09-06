@@ -25,10 +25,15 @@ from executor_system.pddlrun_adapter import ObjectNameResolver
 from baseline_converters.common import (
     build_bundle_data as common_build_bundle_data,
     load_object_names,
+    load_task_record,
     render_bundle_literal as common_render_bundle_literal,
     render_executable_plan as common_render_executable_plan,
 )
 from run_config import normalize_floor_plan
+from baseline_converters.generation_validation import (
+    GenerationValidationError, generation_failure_counts, generation_failure_result,
+    prepare_generation_robots, validate_generation_plan,
+)
 
 
 DEFAULT_LOGS_DIR = (
@@ -896,6 +901,7 @@ def process_task_run(
         "status": "failed",
         "success": False,
         "category": None,
+        "failure_reason": None,
         "skip_reason": "",
         "action_count": 0,
         "stage_count": 0,
@@ -918,9 +924,9 @@ def process_task_run(
             )
             return result
 
-        robots = task_context.get("robots")
-        if not isinstance(robots, list) or not robots:
-            raise FinalPlanEncodingError("inputs/task_context.json is missing a robot list.")
+        task_file = dataset_path_for_run(data_repo_root, test_set, floor_plan or None, task_index)
+        task_record = load_task_record(task_file, int(task_index))
+        robots = prepare_generation_robots(task_context.get("robots"), task_record)
 
         object_names = load_object_names(data_repo_root, floor_plan or "", task_context)
         resolver = ObjectNameResolver(object_names)
@@ -930,8 +936,13 @@ def process_task_run(
 
         task_id = f"lammap_{normalize_floor_plan(floor_plan) if floor_plan else 'unknown'}_{task_index if task_index is not None else 'task'}"
         task_plan_data = build_task_plan_data(task_id, encoded_actions)
-        task_file = dataset_path_for_run(data_repo_root, test_set, floor_plan or None, task_index)
         gcr = load_task_record_gcr(task_file, int(task_index))
+        validate_generation_plan(
+            task_plan_data, robots=robots,
+            task_record=task_record,
+            task_context=task_context, repo_root=data_repo_root, floor_plan=floor_plan,
+            object_mappings=resolver.mappings,
+        )
         bundle_data = build_bundle_data(
             task=task,
             task_plan_data=task_plan_data,
@@ -974,6 +985,9 @@ def process_task_run(
             if validate_code:
                 py_compile.compile(str(output_dir / "executable_plan.py"), doraise=True)
         return result
+    except GenerationValidationError as exc:
+        result.update(generation_failure_result(exc, output_dir / "executable_plan.py", dry_run=dry_run))
+        return result
     except Exception as exc:
         result.update({"status": "failed", "success": False, "error": str(exc)})
         return result
@@ -997,6 +1011,7 @@ def write_global_summary(
         "failed_generations": total - successful,
         "success_rate": successful / total * 100 if total else 0,
         "total_generation_time": sum(float(result.get("generation_time", 0)) for result in results),
+        **generation_failure_counts(results),
     }
     if source_summary is not None:
         summary["source_summary"] = str(source_summary)

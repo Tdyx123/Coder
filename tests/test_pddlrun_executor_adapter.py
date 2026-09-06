@@ -15,6 +15,7 @@ if str(SCRIPTS_DIR) not in sys.path:
 from executor_system.pddlrun_adapter import (
     ObjectNameResolver,
     PddlRunAdapterError,
+    build_task_plan_from_pddlrun_outputs,
     build_task_plan_from_pddlrun_paths,
     encode_plan_action,
     parse_plan_actions,
@@ -35,6 +36,73 @@ class PddlRunExecutorAdapterTest(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
         return path
+
+    def test_unchecked_conversion_keeps_first_assignment_and_plan(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            first = self.write_file(
+                root / "first/subtask_01_plan.txt", "(openobject robot1 drawer)\n"
+            )
+            duplicate = self.write_file(
+                root / "second/subtask_01_plan.txt", "(closeobject robot1 drawer)\n"
+            )
+            empty = self.write_file(root / "subtask_02_plan.txt", "; empty plan\n")
+            extra = self.write_file(
+                root / "subtask_04_plan.txt", "(gotoobject robot2 cabinet)\n"
+            )
+            bundle = build_task_plan_from_pddlrun_outputs(
+                task="open drawer and approach cabinet",
+                robots=[{"name": "robot1"}, {"name": "robot2"}],
+                allocation_text=(
+                    "# Sequence of Operations:\n"
+                    "Subtask 1: Robot 2;Subtask 2: Robot 1;\n"
+                    "Subtask 1: Robot 1;\nSubtask 3: Robot 1;\n"
+                ),
+                plan_files=[first, duplicate, empty, extra],
+                object_names=["Drawer", "Cabinet"],
+                expected_subtask_ids=[2, 3, 9],
+                noop_subtasks=[
+                    {"subtask_id": 1, "verified": True},
+                    {"subtask_id": 1, "verified": True},
+                ],
+                validate_plan=False,
+            )
+
+            self.assertEqual(
+                [[(item.subtask_id, item.robot_number) for item in phase] for phase in bundle.phases],
+                [[(1, 2)], [(4, 2)]],
+            )
+            self.assertEqual(bundle.plan_files[1], first)
+            self.assertEqual(bundle.no_trans, 2)
+            self.assertEqual(bundle.noop_subtasks, [])
+            self.assertEqual(bundle.object_mappings, {"drawer": "Drawer", "cabinet": "Cabinet"})
+            self.assertEqual(
+                [stage.robot_action_queues["robot2"][0].action_type for stage in bundle.task_plan.stages],
+                ["OpenObject", "GoToObject"],
+            )
+
+    def test_unchecked_conversion_preserves_required_input_errors(self):
+        cases = [
+            ("(openobject robot1 drawer", "Could not parse PDDL plan line"),
+            ("(unknownaction robot1 drawer)", "Unsupported PDDL action"),
+            ("(openobject robot1)", "expected at least"),
+            (None, "Planner output file\\(s\\) not found"),
+        ]
+        for plan_text, error in cases:
+            with self.subTest(plan_text=plan_text), tempfile.TemporaryDirectory() as tmp_dir:
+                root = Path(tmp_dir)
+                allocation = self.write_file(
+                    root / "02_allocate/02_allocate_output.txt", "Subtask 1: Robot 1;"
+                )
+                plan = root / "08_planner/outputs/subtask_01_plan.txt"
+                if plan_text is not None:
+                    self.write_file(plan, plan_text)
+                with self.assertRaisesRegex(PddlRunAdapterError, error):
+                    build_task_plan_from_pddlrun_paths(
+                        task="open drawer", robots=[{"name": "robot1"}],
+                        allocate_file=allocation, plan_folder=None, plan_files=[plan],
+                        validate_plan=False,
+                    )
 
     def write_current_noop_artifacts(
         self,

@@ -220,7 +220,22 @@ Important notes:
 - `--validate-code` is enabled by default
 - `plantocode.py` also writes `plan_to_code/executable_plan.py` back into each original log folder
 
-To skip validation:
+PDDLRun and the LaMMA-P, SMART-LLM, Scale-Plan, KGLAMP, and COT converters
+always check the assigned robot's skills before generating code. Explicit
+`PickupObject` actions also require the object's mass to be no greater than
+the robot's `mass_capacity`. Only the first validation failure is recorded
+for each task, checking skills before mass on the same action. Missing metadata
+is filled from the recorded robot identity or scene cache where possible;
+unresolved or invalid required metadata fails generation. Failed validation removes any previous
+generated `executable_plan.py` for that task; dry runs do not write or remove files.
+
+`plan_to_code_summary.json` includes `mass_failed_generations` and
+`skill_failed_generations` (task counts). `plan_to_code_results.json` records
+`failure_reason` and `validation_error` with the failing stage, robot, and
+zero-based action index. Reasons are `mass_exceeded`, `missing_skill`, or
+`validation_data_missing`; the last contributes only to the overall failure count.
+
+To skip Python compilation validation (skill and mass checks remain enabled):
 
 ```bash
 python scripts/plantocode.py --logs-dir ./logs/task_manager_runs --no-validate-code

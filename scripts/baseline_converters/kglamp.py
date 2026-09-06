@@ -31,6 +31,10 @@ from baseline_converters.common import (
     write_plan_to_code_summary,
 )
 from executor_system.pddlrun_adapter import ObjectNameResolver
+from baseline_converters.generation_validation import (
+    GenerationValidationError, generation_failure_result, prepare_generation_robots,
+    validate_generation_plan,
+)
 from run_config import normalize_floor_plan
 
 
@@ -456,6 +460,7 @@ def process_task_run(
         "summary_status": metadata.get("status"),
         "status": "failed",
         "success": False,
+        "failure_reason": None,
         "skip_reason": "",
         "action_count": 0,
         "stage_count": 0,
@@ -511,10 +516,6 @@ def process_task_run(
             result.update({"status": "skipped", "skip_reason": "empty final_plan.txt"})
             return result
 
-        robots = task_context.get("robots")
-        if not isinstance(robots, list) or not robots:
-            raise KglampConversionError("00_inputs/task_context.json is missing a robot list.")
-
         task_file = dataset_path_for_run(
             repo_root=REPO_ROOT,
             task_run_dir=task_run_dir,
@@ -525,6 +526,8 @@ def process_task_run(
             task_index=task_index,
         )
         gcr = lammap.load_task_record_gcr(task_file, int(task_index))
+        task_record = lammap.load_task_record(task_file, int(task_index))
+        robots = prepare_generation_robots(task_context.get("robots"), task_record)
 
         object_names = load_object_names(REPO_ROOT, str(floor_plan or ""), task_context)
         object_names.extend(object_names_from_items(task_context.get("objects") or ()))
@@ -539,6 +542,12 @@ def process_task_run(
             f"{task_index if task_index is not None else 'task'}"
         )
         task_plan_data = build_task_plan_data(task_id, encoded_actions)
+        validate_generation_plan(
+            task_plan_data, robots=robots,
+            task_record=task_record,
+            task_context=task_context, repo_root=REPO_ROOT, floor_plan=floor_plan,
+            object_mappings=resolver.mappings,
+        )
         bundle_data = common_build_bundle_data(
             task=task,
             task_plan_data=task_plan_data,
@@ -574,6 +583,9 @@ def process_task_run(
                 "generated": {"executable_plan": str(executable_path)},
             }
         )
+        return result
+    except GenerationValidationError as exc:
+        result.update(generation_failure_result(exc, executable_path, dry_run=dry_run))
         return result
     except Exception as exc:
         result.update({"status": "failed", "success": False, "error": str(exc)})

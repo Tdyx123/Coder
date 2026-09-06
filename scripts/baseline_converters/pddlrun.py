@@ -34,6 +34,10 @@ from baseline_converters.common import (
     render_executable_plan as common_render_executable_plan,
 )
 from run_config import normalize_floor_plan
+from baseline_converters.generation_validation import (
+    GenerationValidationError, generation_failure_counts, generation_failure_result,
+    prepare_generation_robots, validate_generation_plan,
+)
 
 import resources.robots as robot_catalog
 
@@ -413,10 +417,7 @@ def build_robot_team_from_dataset(robot_ids: Sequence[Any]) -> List[Dict[str, An
 
 
 def robots_for_encoding(run_inputs: RunInputs) -> List[Dict[str, Any]]:
-    robots = run_inputs.task_context.get("robots")
-    if isinstance(robots, list) and robots:
-        return [dict(robot) for robot in robots if isinstance(robot, dict)]
-    return build_robot_team_from_dataset(run_inputs.task_record.get("robot list") or [])
+    return prepare_generation_robots(run_inputs.task_context.get("robots"), run_inputs.task_record)
 
 
 def resolve_manifest_plan_files(task_run_dir: Path) -> List[Path]:
@@ -465,6 +466,7 @@ def build_bundle_for_run(
         plan_files=plan_files,
         object_names=object_names,
         task_id=f"FloorPlan{normalize_floor_plan(floor_plan)}_task_{run_inputs.task_index}",
+        validate_plan=False,
     )
 
 
@@ -734,11 +736,18 @@ def process_task_run(
         "task_run_dir": str(task_run_dir),
         "status": "failed",
         "success": False,
+        "failure_reason": None,
     }
 
     try:
         run_inputs = load_run_inputs(task_run_dir)
         bundle = build_bundle_for_run(run_inputs)
+        validate_generation_plan(
+            serialize_task_plan(bundle.task_plan), robots=robots_for_encoding(run_inputs),
+            task_record=run_inputs.task_record, task_context=run_inputs.task_context,
+            repo_root=run_inputs.data_repo_root, floor_plan=run_inputs.manifest.get("floor_plan"),
+            object_mappings=bundle.object_mappings, object_id_bindings=bundle.object_id_bindings,
+        )
         executable_plan = render_demo_executable(run_inputs, bundle)
 
         compile(executable_plan, "executable_plan.py", "exec")
@@ -768,6 +777,10 @@ def process_task_run(
             }
         )
         return result
+    except GenerationValidationError as exc:
+        result.update(generation_failure_result(exc, task_run_dir / "plan_to_code/executable_plan.py"))
+        result["generation_time"] = time.time() - start_time
+        return result
     except (PlanToCodeError, PddlRunAdapterError, OSError, SyntaxError, py_compile.PyCompileError) as exc:
         result.update(
             {
@@ -788,6 +801,7 @@ def write_summary(processed_results: List[Dict[str, Any]], output_dir: Path) -> 
         "failed_generations": total - successful,
         "success_rate": successful / total * 100 if total else 0,
         "total_generation_time": sum(float(result.get("generation_time", 0)) for result in processed_results),
+        **generation_failure_counts(processed_results),
     }
 
     (output_dir / "plan_to_code_summary.json").write_text(

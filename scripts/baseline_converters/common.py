@@ -9,6 +9,8 @@ from pathlib import Path
 from pprint import pformat
 from typing import Any, Dict, List, Optional, Sequence
 
+from baseline_converters.generation_validation import generation_failure_counts
+
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 REPO_ROOT = SCRIPTS_DIR.parent
@@ -25,6 +27,18 @@ def load_json(path: Path, default: Any = None) -> Any:
     if not path.exists():
         return default
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def load_task_record(task_file: Path, task_index: int) -> Dict[str, Any]:
+    """Read the record from the resolved dataset path, including custom filenames."""
+    with task_file.open(encoding="utf-8") as handle:
+        for index, line in enumerate(handle):
+            if index == task_index:
+                record = json.loads(line)
+                if not isinstance(record, dict):
+                    raise ValueError(f"Dataset record {task_index} must be a JSON object: {task_file}")
+                return record
+    raise ValueError(f"Dataset record {task_index} not found: {task_file}")
 
 
 def write_json(path: Path, payload: Any) -> None:
@@ -131,6 +145,7 @@ def write_plan_to_code_summary(
         "failed_generations": total - successful,
         "success_rate": successful / total * 100 if total else 0,
         "total_generation_time": sum(float(result.get("generation_time", 0)) for result in results),
+        **generation_failure_counts(results),
     }
     if include_dry_run:
         summary["dry_run"] = dry_run

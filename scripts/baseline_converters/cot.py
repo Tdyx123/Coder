@@ -22,6 +22,10 @@ from baseline_converters.common import (
     write_plan_to_code_summary,
 )
 from executor_system.pddlrun_adapter import ObjectNameResolver
+from baseline_converters.generation_validation import (
+    GenerationValidationError, generation_failure_result, prepare_generation_robots,
+    validate_generation_plan,
+)
 
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
@@ -361,28 +365,25 @@ def object_labels(task_context: Dict[str, Any]) -> List[str]:
 def normalized_robots(task_context: Dict[str, Any]) -> List[Dict[str, Any]]:
     raw_robots = task_context.get("robots")
     if not isinstance(raw_robots, list) or not raw_robots:
-        raise CotConversionError("00_inputs/task_context.json is missing a robot list.")
+        raise GenerationValidationError(
+            "validation_data_missing", "00_inputs/task_context.json is missing a robot list.", {"field": "robots"},
+        )
     robots: List[Dict[str, Any]] = []
     seen = set()
     for index, raw_robot in enumerate(raw_robots):
         if not isinstance(raw_robot, dict):
-            raise CotConversionError("COT robot entries must be JSON objects.")
+            raise GenerationValidationError(
+                "validation_data_missing", "COT robot entries must be JSON objects.", {"field": "robots"},
+            )
         name = str(raw_robot.get("symbol") or raw_robot.get("name") or f"robot{index + 1}")
         if not name or name in seen:
-            raise CotConversionError(f"Invalid or duplicate COT robot symbol: {name!r}")
-        skills = raw_robot.get("skills")
-        if (
-            not isinstance(skills, list)
-            or not skills
-            or not all(isinstance(skill, str) and skill.strip() for skill in skills)
-        ):
-            raise CotConversionError(
-                f"COT robot {name!r} must have a non-empty string list 'skills'."
+            raise GenerationValidationError(
+                "validation_data_missing", f"Invalid or duplicate COT robot symbol: {name!r}",
+                {"field": "robots", "robot_id": name},
             )
         seen.add(name)
         robot = dict(raw_robot)
         robot["name"] = name
-        robot["skills"] = [skill.strip() for skill in skills]
         robots.append(robot)
     return robots
 
@@ -396,10 +397,7 @@ def parse_and_encode_plan(
     if not isinstance(raw_entries, list) or not raw_entries:
         raise CotConversionError("02_plan/01_final_plan.json is missing a non-empty list 'plan'.")
 
-    robot_skills = {
-        str(robot["name"]): {str(skill) for skill in robot.get("skills") or ()}
-        for robot in robots
-    }
+    robot_names = {str(robot["name"]) for robot in robots}
     normalized_entries: List[Dict[str, Any]] = []
     raw_actions: List[lammap.RawAction] = []
     for order, raw_entry in enumerate(raw_entries):
@@ -429,14 +427,9 @@ def parse_and_encode_plan(
         if reasoning_step < 1:
             raise CotConversionError(f"COT plan action {order} reasoning_step must be positive.")
         robot_id = arguments[0]
-        if robot_id not in robot_skills:
+        if robot_id not in robot_names:
             raise CotConversionError(
                 f"COT plan action {order} references unknown robot {robot_id!r}."
-            )
-        if action_type not in robot_skills[robot_id]:
-            raise CotConversionError(
-                f"COT plan action {order} assigns {action_type} to {robot_id}, "
-                "but the robot does not have that skill."
             )
 
         raw_text = f"({raw_action_name} {' '.join(arguments)})"
@@ -560,6 +553,7 @@ def process_task_run(
         "summary_status": metadata.get("status"),
         "status": "failed",
         "success": False,
+        "failure_reason": None,
         "skip_reason": "",
         "action_count": 0,
         "stage_count": 0,
@@ -614,12 +608,16 @@ def process_task_run(
         gcr = task_record.get("object_states")
         if not isinstance(gcr, list):
             raise CotConversionError("Dataset task record is missing list object_states.")
-        robots = normalized_robots(task_context)
+        robots = normalized_robots({
+            "robots": prepare_generation_robots(task_context.get("robots"), task_record),
+        })
         dataset_robot_ids = task_record.get("robot list")
         context_robot_ids = [robot.get("source_id") for robot in robots]
         if not isinstance(dataset_robot_ids, list) or dataset_robot_ids != context_robot_ids:
-            raise CotConversionError(
-                "Dataset robot list does not match 00_inputs/task_context.json source_id order."
+            raise GenerationValidationError(
+                "validation_data_missing",
+                "Dataset robot list does not match 00_inputs/task_context.json source_id order.",
+                {"field": "robots"},
             )
         object_names = load_object_names(repo_root, floor_plan, task_context)
         object_names.extend(object_labels(task_context))
@@ -628,6 +626,10 @@ def process_task_run(
         entries, encoded_actions = parse_and_encode_plan(final_plan, resolver, robots)
         task_id = f"cot_{normalize_floor_plan(floor_plan)}_{task_index}"
         task_plan_data = build_task_plan_data(task_id, entries, encoded_actions)
+        validate_generation_plan(
+            task_plan_data, robots=robots, task_record=task_record, task_context=task_context,
+            repo_root=repo_root, floor_plan=floor_plan, object_mappings=resolver.mappings,
+        )
         bundle_data = common_build_bundle_data(
             task=task,
             task_plan_data=task_plan_data,
@@ -666,6 +668,9 @@ def process_task_run(
                 "generated": {"executable_plan": str(executable_path)},
             }
         )
+        return result
+    except GenerationValidationError as exc:
+        result.update(generation_failure_result(exc, executable_path, dry_run=dry_run))
         return result
     except (
         CotConversionError,
