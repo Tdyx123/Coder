@@ -6,7 +6,7 @@ import os
 import threading
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Mapping, Optional, Protocol, Tuple
+from typing import Any, Dict, FrozenSet, Iterator, List, Mapping, Optional, Protocol, Tuple
 
 from .action_plan import PlannedAction
 from .utils import RobotRef
@@ -22,6 +22,25 @@ class StepNavigationError(RuntimeError):
 
 class NavigationBatchAborted(StepNavigationError):
     """Raised for requests aborted by another request in the same batch."""
+
+
+class NavigationDeferred(RuntimeError):
+    """Signals that a navigation action must be resubmitted in the next wave."""
+
+    def __init__(
+        self,
+        agent_id: int,
+        *,
+        fallback_status: Optional[str] = None,
+    ) -> None:
+        self.agent_id = int(agent_id)
+        self.fallback_status = fallback_status
+        suffix = f" after {fallback_status}" if fallback_status else ""
+        super().__init__(f"navigation deferred for agent {self.agent_id}{suffix}")
+
+
+class NoInteractionPoseError(StepNavigationError):
+    """Raised when no candidate pose can interact with the requested object."""
 
 
 class MovementMode(str, Enum):
@@ -79,6 +98,11 @@ class NavigationRequest:
     next_action: Optional[PlannedAction]
     phase_coordinator: Optional[Any]
     action_wave: Optional[ActionWave] = None
+    interaction_target: Any = None
+    interaction_destination: Optional[Dict[str, Any]] = None
+    interaction_center: Optional[Dict[str, float]] = None
+    interaction_object_resource: Optional[str] = None
+    interaction_target_replaced: bool = False
 
 
 @dataclass(frozen=True)
@@ -86,6 +110,23 @@ class NavigationResult:
     destination: Dict[str, Any]
     position: Dict[str, float]
     decision_trace: Tuple[Dict[str, Any], ...] = ()
+
+
+@dataclass(frozen=True)
+class NavigationBatchResult(Mapping[int, NavigationResult]):
+    results: Dict[int, NavigationResult]
+    deferred_agent_ids: FrozenSet[int] = frozenset()
+    fallback_status: Optional[str] = None
+    failed_agent_errors: Dict[int, Exception] = field(default_factory=dict)
+
+    def __getitem__(self, agent_id: int) -> NavigationResult:
+        return self.results[int(agent_id)]
+
+    def __iter__(self) -> Iterator[int]:
+        return iter(self.results)
+
+    def __len__(self) -> int:
+        return len(self.results)
 
 
 @dataclass
@@ -104,6 +145,12 @@ class NavigationMetrics:
     failed_transitions: int = 0
     position_deviations: int = 0
     invisible_candidates: int = 0
+    interaction_target_substitutions: int = 0
+    invisible_interaction_candidates: int = 0
+    interaction_repositions: int = 0
+    suppressed_reachable_removals: int = 0
+    serial_fallback_batches: int = 0
+    deferred_requests: int = 0
     budget_exhaustions: int = 0
     planning_time_seconds: float = 0.0
     planning_durations_seconds: List[float] = field(default_factory=list)
@@ -153,6 +200,12 @@ class NavigationMetrics:
                 "failed_transitions": self.failed_transitions,
                 "position_deviations": self.position_deviations,
                 "invisible_candidates": self.invisible_candidates,
+                "interaction_target_substitutions": self.interaction_target_substitutions,
+                "invisible_interaction_candidates": self.invisible_interaction_candidates,
+                "interaction_repositions": self.interaction_repositions,
+                "suppressed_reachable_removals": self.suppressed_reachable_removals,
+                "serial_fallback_batches": self.serial_fallback_batches,
+                "deferred_requests": self.deferred_requests,
                 "budget_exhaustions": self.budget_exhaustions,
                 "planning_time_seconds": self.planning_time_seconds,
                 "planning_durations_seconds": list(

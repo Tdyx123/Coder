@@ -7,6 +7,7 @@ the actual controller.step boundary with its controller lock.
 
 import threading
 import time
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
@@ -34,6 +35,8 @@ from .movement import (
     ActionWave,
     MovementMode,
     NavigationBatchAborted,
+    NavigationBatchResult,
+    NavigationDeferred,
     NavigationRequest,
     NavigationResult,
 )
@@ -52,6 +55,9 @@ class _ActionWaveState:
     completed_agent_ids: frozenset = frozenset()
     requests: Dict[int, NavigationRequest] = field(default_factory=dict)
     results: Dict[int, NavigationResult] = field(default_factory=dict)
+    failed_agent_errors: Dict[int, Exception] = field(default_factory=dict)
+    deferred_agent_ids: frozenset = frozenset()
+    fallback_status: Optional[str] = None
     batch_started: bool = False
     navigation_complete: bool = False
     root_exception: Optional[BaseException] = None
@@ -164,7 +170,7 @@ class PhaseCoordinator:
         request: NavigationRequest,
         execute_batch: Callable[
             [Sequence[NavigationRequest], frozenset],
-            Dict[int, NavigationResult],
+            Any,
         ],
     ) -> NavigationResult:
         """Collect a wave's GoTo requests and execute exactly one joint batch."""
@@ -203,6 +209,43 @@ class PhaseCoordinator:
         if batch is not None:
             try:
                 batch_results = execute_batch(batch, completed_agent_ids)
+                if isinstance(batch_results, NavigationBatchResult):
+                    result_map = dict(batch_results.results)
+                    failed_agent_errors = dict(batch_results.failed_agent_errors)
+                    deferred_agent_ids = frozenset(
+                        int(item) for item in batch_results.deferred_agent_ids
+                    )
+                    fallback_status = batch_results.fallback_status
+                else:
+                    result_map = dict(batch_results)
+                    failed_agent_errors = {}
+                    deferred_agent_ids = frozenset()
+                    fallback_status = None
+                result_agent_ids = set(result_map)
+                failed_agent_ids = set(failed_agent_errors)
+                overlap = (
+                    (result_agent_ids & failed_agent_ids)
+                    | (result_agent_ids & deferred_agent_ids)
+                    | (failed_agent_ids & deferred_agent_ids)
+                )
+                reported = result_agent_ids | failed_agent_ids | deferred_agent_ids
+                expected = set(state.navigation_agent_ids)
+                missing = expected - reported
+                unexpected = reported - expected
+                invalid_errors = {
+                    item
+                    for item, error in failed_agent_errors.items()
+                    if not isinstance(error, Exception)
+                    or isinstance(error, TimeoutError)
+                }
+                if missing or unexpected or overlap or invalid_errors:
+                    raise RuntimeError(
+                        "joint navigation batch result partition is invalid: "
+                        f"missing={sorted(missing)}, "
+                        f"unexpected={sorted(unexpected)}, "
+                        f"overlap={sorted(overlap)}, "
+                        f"invalid_errors={sorted(invalid_errors)}"
+                    )
             except BaseException as exc:
                 with self.condition:
                     state.root_exception = exc
@@ -211,15 +254,10 @@ class PhaseCoordinator:
                     self.condition.notify_all()
             else:
                 with self.condition:
-                    missing = set(state.navigation_agent_ids) - set(batch_results)
-                    if missing:
-                        state.root_exception = RuntimeError(
-                            "joint navigation batch omitted result(s) for agent(s): "
-                            + ", ".join(str(item) for item in sorted(missing))
-                        )
-                        state.root_agent_id = agent_id
-                    else:
-                        state.results = dict(batch_results)
+                    state.results = result_map
+                    state.failed_agent_errors = failed_agent_errors
+                    state.deferred_agent_ids = deferred_agent_ids
+                    state.fallback_status = fallback_status
                     state.navigation_complete = True
                     self.condition.notify_all()
 
@@ -231,6 +269,9 @@ class PhaseCoordinator:
             root_exception = state.root_exception
             root_agent_id = state.root_agent_id
             result = state.results.get(agent_id)
+            request_error = state.failed_agent_errors.get(agent_id)
+            deferred = agent_id in state.deferred_agent_ids
+            fallback_status = state.fallback_status
             self._depart_action_wave_locked(state, agent_id)
             if root_exception is not None:
                 if agent_id == root_agent_id:
@@ -239,6 +280,13 @@ class PhaseCoordinator:
                     f"action wave {state.wave_id} was aborted by navigation "
                     f"agent {root_agent_id}: {root_exception}"
                 ) from root_exception
+            if request_error is not None:
+                raise request_error
+            if deferred:
+                raise NavigationDeferred(
+                    agent_id,
+                    fallback_status=fallback_status,
+                )
             if result is None:
                 raise RuntimeError(
                     f"action wave {state.wave_id} has no result for agent {agent_id}"
@@ -452,6 +500,9 @@ class Executor:
                 action_wave = self.before_action(action)
                 event = self.execute_action(action, action_wave=action_wave)
                 self.record_temperature_goal_progress()
+            except NavigationDeferred:
+                tick += 1
+                continue
             except BaseException as exc:
                 if self.phase_coordinator is not None and action_wave is not None:
                     self.phase_coordinator.abort_action_wave(
@@ -521,14 +572,25 @@ class Executor:
         *,
         action_wave: Optional[ActionWave] = None,
     ) -> Any:
-        return self.adapter.execute(
-            self.robot_id,
-            action,
-            next_action=self.state.peek_after_current(),
-            world_state=self.world_state,
-            phase_coordinator=self.phase_coordinator,
-            action_wave=action_wave,
-        )
+        deadline = getattr(self, "deadline", None)
+        factory = getattr(self, "timeout_error_factory", None)
+        if self.phase_coordinator is not None:
+            phase_deadline = self.phase_coordinator.deadline
+            if phase_deadline is not None and (deadline is None or phase_deadline <= deadline):
+                deadline = phase_deadline
+                factory = self.phase_coordinator.timeout_error_factory
+        scope = getattr(self.runtime, "action_deadline_scope", None)
+        # Only propagate context here; locking before wave request collection
+        # would deadlock joint navigation waiting for its other participants.
+        with scope(deadline, factory) if callable(scope) else nullcontext():
+            return self.adapter.execute(
+                self.robot_id,
+                action,
+                next_action=self.state.peek_after_current(),
+                world_state=self.world_state,
+                phase_coordinator=self.phase_coordinator,
+                action_wave=action_wave,
+            )
 
     def record_temperature_goal_progress(self) -> None:
         current_objects = getattr(self.runtime, "current_objects", None)

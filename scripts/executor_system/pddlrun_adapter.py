@@ -7,9 +7,10 @@ import re
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from parsing_utils import ParsingUtils
+from pddl_noop_audit import verify_zero_action_plan
 
 from .action_plan import Action, StagePlan, TaskPlan
 from .utils import robot_name
@@ -49,6 +50,7 @@ class PddlRunPlanBundle:
     object_mappings: Dict[str, str]
     object_mapping_warnings: List[str]
     object_id_bindings: List[Dict[str, Any]] = field(default_factory=list)
+    noop_subtasks: List[Dict[str, Any]] = field(default_factory=list)
 
 
 ACTION_ALIASES = {
@@ -223,11 +225,31 @@ def parse_allocation_phases(allocation_text: str) -> List[List[SubtaskAssignment
     if not nonempty:
         raise PddlRunAdapterError(NO_ALLOCATION_ASSIGNMENTS_ERROR)
 
-    _, _, selected_lines = max(nonempty, key=lambda item: (item[0], item[1]))
+    _, selected_index, selected_lines = max(
+        nonempty,
+        key=lambda item: (item[0], item[1]),
+    )
     assignment_re = re.compile(
         r"Subtask\s+(\d+)\s*:\s*Robot\s+(\d+)\s*;",
         re.IGNORECASE,
     )
+    raw_assignment_ids = [
+        int(match.group(1))
+        for line in sections[selected_index]
+        for match in assignment_re.finditer(line)
+    ]
+    duplicate_ids = sorted(
+        {
+            subtask_id
+            for subtask_id in raw_assignment_ids
+            if raw_assignment_ids.count(subtask_id) > 1
+        }
+    )
+    if duplicate_ids:
+        raise PddlRunAdapterError(
+            "Allocation output contains duplicate subtask assignment(s): "
+            f"{duplicate_ids}"
+        )
     phases: List[List[SubtaskAssignment]] = []
 
     for line in selected_lines:
@@ -625,9 +647,14 @@ def build_task_plan_from_pddlrun_outputs(
     object_names: Optional[Iterable[Any]] = None,
     object_id_bindings: Optional[Any] = None,
     object_id_bindings_by_subtask: Optional[Any] = None,
+    noop_subtasks: Optional[Sequence[Dict[str, Any]]] = None,
+    expected_subtask_ids: Optional[Iterable[int]] = None,
     task_id: str = "pddlrun",
 ) -> PddlRunPlanBundle:
     plan_texts = load_plan_texts(plan_files)
+    artifact_expected_subtasks = {
+        int(subtask_id) for subtask_id in (expected_subtask_ids or ())
+    }
     try:
         phases = parse_allocation_phases(allocation_text)
     except PddlRunAdapterError as exc:
@@ -636,9 +663,26 @@ def build_task_plan_from_pddlrun_outputs(
         phases = [
             [
                 SubtaskAssignment(subtask_id=subtask_id, robot_number=1)
-                for subtask_id in plan_texts
+                for subtask_id in (artifact_expected_subtasks or set(plan_texts))
             ]
         ]
+    assigned_subtask_sequence = [
+        assignment.subtask_id
+        for phase in phases
+        for assignment in phase
+    ]
+    duplicate_assignments = sorted(
+        {
+            subtask_id
+            for subtask_id in assigned_subtask_sequence
+            if assigned_subtask_sequence.count(subtask_id) > 1
+        }
+    )
+    if duplicate_assignments:
+        raise PddlRunAdapterError(
+            "Subtask conservation failed: duplicate subtask assignment(s): "
+            f"{duplicate_assignments}"
+        )
     object_names_list = list(object_names or [])
     global_object_id_bindings = _coerce_object_id_bindings(object_id_bindings)
     subtask_object_id_bindings = _coerce_object_id_bindings_by_subtask(
@@ -683,7 +727,82 @@ def build_task_plan_from_pddlrun_outputs(
         for subtask_id, actions in encoded_by_subtask.items()
         if actions
     }
-    missing_plans = sorted(assigned_subtasks - planned_subtasks)
+    if artifact_expected_subtasks:
+        unexpected_assignments = sorted(
+            assigned_subtasks - artifact_expected_subtasks
+        )
+        if unexpected_assignments:
+            raise PddlRunAdapterError(
+                "Subtask conservation failed: unexpected allocation subtask(s): "
+                f"{unexpected_assignments}"
+            )
+        expected_subtasks = set(artifact_expected_subtasks)
+    else:
+        expected_subtasks = assigned_subtasks | planned_subtasks
+    missing_plans = sorted(expected_subtasks - planned_subtasks)
+    if missing_plans:
+        raise PddlRunAdapterError(
+            "Subtask conservation failed: missing planner output for allocated "
+            f"subtask(s): {missing_plans}"
+        )
+    unexpected_plans = sorted(planned_subtasks - expected_subtasks)
+    if unexpected_plans:
+        raise PddlRunAdapterError(
+            "Subtask conservation failed: unexpected planner output for subtask(s): "
+            f"{unexpected_plans}"
+        )
+
+    supplied_noops = [
+        dict(item)
+        for item in (noop_subtasks or [])
+        if isinstance(item, dict)
+    ]
+    supplied_noop_ids = [
+        int(item["subtask_id"])
+        for item in supplied_noops
+        if str(item.get("subtask_id", "")).isdigit()
+    ]
+    duplicate_noop_ids = sorted(
+        {
+            subtask_id
+            for subtask_id in supplied_noop_ids
+            if supplied_noop_ids.count(subtask_id) > 1
+        }
+    )
+    if duplicate_noop_ids:
+        raise PddlRunAdapterError(
+            "Subtask conservation failed: duplicate no-op proof(s): "
+            f"{duplicate_noop_ids}"
+        )
+    verified_noops_by_id = {
+        int(item["subtask_id"]): item
+        for item in supplied_noops
+        if str(item.get("subtask_id", "")).isdigit()
+        and bool(item.get("verified"))
+    }
+    zero_action_subtasks = planned_subtasks - executable_subtasks
+    unverified_zero_action = sorted(
+        zero_action_subtasks - set(verified_noops_by_id)
+    )
+    if unverified_zero_action:
+        raise PddlRunAdapterError(
+            "Subtask conservation failed: unverified zero-action planner output "
+            f"for subtask(s): {unverified_zero_action}"
+        )
+    orphan_noops = sorted(set(verified_noops_by_id) - zero_action_subtasks)
+    if orphan_noops:
+        raise PddlRunAdapterError(
+            "Subtask conservation failed: verified no-op does not match a zero-action "
+            f"planner output for subtask(s): {orphan_noops}"
+        )
+
+    covered_subtasks = executable_subtasks | set(verified_noops_by_id)
+    if expected_subtasks != covered_subtasks or executable_subtasks & set(verified_noops_by_id):
+        raise PddlRunAdapterError(
+            "Subtask conservation failed: expected subtask IDs "
+            f"{sorted(expected_subtasks)}, executable {sorted(executable_subtasks)}, "
+            f"verified no-op {sorted(verified_noops_by_id)}"
+        )
     unassigned_plans = sorted(executable_subtasks - assigned_subtasks)
     filtered_phases: List[List[SubtaskAssignment]] = []
     for phase in phases:
@@ -695,13 +814,6 @@ def build_task_plan_from_pddlrun_outputs(
         if filtered_phase:
             filtered_phases.append(filtered_phase)
 
-    if not filtered_phases and missing_plans:
-        raise PddlRunAdapterError(
-            "Allocation references no subtask(s) with planner output; "
-            f"missing planner output for allocated subtask(s): {missing_plans}"
-        )
-    if not executable_subtasks:
-        raise PddlRunAdapterError("No executable actions found in planner outputs.")
     if unassigned_plans:
         filtered_phases.append(
             [
@@ -733,7 +845,7 @@ def build_task_plan_from_pddlrun_outputs(
         if queues:
             stages.append(StagePlan(f"Phase {phase_index}", dict(queues)))
 
-    if not stages:
+    if not stages and executable_subtasks:
         raise PddlRunAdapterError("No executable actions found in planner outputs.")
 
     no_trans = sum(
@@ -760,6 +872,10 @@ def build_task_plan_from_pddlrun_outputs(
         object_mappings=object_mappings,
         object_mapping_warnings=object_mapping_warnings,
         object_id_bindings=bundled_object_id_bindings,
+        noop_subtasks=[
+            verified_noops_by_id[subtask_id]
+            for subtask_id in sorted(verified_noops_by_id)
+        ],
     )
 
 
@@ -773,16 +889,56 @@ def build_task_plan_from_pddlrun_paths(
     object_names: Optional[Iterable[Any]] = None,
     object_id_bindings: Optional[Any] = None,
     object_id_bindings_by_subtask: Optional[Any] = None,
+    noop_subtasks: Optional[Sequence[Dict[str, Any]]] = None,
     task_id: str = "pddlrun",
 ) -> PddlRunPlanBundle:
     allocation_text = load_allocation_text(allocate_file)
     resolved_plan_files = resolve_plan_files(plan_folder, plan_files)
+    allocation_path = Path(allocate_file).expanduser()
+    task_run_dir = allocation_path.parent.parent
+    expected_subtask_ids = _expected_subtask_ids_from_artifacts(task_run_dir)
     if object_id_bindings is None and object_id_bindings_by_subtask is None:
         discovered_bindings, discovered_bindings_by_subtask = (
             discover_object_id_binding_artifacts(allocate_file)
         )
         object_id_bindings = discovered_bindings
         object_id_bindings_by_subtask = discovered_bindings_by_subtask
+    reported_noops: Sequence[Dict[str, Any]] = noop_subtasks or ()
+    if noop_subtasks is None:
+        noop_path = task_run_dir / "08_planner" / "noop_subtasks.json"
+        raw_report = _read_json_if_exists(noop_path)
+        if raw_report is not None and not isinstance(raw_report, list):
+            raise PddlRunAdapterError(
+                f"No-op audit artifact must be a list: {noop_path}"
+            )
+        reported_noops = raw_report or ()
+    reported_noop_ids = [
+        int(item["subtask_id"])
+        for item in reported_noops
+        if isinstance(item, dict)
+        and str(item.get("subtask_id", "")).isdigit()
+    ]
+    duplicate_reported_ids = sorted(
+        {
+            subtask_id
+            for subtask_id in reported_noop_ids
+            if reported_noop_ids.count(subtask_id) > 1
+        }
+    )
+    if duplicate_reported_ids:
+        raise PddlRunAdapterError(
+            "Subtask conservation failed: duplicate no-op proof(s): "
+            f"{duplicate_reported_ids}"
+        )
+    # A saved noop_subtasks.json record is an audit report, not an authority:
+    # its fixed schema does not bind it cryptographically to the current
+    # problem, plan or planner/VAL manifests.  Always rebuild zero-action
+    # proofs from the exact artifacts being converted so an interrupted or
+    # partial rerun cannot reuse a stale ``verified=true`` record.
+    noop_subtasks = _derive_legacy_noop_proofs(
+        task_run_dir,
+        resolved_plan_files,
+    )
     return build_task_plan_from_pddlrun_outputs(
         task=task,
         robots=robots,
@@ -791,5 +947,314 @@ def build_task_plan_from_pddlrun_paths(
         object_names=object_names,
         object_id_bindings=object_id_bindings,
         object_id_bindings_by_subtask=object_id_bindings_by_subtask,
+        noop_subtasks=noop_subtasks,
+        expected_subtask_ids=expected_subtask_ids,
         task_id=task_id,
     )
+
+
+def _load_json_file(path: Path, default: Any) -> Any:
+    if not path.is_file():
+        return default
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return default
+
+
+def _subtask_mapping_value(value: Any, subtask_id: int) -> Any:
+    if not isinstance(value, dict):
+        return None
+    return value.get(str(subtask_id), value.get(subtask_id))
+
+
+def _expected_subtask_ids_from_artifacts(task_run_dir: Path) -> Set[int]:
+    for relative_path in (
+        "04_problem_files/03_subtasks.json",
+        "04_problem_files/04_generated_problem_files.json",
+    ):
+        payload = _load_json_file(task_run_dir / relative_path, None)
+        if not isinstance(payload, list):
+            continue
+        subtask_ids = {
+            int(item["index"])
+            for item in payload
+            if isinstance(item, dict) and str(item.get("index", "")).isdigit()
+        }
+        if subtask_ids:
+            return subtask_ids
+
+    problem_ids = {
+        subtask_id
+        for folder in (
+            task_run_dir / "07_validate/outputs",
+            task_run_dir / "05_problem_generation/outputs",
+        )
+        if folder.is_dir()
+        for path in folder.glob("*.pddl")
+        for subtask_id in [extract_subtask_id(path.name)]
+        if subtask_id is not None
+    }
+    if problem_ids:
+        return problem_ids
+
+    planner_manifest = _load_json_file(
+        task_run_dir / "08_planner/planner_manifest.json",
+        [],
+    )
+    return {
+        subtask_id
+        for item in (planner_manifest if isinstance(planner_manifest, list) else [])
+        if isinstance(item, dict)
+        for subtask_id in [extract_subtask_id(str(item.get("problem_file", "")))]
+        if subtask_id is not None
+    }
+
+
+def _legacy_evidence_for_subtask(task_run_dir: Path, subtask_id: int) -> List[Dict[str, Any]]:
+    evidence_by_subtask = _load_json_file(
+        task_run_dir
+        / "05_problem_generation/key_object_pddl_state_evidence_by_subtask.json",
+        {},
+    )
+    evidence = _subtask_mapping_value(evidence_by_subtask, subtask_id)
+    if isinstance(evidence, list):
+        return [dict(item) for item in evidence if isinstance(item, dict)]
+
+    states_by_subtask = _load_json_file(
+        task_run_dir / "05_problem_generation/key_object_pddl_states_by_subtask.json",
+        {},
+    )
+    states = _subtask_mapping_value(states_by_subtask, subtask_id)
+    derived: List[Dict[str, Any]] = []
+    for state in states if isinstance(states, list) else []:
+        if not isinstance(state, dict):
+            continue
+        for fact in state.get("facts", []):
+            if isinstance(fact, str):
+                derived.append(
+                    {
+                        "literal": fact,
+                        "object": state.get("object"),
+                        "source_field": "legacy_positive_fact",
+                        "observed_value": True,
+                    }
+                )
+    derived.extend(_legacy_scene_snapshot_evidence(task_run_dir, subtask_id))
+    return derived
+
+
+def _legacy_scene_snapshot_evidence(
+    task_run_dir: Path,
+    subtask_id: int,
+) -> List[Dict[str, Any]]:
+    scene_objects: Optional[List[Any]] = None
+    for relative_path in (
+        "inputs/scene_metadata.json",
+        "inputs/metadata.json",
+        "05_problem_generation/scene_metadata.json",
+        "scene_metadata.json",
+    ):
+        payload = _load_json_file(task_run_dir / relative_path, None)
+        candidate = payload
+        if isinstance(candidate, dict):
+            candidate = candidate.get("objects")
+            if candidate is None and isinstance(payload.get("metadata"), dict):
+                candidate = payload["metadata"].get("objects")
+        if isinstance(candidate, list):
+            scene_objects = candidate
+            break
+    if scene_objects is None:
+        return []
+
+    bindings_by_subtask = _load_json_file(
+        task_run_dir
+        / "05_problem_generation/key_object_id_bindings_by_subtask.json",
+        {},
+    )
+    bindings = _subtask_mapping_value(bindings_by_subtask, subtask_id)
+    if not isinstance(bindings, list):
+        bindings = _load_json_file(
+            task_run_dir / "05_problem_generation/key_object_id_bindings.json",
+            [],
+        )
+    if not isinstance(bindings, list):
+        return []
+
+    token_by_object_id = {
+        str(binding["object_id"]): str(binding["object"])
+        for binding in bindings
+        if isinstance(binding, dict)
+        and binding.get("object_id")
+        and binding.get("object")
+    }
+    object_by_id = {
+        str(item["objectId"]): item
+        for item in scene_objects
+        if isinstance(item, dict) and item.get("objectId")
+    }
+    derived: List[Dict[str, Any]] = []
+
+    def add(
+        literal: str,
+        *,
+        object_id: str,
+        source_field: str,
+        observed_value: Any,
+        polarity: str,
+    ) -> None:
+        derived.append(
+            {
+                "literal": literal,
+                "polarity": polarity,
+                "object": token_by_object_id[object_id],
+                "object_id": object_id,
+                "source_field": source_field,
+                "observed_value": observed_value,
+            }
+        )
+
+    for object_id, object_token in sorted(token_by_object_id.items()):
+        item = object_by_id.get(object_id)
+        if item is None:
+            continue
+        for predicate, source_field in (
+            ("object-open", "isOpen"),
+            ("switch-on", "isToggled"),
+        ):
+            if source_field not in item or not isinstance(item[source_field], bool):
+                continue
+            observed = item[source_field]
+            literal = (
+                f"({predicate} {object_token})"
+                if observed
+                else f"(not ({predicate} {object_token}))"
+            )
+            add(
+                literal,
+                object_id=object_id,
+                source_field=source_field,
+                observed_value=observed,
+                polarity="positive" if observed else "negative",
+            )
+
+        parent_ids = item.get("parentReceptacles")
+        if not isinstance(parent_ids, list):
+            continue
+        for parent_id in parent_ids:
+            parent_token = token_by_object_id.get(str(parent_id))
+            if parent_token:
+                add(
+                    f"(at-location {object_token} {parent_token})",
+                    object_id=object_id,
+                    source_field="parentReceptacles",
+                    observed_value=str(parent_id),
+                    polarity="positive",
+                )
+                break
+    return derived
+
+
+def _planner_problem_path(task_run_dir: Path, record: Dict[str, Any]) -> Optional[Path]:
+    raw_path = record.get("problem_path")
+    if raw_path:
+        path = Path(str(raw_path)).expanduser()
+        if not path.is_absolute():
+            path = task_run_dir / path
+        if path.is_file():
+            return path
+    filename = str(record.get("problem_file") or "")
+    for relative_dir in (
+        "07_validate/outputs",
+        "05_problem_generation/outputs",
+        "04_problem_files/outputs",
+    ):
+        candidate = task_run_dir / relative_dir / filename
+        if filename and candidate.is_file():
+            return candidate
+    return None
+
+
+def _planner_record_matches_plan(
+    task_run_dir: Path,
+    record: Dict[str, Any],
+    plan_path: Path,
+) -> bool:
+    raw_path = (
+        record.get("compatibility_output")
+        or record.get("plan_file")
+        or record.get("output_file")
+    )
+    if not raw_path:
+        return False
+    recorded_path = Path(str(raw_path)).expanduser()
+    if not recorded_path.is_absolute():
+        recorded_path = task_run_dir / recorded_path
+    return recorded_path.resolve() == plan_path.resolve()
+
+
+def _derive_legacy_noop_proofs(
+    task_run_dir: Path,
+    plan_files: Sequence[Any],
+    *,
+    skip_subtask_ids: Iterable[int] = (),
+) -> List[Dict[str, Any]]:
+    skip_ids = set(skip_subtask_ids)
+    planner_manifest = _load_json_file(
+        task_run_dir / "08_planner/planner_manifest.json",
+        [],
+    )
+    records_by_id = {
+        subtask_id: record
+        for record in (planner_manifest if isinstance(planner_manifest, list) else [])
+        if isinstance(record, dict)
+        for subtask_id in [extract_subtask_id(str(record.get("problem_file", "")))]
+        if subtask_id is not None
+    }
+    problem_audits = _load_json_file(
+        task_run_dir / "05_problem_generation/problem_state_audit.json",
+        [],
+    )
+    repairs_by_id = {
+        int(item["subtask_id"]): item.get("repairs", [])
+        for item in (problem_audits if isinstance(problem_audits, list) else [])
+        if isinstance(item, dict) and str(item.get("subtask_id", "")).isdigit()
+    }
+    val_path = task_run_dir / "08_val/val_manifest.json"
+    val_manifest = _load_json_file(val_path, {})
+    latest_val = (
+        val_manifest.get("latest_by_subtask", {})
+        if isinstance(val_manifest, dict)
+        else {}
+    )
+    val_enabled = val_path.is_file()
+
+    proofs: List[Dict[str, Any]] = []
+    for raw_plan_path in plan_files:
+        plan_path = Path(raw_plan_path).expanduser()
+        subtask_id = extract_subtask_id(plan_path.name)
+        if subtask_id is None or subtask_id in skip_ids or not plan_path.is_file():
+            continue
+        plan_text = plan_path.read_text(encoding="utf-8")
+        if parse_plan_actions(plan_text):
+            continue
+        record = dict(records_by_id.get(subtask_id, {}))
+        if not _planner_record_matches_plan(task_run_dir, record, plan_path):
+            record["status"] = "artifact_mismatch"
+            record["has_planner_error"] = True
+        problem_path = _planner_problem_path(task_run_dir, record)
+        problem = problem_path.read_text(encoding="utf-8") if problem_path else ""
+        val_record = _subtask_mapping_value(latest_val, subtask_id)
+        proofs.append(
+            verify_zero_action_plan(
+                subtask_id=subtask_id,
+                problem=problem,
+                plan_text=plan_text,
+                evidence=_legacy_evidence_for_subtask(task_run_dir, subtask_id),
+                planner_record=record,
+                val_enabled=val_enabled,
+                val_record=val_record if isinstance(val_record, dict) else None,
+                repairs=repairs_by_id.get(subtask_id, []),
+            )
+        )
+    return proofs

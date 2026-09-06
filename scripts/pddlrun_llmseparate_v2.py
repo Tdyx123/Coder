@@ -29,6 +29,12 @@ from llm_handler import LLMError, LLMHandler
 from llm_logger import get_llm_logger
 from pddl_rag import PDDLRagError, PDDLRagRetriever, PDDLRagTimeoutError
 from pddl_problem_repair import ProblemRepairResult, repair_problem_pddl
+from pddl_noop_audit import (
+    audit_problem_initial_state,
+    build_key_object_evidence,
+    plan_has_actions,
+    verify_zero_action_plan,
+)
 from parsing_utils import ParsingUtils
 from run_config import (
     RunConfig,
@@ -1541,6 +1547,10 @@ class TaskManager:
                     subtask_id: context["states"]
                     for subtask_id, context in key_object_pddl_context_by_subtask.items()
                 }
+                key_object_pddl_evidence_by_subtask = {
+                    subtask_id: context.get("evidence", [])
+                    for subtask_id, context in key_object_pddl_context_by_subtask.items()
+                }
                 self._write_json_artifact(
                     "05_problem_generation/key_object_pddl_states.json",
                     key_object_pddl_states,
@@ -1558,6 +1568,15 @@ class TaskManager:
                     "problem_files",
                     "key_object_pddl_states_by_subtask",
                     "05_problem_generation/key_object_pddl_states_by_subtask.json",
+                )
+                self._write_json_artifact(
+                    "05_problem_generation/key_object_pddl_state_evidence_by_subtask.json",
+                    key_object_pddl_evidence_by_subtask,
+                )
+                self._record_artifact(
+                    "problem_files",
+                    "key_object_pddl_state_evidence_by_subtask",
+                    "05_problem_generation/key_object_pddl_state_evidence_by_subtask.json",
                 )
                 self._persist_manifest()
                 print(f"✓ Matched {len(key_objects)} key objects")
@@ -2432,7 +2451,7 @@ class TaskManager:
     ) -> Dict[str, List[Dict[str, Any]]]:
         """Convert key objects into PDDL states plus object-token bindings."""
         if not key_objects:
-            return {"states": [], "object_id_bindings": []}
+            return {"states": [], "object_id_bindings": [], "evidence": []}
 
         key_object_types = {
             self._object_match_key(obj.get("name", ""))
@@ -2441,11 +2460,11 @@ class TaskManager:
         }
         key_object_types.discard("")
         if not key_object_types:
-            return {"states": [], "object_id_bindings": []}
+            return {"states": [], "object_id_bindings": [], "evidence": []}
 
         floor_objects = self._load_floor_ai2thor_metadata()
         if not floor_objects:
-            return {"states": [], "object_id_bindings": []}
+            return {"states": [], "object_id_bindings": [], "evidence": []}
 
         supported_predicates = self._extract_pddl_predicate_names(domain_content)
         floor_object_numbering = self._build_floor_object_numbering(floor_objects)
@@ -2456,6 +2475,7 @@ class TaskManager:
         }
         allaction_types = self._allaction_pddl_type_names()
         states: List[Dict[str, Any]] = []
+        evidence: List[Dict[str, Any]] = []
         bindings_by_object_id: Dict[str, Dict[str, Any]] = {}
 
         def record_binding(entry: Dict[str, Any], role: str) -> None:
@@ -2512,6 +2532,15 @@ class TaskManager:
                 parent_token,
                 supported_predicates,
             )
+            evidence.extend(
+                build_key_object_evidence(
+                    item,
+                    object_token,
+                    parent_token,
+                    facts,
+                    supported_predicates,
+                )
+            )
             state_entry: Dict[str, Any] = {
                 "object": object_token,
                 "object_type": self._pddl_type_for_ai2thor_object_type(object_type, allaction_types),
@@ -2539,6 +2568,7 @@ class TaskManager:
         return {
             "states": states,
             "object_id_bindings": list(bindings_by_object_id.values()),
+            "evidence": evidence,
         }
 
     def _filter_key_object_pddl_states_for_domain(
@@ -2814,23 +2844,32 @@ class TaskManager:
             plan_text = self.file_processor.read_file(str(plan_path))
             actions_in_plan = self._parse_plan_actions(plan_text)
             requires_execution = bool(actions_in_plan)
-            if not requires_execution and not self._is_valid_zero_action_plan(
+            fallback_problem = (
+                problem_pddl[subtask_id - 1]
+                if subtask_id - 1 < len(problem_pddl)
+                else ""
+            )
+            planner_problem = self._read_planner_problem_content(
                 record,
-                plan_text,
-            ):
-                raise PDDLError(
-                    f"No plan actions found for subtask {subtask_id}: {plan_path}"
+                fallback_problem,
+            )
+            noop_proof: Optional[Dict[str, Any]] = None
+            if not requires_execution:
+                noop_proof = verify_zero_action_plan(
+                    subtask_id=subtask_id,
+                    problem=planner_problem,
+                    plan_text=plan_text,
+                    evidence=self._key_object_evidence_for_subtask(subtask_id),
+                    planner_record=record,
                 )
+                self._write_noop_audit_records([noop_proof])
+                if not noop_proof["verified"]:
+                    reasons = ", ".join(noop_proof["failure_reasons"])
+                    raise PDDLError(
+                        "Unverified zero-action plan for subtask "
+                        f"{subtask_id}: {reasons or plan_path}"
+                    )
             if requires_execution:
-                fallback_problem = (
-                    problem_pddl[subtask_id - 1]
-                    if subtask_id - 1 < len(problem_pddl)
-                    else ""
-                )
-                planner_problem = self._read_planner_problem_content(
-                    record,
-                    fallback_problem,
-                )
                 required_locations, unresolved_location_actions = (
                     self._extract_required_locations(
                         actions_in_plan,
@@ -2862,29 +2901,27 @@ class TaskManager:
                     "required_locations": required_locations,
                     "unresolved_location_actions": unresolved_location_actions,
                     "plan_path": str(plan_path),
+                    "noop_proof": noop_proof,
                 }
             )
         return requirements
 
-    @staticmethod
-    def _is_valid_zero_action_plan(
-        planner_record: Dict[str, Any],
-        plan_text: str,
-    ) -> bool:
-        """Return whether successful planner output represents a legal no-op."""
-        if planner_record.get("return_code") not in (None, 0):
-            return False
-        if planner_record.get("has_planner_error") is True:
-            return False
-        if planner_record.get("status") not in (None, "completed", "ok"):
-            return False
-        return bool(
-            re.search(
-                r"^\s*;\s*cost\s*=\s*0(?:\s|\(|$)",
-                str(plan_text),
-                flags=re.IGNORECASE | re.MULTILINE,
-            )
-        )
+    def _write_noop_audit_records(self, records: Sequence[Dict[str, Any]]) -> None:
+        artifact = "08_planner/noop_subtasks.json"
+        existing = self._read_json_artifact(artifact, [])
+        if not isinstance(existing, list):
+            existing = []
+        by_id = {
+            int(item["subtask_id"]): item
+            for item in existing
+            if isinstance(item, dict) and str(item.get("subtask_id", "")).isdigit()
+        }
+        for record in records:
+            subtask_id = record.get("subtask_id")
+            if str(subtask_id).isdigit():
+                by_id[int(subtask_id)] = record
+        self._write_json_artifact(artifact, [by_id[key] for key in sorted(by_id)])
+        self._record_artifact("planner", "noop_subtasks", artifact)
 
     def _filter_candidate_robots(
         self,
@@ -3895,6 +3932,51 @@ class TaskManager:
         self._persist_manifest()
         return validation_records
 
+    def _key_object_evidence_for_subtask(self, subtask_id: int) -> List[Dict[str, Any]]:
+        evidence_by_subtask = self._read_json_artifact(
+            "05_problem_generation/key_object_pddl_state_evidence_by_subtask.json",
+            {},
+        )
+        if not isinstance(evidence_by_subtask, dict):
+            return []
+        evidence = evidence_by_subtask.get(
+            str(subtask_id),
+            evidence_by_subtask.get(subtask_id, []),
+        )
+        return evidence if isinstance(evidence, list) else []
+
+    def _audit_problem_before_planning(
+        self,
+        problem_path: str,
+        subtask_id: int,
+    ) -> Dict[str, Any]:
+        problem = self.file_processor.read_file(problem_path)
+        audit = audit_problem_initial_state(
+            problem,
+            self._key_object_evidence_for_subtask(subtask_id),
+        )
+        if audit.problem != problem:
+            self.file_processor.write_file(problem_path, audit.problem)
+        audit_record = {
+            "subtask_id": subtask_id,
+            "goal_literals": audit.goal_literals,
+            "repairs": audit.repairs,
+            "failure_reasons": audit.failure_reasons,
+        }
+        artifact = "05_problem_generation/problem_state_audit.json"
+        existing = self._read_json_artifact(artifact, [])
+        if not isinstance(existing, list):
+            existing = []
+        by_id = {
+            int(item["subtask_id"]): item
+            for item in existing
+            if isinstance(item, dict) and str(item.get("subtask_id", "")).isdigit()
+        }
+        by_id[subtask_id] = audit_record
+        self._write_json_artifact(artifact, [by_id[key] for key in sorted(by_id)])
+        self._record_artifact("problem_generation", "problem_state_audit", artifact)
+        return audit_record
+
     def run_allaction_planners(self) -> List[Dict[str, Any]]:
         """Plan validated problems with the full-capability PDDL domain."""
         validated_problem_dir = self._get_validated_problem_file_path()
@@ -3915,6 +3997,9 @@ class TaskManager:
             if filename.endswith(".pddl")
         ):
             problem_full_path = os.path.join(validated_problem_dir, problem_file)
+            subtask_id = self._subtask_id_from_filename(problem_file)
+            if subtask_id is not None:
+                self._audit_problem_before_planning(problem_full_path, subtask_id)
             safe_name = self._sanitize_filename(problem_file[:-5])
             output_file = os.path.join(plan_dir, f"{safe_name}_plan.txt")
             if os.path.isfile(output_file):
@@ -4055,6 +4140,12 @@ class TaskManager:
                 output_file = None
                 try:
                     problem_file_full = os.path.join(problem_file_path, problem_file)
+                    subtask_id = self._subtask_id_from_filename(problem_file)
+                    if subtask_id is not None:
+                        self._audit_problem_before_planning(
+                            problem_file_full,
+                            subtask_id,
+                        )
                     safe_name = self._sanitize_filename(problem_file.replace(".pddl", ""))
                     output_file = os.path.join(plan_file_path, f"{safe_name}_plan.txt")
                     if os.path.isfile(output_file):
@@ -4064,6 +4155,7 @@ class TaskManager:
                         print(f"No domain specified in {problem_file}")
                         planner_records.append({
                             "problem_file": problem_file,
+                            "problem_path": problem_file_full,
                             "domain_file": None,
                             "compatibility_output": output_file,
                             **self._build_planner_status_fields(
@@ -4079,6 +4171,7 @@ class TaskManager:
                         print(f"No domain file found for domain {domain_name}")
                         planner_records.append({
                             "problem_file": problem_file,
+                            "problem_path": problem_file_full,
                             "domain_file": None,
                             "compatibility_output": output_file,
                             **self._build_planner_status_fields(
@@ -4116,6 +4209,7 @@ class TaskManager:
                     self._write_text_artifact(stderr_path, result.stderr)
                     planner_records.append({
                         "problem_file": problem_file,
+                        "problem_path": problem_file_full,
                         "domain_file": domain_file,
                         "command_path": command_path,
                         "stdout_path": stdout_path,
@@ -4139,6 +4233,7 @@ class TaskManager:
                     print(f"Planner timed out for {problem_file}")
                     planner_records.append({
                         "problem_file": problem_file,
+                        "problem_path": problem_file_full,
                         "domain_file": domain_file,
                         "compatibility_output": output_file,
                         "error": str(e),
@@ -4152,6 +4247,7 @@ class TaskManager:
                     print(f"Error processing file {problem_file}: {str(e)}")
                     planner_records.append({
                         "problem_file": problem_file,
+                        "problem_path": problem_file_full,
                         "domain_file": domain_file,
                         "compatibility_output": output_file,
                         "error": str(e),

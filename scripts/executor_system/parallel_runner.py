@@ -45,7 +45,7 @@ from executor_system.action_plan import (  # noqa: E402
     action_allows_failure_retry,
 )
 from executor_system.executor import Executor, PhaseCoordinator  # noqa: E402
-from executor_system.movement import MovementConfig  # noqa: E402
+from executor_system.movement import MovementConfig, NavigationDeferred  # noqa: E402
 from executor_system.runtime import is_pickup_object_clip_error  # noqa: E402
 from baseline_converters import pddlrun  # noqa: E402
 
@@ -117,6 +117,12 @@ class TolerantRunStats:
     def record_started(self) -> None:
         with self._lock:
             self.executed_actions += 1
+
+    def record_deferred(self) -> None:
+        with self._lock:
+            if self.executed_actions < 1:
+                raise RuntimeError("cannot defer an action that was not started")
+            self.executed_actions -= 1
 
     def record_failure(
         self,
@@ -197,6 +203,7 @@ class TolerantExecutor(Executor):
         )
         self.stats = stats
         self.deadline = deadline
+        self.timeout_error_factory = PlanExecutionTimeout
 
     def execute(self) -> WorldState:
         if not self.robot_id:
@@ -248,6 +255,10 @@ class TolerantExecutor(Executor):
                     action_wave = self.before_action(action)
                     event = self.execute_action(action, action_wave=action_wave)
                     self.record_temperature_goal_progress()
+                except NavigationDeferred:
+                    self.stats.record_deferred()
+                    tick += 1
+                    continue
                 except PlanExecutionTimeout as exc:
                     if self.phase_coordinator is not None and action_wave is not None:
                         self.phase_coordinator.abort_action_wave(

@@ -703,6 +703,7 @@ def serialize_bundle(bundle: PddlRunPlanBundle, gcr: Sequence[Any]) -> Dict[str,
         "object_mappings": dict(bundle.object_mappings),
         "object_mapping_warnings": list(bundle.object_mapping_warnings),
         "object_id_bindings": list(bundle.object_id_bindings),
+        "noop_subtasks": literalize(bundle.noop_subtasks),
     }
 
 

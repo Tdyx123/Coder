@@ -8,8 +8,10 @@ import re
 import shutil
 import subprocess
 import threading
+import time
 from collections import deque
 from contextlib import contextmanager
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
@@ -46,7 +48,9 @@ from .movement import (
     ActionWave,
     MovementConfig,
     NavigationMetrics,
+    NavigationDeferred,
     NavigationRequest,
+    NoInteractionPoseError,
     create_movement_strategy,
 )
 from .utils import (
@@ -109,7 +113,57 @@ PICKUP_OBJECT_TARGET_VISIBILITY_LOOK_OFFSETS = (
     20.0,
     30.0,
 )
-OBJECT_ACTION_TARGET_VISIBILITY_RETRY_ACTIONS = {"PickupObject", "BreakObject"}
+OBJECT_ACTION_TARGET_VISIBILITY_RETRY_ACTIONS = {
+    "PickupObject",
+    "BreakObject",
+    "SliceObject",
+}
+
+INTERACTION_TARGET_ARGUMENT_INDEX = {
+    "PickupObject": 0,
+    "BreakObject": 0,
+    "BreakEgg": 0,
+    "SliceObject": 0,
+    "OpenObject": 0,
+    "CloseObject": 0,
+    "SwitchOn": 0,
+    "SwitchOff": 0,
+    "ToggleObjectOn": 0,
+    "ToggleObjectOff": 0,
+    "CleanObject": 0,
+    "DirtyObject": 0,
+    "EmptyLiquid": 0,
+    "EmptyLiquidFromObject": 0,
+    "ColdObject": 0,
+    "PrepareEgg": 0,
+    "RunMicrowave": 0,
+    "RunCoffeeMachine": 0,
+    "RunToaster": 0,
+    "CookByStoveBurner": 0,
+    "HeatByStoveBurner": 0,
+    "FireByStoveBurner": 0,
+    "FillWater": 0,
+    "PutObject": 1,
+}
+
+
+def navigation_interaction_target(
+    dest_obj: Any,
+    next_action: Optional[PlannedAction],
+) -> tuple[Any, bool]:
+    if next_action is None or next_action.name not in INTERACTION_TARGET_ARGUMENT_INDEX:
+        return dest_obj, False
+    argument_index = INTERACTION_TARGET_ARGUMENT_INDEX[next_action.name]
+    if (
+        len(next_action.args) <= argument_index
+        or next_action.args[argument_index] in (None, "")
+    ):
+        raise RuntimeError(
+            f"{next_action.name} is missing interaction target argument "
+            f"{argument_index}."
+        )
+    target = next_action.args[argument_index]
+    return target, object_key(target) != object_key(dest_obj)
 
 
 def is_pickup_object_clip_error(value: Any) -> bool:
@@ -2847,6 +2901,11 @@ class ThorRuntime:
     ) -> None:
         if not hasattr(self, "_navigation_action_scope_state"):
             self._navigation_action_scope_state = threading.local()
+            # Initialize before workers start: a controller-step lock alone cannot
+            # protect a planned trajectory from another navigation's movements.
+            self._navigation_execution_lock = threading.RLock()
+            self._navigation_deadline_state = threading.local()
+            self._interaction_reposition_state = threading.local()
         self.movement_config = MovementConfig.resolve(movement_mode, environ)
         self.navigation_metrics = NavigationMetrics(self.movement_config.mode)
         self.movement_strategy = create_movement_strategy(
@@ -2854,6 +2913,41 @@ class ThorRuntime:
             self.movement_config,
             self.navigation_metrics,
         )
+
+    @contextmanager
+    def action_deadline_scope(self, deadline=None, timeout_error_factory=None):
+        state = self._navigation_deadline_state
+        previous = getattr(state, "context", (None, None))
+        if previous[0] is not None and (deadline is None or previous[0] <= deadline):
+            state.context = previous
+        else:
+            state.context = (deadline, timeout_error_factory)
+        try:
+            yield
+        finally:
+            state.context = previous
+
+    def check_navigation_deadline(self) -> None:
+        deadline, factory = getattr(self._navigation_deadline_state, "context", (None, None))
+        if deadline is not None and time.monotonic() >= deadline:
+            raise (factory or TimeoutError)("Task plan deadline reached during navigation.")
+
+    @contextmanager
+    def navigation_execution_scope(self):
+        """Lock order: navigation -> controller; never acquire while holding a wave condition."""
+        self.check_navigation_deadline()
+        deadline, factory = getattr(self._navigation_deadline_state, "context", (None, None))
+        if deadline is None:
+            self._navigation_execution_lock.acquire()
+        elif not self._navigation_execution_lock.acquire(
+            timeout=max(0.0, deadline - time.monotonic())
+        ):
+            raise (factory or TimeoutError)("Task plan deadline reached waiting for navigation.")
+        try:
+            self.check_navigation_deadline()
+            yield
+        finally:
+            self._navigation_execution_lock.release()
 
     @contextmanager
     def navigation_action_scope(self):
@@ -2885,14 +2979,50 @@ class ThorRuntime:
         if not center:
             raise RuntimeError(f"Object {dest_obj!r} has no usable center.")
 
-        candidate_positions = self.teleport_candidate_positions(
-            center,
-            agent_id=agent_id,
-            include_agent_positions=False,
-        )[:TELEPORT_CANDIDATE_LIMIT]
+        interaction_target, interaction_target_replaced = navigation_interaction_target(
+            dest_obj,
+            next_action,
+        )
+
+        interaction_destination = destination
+        interaction_center = center
+        if interaction_target_replaced:
+            interaction_destination = self.find_object(
+                interaction_target,
+                agent_id=agent_id,
+                require_center=True,
+            )
+            interaction_center = object_center(interaction_destination)
+            if not interaction_center:
+                raise RuntimeError(
+                    f"Interaction object {interaction_target!r} has no usable center."
+                )
+            self.navigation_metrics.increment("interaction_target_substitutions")
+
+        try:
+            candidate_positions = self.teleport_candidate_positions(
+                interaction_center,
+                agent_id=agent_id,
+                include_agent_positions=False,
+            )[:TELEPORT_CANDIDATE_LIMIT]
+        except RuntimeError as exc:
+            raise NoInteractionPoseError(
+                "NO_INTERACTION_POSE: no reachable candidate for agent "
+                f"{agent_id} target {interaction_target!r}"
+            ) from exc
+        if not candidate_positions:
+            raise NoInteractionPoseError(
+                "NO_INTERACTION_POSE: no reachable candidate for agent "
+                f"{agent_id} target {interaction_target!r}"
+            )
         object_resource = (
             str(destination.get("objectId"))
             if destination.get("objectId")
+            else None
+        )
+        interaction_object_resource = (
+            str(interaction_destination.get("objectId"))
+            if interaction_destination.get("objectId")
             else None
         )
         return NavigationRequest(
@@ -2908,6 +3038,11 @@ class ThorRuntime:
             next_action=next_action,
             phase_coordinator=phase_coordinator,
             action_wave=action_wave,
+            interaction_target=interaction_target,
+            interaction_destination=dict(interaction_destination),
+            interaction_center=dict(interaction_center),
+            interaction_object_resource=interaction_object_resource,
+            interaction_target_replaced=interaction_target_replaced,
         )
 
     def navigate_to_object(
@@ -2919,9 +3054,11 @@ class ThorRuntime:
         next_action: Optional[PlannedAction] = None,
         phase_coordinator: Optional[Any] = None,
         action_wave: Optional[ActionWave] = None,
+        exclude_current_position: bool = False,
     ) -> Dict[str, Any]:
         self.navigation_metrics.record_request_started()
         try:
+            navigation_interaction_target(dest_obj, next_action)
             if allow_hand_preparation:
                 self.prepare_hand_for_goto_if_needed(robot, next_action)
             request = self.build_navigation_request(
@@ -2931,9 +3068,29 @@ class ThorRuntime:
                 phase_coordinator=phase_coordinator,
                 action_wave=action_wave,
             )
+            if exclude_current_position:
+                current_key = position_to_grid_key(
+                    self.current_agent_position(request.agent_id)
+                )
+                candidate_positions = tuple(
+                    position
+                    for position in request.candidate_positions
+                    if position_to_grid_key(position) != current_key
+                )
+                if not candidate_positions:
+                    raise NoInteractionPoseError(
+                        "NO_INTERACTION_POSE: interaction reposition has no "
+                        f"candidate away from agent {request.agent_id}'s current pose"
+                    )
+                request = replace(
+                    request,
+                    candidate_positions=candidate_positions,
+                )
             result = self.movement_strategy.navigate(request)
             log(f"Reached: {dest_obj}")
             self.record_operated_object_name(result.destination)
+        except NavigationDeferred:
+            raise
         except Exception:
             self.navigation_metrics.record_request_failed()
             raise
@@ -3172,6 +3329,12 @@ class ThorRuntime:
     ) -> Optional[Any]:
         initial_horizon = self.camera_horizon(agent_id, initial_event)
         if initial_horizon is None:
+            if action == "SliceObject":
+                return self.retry_slice_after_interaction_reposition(
+                    agent_id,
+                    payload,
+                    initial_event,
+                )
             return initial_event
 
         last_event = initial_event
@@ -3236,7 +3399,6 @@ class ThorRuntime:
                     f"{agent_id} after camera offset {offset:g}; "
                     "trying another angle."
                 )
-            return last_event
         finally:
             if restore_horizon:
                 self.try_look_to_camera_horizon(
@@ -3244,6 +3406,80 @@ class ThorRuntime:
                     initial_horizon,
                     action_name=action,
                 )
+        if action == "SliceObject":
+            return self.retry_slice_after_interaction_reposition(
+                agent_id,
+                payload,
+                last_event,
+            )
+        return last_event
+
+    def retry_slice_after_interaction_reposition(
+        self,
+        agent_id: int,
+        payload: Dict[str, Any],
+        initial_event: Optional[Any],
+    ) -> Optional[Any]:
+        movement_config = getattr(self, "movement_config", None)
+        if getattr(getattr(movement_config, "mode", None), "value", None) != "step":
+            return initial_event
+
+        target = payload.get("objectId")
+        if not target:
+            return initial_event
+        robot_names = sorted(
+            name
+            for name, mapped_agent_id in self.robot_agent_map.items()
+            if int(mapped_agent_id) == int(agent_id)
+        )
+        if not robot_names:
+            return initial_event
+
+        state = self._interaction_reposition_state
+        active_keys = set(getattr(state, "active_keys", set()))
+        recovery_key = (int(agent_id), "SliceObject", str(target))
+        if recovery_key in active_keys:
+            return initial_event
+        active_keys.add(recovery_key)
+        state.active_keys = active_keys
+        try:
+            # Include request construction and the final Slice: both must observe
+            # the same static peers as the reposition plan. RLock permits the
+            # single-request coordinator to enter the same execution scope.
+            with self.navigation_execution_scope():
+                try:
+                    self.navigate_to_object(
+                        robot_names[0],
+                        target,
+                        allow_hand_preparation=False,
+                        next_action=PlannedAction("SliceObject", (str(target),)),
+                        exclude_current_position=True,
+                    )
+                except TimeoutError:
+                    raise
+                except Exception as exc:
+                    log(
+                        "SliceObject interaction reposition failed for agent "
+                        f"{agent_id}: {exc}"
+                    )
+                    return initial_event
+
+                self.check_navigation_deadline()
+                self.navigation_metrics.increment("interaction_repositions")
+                try:
+                    return self.step(
+                        payload,
+                        check_success=False,
+                        retry_on_failure=False,
+                    )
+                except Exception as exc:
+                    if is_object_action_target_visibility_error(exc):
+                        return initial_event
+                    raise
+        finally:
+            active_keys = set(getattr(state, "active_keys", set()))
+            active_keys.discard(recovery_key)
+            state.active_keys = active_keys
 
     def retry_pickup_after_target_visibility_error(
         self,

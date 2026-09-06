@@ -17,6 +17,7 @@ from executor_system.action_plan import TaskPlan
 from executor_system.config import CLOUD_RENDERING, RENDER_IMAGE
 from executor_system.movement import MovementConfig
 from executor_system.parallel_runner import (
+    TolerantRunStats,
     effective_timeout_seconds,
     run_action_plan_tolerant,
     write_result_json,
@@ -86,6 +87,15 @@ def build_hardcoded_bundle(bundle_data: Dict[str, Any]) -> types.SimpleNamespace
     if not isinstance(bundle_data["gcr"], list):
         raise RuntimeError("BUNDLE_DATA['gcr'] must be a list of target object_states.")
 
+    noop_subtasks = bundle_data.get("noop_subtasks", [])
+    if not isinstance(noop_subtasks, list):
+        raise RuntimeError("BUNDLE_DATA['noop_subtasks'] must be a list when provided.")
+    if any(
+        not isinstance(item, dict) or not bool(item.get("verified"))
+        for item in noop_subtasks
+    ):
+        raise RuntimeError("BUNDLE_DATA contains an unverified no-op subtask.")
+
     return types.SimpleNamespace(
         task=bundle_data["task"],
         task_plan=TaskPlan.from_dict(bundle_data["task_plan"]),
@@ -95,6 +105,7 @@ def build_hardcoded_bundle(bundle_data: Dict[str, Any]) -> types.SimpleNamespace
         object_mappings=bundle_data["object_mappings"],
         object_mapping_warnings=bundle_data["object_mapping_warnings"],
         object_id_bindings=bundle_data.get("object_id_bindings", []),
+        noop_subtasks=list(noop_subtasks),
     )
 
 
@@ -190,7 +201,10 @@ def run_standalone(
     runtime.register_object_id_bindings(bundle.object_id_bindings)
     _context.runtime = runtime
     try:
-        run_action_plan(bundle.task_plan)
+        if bundle.task_plan.stages:
+            run_action_plan(bundle.task_plan)
+        elif not bundle.noop_subtasks:
+            run_action_plan(bundle.task_plan)
         runtime.step({"action": "Done"}, check_success=False)
 
         metrics = runtime.evaluate(ground_truth)
@@ -253,14 +267,17 @@ def run_runner_mode(
         runtime.register_object_id_bindings(bundle.object_id_bindings)
         _context.runtime = runtime
 
-        execution_report = run_action_plan_tolerant(
-            runtime,
-            bundle.task_plan,
-            timeout_seconds=effective_timeout_seconds(
-                runtime.movement_config.mode.value,
-                args.timeout_seconds,
-            ),
-        )
+        if bundle.task_plan.stages or not bundle.noop_subtasks:
+            execution_report = run_action_plan_tolerant(
+                runtime,
+                bundle.task_plan,
+                timeout_seconds=effective_timeout_seconds(
+                    runtime.movement_config.mode.value,
+                    args.timeout_seconds,
+                ),
+            )
+        else:
+            execution_report = TolerantRunStats().to_dict()
         result.update(execution_report)
         try:
             runtime.step({"action": "Done"}, check_success=False, save_frame=False)

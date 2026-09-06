@@ -51,6 +51,7 @@ from executor_system.demo_state import (
     verified_ground_truth_goal_signatures,
 )
 from executor_system.executor import PhaseCoordinator
+from executor_system.movement import NavigationDeferred
 from executor_system.goals import goal_state_verified
 from executor_system.runtime import PICKUP_OBJECT_CLIP_ERROR, ThorRuntime
 
@@ -273,7 +274,7 @@ class PhaseCoordinatorTest(unittest.TestCase):
         def find_object(*_args, **_kwargs):
             index = len(find_calls)
             find_calls.append((_args, _kwargs))
-            return [first_destination, second_destination][index]
+            return [first_destination, second_destination][min(index, 1)]
 
         def teleport_candidate_positions(*_args, **_kwargs):
             index = len(candidate_calls)
@@ -310,7 +311,7 @@ class PhaseCoordinatorTest(unittest.TestCase):
 
         self.assertEqual(result, second_destination)
         self.assertEqual(refresh_calls, [0, 0])
-        self.assertEqual(len(find_calls), 2)
+        self.assertEqual(len(find_calls), 3)
         self.assertEqual(len(candidate_calls), 2)
         self.assertEqual(waited_positions, [(0, [first_candidate])])
         self.assertEqual(
@@ -2035,6 +2036,38 @@ class ParallelRunnerCliTest(unittest.TestCase):
 
 
 class TolerantExecutorTest(unittest.TestCase):
+    def test_deferred_navigation_is_not_counted_or_recorded_as_failure(self):
+        runtime = FakeRuntime()
+        calls = {"count": 0}
+
+        def fake_execute(_adapter, _robot_id, _action, **_kwargs):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise NavigationDeferred(0, fallback_status="NO_PLAN_FOUND")
+            return FakeEvent()
+
+        plan = TaskPlan(
+            "task",
+            [
+                StagePlan(
+                    "Phase 1",
+                    {
+                        "robot1": [
+                            Action("GoToObject", {"args": ("Apple",)}),
+                        ],
+                    },
+                )
+            ],
+        )
+
+        with patch("executor_system.action_plan.AI2ThorAdapter.execute", fake_execute):
+            result = run_action_plan_tolerant(runtime, plan, timeout_seconds=5)
+
+        self.assertEqual(calls["count"], 2)
+        self.assertEqual(result["executed_actions"], 1)
+        self.assertEqual(result["failed_actions"], 0)
+        self.assertEqual(result["robot_failures"], [])
+
     def test_robot_failure_continues_with_next_action(self):
         runtime = FakeRuntime()
         calls = []

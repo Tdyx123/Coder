@@ -75,6 +75,7 @@ def _normalize_provider(provider: Dict[str, Any]) -> ProviderConfig:
     base_url = str(provider.get("base_url", "")).strip()
     models = provider.get("models")
     api_keys = provider.get("api_keys")
+    stream = provider.get("stream", True)
 
     if not name:
         raise ProviderConfigError("Provider is missing a non-empty 'name'")
@@ -100,12 +101,17 @@ def _normalize_provider(provider: Dict[str, Any]) -> ProviderConfig:
         raise ProviderConfigError(
             f"Provider '{name}' has empty values in 'api_keys'"
         )
+    if not isinstance(stream, bool):
+        raise ProviderConfigError(
+            f"Provider '{name}' must define 'stream' as a boolean"
+        )
 
     normalized_provider = dict(provider)
     normalized_provider["name"] = name
     normalized_provider["base_url"] = base_url
     normalized_provider["models"] = normalized_models
     normalized_provider["api_keys"] = normalized_api_keys
+    normalized_provider["stream"] = stream
     return normalized_provider
 
 
@@ -301,15 +307,17 @@ def complete_with_provider(
         "mimo-v2.5",
         "kimi-k2.6",
     }
+    stream_enabled = provider.get("stream", True)
     kwargs: Dict[str, Any] = {
         "model": model,
         "messages": messages,
         "api_base": provider["base_url"],
         "temperature": temperature,
         "custom_llm_provider": "openai",
-        "stream": True,
-        "stream_options": {"include_usage": True},
+        "stream": stream_enabled,
     }
+    if stream_enabled:
+        kwargs["stream_options"] = {"include_usage": True}
     if uses_max_completion_tokens:
         kwargs["max_completion_tokens"] = max_tokens
     else:
@@ -354,8 +362,12 @@ def complete_with_provider(
         key_index = (start_index + offset) % len(api_keys)
         kwargs["api_key"] = api_keys[key_index]
         try:
-            stream = completion(**kwargs)
-            response = _collect_stream_response(stream, model)
+            completion_response = completion(**kwargs)
+            response = (
+                _collect_stream_response(completion_response, model)
+                if stream_enabled
+                else completion_response
+            )
             return _attach_response_metadata(
                 response,
                 {

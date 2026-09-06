@@ -83,6 +83,15 @@ class LLMClientTests(unittest.TestCase):
         with self.assertRaises(llm_client.ProviderConfigError):
             llm_client.load_providers(config_path)
 
+    def test_normalize_provider_rejects_non_boolean_stream(self):
+        provider = dict(self.provider, stream="false")
+
+        with self.assertRaisesRegex(
+            llm_client.ProviderConfigError,
+            "Provider 'deepseek' must define 'stream' as a boolean",
+        ):
+            llm_client._normalize_provider(provider)
+
     def test_round_robin_uses_next_key_for_each_request(self):
         seen_keys = []
 
@@ -306,6 +315,63 @@ class LLMClientTests(unittest.TestCase):
         self.assertEqual(llm_client.extract_text(response), "Hello")
         self.assertEqual(response["choices"][0]["finish_reason"], "stop")
         self.assertEqual(llm_client.extract_response_metadata(response)["key_index"], 0)
+
+    def test_local01_uses_direct_non_stream_response(self):
+        seen_kwargs = []
+        usage = SimpleObj(
+            prompt_tokens=2,
+            completion_tokens=3,
+            total_tokens=5,
+        )
+        direct_response = {
+            "model": "Qwen3.5-9B_merged",
+            "object": "chat.completion",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "Hello"},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": usage,
+        }
+        provider = {
+            "name": "local01",
+            "base_url": "http://localhost:13103/v1",
+            "api_keys": ["no_need"],
+            "models": ["Qwen3.5-9B_merged"],
+            "stream": False,
+        }
+
+        def fake_completion(**kwargs):
+            seen_kwargs.append(kwargs)
+            return direct_response
+
+        with patch.object(llm_client, "completion", side_effect=fake_completion):
+            response = llm_client.complete_with_provider(
+                model="Qwen3.5-9B_merged",
+                prompt="hello",
+                provider=provider,
+                max_tokens=16,
+                temperature=0.1,
+            )
+
+        self.assertFalse(seen_kwargs[0]["stream"])
+        self.assertNotIn("stream_options", seen_kwargs[0])
+        self.assertIs(response, direct_response)
+        self.assertEqual(llm_client.extract_text(response), "Hello")
+        self.assertEqual(
+            llm_client.extract_usage(response),
+            {
+                "prompt_tokens": 2,
+                "completion_tokens": 3,
+                "total_tokens": 5,
+            },
+        )
+        self.assertEqual(
+            llm_client.extract_response_metadata(response),
+            {"key_index": 0, "key_count": 1, "provider_name": "local01"},
+        )
 
     def test_complete_with_provider_handles_object_stream_chunks(self):
         def chunk(content=None, finish_reason=None):

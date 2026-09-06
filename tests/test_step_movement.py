@@ -14,6 +14,7 @@ from executor_system.movement import (
     MovementConfig,
     NavigationMetrics,
     NavigationRequest,
+    NoInteractionPoseError,
     StepNavigationError,
     create_movement_strategy,
 )
@@ -117,6 +118,17 @@ class StepMovementHappyPathTest(unittest.TestCase):
 
 
 class StepMovementRecoveryTest(unittest.TestCase):
+    def test_no_walkable_interaction_candidate_uses_dedicated_error(self):
+        runtime, request = navigation_case(
+            walkable=[(0, 0)],
+            candidates=[(2, 0)],
+        )
+        config = MovementConfig.resolve("step", environ={})
+        metrics = NavigationMetrics(config.mode)
+
+        with self.assertRaisesRegex(NoInteractionPoseError, "NO_INTERACTION_POSE"):
+            StepMovementStrategy(runtime, config, metrics).navigate(request)
+
     def test_failed_edge_is_blocked_and_planner_uses_detour(self):
         runtime, request = navigation_case(
             walkable=[(0, 0), (1, 0), (2, 0), (0, 1), (1, 1), (2, 1)],
@@ -154,7 +166,7 @@ class StepMovementRecoveryTest(unittest.TestCase):
         self.assertEqual(metrics.to_dict()["replans"], 1)
         self.assertEqual(metrics.to_dict()["failed_transitions"], 1)
 
-    def test_removed_remaining_path_is_not_attempted_and_replans(self):
+    def test_temporary_reachable_snapshot_removal_keeps_stable_path(self):
         initial_walkable = [
             (0, 0),
             (1, 0),
@@ -170,18 +182,24 @@ class StepMovementRecoveryTest(unittest.TestCase):
             candidates=[(3, 0)],
         )
         replacement = [point for point in initial_walkable if point != (2, 0)]
-        runtime.walkable_after_successful_moves[1] = {
-            0: [thor_position(x * 0.25, z * 0.25) for x, z in replacement]
-        }
+        original_refresh = runtime.refresh_reachable_positions
+
+        def refresh(agent_id):
+            if runtime.successful_move_count >= 1:
+                return [thor_position(x * 0.25, z * 0.25) for x, z in replacement]
+            return original_refresh(agent_id)
+
+        runtime.refresh_reachable_positions = refresh
         config = MovementConfig.resolve("step", environ={})
         metrics = NavigationMetrics(config.mode)
 
         result = StepMovementStrategy(runtime, config, metrics).navigate(request)
 
         self.assertEqual(position_to_grid_key(result.position), (3, 0))
-        self.assertEqual(runtime.edge_attempts[((1, 0), (2, 0))], 0)
-        self.assertIn(((1, 0), (1, 1)), runtime.successful_edges)
-        self.assertEqual(metrics.to_dict()["replans"], 1)
+        self.assertEqual(runtime.edge_attempts[((1, 0), (2, 0))], 1)
+        self.assertNotIn(((1, 0), (1, 1)), runtime.successful_edges)
+        self.assertEqual(metrics.to_dict()["replans"], 0)
+        self.assertGreater(metrics.to_dict()["suppressed_reachable_removals"], 0)
 
     def test_legal_position_deviation_replans_from_observed_grid(self):
         runtime, request = navigation_case(
@@ -218,26 +236,28 @@ class StepMovementRecoveryTest(unittest.TestCase):
 
         self.assertEqual([action[0] for action in runtime.actions], ["MoveAhead"])
 
-    def test_invisible_first_candidate_is_excluded_then_second_succeeds(self):
+    def test_two_invisible_candidates_are_excluded_then_third_succeeds(self):
         runtime, request = navigation_case(
-            walkable=[(0, 0), (1, 0), (2, 0)],
-            candidates=[(1, 0), (2, 0)],
+            walkable=[(0, 0), (1, 0), (2, 0), (3, 0)],
+            candidates=[(1, 0), (2, 0), (3, 0)],
         )
         runtime.object_visibility_by_position["Apple|1"] = {
             (1, 0): False,
-            (2, 0): True,
+            (2, 0): False,
+            (3, 0): True,
         }
         config = MovementConfig.resolve("step", environ={})
         metrics = NavigationMetrics(config.mode)
 
         result = StepMovementStrategy(runtime, config, metrics).navigate(request)
 
-        self.assertEqual(position_to_grid_key(result.position), (2, 0))
-        self.assertEqual(metrics.to_dict()["invisible_candidates"], 1)
-        self.assertEqual(metrics.to_dict()["replans"], 1)
-        self.assertEqual([action[0] for action in runtime.actions].count("Face"), 2)
+        self.assertEqual(position_to_grid_key(result.position), (3, 0))
+        self.assertEqual(metrics.to_dict()["invisible_candidates"], 2)
+        self.assertEqual(metrics.to_dict()["invisible_interaction_candidates"], 2)
+        self.assertEqual(metrics.to_dict()["replans"], 0)
+        self.assertEqual([action[0] for action in runtime.actions].count("Face"), 3)
 
-    def test_all_invisible_candidates_fall_back_to_reachable_endpoint(self):
+    def test_all_invisible_candidates_report_no_interaction_pose(self):
         runtime, request = navigation_case(
             walkable=[(0, 0), (1, 0), (2, 0)],
             candidates=[(1, 0), (2, 0)],
@@ -249,17 +269,87 @@ class StepMovementRecoveryTest(unittest.TestCase):
         config = MovementConfig.resolve("step", environ={})
         metrics = NavigationMetrics(config.mode)
 
+        with self.assertRaisesRegex(NoInteractionPoseError, "NO_INTERACTION_POSE"):
+            StepMovementStrategy(runtime, config, metrics).navigate(request)
+
+        self.assertEqual(metrics.to_dict()["invisible_candidates"], 2)
+        self.assertEqual(metrics.to_dict()["invisible_interaction_candidates"], 2)
+        self.assertEqual(metrics.to_dict()["replans"], 0)
+
+    def test_arrival_faces_and_checks_interaction_target_not_original_surface(self):
+        runtime, request = navigation_case(
+            walkable=[(0, 0), (1, 0), (2, 0)],
+            candidates=[(1, 0), (2, 0)],
+        )
+        counter = {
+            "objectId": "CounterTop|1",
+            "objectType": "CounterTop",
+            "visible": True,
+            "position": {"x": 0.0, "y": 0.9, "z": 0.0},
+        }
+        card = {
+            "objectId": "CreditCard|1",
+            "objectType": "CreditCard",
+            "visible": True,
+            "position": {"x": 0.75, "y": 0.9, "z": 0.0},
+        }
+        runtime.objects = {
+            counter["objectId"]: dict(counter),
+            card["objectId"]: dict(card),
+        }
+        runtime.object_visibility_by_position[card["objectId"]] = {
+            (1, 0): False,
+            (2, 0): True,
+        }
+        request = replace(
+            request,
+            dest_obj="CounterTop",
+            destination=dict(counter),
+            center=dict(counter["position"]),
+            object_resource=counter["objectId"],
+            interaction_target="CreditCard",
+            interaction_destination=dict(card),
+            interaction_center=dict(card["position"]),
+            interaction_object_resource=card["objectId"],
+            interaction_target_replaced=True,
+        )
+        metrics = NavigationMetrics(MovementConfig.resolve("step", environ={}).mode)
+
+        result = StepMovementStrategy(
+            runtime,
+            MovementConfig.resolve("step", environ={}),
+            metrics,
+        ).navigate(request)
+
+        self.assertEqual(position_to_grid_key(result.position), (2, 0))
+        self.assertEqual(result.destination["objectId"], counter["objectId"])
+        face_targets = [action[2] for action in runtime.actions if action[0] == "Face"]
+        self.assertEqual(face_targets, [card["position"], card["position"]])
+
+    def test_held_item_rotation_failure_excludes_candidate(self):
+        runtime, request = navigation_case(
+            walkable=[(0, 0), (1, 0), (2, 0)],
+            candidates=[(1, 0), (2, 0)],
+        )
+        original_face = runtime.face_position_direct
+        face_attempts = {"count": 0}
+
+        def face(agent_id, target):
+            face_attempts["count"] += 1
+            if face_attempts["count"] == 1:
+                raise RuntimeError("RotateLeft failed while holding an item")
+            return original_face(agent_id, target)
+
+        runtime.face_position_direct = face
+        runtime.held_item_rotation_failure = lambda exc: "holding" in str(exc)
+        config = MovementConfig.resolve("step", environ={})
+        metrics = NavigationMetrics(config.mode)
+
         result = StepMovementStrategy(runtime, config, metrics).navigate(request)
 
         self.assertEqual(position_to_grid_key(result.position), (2, 0))
-        self.assertEqual(metrics.to_dict()["invisible_candidates"], 2)
-        self.assertEqual(metrics.to_dict()["replans"], 1)
-        self.assertTrue(
-            any(
-                event.get("event") == "candidate_visibility_fallback"
-                for event in result.decision_trace
-            )
-        )
+        self.assertEqual(face_attempts["count"], 2)
+        self.assertEqual(metrics.to_dict()["replans"], 0)
 
     def test_replan_budget_exhaustion_stops_deterministically(self):
         runtime, request = navigation_case(

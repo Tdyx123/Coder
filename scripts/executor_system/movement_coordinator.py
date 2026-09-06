@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import time
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from typing import (
     Any,
@@ -30,9 +31,11 @@ from multi_robot_avoidance import (
 
 from .movement import (
     MovementConfig,
+    NavigationBatchResult,
     NavigationMetrics,
     NavigationRequest,
     NavigationResult,
+    NoInteractionPoseError,
     StepNavigationError,
 )
 from .utils import position_inside_aabb_footprint
@@ -78,6 +81,13 @@ class StepMovementCoordinator:
             for agent_id in range(int(runtime.physical_agent_count))
         )
         self.walkable_map = GlobalWalkableMap(robot_ids, config.grid_size_m)
+        self._stable_thor_positions: Dict[GridPoint, Dict[str, float]] = {}
+        for position in getattr(runtime, "global_reachable_positions", ()) or ():
+            normalized = dict(position)
+            self._stable_thor_positions.setdefault(
+                self._grid_point(normalized),
+                normalized,
+            )
 
     def _grid_point(self, position: Mapping[str, float]) -> GridPoint:
         return GridPoint(
@@ -106,17 +116,32 @@ class StepMovementCoordinator:
         return point
 
     def refresh_world(self) -> RuntimeWorldSnapshot:
-        snapshots = {
+        self._check_deadline()
+        live_snapshots = {
             str(agent_id): self.runtime.refresh_reachable_positions(agent_id)
             for agent_id in range(int(self.runtime.physical_agent_count))
         }
-        update = self.walkable_map.replace_all(snapshots)
-
-        raw_positions = [
+        raw_live_positions = [
             dict(position)
-            for positions in snapshots.values()
+            for positions in live_snapshots.values()
             for position in positions
         ]
+        live_by_key: Dict[GridPoint, Dict[str, float]] = {}
+        for position in raw_live_positions:
+            live_by_key.setdefault(self._grid_point(position), position)
+
+        suppressed_removals = len(
+            set(self._stable_thor_positions) - set(live_by_key)
+        )
+        if suppressed_removals:
+            self.metrics.increment(
+                "suppressed_reachable_removals",
+                suppressed_removals,
+            )
+        for point, position in live_by_key.items():
+            self._stable_thor_positions.setdefault(point, dict(position))
+
+        raw_positions = list(self._stable_thor_positions.values())
         raw_positions.sort(
             key=lambda position: (
                 float(position["x"]),
@@ -124,6 +149,12 @@ class StepMovementCoordinator:
                 float(position.get("y", 0.0)),
             )
         )
+        stable_snapshots = {
+            robot_id: [dict(position) for position in raw_positions]
+            for robot_id in self.walkable_map.robot_ids
+        }
+        update = self.walkable_map.replace_all(stable_snapshots)
+
         thor_positions: Dict[GridPoint, Dict[str, float]] = {}
         for position in raw_positions:
             thor_positions.setdefault(self._grid_point(position), position)
@@ -363,9 +394,10 @@ class StepMovementCoordinator:
                         )
                     )
                 if not candidate_items:
-                    raise StepNavigationError(
-                        f"agent {agent_id} target {request.dest_obj!r} has no "
-                        "walkable step-navigation candidate"
+                    raise NoInteractionPoseError(
+                        "NO_INTERACTION_POSE: agent "
+                        f"{agent_id} target {request.interaction_target or request.dest_obj!r} "
+                        "has no walkable step-navigation candidate"
                     )
                 candidates = tuple(candidate_items)
             robots.append(
@@ -478,6 +510,7 @@ class StepMovementCoordinator:
     ) -> _ExecutionBoundary:
         latest = snapshot
         for index, micro_step in enumerate(plan.micro_steps):
+            self._check_deadline()
             agent_id = int(micro_step.robot_id)
             actual_source = self._authoritative_grid_point(
                 agent_id,
@@ -508,6 +541,8 @@ class StepMovementCoordinator:
                     agent_id,
                     target,
                 )
+            except TimeoutError:
+                raise
             except Exception as exc:
                 return _ExecutionBoundary(
                     kind="failed_transition",
@@ -576,54 +611,100 @@ class StepMovementCoordinator:
         self,
         plan,
         active_states: Mapping[int, ActiveNavigationState],
-    ) -> bool:
+        *,
+        selected_agent_id: Optional[int] = None,
+    ) -> Tuple[bool, Optional[Exception]]:
         needs_replan = False
         for agent_id, state in sorted(active_states.items()):
             if state.result is not None:
                 continue
+            self._check_deadline()
             request = state.request
-            self.runtime.face_position_direct(agent_id, request.center)
+            assigned = plan.assignment[str(agent_id)].position
+            interaction_center = request.interaction_center or request.center
+            try:
+                self.runtime.face_position_direct(agent_id, interaction_center)
+            except TimeoutError:
+                raise
+            except Exception as exc:
+                held_item_failure = getattr(
+                    self.runtime,
+                    "held_item_rotation_failure",
+                    lambda _exc: False,
+                )(exc)
+                if not held_item_failure:
+                    if agent_id == selected_agent_id:
+                        return False, exc
+                    raise
+                state.excluded_candidate_keys.add(assigned)
+                state.decision_trace.append(
+                    {
+                        "event": "candidate_excluded",
+                        "reason": "held_item_rotation_failure",
+                        "candidate": assigned.to_list(),
+                    }
+                )
+                if not self._has_remaining_candidate(state, assigned):
+                    error = NoInteractionPoseError(
+                        "NO_INTERACTION_POSE: held-item rotation failed at "
+                        f"every candidate for agent {agent_id} target "
+                        f"{request.interaction_target or request.dest_obj!r}"
+                    )
+                    if agent_id == selected_agent_id:
+                        error.__cause__ = exc
+                        return False, error
+                    raise error from exc
+                needs_replan = True
+                continue
+
             destination = self.runtime.find_object(
-                request.object_resource or request.dest_obj,
+                request.interaction_object_resource
+                or request.interaction_target
+                or request.object_resource
+                or request.dest_obj,
                 agent_id=agent_id,
                 require_center=True,
             )
-            assigned = plan.assignment[str(agent_id)].position
             if not bool(destination.get("visible", False)):
                 self.metrics.increment("invisible_candidates")
-                remaining_candidate_exists = any(
-                    self._grid_point(position) != assigned
-                    and self._grid_point(position) not in state.excluded_candidate_keys
-                    for position in request.candidate_positions
-                )
-                if (
-                    remaining_candidate_exists
-                    and len(state.excluded_candidate_keys)
-                    < self.config.max_invisible_candidate_replans
-                ):
-                    state.excluded_candidate_keys.add(assigned)
-                    state.decision_trace.append(
-                        {
-                            "event": "candidate_excluded",
-                            "reason": "target_not_visible",
-                            "candidate": assigned.to_list(),
-                        }
-                    )
-                    needs_replan = True
-                    continue
+                self.metrics.increment("invisible_interaction_candidates")
+                state.excluded_candidate_keys.add(assigned)
                 state.decision_trace.append(
                     {
-                        "event": "candidate_visibility_fallback",
+                        "event": "candidate_excluded",
                         "reason": "target_not_visible",
                         "candidate": assigned.to_list(),
                     }
                 )
+                if not self._has_remaining_candidate(state, assigned):
+                    error = NoInteractionPoseError(
+                        "NO_INTERACTION_POSE: interaction target is invisible "
+                        f"from every candidate for agent {agent_id} target "
+                        f"{request.interaction_target or request.dest_obj!r}"
+                    )
+                    if agent_id == selected_agent_id:
+                        return False, error
+                    raise error
+                needs_replan = True
+                continue
             state.result = NavigationResult(
-                destination=dict(destination),
+                destination=dict(request.destination),
                 position=self.runtime.current_agent_position(agent_id),
                 decision_trace=tuple(state.decision_trace),
             )
-        return needs_replan
+        return needs_replan, None
+
+    def _has_remaining_candidate(
+        self,
+        state: ActiveNavigationState,
+        assigned: GridPoint,
+    ) -> bool:
+        return any(
+            self._grid_point(position) != assigned
+            and self._grid_point(position) not in state.excluded_candidate_keys
+            and self._grid_point(position) in self.walkable_map.walkable
+            for position in state.request.candidate_positions
+        )
 
     def _record_replan(
         self,
@@ -656,10 +737,26 @@ class StepMovementCoordinator:
         self,
         requests: Sequence[NavigationRequest],
         completed_agent_ids: FrozenSet[int] = frozenset(),
-    ) -> Dict[int, NavigationResult]:
+    ) -> NavigationBatchResult:
+        # Request collection happens in PhaseCoordinator before this callback.
+        # Hold the runtime lock until _execute_batch has released reservations.
+        scope = getattr(self.runtime, "navigation_execution_scope", None)
+        with scope() if callable(scope) else nullcontext():
+            return self._execute_batch(requests, completed_agent_ids)
+
+    def _check_deadline(self) -> None:
+        check = getattr(self.runtime, "check_navigation_deadline", None)
+        if callable(check):
+            check()
+
+    def _execute_batch(
+        self,
+        requests: Sequence[NavigationRequest],
+        completed_agent_ids: FrozenSet[int] = frozenset(),
+    ) -> NavigationBatchResult:
         ordered = tuple(sorted(requests, key=lambda request: request.agent_id))
         if not ordered:
-            return {}
+            return NavigationBatchResult(results={})
         agent_ids = [request.agent_id for request in ordered]
         if len(set(agent_ids)) != len(agent_ids):
             raise StepNavigationError("navigation batch contains duplicate agent ids")
@@ -677,6 +774,26 @@ class StepMovementCoordinator:
         parking_attempted = False
         replan_count = 0
         current_plan = None
+        deferred_agent_ids: FrozenSet[int] = frozenset()
+        fallback_status: Optional[str] = None
+        selected_agent_id: Optional[int] = None
+
+        def batch_result(error: Optional[Exception] = None) -> NavigationBatchResult:
+            if error is not None and selected_agent_id is None:
+                raise error
+            return NavigationBatchResult(
+                results={
+                    agent_id: state.result
+                    for agent_id, state in active_states.items()
+                    if state.result is not None
+                },
+                failed_agent_errors=(
+                    {selected_agent_id: error} if error is not None else {}
+                ),
+                deferred_agent_ids=deferred_agent_ids,
+                fallback_status=fallback_status,
+            )
+
         try:
             while any(state.result is None for state in active_states.values()):
                 snapshot = self.refresh_world()
@@ -720,15 +837,75 @@ class StepMovementCoordinator:
                             parking_candidates,
                         )
                 if planning.plan is None:
+                    eligible_fallback_status = planning.status in {
+                        "NO_PLAN_FOUND",
+                        "SEARCH_LIMIT_REACHED",
+                    }
+                    unresolved_agent_ids = tuple(
+                        sorted(
+                            agent_id
+                            for agent_id, state in active_states.items()
+                            if state.result is None
+                        )
+                    )
+                    serial_planning = None
+                    serial_agent_id = None
+                    if eligible_fallback_status and len(unresolved_agent_ids) > 1:
+                        for candidate_agent_id in unresolved_agent_ids:
+                            candidate_state = active_states[candidate_agent_id]
+                            candidate_planning = self._plan(
+                                {candidate_agent_id: candidate_state},
+                                snapshot,
+                                frozenset(blocked_transitions),
+                                {},
+                            )
+                            if candidate_planning.plan is not None:
+                                serial_agent_id = candidate_agent_id
+                                serial_planning = candidate_planning
+                                break
+                    if serial_planning is not None and serial_agent_id is not None:
+                        selected_agent_id = serial_agent_id
+                        fallback_status = planning.status
+                        deferred_agent_ids = frozenset(
+                            agent_id
+                            for agent_id in unresolved_agent_ids
+                            if agent_id != serial_agent_id
+                        )
+                        selected_state = active_states[serial_agent_id]
+                        selected_state.decision_trace.append(
+                            {
+                                "event": "serial_navigation_fallback",
+                                "joint_status": fallback_status,
+                                "selected_agent_id": serial_agent_id,
+                                "deferred_agent_ids": sorted(deferred_agent_ids),
+                            }
+                        )
+                        active_states = {
+                            agent_id: state
+                            for agent_id, state in active_states.items()
+                            if state.result is not None or agent_id == serial_agent_id
+                        }
+                        parking_candidates = {}
+                        planning = serial_planning
+                        self.metrics.increment("serial_fallback_batches")
+                        self.metrics.increment(
+                            "deferred_requests",
+                            len(deferred_agent_ids),
+                        )
+
+                if planning.plan is None:
                     parking_context = (
                         "; parking recovery found no safe joint plan"
                         if parking_attempted
                         else ""
                     )
-                    raise StepNavigationError(
+                    error = StepNavigationError(
                         "step navigation planning failed after full refresh "
                         f"with status {planning.status}{parking_context}"
                     )
+                    if not eligible_fallback_status:
+                        raise error
+                    return batch_result(error)
 
                 current_plan = planning.plan
                 if parking_candidates:
@@ -766,36 +943,36 @@ class StepMovementCoordinator:
                         )
                         if len(blocked_transitions) > self.config.max_failed_transitions:
                             self.metrics.increment("budget_exhaustions")
-                            raise StepNavigationError(
+                            return batch_result(StepNavigationError(
                                 "failed transition budget "
                                 f"{self.config.max_failed_transitions} exhausted"
-                            )
+                            ))
                     elif boundary.kind == "position_deviation":
                         self.metrics.increment("position_deviations")
                     replan_count += 1
-                    self._record_replan(
-                        active_states,
-                        replan_count,
-                        boundary.reason,
-                    )
+                    try:
+                        self._record_replan(
+                            active_states,
+                            replan_count,
+                            boundary.reason,
+                        )
+                    except StepNavigationError as exc:
+                        return batch_result(exc)
                     current_plan = None
                     continue
 
-                needs_replan = self._finish_arrived_requests(
+                needs_replan, arrival_error = self._finish_arrived_requests(
                     current_plan,
                     active_states,
+                    selected_agent_id=selected_agent_id,
                 )
+                if arrival_error is not None:
+                    return batch_result(arrival_error)
                 if needs_replan:
                     self._release_plan(
                         current_plan,
                         0,
                         active_states,
-                        "target not visible from assigned candidate",
-                    )
-                    replan_count += 1
-                    self._record_replan(
-                        active_states,
-                        replan_count,
                         "target not visible from assigned candidate",
                     )
                     current_plan = None
@@ -808,11 +985,7 @@ class StepMovementCoordinator:
                     "batch complete",
                 )
                 current_plan = None
-            return {
-                agent_id: state.result
-                for agent_id, state in active_states.items()
-                if state.result is not None
-            }
+            return batch_result()
         finally:
             if current_plan is not None:
                 current_plan.reservations.release_from(0)

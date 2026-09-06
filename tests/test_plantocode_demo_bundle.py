@@ -456,6 +456,27 @@ def write_scale_plan_fixture(root: Path) -> Path:
 
 
 class PlanToCodeDemoBundleTest(unittest.TestCase):
+    def test_generated_runtime_preserves_optional_noop_subtasks(self):
+        proof = {
+            "subtask_id": 1,
+            "goal_literals": ["(ready drawer)"],
+            "verified": True,
+        }
+        bundle_data = {
+            "task": "unit task",
+            "task_plan": {"task_id": "unit", "stages": []},
+            "gcr": [],
+            "no_trans": 0,
+            "phases": [],
+            "object_mappings": {},
+            "object_mapping_warnings": [],
+            "noop_subtasks": [proof],
+        }
+
+        bundle = build_hardcoded_bundle(bundle_data)
+
+        self.assertEqual(bundle.noop_subtasks, [proof])
+
     def test_generated_runtime_requires_bundle_gcr(self):
         bundle_data = {
             "task": "unit task",
@@ -629,6 +650,7 @@ class PlanToCodeDemoBundleTest(unittest.TestCase):
 
             self.assertIsNotNone(bundle_data)
             self.assertEqual(bundle_data["no_trans"], 6)
+            self.assertEqual(bundle_data["noop_subtasks"], [])
             self.assertEqual(
                 bundle_data["gcr"],
                 [
@@ -1018,7 +1040,7 @@ class PlanToCodeDemoBundleTest(unittest.TestCase):
                 ["GoToObject", "OpenObject"],
             )
 
-    def test_plantocode_skips_allocated_subtask_without_plan(self):
+    def test_plantocode_rejects_allocated_subtask_without_plan(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             task_run_dir = write_parallel_run_fixture_task(root, "6", 0)
@@ -1099,33 +1121,13 @@ class PlanToCodeDemoBundleTest(unittest.TestCase):
                 ]
             )
 
-            self.assertEqual(result_code, 0)
+            self.assertEqual(result_code, 1)
             executable_plan = task_run_dir / "plan_to_code" / "executable_plan.py"
             details = json.loads((root / "summary" / "plan_to_code_results.json").read_text(encoding="utf-8"))
-            bundle_data = load_bundle_data_from_executable(executable_plan)
 
-            self.assertEqual(details[0]["status"], "success")
-            self.assertEqual(details[0]["phase_count"], 2)
-            self.assertEqual(details[0]["no_trans"], 4)
-            self.assertEqual(
-                bundle_data["phases"],
-                [
-                    [{"subtask_id": 1, "robot_number": 1}],
-                    [{"subtask_id": 3, "robot_number": 1}],
-                ],
-            )
-            self.assertEqual(bundle_data["no_trans"], 4)
-            self.assertNotIn("plan_files", bundle_data)
-            first_stage = bundle_data["task_plan"]["stages"][0]
-            second_stage = bundle_data["task_plan"]["stages"][1]
-            self.assertEqual(
-                [action["parameters"]["args"] for action in first_stage["robot_action_queues"]["robot1"]],
-                [("Cabinet",), ("Cabinet",)],
-            )
-            self.assertEqual(
-                [action["parameters"]["args"] for action in second_stage["robot_action_queues"]["robot1"]],
-                [("Drawer",), ("Drawer",)],
-            )
+            self.assertFalse(executable_plan.exists())
+            self.assertEqual(details[0]["status"], "failed")
+            self.assertIn("unexpected allocation subtask(s): [2]", details[0]["error"])
 
     def test_plantocode_appends_unassigned_planner_subtasks_in_final_phase(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1146,8 +1148,7 @@ class PlanToCodeDemoBundleTest(unittest.TestCase):
             )
             (task_run_dir / "02_allocate" / "02_allocate_output.txt").write_text(
                 "# Sequence of Operations:\n"
-                "Subtask 1: Robot 1;\n"
-                "Subtask 2: Robot 1;\n",
+                "Subtask 1: Robot 1;\n",
                 encoding="utf-8",
             )
             outputs_dir = task_run_dir / "08_planner" / "outputs"
@@ -1231,7 +1232,7 @@ class PlanToCodeDemoBundleTest(unittest.TestCase):
                 [("Drawer",), ("Drawer",)],
             )
 
-    def test_plantocode_skips_missing_manifest_plan_file(self):
+    def test_plantocode_rejects_missing_manifest_plan_file(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             task_run_dir = write_parallel_run_fixture_task(root, "6", 0)
@@ -1321,22 +1322,17 @@ class PlanToCodeDemoBundleTest(unittest.TestCase):
                 )
 
             output = stdout.getvalue()
-            self.assertEqual(result_code, 0)
+            self.assertEqual(result_code, 1)
             self.assertIn("Skipping missing planner output listed in manifest", output)
             self.assertIn(str(missing_plan_2), output)
             self.assertNotIn("Planner output file(s) not found", output)
 
             executable_plan = task_run_dir / "plan_to_code" / "executable_plan.py"
             details = json.loads((root / "summary" / "plan_to_code_results.json").read_text(encoding="utf-8"))
-            bundle_data = load_bundle_data_from_executable(executable_plan)
 
-            self.assertEqual(details[0]["status"], "success")
-            self.assertEqual(details[0]["phase_count"], 2)
-            self.assertEqual(bundle_data["phases"], [
-                [{"subtask_id": 1, "robot_number": 1}],
-                [{"subtask_id": 3, "robot_number": 1}],
-            ])
-            self.assertNotIn("plan_files", bundle_data)
+            self.assertFalse(executable_plan.exists())
+            self.assertEqual(details[0]["status"], "failed")
+            self.assertIn("missing planner output for allocated subtask(s): [2]", details[0]["error"])
 
     def test_lammap_baseline_mode_writes_parallel_runner_summary_path(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

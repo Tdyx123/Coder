@@ -28,7 +28,17 @@ from file_processor import FileProcessor, PDDLError
 from llm_handler import LLMError, LLMHandler
 from llm_logger import get_llm_logger
 from pddl_rag import PDDLRagError, PDDLRagRetriever, PDDLRagTimeoutError
-from pddl_problem_repair import ProblemRepairResult, repair_problem_pddl
+from pddl_problem_repair import (
+    ProblemRepairResult,
+    repair_problem_pddl,
+    repair_unknown_object_types,
+)
+from pddl_noop_audit import (
+    audit_problem_initial_state,
+    build_key_object_evidence,
+    plan_has_actions,
+    verify_zero_action_plan,
+)
 from parsing_utils import ParsingUtils
 from run_config import (
     RunConfig,
@@ -1257,11 +1267,31 @@ class TaskManager:
         return summary
 
     def _planner_record_success(self, record: Dict[str, Any]) -> bool:
-        return (
+        basic_success = (
             record.get("status") == "completed"
             and bool(record.get("plan_generated"))
             and not bool(record.get("has_planner_error"))
             and record.get("return_code") in (None, 0)
+        )
+        if not basic_success:
+            return False
+        plan_path = record.get("compatibility_output")
+        if not plan_path or not os.path.isfile(str(plan_path)):
+            return True
+        plan_text = self.file_processor.read_file(str(plan_path))
+        if plan_has_actions(plan_text):
+            return True
+        if self.val_feedback_enabled:
+            return True
+        subtask_id = self._subtask_id_from_filename(str(record.get("problem_file", "")))
+        if subtask_id is None:
+            return False
+        noop_records = self._read_json_artifact("08_planner/noop_subtasks.json", [])
+        return any(
+            isinstance(noop, dict)
+            and noop.get("subtask_id") == subtask_id
+            and bool(noop.get("verified"))
+            for noop in (noop_records if isinstance(noop_records, list) else [])
         )
 
     def _build_planner_status_fields(
@@ -1929,25 +1959,52 @@ class TaskManager:
                 if f.endswith("_problem.pddl")
             ])
 
+        planner_manifest_path = self.config.artifact(
+            "planner_manifest",
+            "08_planner/planner_manifest.json",
+        )
+        planner_records = self._read_json_artifact(planner_manifest_path, [])
+        if not isinstance(planner_records, list):
+            planner_records = []
+        noop_records = self._read_json_artifact("08_planner/noop_subtasks.json", [])
+        verified_noops = {
+            int(record["subtask_id"])
+            for record in noop_records
+            if isinstance(record, dict)
+            and str(record.get("subtask_id", "")).isdigit()
+            and bool(record.get("verified"))
+        } if isinstance(noop_records, list) else set()
+
+        valid_subtasks: Optional[Set[int]] = None
         if self.val_feedback_enabled:
             val_manifest_path = self.config.artifact("val_manifest", "08_val/val_manifest.json")
             val_manifest = self._read_json_artifact(val_manifest_path, {})
             latest = val_manifest.get("latest_by_subtask", {}) if isinstance(val_manifest, dict) else {}
-            if not isinstance(latest, dict):
-                latest = {}
-            TC = sum(
-                1
-                for record in latest.values()
-                if isinstance(record, dict) and bool(record.get("valid"))
-            )
-            return TC, total_subtasks
+            valid_subtasks = {
+                int(subtask_id)
+                for subtask_id, record in latest.items()
+                if str(subtask_id).isdigit()
+                and isinstance(record, dict)
+                and bool(record.get("valid"))
+            } if isinstance(latest, dict) else set()
 
-        TC = 0
-        plan_file_path = self._get_plan_file_path()
-        if plan_file_path and os.path.exists(plan_file_path):
-            TC = len([f for f in os.listdir(plan_file_path) if f.endswith('_plan.txt')])
+        completed: Set[int] = set()
+        for record in planner_records:
+            if not isinstance(record, dict) or not self._planner_record_success(record):
+                continue
+            subtask_id = self._subtask_id_from_filename(str(record.get("problem_file", "")))
+            if subtask_id is None:
+                continue
+            if valid_subtasks is not None and subtask_id not in valid_subtasks:
+                continue
+            plan_path = record.get("compatibility_output")
+            if not plan_path or not os.path.isfile(str(plan_path)):
+                continue
+            plan_text = self.file_processor.read_file(str(plan_path))
+            if plan_has_actions(plan_text) or subtask_id in verified_noops:
+                completed.add(subtask_id)
 
-        return TC, total_subtasks
+        return len(completed), total_subtasks
 
     def load_dataset(self, test_file: str) -> Tuple[List[str], List[List[dict]], List[str], List[int], List[int]]:
         """Load dataset from a JSONL file.
@@ -2191,6 +2248,10 @@ class TaskManager:
                     subtask_idx: subtask_context["states"]
                     for subtask_idx, subtask_context in key_object_pddl_context_by_subtask.items()
                 }
+                key_object_pddl_evidence_by_subtask = {
+                    subtask_idx: subtask_context.get("evidence", [])
+                    for subtask_idx, subtask_context in key_object_pddl_context_by_subtask.items()
+                }
                 key_object_id_bindings_by_subtask = {
                     subtask_idx: subtask_context["object_id_bindings"]
                     for subtask_idx, subtask_context in key_object_pddl_context_by_subtask.items()
@@ -2199,10 +2260,20 @@ class TaskManager:
                 key_object_states_by_subtask_artifact = "05_problem_generation/key_object_pddl_states_by_subtask.json"
                 key_object_id_bindings_artifact = "05_problem_generation/key_object_id_bindings.json"
                 key_object_id_bindings_by_subtask_artifact = "05_problem_generation/key_object_id_bindings_by_subtask.json"
+                key_object_evidence_by_subtask_artifact = "05_problem_generation/key_object_pddl_state_evidence_by_subtask.json"
                 self._write_json_artifact(key_object_states_artifact, key_object_pddl_states)
                 self._record_artifact("problem_files", "key_object_pddl_states", key_object_states_artifact)
                 self._write_json_artifact(key_object_states_by_subtask_artifact, key_object_pddl_states_by_subtask)
                 self._record_artifact("problem_files", "key_object_pddl_states_by_subtask", key_object_states_by_subtask_artifact)
+                self._write_json_artifact(
+                    key_object_evidence_by_subtask_artifact,
+                    key_object_pddl_evidence_by_subtask,
+                )
+                self._record_artifact(
+                    "problem_files",
+                    "key_object_pddl_state_evidence_by_subtask",
+                    key_object_evidence_by_subtask_artifact,
+                )
                 self._write_json_artifact(key_object_id_bindings_artifact, key_object_id_bindings)
                 self._record_artifact("problem_files", "key_object_id_bindings", key_object_id_bindings_artifact)
                 self._write_json_artifact(key_object_id_bindings_by_subtask_artifact, key_object_id_bindings_by_subtask)
@@ -2268,6 +2339,7 @@ class TaskManager:
                             val_result.get("planner_records", available_planner_records),
                         )
                         attempt_result["val_result"] = val_result
+                        self._refresh_noop_audits(attempt_result["planner_records"])
                         print("✓ VAL validation complete")
 
                 allocated_plan = attempt_result.get("allocated_plan", "")
@@ -2885,7 +2957,7 @@ class TaskManager:
     ) -> Dict[str, List[Dict[str, Any]]]:
         """Convert key objects into PDDL states plus object-token bindings."""
         if not key_objects:
-            return {"states": [], "object_id_bindings": []}
+            return {"states": [], "object_id_bindings": [], "evidence": []}
 
         key_object_types = {
             self._object_match_key(obj.get("name", ""))
@@ -2894,11 +2966,11 @@ class TaskManager:
         }
         key_object_types.discard("")
         if not key_object_types:
-            return {"states": [], "object_id_bindings": []}
+            return {"states": [], "object_id_bindings": [], "evidence": []}
 
         floor_objects = self._load_floor_ai2thor_metadata()
         if not floor_objects:
-            return {"states": [], "object_id_bindings": []}
+            return {"states": [], "object_id_bindings": [], "evidence": []}
 
         supported_predicates = self._extract_pddl_predicate_names(domain_content)
         floor_object_numbering = self._build_floor_object_numbering(floor_objects)
@@ -2909,6 +2981,7 @@ class TaskManager:
         }
         allaction_types = self._allaction_pddl_type_names()
         states: List[Dict[str, Any]] = []
+        evidence: List[Dict[str, Any]] = []
         bindings_by_object_id: Dict[str, Dict[str, Any]] = {}
 
         def record_binding(entry: Dict[str, Any], role: str) -> None:
@@ -2965,6 +3038,15 @@ class TaskManager:
                 parent_token,
                 supported_predicates,
             )
+            evidence.extend(
+                build_key_object_evidence(
+                    item,
+                    object_token,
+                    parent_token,
+                    facts,
+                    supported_predicates,
+                )
+            )
             state_entry: Dict[str, Any] = {
                 "object": object_token,
                 "object_type": self._pddl_type_for_ai2thor_object_type(object_type, allaction_types),
@@ -2992,6 +3074,7 @@ class TaskManager:
         return {
             "states": states,
             "object_id_bindings": list(bindings_by_object_id.values()),
+            "evidence": evidence,
         }
 
     def _filter_key_object_pddl_states_for_domain(
@@ -3550,6 +3633,10 @@ class TaskManager:
                 real_robot_name,
             )
             extracted_problem = self._force_problem_domain(extracted_problem, real_robot_name)
+            extracted_problem, _, _ = repair_unknown_object_types(
+                extracted_problem,
+                domain_content,
+            )
             repair_result: Optional[ProblemRepairResult] = None
             if self.problem_repair_enabled:
                 repair_result = repair_problem_pddl(
@@ -3681,6 +3768,139 @@ class TaskManager:
         except Exception as e:
             raise PDDLError(f"Error planning generated problems: {str(e)}")
 
+    def _key_object_evidence_for_subtask(self, subtask_id: int) -> List[Dict[str, Any]]:
+        evidence_by_subtask = self._read_json_artifact(
+            "05_problem_generation/key_object_pddl_state_evidence_by_subtask.json",
+            {},
+        )
+        if not isinstance(evidence_by_subtask, dict):
+            return []
+        evidence = evidence_by_subtask.get(
+            str(subtask_id),
+            evidence_by_subtask.get(subtask_id, []),
+        )
+        return evidence if isinstance(evidence, list) else []
+
+    def _audit_problem_before_planning(
+        self,
+        problem_path: str,
+        subtask_id: int,
+    ) -> Dict[str, Any]:
+        problem = self.file_processor.read_file(problem_path)
+        audit = audit_problem_initial_state(
+            problem,
+            self._key_object_evidence_for_subtask(subtask_id),
+        )
+        if audit.problem != problem:
+            self.file_processor.write_file(problem_path, audit.problem)
+        audit_record = {
+            "subtask_id": subtask_id,
+            "goal_literals": audit.goal_literals,
+            "repairs": audit.repairs,
+            "failure_reasons": audit.failure_reasons,
+        }
+        artifact = "05_problem_generation/problem_state_audit.json"
+        existing = self._read_json_artifact(artifact, [])
+        if not isinstance(existing, list):
+            existing = []
+        by_id = {
+            int(item["subtask_id"]): item
+            for item in existing
+            if isinstance(item, dict) and str(item.get("subtask_id", "")).isdigit()
+        }
+        by_id[subtask_id] = audit_record
+        self._write_json_artifact(artifact, [by_id[key] for key in sorted(by_id)])
+        self._record_artifact("problem_generation", "problem_state_audit", artifact)
+        if audit.failure_reasons:
+            raise PlanningError(
+                f"Problem state audit failed for subtask {subtask_id}: "
+                + "; ".join(audit.failure_reasons)
+            )
+        return audit_record
+
+    def _refresh_noop_audits(
+        self,
+        planner_records: Sequence[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        artifact = "08_planner/noop_subtasks.json"
+        existing = self._read_json_artifact(artifact, [])
+        if not isinstance(existing, list):
+            existing = []
+        by_id = {
+            int(item["subtask_id"]): item
+            for item in existing
+            if isinstance(item, dict) and str(item.get("subtask_id", "")).isdigit()
+        }
+        problem_audits = self._read_json_artifact(
+            "05_problem_generation/problem_state_audit.json",
+            [],
+        )
+        audit_by_id = {
+            int(item["subtask_id"]): item
+            for item in problem_audits
+            if isinstance(item, dict) and str(item.get("subtask_id", "")).isdigit()
+        } if isinstance(problem_audits, list) else {}
+        val_manifest = self._read_json_artifact(
+            self.config.artifact("val_manifest", "08_val/val_manifest.json"),
+            {},
+        )
+        latest_val = (
+            val_manifest.get("latest_by_subtask", {})
+            if isinstance(val_manifest, dict)
+            else {}
+        )
+
+        refreshed: List[Dict[str, Any]] = []
+        for planner_record in planner_records:
+            subtask_id = self._subtask_id_from_filename(
+                str(planner_record.get("problem_file", ""))
+            )
+            if subtask_id is None:
+                continue
+            by_id.pop(subtask_id, None)
+            plan_path = planner_record.get("compatibility_output")
+            audit_record = audit_by_id.get(subtask_id, {})
+            plan_exists = bool(plan_path and os.path.isfile(str(plan_path)))
+            if not plan_exists and not audit_record.get("failure_reasons"):
+                continue
+            plan_text = self.file_processor.read_file(str(plan_path)) if plan_exists else ""
+            if plan_has_actions(plan_text):
+                continue
+            problem_path = planner_record.get("problem_path")
+            if not problem_path:
+                problem_dir = self._get_raw_problem_file_path()
+                problem_path = (
+                    os.path.join(problem_dir, str(planner_record.get("problem_file", "")))
+                    if problem_dir
+                    else ""
+                )
+            problem = (
+                self.file_processor.read_file(str(problem_path))
+                if problem_path and os.path.isfile(str(problem_path))
+                else ""
+            )
+            val_record = (
+                latest_val.get(str(subtask_id), latest_val.get(subtask_id))
+                if isinstance(latest_val, dict)
+                else None
+            )
+            proof = verify_zero_action_plan(
+                subtask_id=subtask_id,
+                problem=problem,
+                plan_text=plan_text,
+                evidence=self._key_object_evidence_for_subtask(subtask_id),
+                planner_record=planner_record,
+                val_enabled=self.val_feedback_enabled,
+                val_record=val_record if isinstance(val_record, dict) else None,
+                repairs=audit_record.get("repairs", []),
+            )
+            by_id[subtask_id] = proof
+            refreshed.append(proof)
+
+        self._write_json_artifact(artifact, [by_id[key] for key in sorted(by_id)])
+        self._record_artifact("planner", "noop_subtasks", artifact)
+        return refreshed
+
     def run_planners(self, subtask_ids: Optional[Set[int]] = None) -> List[Dict[str, Any]]:
         """Run PDDL planners on problem files."""
         try:
@@ -3706,10 +3926,13 @@ class TaskManager:
                 output_file = None
                 try:
                     problem_file_full = os.path.join(problem_file_path, problem_file)
+                    subtask_id = self._subtask_id_from_filename(problem_file)
                     safe_name = self._sanitize_filename(problem_file.replace(".pddl", ""))
                     output_file = os.path.join(plan_file_path, f"{safe_name}_plan.txt")
                     if os.path.isfile(output_file):
                         os.unlink(output_file)
+                    if subtask_id is not None:
+                        self._audit_problem_before_planning(problem_file_full, subtask_id)
                     domain_name = self.file_processor.extract_domain_name(problem_file_full)
                     if not domain_name:
                         print(f"No domain specified in {problem_file}")
@@ -3767,6 +3990,7 @@ class TaskManager:
                     self._write_text_artifact(stderr_path, result.stderr)
                     planner_records.append({
                         "problem_file": problem_file,
+                        "problem_path": problem_file_full,
                         "domain_file": domain_file,
                         "command_path": command_path,
                         "stdout_path": stdout_path,
@@ -3821,6 +4045,7 @@ class TaskManager:
             merged_records = self._merge_subtask_records(existing_records, planner_records)
             self._write_json_artifact(planner_manifest_path, merged_records)
             self._record_artifact("planner", "manifest", planner_manifest_path)
+            self._refresh_noop_audits(planner_records)
             self._persist_manifest()
             return planner_records
                     

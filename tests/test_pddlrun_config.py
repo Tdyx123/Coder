@@ -955,17 +955,26 @@ class PDDLRunConfigTests(unittest.TestCase):
             resources_dir = root / "resources"
             resources_dir.mkdir(parents=True, exist_ok=True)
             domain_file = resources_dir / "robot1.pddl"
-            domain_file.write_text("(define (domain robot1))", encoding="utf-8")
+            domain_file.write_text(
+                "(define (domain robot1) (:predicates (ready ?object - object)))",
+                encoding="utf-8",
+            )
 
             problem_dir = Path(manager._get_raw_problem_file_path())
             problem_dir.mkdir(parents=True, exist_ok=True)
             problem_file = problem_dir / "subtask_01_problem.pddl"
-            problem_file.write_text("(define (problem task) (:domain robot1 ))", encoding="utf-8")
+            problem_file.write_text(
+                "(define (problem task) (:domain robot1) "
+                "(:objects drawer - object) (:init (ready drawer)) "
+                "(:goal (ready drawer)))",
+                encoding="utf-8",
+            )
             output_file = Path(manager._get_plan_file_path()) / "subtask_01_problem_plan.txt"
             captured = {}
 
             def fake_run(command, stdout, stderr, text, timeout):
                 captured["command"] = command
+                captured["planner_problem"] = Path(command[-1]).read_text(encoding="utf-8")
                 self.assertEqual(timeout, 17)
 
                 class Result:
@@ -985,6 +994,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertLess(command.index("--plan-file"), command.index("--alias"))
             self.assertEqual(command[3:5], ["--alias", "custom-alias"])
             self.assertEqual(command[-2:], [str(domain_file), str(problem_file)])
+            self.assertNotIn("(ready drawer)", captured["planner_problem"].split("(:goal", 1)[0])
             self.assertFalse((Path(manager.current_task_run_dir) / "07_validate").exists())
             self.assertFalse(output_file.exists())
             planner_manifest = (
@@ -1025,6 +1035,162 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertFalse(record["has_planner_error"])
             self.assertTrue(feedback["succeeded"])
             self.assertEqual(feedback["feedback_text"], "")
+
+    def test_run_planners_writes_verified_noop_audit(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manager = TaskManager(str(root), "test-model", config=RunConfig(root))
+            manager.current_task_run_dir = str(root / "task_run")
+            manager.current_task_manifest = {"artifacts": {}}
+            Path(manager.current_task_run_dir).mkdir(parents=True)
+            resources_dir = root / "resources"
+            resources_dir.mkdir(parents=True, exist_ok=True)
+            (resources_dir / "robot1.pddl").write_text(
+                "(define (domain robot1) (:predicates (ready ?object - object)))",
+                encoding="utf-8",
+            )
+            problem_dir = Path(manager._get_raw_problem_file_path())
+            problem_dir.mkdir(parents=True)
+            (problem_dir / "subtask_01_problem.pddl").write_text(
+                "(define (problem ready) (:domain robot1) "
+                "(:objects drawer - object) (:init (ready drawer)) "
+                "(:goal (ready drawer)))",
+                encoding="utf-8",
+            )
+            manager._write_json_artifact(
+                "05_problem_generation/key_object_pddl_state_evidence_by_subtask.json",
+                {"1": [{"literal": "(ready drawer)", "source_field": "isReady"}]},
+            )
+
+            def fake_run(command, stdout, stderr, text, timeout):
+                Path(command[2]).write_text("; cost = 0 (unit cost)\n", encoding="utf-8")
+
+                class Result:
+                    stdout = "Solution found"
+                    stderr = ""
+                    returncode = 0
+
+                return Result()
+
+            with patch("pddlrun_llmseparate.subprocess.run", side_effect=fake_run):
+                manager.run_planners()
+
+            noop_records = json.loads(
+                (root / "task_run/08_planner/noop_subtasks.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(len(noop_records), 1)
+            self.assertTrue(noop_records[0]["verified"])
+            self.assertEqual(noop_records[0]["goal_literals"], ["(ready drawer)"])
+
+    def test_run_planners_blocks_audit_failure_and_invalidates_stale_outputs(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manager = TaskManager(str(root), "test-model", config=RunConfig(root))
+            manager.current_task_run_dir = str(root / "task_run")
+            manager.current_task_manifest = {"artifacts": {}}
+            Path(manager.current_task_run_dir).mkdir(parents=True)
+            resources_dir = root / "resources"
+            resources_dir.mkdir(parents=True, exist_ok=True)
+            (resources_dir / "robot1.pddl").write_text(
+                "(define (domain robot1) (:predicates (ready ?object - object)))",
+                encoding="utf-8",
+            )
+            problem_dir = Path(manager._get_raw_problem_file_path())
+            problem_dir.mkdir(parents=True)
+            invalid_problem = problem_dir / "subtask_01_problem.pddl"
+            invalid_problem.write_text(
+                "; (:goal (ready drawer))\n"
+                "(define (problem invalid) (:domain robot1) (:init (ready drawer)))",
+                encoding="utf-8",
+            )
+            valid_problem = problem_dir / "subtask_02_problem.pddl"
+            valid_problem.write_text(
+                "(define (problem valid) (:domain robot1) (:init) (:goal (ready drawer)))",
+                encoding="utf-8",
+            )
+            output_dir = Path(manager._get_plan_file_path())
+            output_dir.mkdir(parents=True)
+            stale_output = output_dir / "subtask_01_problem_plan.txt"
+            stale_output.write_text("; cost = 0\n", encoding="utf-8")
+            manager._write_json_artifact("08_planner/noop_subtasks.json", [
+                {"subtask_id": 1, "verified": True, "failure_reasons": []},
+            ])
+            manager._write_json_artifact("08_planner/planner_manifest.json", [
+                {"problem_file": invalid_problem.name, "status": "completed",
+                 "return_code": 0, "compatibility_output": str(stale_output)},
+            ])
+            called_problems = []
+
+            def fake_run(command, stdout, stderr, text, timeout):
+                called_problems.append(Path(command[-1]).name)
+                Path(command[2]).write_text("(make-ready drawer)\n", encoding="utf-8")
+                return subprocess.CompletedProcess(command, 0, "Solution found", "")
+
+            with patch("pddlrun_llmseparate.subprocess.run", side_effect=fake_run):
+                records = manager.run_planners(subtask_ids={1, 2})
+
+            self.assertEqual(called_problems, [valid_problem.name])
+            self.assertFalse(stale_output.exists())
+            invalid_record = next(item for item in records if item["problem_file"] == invalid_problem.name)
+            self.assertEqual(invalid_record["status"], "error")
+            self.assertFalse(invalid_record["plan_generated"])
+            self.assertTrue(invalid_record["has_planner_error"])
+            self.assertIn("missing_goal_section", invalid_record["error"])
+            self.assertFalse(manager._planner_record_success(invalid_record))
+            audits = manager._read_json_artifact("05_problem_generation/problem_state_audit.json", [])
+            self.assertIn("missing_goal_section", audits[0]["failure_reasons"])
+            noops = manager._read_json_artifact("08_planner/noop_subtasks.json", [])
+            self.assertEqual(len(noops), 1)
+            self.assertFalse(noops[0]["verified"])
+            self.assertIn("missing_goal_section", noops[0]["failure_reasons"])
+            saved = manager._read_json_artifact("08_planner/planner_manifest.json", [])
+            self.assertEqual(next(item for item in saved if item["problem_file"] == invalid_problem.name), invalid_record)
+
+    def test_audit_failure_is_persisted_before_raising(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manager = TaskManager(str(root), "test-model", config=RunConfig(root))
+            manager.current_task_run_dir = str(root / "task_run")
+            manager.current_task_manifest = {"artifacts": {}}
+            problem_path = root / "subtask_01_problem.pddl"
+            problem = "(define (problem bad) (:init) (:goal (or (ready a) (ready b))))"
+            problem_path.write_text(problem, encoding="utf-8")
+
+            with self.assertRaisesRegex(PDDLError, "unsupported_goal:or"):
+                manager._audit_problem_before_planning(str(problem_path), 1)
+
+            audits = manager._read_json_artifact("05_problem_generation/problem_state_audit.json", [])
+            self.assertEqual(audits[0]["failure_reasons"], ["unsupported_goal:or"])
+            self.assertEqual(problem_path.read_text(encoding="utf-8"), problem)
+
+    def test_planner_feedback_rejects_unverified_zero_action_plan(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manager = TaskManager(str(root), "test-model", config=RunConfig(root))
+            manager.current_task_run_dir = str(root / "task_run")
+            manager.current_task_manifest = {"artifacts": {}}
+            Path(manager.current_task_run_dir).mkdir(parents=True)
+            plan_path = root / "subtask_01_problem_plan.txt"
+            plan_path.write_text("; cost = 0 (unit cost)\n", encoding="utf-8")
+            record = {
+                "problem_file": "subtask_01_problem.pddl",
+                "compatibility_output": str(plan_path),
+                "status": "completed",
+                "return_code": 0,
+                "plan_generated": True,
+                "has_planner_error": False,
+            }
+
+            feedback = manager._build_planner_feedback(
+                [record],
+                expected_subtask_count=1,
+                robot_assignments={1: 1},
+            )
+
+            self.assertFalse(feedback["succeeded"])
+            self.assertEqual(feedback["failed_subtask_ids"], [1])
 
     def test_planner_feedback_reports_missing_plan_reason(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1405,7 +1571,11 @@ class PDDLRunConfigTests(unittest.TestCase):
     def test_val_enabled_completion_rate_counts_latest_valid_records(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
-            manager, _ = self.make_val_manager(root, subtask_count=2)
+            manager, planner_records = self.make_val_manager(root, subtask_count=2)
+            manager._write_json_artifact(
+                "08_planner/planner_manifest.json",
+                planner_records,
+            )
             manager._write_json_artifact(
                 "08_val/val_manifest.json",
                 {
@@ -1418,7 +1588,7 @@ class PDDLRunConfigTests(unittest.TestCase):
 
             self.assertEqual(manager.calculate_completion_rate(), (1, 2))
 
-    def test_completion_rate_counts_generated_problems_and_plain_plan_names(self):
+    def test_completion_rate_excludes_unverified_zero_action_plans(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             manager = TaskManager(str(root), "test-model", config=RunConfig(root))
@@ -1432,7 +1602,31 @@ class PDDLRunConfigTests(unittest.TestCase):
                     "(define (problem fixture))",
                     encoding="utf-8",
                 )
-            (plan_dir / "subtask_01_problem_plan.txt").write_text("(noop)", encoding="utf-8")
+            action_plan = plan_dir / "subtask_01_problem_plan.txt"
+            action_plan.write_text("(noop)", encoding="utf-8")
+            zero_plan = plan_dir / "subtask_02_problem_plan.txt"
+            zero_plan.write_text("; cost = 0 (unit cost)\n", encoding="utf-8")
+            manager._write_json_artifact(
+                "08_planner/planner_manifest.json",
+                [
+                    {
+                        "problem_file": "subtask_01_problem.pddl",
+                        "compatibility_output": str(action_plan),
+                        "status": "completed",
+                        "return_code": 0,
+                        "plan_generated": True,
+                        "has_planner_error": False,
+                    },
+                    {
+                        "problem_file": "subtask_02_problem.pddl",
+                        "compatibility_output": str(zero_plan),
+                        "status": "completed",
+                        "return_code": 0,
+                        "plan_generated": True,
+                        "has_planner_error": False,
+                    },
+                ],
+            )
 
             self.assertEqual(manager.calculate_completion_rate(), (1, 2))
 
@@ -1501,6 +1695,18 @@ class PDDLRunConfigTests(unittest.TestCase):
             run_attempt.assert_called_once()
             run_val.assert_not_called()
             self.assertNotIn("feedback", manager.current_task_manifest)
+            evidence_path = (
+                Path(manager.current_task_run_dir)
+                / "05_problem_generation/key_object_pddl_state_evidence_by_subtask.json"
+            )
+            self.assertTrue(evidence_path.is_file())
+            self.assertEqual(json.loads(evidence_path.read_text(encoding="utf-8")), {})
+            self.assertEqual(
+                manager.current_task_manifest["artifacts"]["problem_files"][
+                    "key_object_pddl_state_evidence_by_subtask"
+                ],
+                "05_problem_generation/key_object_pddl_state_evidence_by_subtask.json",
+            )
 
     def test_process_tasks_feedback_disabled_validates_available_plan_subset(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1829,6 +2035,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             def fake_run(command, stdout, stderr, text, timeout):
                 call_order.append("planner")
                 captured["planner_command"] = command
+                captured["planner_problem"] = Path(command[-1]).read_text(encoding="utf-8")
                 self.assertEqual(timeout, 17)
                 Path(command[2]).parent.mkdir(parents=True, exist_ok=True)
                 Path(command[2]).write_text("(GoToObject robot1 apple)\n", encoding="utf-8")
@@ -1860,6 +2067,10 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertEqual(command[3:5], ["--alias", "custom-alias"])
             self.assertEqual(command[-2:], [str(domain_file), str(validated_problem)])
             self.assertNotEqual(command[-1], str(raw_problem))
+            self.assertNotIn(
+                "(available apple)",
+                captured["planner_problem"].split("(:goal", 1)[0],
+            )
 
             validation_manifest = Path(manager.current_task_run_dir) / "07_validate/validation_manifest.json"
             validation_records = json.loads(validation_manifest.read_text(encoding="utf-8"))
@@ -1878,6 +2089,58 @@ class PDDLRunConfigTests(unittest.TestCase):
             )
             self.assertEqual(requirements[0]["subtask_id"], 1)
             self.assertEqual(requirements[0]["required_skills"], ["GoToObject"])
+
+    def test_v2_run_planners_audits_raw_problem_immediately_before_planner(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            config = pddlrun_llmseparate_v2.RunConfig(root)
+            manager = pddlrun_llmseparate_v2.TaskManager(
+                str(root),
+                "test-model",
+                config=config,
+            )
+            manager.current_task_run_dir = str(root / "task_run")
+            manager.current_task_manifest = {"artifacts": {}}
+            Path(manager.current_task_run_dir).mkdir(parents=True)
+            resources_dir = root / "resources"
+            resources_dir.mkdir(parents=True, exist_ok=True)
+            (resources_dir / "robot1.pddl").write_text(
+                "(define (domain robot1) (:predicates (ready ?o - object)))",
+                encoding="utf-8",
+            )
+            problem_dir = Path(manager._get_raw_problem_file_path())
+            problem_dir.mkdir(parents=True)
+            problem_path = problem_dir / "subtask_01_problem.pddl"
+            problem_path.write_text(
+                "(define (problem ready) (:domain robot1) "
+                "(:objects drawer - object) (:init (ready drawer)) "
+                "(:goal (ready drawer)))",
+                encoding="utf-8",
+            )
+            captured = {}
+
+            def fake_run(command, stdout, stderr, text, timeout):
+                captured["problem"] = Path(command[-1]).read_text(encoding="utf-8")
+                Path(command[2]).write_text("(noop robot1)\n", encoding="utf-8")
+
+                class Result:
+                    stdout = "Solution found"
+                    stderr = ""
+                    returncode = 0
+
+                return Result()
+
+            with patch(
+                "pddlrun_llmseparate_v2.subprocess.run",
+                side_effect=fake_run,
+            ):
+                planner_records = manager.run_planners()
+
+            self.assertNotIn(
+                "(ready drawer)",
+                captured["problem"].split("(:goal", 1)[0],
+            )
+            self.assertEqual(planner_records[0]["problem_path"], str(problem_path))
 
     def test_v2_extracts_required_robot_skills_from_normalized_action_names(self):
         manager = pddlrun_llmseparate_v2.TaskManager.__new__(pddlrun_llmseparate_v2.TaskManager)
@@ -1972,11 +2235,34 @@ class PDDLRunConfigTests(unittest.TestCase):
             )
             plan_path = root / "subtask_01_plan.txt"
             plan_path.write_text("; cost = 0 (unit cost)\n", encoding="utf-8")
+            manager.current_task_run_dir = str(root / "task_run")
+            Path(manager.current_task_run_dir).mkdir(parents=True)
+            manager.current_task_manifest = {"artifacts": {}}
+            manager._write_json_artifact(
+                "05_problem_generation/key_object_pddl_state_evidence_by_subtask.json",
+                {
+                    "1": [
+                        {
+                            "literal": "(ready drawer)",
+                            "object_id": "Drawer|1",
+                            "source_field": "isReady",
+                            "observed_value": True,
+                        }
+                    ]
+                },
+            )
+            problem = """(define (problem ready)
+  (:domain allactionrobot)
+  (:objects drawer - object)
+  (:init (ready drawer))
+  (:goal (ready drawer))
+)
+"""
 
             requirements = manager._build_subtask_requirements(
                 subtasks=["#SubTask 1: Already complete"],
                 decomposed_plan="#SubTask 1: Already complete",
-                problem_pddl=[""],
+                problem_pddl=[problem],
                 planner_records=[
                     {
                         "problem_file": "subtask_01_problem_validated.pddl",
@@ -1984,6 +2270,7 @@ class PDDLRunConfigTests(unittest.TestCase):
                         "return_code": 0,
                         "status": "completed",
                         "has_planner_error": False,
+                        "plan_generated": True,
                     }
                 ],
                 objects_ai="objects=[]",
@@ -1996,6 +2283,50 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertEqual(requirements[0]["duration"], 0)
             self.assertEqual(requirements[0]["required_locations"], [])
             self.assertEqual(requirements[0]["unresolved_location_actions"], [])
+            self.assertTrue(requirements[0]["noop_proof"]["verified"])
+
+    def test_v2_build_requirements_rejects_cost_zero_without_state_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manager = pddlrun_llmseparate_v2.TaskManager(
+                str(root),
+                "test-model",
+                config=SharedRunConfig(root),
+            )
+            manager.current_task_run_dir = str(root / "task_run")
+            Path(manager.current_task_run_dir).mkdir(parents=True)
+            manager.current_task_manifest = {"artifacts": {}}
+            plan_path = root / "subtask_01_plan.txt"
+            plan_path.write_text("; cost = 0 (unit cost)\n", encoding="utf-8")
+            problem = """(define (problem ready)
+  (:domain allactionrobot)
+  (:objects drawer - object)
+  (:init (ready drawer))
+  (:goal (ready drawer))
+)
+"""
+
+            with self.assertRaisesRegex(
+                pddlrun_llmseparate_v2.PDDLError,
+                "Unverified zero-action plan",
+            ):
+                manager._build_subtask_requirements(
+                    subtasks=["#SubTask 1: Already complete"],
+                    decomposed_plan="#SubTask 1: Already complete",
+                    problem_pddl=[problem],
+                    planner_records=[
+                        {
+                            "problem_file": "subtask_01_problem_validated.pddl",
+                            "compatibility_output": str(plan_path),
+                            "return_code": 0,
+                            "status": "completed",
+                            "has_planner_error": False,
+                            "plan_generated": True,
+                        }
+                    ],
+                    objects_ai="objects=[]",
+                    preferred_predecessors={1: []},
+                )
 
     def test_v2_build_requirements_rejects_unmarked_empty_plan(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -2010,7 +2341,7 @@ class PDDLRunConfigTests(unittest.TestCase):
 
             with self.assertRaisesRegex(
                 pddlrun_llmseparate_v2.PDDLError,
-                "No plan actions found",
+                "Unverified zero-action plan",
             ):
                 manager._build_subtask_requirements(
                     subtasks=["#SubTask 1: Missing plan"],
@@ -2049,6 +2380,15 @@ class PDDLRunConfigTests(unittest.TestCase):
                 "(gotoobject robot1 apple)\n; cost = 1 (unit cost)\n",
                 encoding="utf-8",
             )
+            manager._write_json_artifact(
+                "05_problem_generation/key_object_pddl_state_evidence_by_subtask.json",
+                {"1": [{"literal": "(ready drawer)", "source_field": "isReady"}]},
+            )
+            noop_problem = (
+                "(define (problem ready) (:domain allactionrobot) "
+                "(:objects drawer - object) (:init (ready drawer)) "
+                "(:goal (ready drawer)))"
+            )
 
             allocated = manager._allocate_subtasks_with_cpsat(
                 subtasks=[
@@ -2056,7 +2396,7 @@ class PDDLRunConfigTests(unittest.TestCase):
                     "#SubTask 2: Go to the apple",
                 ],
                 decomposed_plan="two independent subtasks",
-                problem_pddl=["", ""],
+                problem_pddl=[noop_problem, ""],
                 planner_records=[
                     {
                         "problem_file": "subtask_01_problem_validated.pddl",
@@ -2064,6 +2404,7 @@ class PDDLRunConfigTests(unittest.TestCase):
                         "return_code": 0,
                         "status": "completed",
                         "has_planner_error": False,
+                        "plan_generated": True,
                     },
                     {
                         "problem_file": "subtask_02_problem_validated.pddl",
@@ -2144,6 +2485,15 @@ class PDDLRunConfigTests(unittest.TestCase):
 
             noop_plan = root / "subtask_01_plan.txt"
             noop_plan.write_text("; cost = 0 (unit cost)\n", encoding="utf-8")
+            manager._write_json_artifact(
+                "05_problem_generation/key_object_pddl_state_evidence_by_subtask.json",
+                {"1": [{"literal": "(ready drawer)", "source_field": "isReady"}]},
+            )
+            noop_problem = (
+                "(define (problem ready) (:domain allactionrobot) "
+                "(:objects drawer - object) (:init (ready drawer)) "
+                "(:goal (ready drawer)))"
+            )
 
             with patch.object(
                 manager,
@@ -2153,7 +2503,7 @@ class PDDLRunConfigTests(unittest.TestCase):
                 allocated = manager._allocate_subtasks_with_cpsat(
                     subtasks=["#SubTask 1: Already complete"],
                     decomposed_plan="#SubTask 1: Already complete",
-                    problem_pddl=[""],
+                    problem_pddl=[noop_problem],
                     planner_records=[
                         {
                             "problem_file": "subtask_01_problem_validated.pddl",
@@ -2161,6 +2511,7 @@ class PDDLRunConfigTests(unittest.TestCase):
                             "return_code": 0,
                             "status": "completed",
                             "has_planner_error": False,
+                            "plan_generated": True,
                         }
                     ],
                     available_robots=[],
@@ -3246,6 +3597,48 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertIn("(:domain robot1)", result.problem)
             self.assertIsNone(result.repair)
 
+    def test_run_problem_generation_normalizes_only_unknown_types_when_full_repair_disabled(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            manager = TaskManager(str(root), "test-model", config=RunConfig(root))
+            manager.current_task_manifest = {"artifacts": {}, "task": "Fill the kettle"}
+
+            class FakeLLM:
+                def query_model(self, messages, model, max_tokens=None, frequency_penalty=0):
+                    return {}, (
+                        "(define (problem generated)\n"
+                        "  (:domain robot7)\n"
+                        "  (:objects\n"
+                        "    robot7 - robot\n"
+                        "    Sink - sink\n"
+                        "    Kettle - kettle\n"
+                        "  )\n"
+                        "  (:init)\n"
+                        "  (:goal (ready Kettle))\n"
+                        ")"
+                    )
+
+            domain_content = (
+                "(define (domain robot7)\n"
+                "  (:types robot kettle - object)\n"
+                "  (:predicates (ready ?object - object))\n"
+                ")"
+            )
+            results = manager._run_problem_generation(
+                subtasks=["#SubTask 1: Fill the kettle"],
+                robot_assignments={1: 7},
+                llm=FakeLLM(),
+                model="test-model",
+                objects_ai="\n\nobjects = []",
+                domain_contents_by_robot={"robot7": domain_content},
+                static_problem_prompt="# static problem example\n",
+            )
+
+            self.assertEqual(1, len(results))
+            self.assertIn("Sink - object", results[0].problem)
+            self.assertIn("Kettle - kettle", results[0].problem)
+            self.assertIsNone(results[0].repair)
+
     def test_problemextracting_repairs_canonical_file_and_merges_sparse_manifest(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
@@ -3529,6 +3922,30 @@ class PDDLRunConfigTests(unittest.TestCase):
             context = manager._build_key_object_pddl_context(key_object_inputs, domain)
 
             self.assertEqual(context["states"], states)
+            evidence_by_literal = {
+                item["literal"]: item
+                for item in context["evidence"]
+            }
+            self.assertEqual(
+                evidence_by_literal["(object-open Drawer_1)"]["observed_value"],
+                True,
+            )
+            self.assertEqual(
+                evidence_by_literal["(not (object-open Drawer_2))"]["observed_value"],
+                False,
+            )
+            self.assertEqual(
+                evidence_by_literal["(not (object-open Drawer_2))"]["source_field"],
+                "isOpen",
+            )
+            self.assertEqual(
+                evidence_by_literal["(switch-on LightSwitch)"]["source_field"],
+                "isToggled",
+            )
+            self.assertEqual(
+                evidence_by_literal["(at-location Apple CounterTop)"]["source_field"],
+                "parentReceptacles",
+            )
             self.assertEqual([item["object"] for item in states if item["object_type"] == "object" and item["object"].startswith("Drawer")], ["Drawer_1", "Drawer_2"])
             self.assertIn("LightSwitch", [item["object"] for item in states])
             self.assertNotIn("Bread", [item["object"] for item in states])

@@ -36,6 +36,50 @@ class PddlRunExecutorAdapterTest(unittest.TestCase):
         path.write_text(content, encoding="utf-8")
         return path
 
+    def write_current_noop_artifacts(
+        self,
+        root: Path,
+        plans_and_goals,
+    ) -> None:
+        planner_records = []
+        evidence_by_subtask = {}
+        for subtask_id, plan_path, goal_literal in plans_and_goals:
+            problem_path = self.write_file(
+                root
+                / "05_problem_generation/outputs"
+                / f"subtask_{subtask_id:02d}_problem.pddl",
+                "(define (problem ready) (:domain robot1) "
+                "(:objects target - object) "
+                f"(:init {goal_literal}) (:goal {goal_literal}))",
+            )
+            planner_records.append(
+                {
+                    "problem_file": problem_path.name,
+                    "problem_path": str(problem_path),
+                    "compatibility_output": str(plan_path),
+                    "status": "completed",
+                    "return_code": 0,
+                    "plan_generated": True,
+                    "has_planner_error": False,
+                }
+            )
+            evidence_by_subtask[str(subtask_id)] = [
+                {
+                    "literal": goal_literal,
+                    "source_field": "unit_test_state",
+                    "observed_value": True,
+                }
+            ]
+        self.write_file(
+            root / "08_planner/planner_manifest.json",
+            json.dumps(planner_records),
+        )
+        self.write_file(
+            root
+            / "05_problem_generation/key_object_pddl_state_evidence_by_subtask.json",
+            json.dumps(evidence_by_subtask),
+        )
+
     def test_scans_plan_folder_and_builds_parallel_stages(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
@@ -86,7 +130,7 @@ class PddlRunExecutorAdapterTest(unittest.TestCase):
             )
             self.assertEqual(bundle.no_trans, 6)
 
-    def test_allocation_subtasks_without_plans_are_skipped(self):
+    def test_allocation_subtasks_without_plans_are_rejected(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             allocate_file = self.write_file(
@@ -105,33 +149,18 @@ class PddlRunExecutorAdapterTest(unittest.TestCase):
                 "(gotoobject robot1 drawer)\n(openobject robot1 drawer)\n",
             )
 
-            bundle = build_task_plan_from_pddlrun_paths(
-                task="break window and open drawer",
-                robots=[{"name": "robot1"}, {"name": "robot2"}],
-                allocate_file=allocate_file,
-                plan_folder=plan_folder,
-                plan_files=[],
-                object_names=["Window", "Cabinet", "Drawer"],
-            )
-
-            self.assertEqual(
-                [[(item.subtask_id, item.robot_number) for item in phase] for phase in bundle.phases],
-                [[(1, 2)], [(3, 1)]],
-            )
-            self.assertEqual(len(bundle.task_plan.stages), 2)
-            first_stage = bundle.task_plan.stages[0]
-            second_stage = bundle.task_plan.stages[1]
-            self.assertEqual(list(first_stage.robot_action_queues), ["robot2"])
-            self.assertEqual(
-                [action.action_type for action in first_stage.robot_action_queues["robot2"]],
-                ["GoToObject", "BreakObject"],
-            )
-            self.assertEqual(list(second_stage.robot_action_queues), ["robot1"])
-            self.assertEqual(
-                [action.action_type for action in second_stage.robot_action_queues["robot1"]],
-                ["GoToObject", "OpenObject"],
-            )
-            self.assertEqual(bundle.no_trans, 4)
+            with self.assertRaisesRegex(
+                PddlRunAdapterError,
+                "missing planner output for allocated subtask.*2",
+            ):
+                build_task_plan_from_pddlrun_paths(
+                    task="break window and open drawer",
+                    robots=[{"name": "robot1"}, {"name": "robot2"}],
+                    allocate_file=allocate_file,
+                    plan_folder=plan_folder,
+                    plan_files=[],
+                    object_names=["Window", "Cabinet", "Drawer"],
+                )
 
     def test_unassigned_planner_outputs_are_appended_in_final_phase(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -139,8 +168,7 @@ class PddlRunExecutorAdapterTest(unittest.TestCase):
             allocate_file = self.write_file(
                 root / "02_allocate" / "02_allocate_output.txt",
                 "# Sequence of Operations:\n"
-                "Subtask 1: Robot 1;\n"
-                "Subtask 2: Robot 1;\n",
+                "Subtask 1: Robot 1;\n",
             )
             plan_folder = root / "08_planner" / "outputs"
             self.write_file(
@@ -296,7 +324,7 @@ class PddlRunExecutorAdapterTest(unittest.TestCase):
             )
             self.assertEqual(bundle.no_trans, 4)
 
-    def test_phases_empty_after_missing_plan_filter_are_dropped(self):
+    def test_multiple_missing_allocated_plans_are_rejected(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             allocate_file = self.write_file(
@@ -312,26 +340,84 @@ class PddlRunExecutorAdapterTest(unittest.TestCase):
                 "(gotoobject robot1 drawer)\n(openobject robot1 drawer)\n",
             )
 
-            bundle = build_task_plan_from_pddlrun_paths(
-                task="open drawer",
-                robots=[{"name": "robot1"}],
-                allocate_file=allocate_file,
-                plan_folder=plan_folder,
-                plan_files=[],
-                object_names=["Cabinet", "Drawer", "Window"],
+            with self.assertRaisesRegex(
+                PddlRunAdapterError,
+                r"missing planner output for allocated subtask.*\[1, 3\]",
+            ):
+                build_task_plan_from_pddlrun_paths(
+                    task="open drawer",
+                    robots=[{"name": "robot1"}],
+                    allocate_file=allocate_file,
+                    plan_folder=plan_folder,
+                    plan_files=[],
+                    object_names=["Cabinet", "Drawer", "Window"],
+                )
+
+    def test_decomposition_manifest_detects_subtask_omitted_by_allocation(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            allocate_file = self.write_file(
+                root / "02_allocate" / "02_allocate_output.txt",
+                "# Sequence of Operations:\nSubtask 1: Robot 1;\n",
+            )
+            plan_folder = root / "08_planner" / "outputs"
+            self.write_file(
+                plan_folder / "subtask_01_problem_validated_plan.txt",
+                "(gotoobject robot1 drawer)\n(openobject robot1 drawer)\n",
+            )
+            self.write_file(
+                root / "04_problem_files" / "03_subtasks.json",
+                json.dumps(
+                    [
+                        {"index": 1, "path": "subtask_01.txt"},
+                        {"index": 2, "path": "subtask_02.txt"},
+                    ]
+                ),
             )
 
-            self.assertEqual(
-                [[(item.subtask_id, item.robot_number) for item in phase] for phase in bundle.phases],
-                [[(2, 1)]],
+            with self.assertRaisesRegex(
+                PddlRunAdapterError,
+                r"missing planner output.*\[2\]",
+            ):
+                build_task_plan_from_pddlrun_paths(
+                    task="two subtasks",
+                    robots=[{"name": "robot1"}],
+                    allocate_file=allocate_file,
+                    plan_folder=plan_folder,
+                    plan_files=[],
+                )
+
+    def test_decomposition_manifest_rejects_extra_allocated_subtask(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            allocate_file = self.write_file(
+                root / "02_allocate" / "02_allocate_output.txt",
+                "# Sequence of Operations:\n"
+                "Subtask 1: Robot 1;Subtask 2: Robot 1;\n",
             )
-            self.assertEqual(len(bundle.task_plan.stages), 1)
-            self.assertEqual(bundle.task_plan.stages[0].stage_id, "Phase 1")
-            self.assertEqual(
-                [action.action_type for action in bundle.task_plan.stages[0].robot_action_queues["robot1"]],
-                ["GoToObject", "OpenObject"],
+            plan_folder = root / "08_planner" / "outputs"
+            for subtask_id in (1, 2):
+                self.write_file(
+                    plan_folder
+                    / f"subtask_{subtask_id:02d}_problem_validated_plan.txt",
+                    "(gotoobject robot1 drawer)\n(openobject robot1 drawer)\n",
+                )
+            self.write_file(
+                root / "04_problem_files" / "03_subtasks.json",
+                json.dumps([{"index": 1, "path": "subtask_01.txt"}]),
             )
-            self.assertEqual(bundle.no_trans, 2)
+
+            with self.assertRaisesRegex(
+                PddlRunAdapterError,
+                r"unexpected allocation subtask.*\[2\]",
+            ):
+                build_task_plan_from_pddlrun_paths(
+                    task="one authoritative subtask",
+                    robots=[{"name": "robot1"}],
+                    allocate_file=allocate_file,
+                    plan_folder=plan_folder,
+                    plan_files=[],
+                )
 
     def test_empty_robot_action_queue_is_dropped_from_stage(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -342,13 +428,38 @@ class PddlRunExecutorAdapterTest(unittest.TestCase):
                 "Subtask 1: Robot 1;Subtask 2: Robot 2;\n",
             )
             plan_folder = root / "08_planner" / "outputs"
-            self.write_file(
+            noop_plan_path = self.write_file(
                 plan_folder / "subtask_01_problem_validated_plan.txt",
                 "; cost = 0 (unit cost)\n",
             )
             self.write_file(
                 plan_folder / "subtask_02_problem_validated_plan.txt",
                 "(gotoobject robot2 drawer)\n(openobject robot2 drawer)\n",
+            )
+            self.write_file(
+                root / "08_planner" / "noop_subtasks.json",
+                json.dumps(
+                    [
+                        {
+                            "subtask_id": 1,
+                            "goal_literals": ["(ready drawer)"],
+                            "evidence": [{"literal": "(ready drawer)"}],
+                            "repairs": [],
+                            "planner_status": "completed",
+                            "val_status": "not_run",
+                            "verified": True,
+                            "failure_reasons": [],
+                        }
+                    ]
+                ),
+            )
+            self.write_current_noop_artifacts(
+                root,
+                [(1, noop_plan_path, "(ready drawer)")],
+            )
+            self.write_file(
+                root / "04_problem_files/03_subtasks.json",
+                json.dumps([{"index": 1}, {"index": 2}]),
             )
 
             bundle = build_task_plan_from_pddlrun_paths(
@@ -373,8 +484,9 @@ class PddlRunExecutorAdapterTest(unittest.TestCase):
                 ["GoToObject", "OpenObject"],
             )
             self.assertEqual(bundle.no_trans, 2)
+            self.assertEqual([item["subtask_id"] for item in bundle.noop_subtasks], [1])
 
-    def test_empty_stage_is_dropped_after_empty_subtask_pruning(self):
+    def test_unmarked_empty_subtask_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             allocate_file = self.write_file(
@@ -393,26 +505,430 @@ class PddlRunExecutorAdapterTest(unittest.TestCase):
                 "(gotoobject robot1 drawer)\n(openobject robot1 drawer)\n",
             )
 
+            with self.assertRaisesRegex(
+                PddlRunAdapterError,
+                "unverified zero-action planner output.*1",
+            ):
+                build_task_plan_from_pddlrun_paths(
+                    task="open drawer",
+                    robots=[{"name": "robot1"}],
+                    allocate_file=allocate_file,
+                    plan_folder=plan_folder,
+                    plan_files=[],
+                    object_names=["Drawer"],
+                )
+
+    def test_duplicate_subtask_assignment_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            allocate_file = self.write_file(
+                root / "02_allocate" / "02_allocate_output.txt",
+                "# Sequence of Operations:\n"
+                "Subtask 1: Robot 1;\n"
+                "Subtask 1: Robot 2;\n",
+            )
+            plan_folder = root / "08_planner" / "outputs"
+            self.write_file(
+                plan_folder / "subtask_01_problem_plan.txt",
+                "(gotoobject robot1 drawer)\n(openobject robot1 drawer)\n",
+            )
+
+            with self.assertRaisesRegex(PddlRunAdapterError, "duplicate subtask assignment"):
+                build_task_plan_from_pddlrun_paths(
+                    task="open drawer",
+                    robots=[{"name": "robot1"}, {"name": "robot2"}],
+                    allocate_file=allocate_file,
+                    plan_folder=plan_folder,
+                    plan_files=[],
+                )
+
+    def test_duplicate_noop_proof_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            allocate_file = self.write_file(
+                root / "02_allocate" / "02_allocate_output.txt",
+                "# Sequence of Operations:\nSubtask 1: Robot 1;\n",
+            )
+            plan_folder = root / "08_planner" / "outputs"
+            self.write_file(
+                plan_folder / "subtask_01_problem_plan.txt",
+                "; cost = 0 (unit cost)\n",
+            )
+            proof = {
+                "subtask_id": 1,
+                "goal_literals": ["(ready drawer)"],
+                "evidence": [{"literal": "(ready drawer)"}],
+                "repairs": [],
+                "planner_status": "completed",
+                "val_status": "not_run",
+                "verified": True,
+                "failure_reasons": [],
+            }
+            self.write_file(
+                root / "08_planner" / "noop_subtasks.json",
+                json.dumps([proof, proof]),
+            )
+
+            with self.assertRaisesRegex(PddlRunAdapterError, "duplicate no-op proof"):
+                build_task_plan_from_pddlrun_paths(
+                    task="already ready",
+                    robots=[{"name": "robot1"}],
+                    allocate_file=allocate_file,
+                    plan_folder=plan_folder,
+                    plan_files=[],
+                )
+
+    def test_all_verified_noops_build_zero_phase_bundle(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            allocate_file = self.write_file(
+                root / "02_allocate" / "02_allocate_output.txt",
+                "# Sequence of Operations:\nSubtask 1: Robot 1;\nSubtask 2: Robot 2;\n",
+            )
+            plan_folder = root / "08_planner" / "outputs"
+            first_plan_path = self.write_file(
+                plan_folder / "subtask_01_problem_validated_plan.txt",
+                "; cost = 0 (unit cost)\n",
+            )
+            second_plan_path = self.write_file(
+                plan_folder / "subtask_02_problem_validated_plan.txt",
+                "; cost = 0 (unit cost)\n",
+            )
+            proofs = [
+                {
+                    "subtask_id": subtask_id,
+                    "goal_literals": [f"(ready item{subtask_id})"],
+                    "evidence": [{"literal": f"(ready item{subtask_id})"}],
+                    "repairs": [],
+                    "planner_status": "completed",
+                    "val_status": "not_run",
+                    "verified": True,
+                    "failure_reasons": [],
+                }
+                for subtask_id in (1, 2)
+            ]
+            self.write_file(
+                root / "08_planner" / "noop_subtasks.json",
+                json.dumps(proofs),
+            )
+            self.write_current_noop_artifacts(
+                root,
+                [
+                    (1, first_plan_path, "(ready item1)"),
+                    (2, second_plan_path, "(ready item2)"),
+                ],
+            )
+
             bundle = build_task_plan_from_pddlrun_paths(
-                task="open drawer",
-                robots=[{"name": "robot1"}],
+                task="already complete",
+                robots=[{"name": "robot1"}, {"name": "robot2"}],
                 allocate_file=allocate_file,
                 plan_folder=plan_folder,
                 plan_files=[],
-                object_names=["Drawer"],
             )
 
+            self.assertEqual(bundle.phases, [])
+            self.assertEqual(bundle.task_plan.stages, [])
+            self.assertEqual(bundle.no_trans, 0)
             self.assertEqual(
-                [[(item.subtask_id, item.robot_number) for item in phase] for phase in bundle.phases],
-                [[(2, 1)]],
+                [item["subtask_id"] for item in bundle.noop_subtasks],
+                [1, 2],
             )
-            self.assertEqual(len(bundle.task_plan.stages), 1)
-            self.assertEqual(bundle.task_plan.stages[0].stage_id, "Phase 1")
+            self.assertTrue(all(item["verified"] for item in bundle.noop_subtasks))
+
+    def test_current_noop_cannot_use_goal_section_from_comment(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            allocate_file = self.write_file(
+                root / "02_allocate/02_allocate_output.txt",
+                "# Sequence of Operations:\nSubtask 1: Robot 1;\n",
+            )
+            plan_path = self.write_file(
+                root / "08_planner/outputs/subtask_01_problem_plan.txt",
+                "; cost = 0\n",
+            )
+            self.write_current_noop_artifacts(root, [(1, plan_path, "(ready drawer)")])
+            self.write_file(
+                root / "05_problem_generation/outputs/subtask_01_problem.pddl",
+                "; (:goal (ready drawer))\n"
+                "(define (problem invalid) (:domain robot1) (:init (ready drawer)))",
+            )
+
+            with self.assertRaisesRegex(PddlRunAdapterError, "unverified zero-action planner output.*1"):
+                build_task_plan_from_pddlrun_paths(
+                    task="already ready", robots=[{"name": "robot1"}],
+                    allocate_file=allocate_file, plan_folder=plan_path.parent, plan_files=[],
+                )
+
+    def test_legacy_zero_action_plan_derives_proof_from_run_artifacts(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            allocate_file = self.write_file(
+                root / "02_allocate" / "02_allocate_output.txt",
+                "# Sequence of Operations:\nSubtask 1: Robot 1;\n",
+            )
+            plan_path = self.write_file(
+                root / "08_planner/outputs/subtask_01_problem_validated_plan.txt",
+                "; cost = 0 (unit cost)\n",
+            )
+            problem_path = self.write_file(
+                root / "07_validate/outputs/subtask_01_problem_validated.pddl",
+                "(define (problem ready) (:domain allactionrobot) "
+                "(:objects drawer - object) (:init (ready drawer)) "
+                "(:goal (ready drawer)))",
+            )
+            self.write_file(
+                root / "08_planner/planner_manifest.json",
+                json.dumps(
+                    [
+                        {
+                            "problem_file": problem_path.name,
+                            "problem_path": str(problem_path),
+                            "compatibility_output": str(plan_path),
+                            "status": "completed",
+                            "return_code": 0,
+                            "plan_generated": True,
+                            "has_planner_error": False,
+                        }
+                    ]
+                ),
+            )
+            self.write_file(
+                root
+                / "05_problem_generation/key_object_pddl_state_evidence_by_subtask.json",
+                json.dumps(
+                    {
+                        "1": [
+                            {
+                                "literal": "(ready drawer)",
+                                "source_field": "isReady",
+                                "observed_value": True,
+                            }
+                        ]
+                    }
+                ),
+            )
+
+            bundle = build_task_plan_from_pddlrun_paths(
+                task="already ready",
+                robots=[{"name": "robot1"}],
+                allocate_file=allocate_file,
+                plan_folder=plan_path.parent,
+                plan_files=[],
+            )
+
+            self.assertEqual(bundle.phases, [])
+            self.assertTrue(bundle.noop_subtasks[0]["verified"])
+            self.assertEqual(bundle.noop_subtasks[0]["subtask_id"], 1)
+
+    def test_legacy_noop_manifest_must_reference_the_current_plan_file(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            allocate_file = self.write_file(
+                root / "02_allocate" / "02_allocate_output.txt",
+                "# Sequence of Operations:\nSubtask 1: Robot 1;\n",
+            )
+            plan_path = self.write_file(
+                root / "08_planner/outputs/subtask_01_problem_plan.txt",
+                "; cost = 0 (unit cost)\n",
+            )
+            problem_path = self.write_file(
+                root / "05_problem_generation/outputs/subtask_01_problem.pddl",
+                "(define (problem ready) (:domain robot1) "
+                "(:objects drawer - object) (:init (ready drawer)) "
+                "(:goal (ready drawer)))",
+            )
+            self.write_file(
+                root / "08_planner/planner_manifest.json",
+                json.dumps(
+                    [
+                        {
+                            "problem_file": problem_path.name,
+                            "problem_path": str(problem_path),
+                            "compatibility_output": str(
+                                root / "08_planner/outputs/missing_old_plan.txt"
+                            ),
+                            "return_code": 0,
+                        }
+                    ]
+                ),
+            )
+            self.write_file(
+                root
+                / "05_problem_generation/key_object_pddl_states_by_subtask.json",
+                json.dumps(
+                    {"1": [{"object": "drawer", "facts": ["(ready drawer)"]}]}
+                ),
+            )
+
+            with self.assertRaisesRegex(
+                PddlRunAdapterError,
+                "unverified zero-action planner output",
+            ):
+                build_task_plan_from_pddlrun_paths(
+                    task="already ready",
+                    robots=[{"name": "robot1"}],
+                    allocate_file=allocate_file,
+                    plan_folder=plan_path.parent,
+                    plan_files=[],
+                )
+
+    def test_saved_noop_proof_cannot_override_current_failed_planner_record(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            allocate_file = self.write_file(
+                root / "02_allocate" / "02_allocate_output.txt",
+                "# Sequence of Operations:\nSubtask 1: Robot 1;\n",
+            )
+            plan_path = self.write_file(
+                root / "08_planner/outputs/subtask_01_problem_plan.txt",
+                "; cost = 0 (unit cost)\n",
+            )
+            problem_path = self.write_file(
+                root / "05_problem_generation/outputs/subtask_01_problem.pddl",
+                "(define (problem changed) (:domain robot1) "
+                "(:objects drawer - object) (:init (ready drawer)) "
+                "(:goal (ready drawer)))",
+            )
+            self.write_file(
+                root / "08_planner/planner_manifest.json",
+                json.dumps(
+                    [
+                        {
+                            "problem_file": problem_path.name,
+                            "problem_path": str(problem_path),
+                            "compatibility_output": str(plan_path),
+                            "status": "error",
+                            "return_code": 1,
+                            "plan_generated": True,
+                            "has_planner_error": True,
+                        }
+                    ]
+                ),
+            )
+            self.write_file(
+                root
+                / "05_problem_generation/key_object_pddl_state_evidence_by_subtask.json",
+                json.dumps(
+                    {
+                        "1": [
+                            {
+                                "literal": "(ready drawer)",
+                                "source_field": "isReady",
+                                "observed_value": True,
+                            }
+                        ]
+                    }
+                ),
+            )
+            self.write_file(
+                root / "08_planner/noop_subtasks.json",
+                json.dumps(
+                    [
+                        {
+                            "subtask_id": 1,
+                            "goal_literals": ["(ready old-object)"],
+                            "evidence": [{"literal": "(ready old-object)"}],
+                            "repairs": [],
+                            "planner_status": "completed",
+                            "val_status": "not_run",
+                            "verified": True,
+                            "failure_reasons": [],
+                        }
+                    ]
+                ),
+            )
+
+            with self.assertRaisesRegex(
+                PddlRunAdapterError,
+                "unverified zero-action planner output",
+            ):
+                build_task_plan_from_pddlrun_paths(
+                    task="stale no-op proof",
+                    robots=[{"name": "robot1"}],
+                    allocate_file=allocate_file,
+                    plan_folder=plan_path.parent,
+                    plan_files=[],
+                )
+
+    def test_legacy_negative_noop_can_use_explicit_scene_snapshot(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            allocate_file = self.write_file(
+                root / "02_allocate" / "02_allocate_output.txt",
+                "# Sequence of Operations:\nSubtask 1: Robot 1;\n",
+            )
+            plan_path = self.write_file(
+                root / "08_planner/outputs/subtask_01_problem_validated_plan.txt",
+                "; cost = 0 (unit cost)\n",
+            )
+            problem_path = self.write_file(
+                root / "07_validate/outputs/subtask_01_problem_validated.pddl",
+                "(define (problem closed) (:domain allactionrobot) "
+                "(:objects drawer - object) (:init) "
+                "(:goal (not (object-open drawer))))",
+            )
+            self.write_file(
+                root / "08_planner/planner_manifest.json",
+                json.dumps(
+                    [
+                        {
+                            "problem_file": problem_path.name,
+                            "problem_path": str(problem_path),
+                            "compatibility_output": str(plan_path),
+                            "status": "completed",
+                            "return_code": 0,
+                            "plan_generated": True,
+                            "has_planner_error": False,
+                        }
+                    ]
+                ),
+            )
+            self.write_file(
+                root / "05_problem_generation/key_object_id_bindings_by_subtask.json",
+                json.dumps(
+                    {
+                        "1": [
+                            {
+                                "object": "drawer",
+                                "object_id": "Drawer|1",
+                                "object_type": "Drawer",
+                            }
+                        ]
+                    }
+                ),
+            )
+            self.write_file(
+                root / "inputs/scene_metadata.json",
+                json.dumps(
+                    {
+                        "objects": [
+                            {
+                                "objectId": "Drawer|1",
+                                "objectType": "Drawer",
+                                "isOpen": False,
+                                "isToggled": False,
+                            }
+                        ]
+                    }
+                ),
+            )
+
+            bundle = build_task_plan_from_pddlrun_paths(
+                task="drawer already closed",
+                robots=[{"name": "robot1"}],
+                allocate_file=allocate_file,
+                plan_folder=plan_path.parent,
+                plan_files=[],
+            )
+
+            proof = bundle.noop_subtasks[0]
+            self.assertTrue(proof["verified"])
             self.assertEqual(
-                [action.action_type for action in bundle.task_plan.stages[0].robot_action_queues["robot1"]],
-                ["GoToObject", "OpenObject"],
+                proof["evidence"][0]["literal"],
+                "(not (object-open drawer))",
             )
-            self.assertEqual(bundle.no_trans, 2)
+            self.assertEqual(proof["evidence"][0]["source_field"], "isOpen")
 
     def test_all_empty_planner_outputs_report_clear_error(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -435,7 +951,7 @@ class PddlRunExecutorAdapterTest(unittest.TestCase):
 
             with self.assertRaisesRegex(
                 PddlRunAdapterError,
-                "No executable actions found in planner outputs",
+                "unverified zero-action planner output",
             ):
                 build_task_plan_from_pddlrun_paths(
                     task="nothing to do",
@@ -461,7 +977,7 @@ class PddlRunExecutorAdapterTest(unittest.TestCase):
 
             with self.assertRaisesRegex(
                 PddlRunAdapterError,
-                "no subtask\\(s\\) with planner output",
+                "missing planner output for allocated subtask",
             ):
                 build_task_plan_from_pddlrun_paths(
                     task="open drawer",

@@ -15,6 +15,7 @@ from executor_system.action_plan import (
     Action,
     FAILURE_FAIL_STAGE,
     FAILURE_RETRY,
+    PlannedAction,
 )
 from executor_system import actions as executor_actions
 from executor_system import context as runtime_context
@@ -23,6 +24,13 @@ from executor_system.demo_state import ground_truth_lock, verified_ground_truth_
 from executor_system.executor import Executor
 from executor_system.goals import goal_state_verified
 from executor_system.runtime import ThorRuntime
+from executor_system.movement import (
+    MovementConfig,
+    MovementMode,
+    NavigationDeferred,
+    NavigationMetrics,
+    NoInteractionPoseError,
+)
 from executor_system.utils import position_to_grid_key
 
 
@@ -34,6 +42,110 @@ class FakeEvent:
         self.metadata = {"lastActionSuccess": success}
         if error_message:
             self.metadata["errorMessage"] = error_message
+
+
+class NavigationRequestTargetTests(unittest.TestCase):
+    def test_pickup_next_action_retargets_navigation_to_operated_object(self):
+        runtime = runtime_without_init()
+        runtime.robot_agent_map = {"robot1": 0}
+        runtime.physical_agent_count = 1
+        runtime.navigation_metrics = NavigationMetrics(MovementMode.STEP)
+        runtime.refresh_reachable_positions = lambda _agent_id: None
+        objects = {
+            "CounterTop": {
+                "objectId": "CounterTop|1",
+                "position": {"x": 0.0, "y": 0.9, "z": 0.0},
+            },
+            "CreditCard": {
+                "objectId": "CreditCard|1",
+                "position": {"x": 2.0, "y": 0.9, "z": 0.0},
+            },
+        }
+        runtime.find_object = lambda target, **_kwargs: dict(objects[target])
+        captured_centers = []
+
+        def candidates(center, **_kwargs):
+            captured_centers.append(dict(center))
+            return [{"x": 1.75, "y": 0.0, "z": 0.0}]
+
+        runtime.teleport_candidate_positions = candidates
+
+        request = runtime.build_navigation_request(
+            "robot1",
+            "CounterTop",
+            next_action=PlannedAction("PickupObject", ("CreditCard",)),
+        )
+
+        self.assertEqual(request.dest_obj, "CounterTop")
+        self.assertEqual(request.destination["objectId"], "CounterTop|1")
+        self.assertEqual(request.interaction_target, "CreditCard")
+        self.assertEqual(request.interaction_destination["objectId"], "CreditCard|1")
+        self.assertEqual(request.interaction_center, objects["CreditCard"]["position"])
+        self.assertEqual(request.interaction_object_resource, "CreditCard|1")
+        self.assertTrue(request.interaction_target_replaced)
+        self.assertEqual(captured_centers, [objects["CreditCard"]["position"]])
+        self.assertEqual(
+            runtime.navigation_metrics.to_dict()["interaction_target_substitutions"],
+            1,
+        )
+
+    def test_no_reachable_interaction_candidates_use_dedicated_error(self):
+        runtime = runtime_without_init()
+        runtime.robot_agent_map = {"robot1": 0}
+        runtime.physical_agent_count = 1
+        runtime.navigation_metrics = NavigationMetrics(MovementMode.STEP)
+        runtime.refresh_reachable_positions = lambda _agent_id: None
+        runtime.find_object = lambda target, **_kwargs: {
+            "objectId": f"{target}|1",
+            "position": {"x": 1.0, "y": 0.9, "z": 0.0},
+        }
+        runtime.teleport_candidate_positions = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("no reachable candidates")
+        )
+
+        with self.assertRaisesRegex(NoInteractionPoseError, "NO_INTERACTION_POSE"):
+            runtime.build_navigation_request(
+                "robot1",
+                "CounterTop",
+                next_action=PlannedAction("PickupObject", ("CreditCard",)),
+            )
+
+    def test_registered_action_missing_target_fails_before_hand_preparation(self):
+        runtime = runtime_without_init()
+        runtime.navigation_metrics = NavigationMetrics(MovementMode.STEP)
+        preparation_calls = []
+        runtime.prepare_hand_for_goto_if_needed = (
+            lambda *_args, **_kwargs: preparation_calls.append(True)
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "missing interaction target"):
+            runtime.navigate_to_object(
+                "robot1",
+                "CounterTop",
+                next_action=PlannedAction("PickupObject", ()),
+            )
+
+        self.assertEqual(preparation_calls, [])
+
+    def test_navigation_deferred_does_not_count_as_success_or_failure(self):
+        runtime = runtime_without_init()
+        runtime.navigation_metrics = NavigationMetrics(MovementMode.STEP)
+        runtime.prepare_hand_for_goto_if_needed = lambda *_args, **_kwargs: None
+        runtime.build_navigation_request = lambda *_args, **_kwargs: object()
+
+        class DeferredStrategy:
+            def navigate(self, _request):
+                raise NavigationDeferred(0, fallback_status="NO_PLAN_FOUND")
+
+        runtime.movement_strategy = DeferredStrategy()
+
+        with self.assertRaises(NavigationDeferred):
+            runtime.navigate_to_object("robot1", "Apple")
+
+        metrics = runtime.navigation_metrics.to_dict()
+        self.assertEqual(metrics["requests"], 1)
+        self.assertEqual(metrics["successes"], 0)
+        self.assertEqual(metrics["failures"], 0)
 
 
 def runtime_without_init():
@@ -1123,6 +1235,67 @@ class ExecutorRetryPolicyTest(unittest.TestCase):
         self.assertEqual(runtime.total_exec, 1)
         self.assertEqual(runtime.success_exec, 0)
 
+    def test_slice_visibility_recovery_repositions_and_retries_only_once(self):
+        object_id = "Tomato|+00.00|+00.90|+01.00"
+        runtime, calls = object_action_runtime(
+            [
+                {
+                    "objectId": object_id,
+                    "objectType": "Tomato",
+                    "name": "Tomato",
+                    "visible": True,
+                    "distance": 1.0,
+                    "sliceable": True,
+                    "position": {"x": 0.0, "y": 0.9, "z": 1.0},
+                }
+            ],
+            horizon=35.0,
+        )
+        runtime.configure_movement("step", environ={})
+        base_step = runtime.step
+        repositioned = {"value": False}
+        navigation_calls = []
+
+        def step(payload, **kwargs):
+            if payload.get("action") != "SliceObject":
+                return base_step(payload, **kwargs)
+            calls.append(dict(payload))
+            metadata = runtime.agent_event(0).metadata
+            if not repositioned["value"]:
+                metadata["lastActionSuccess"] = False
+                metadata["errorMessage"] = (
+                    runtime_module.PICKUP_OBJECT_TARGET_VISIBILITY_ERROR
+                )
+            return FakeEvent(metadata=metadata)
+
+        def navigate(robot, target, **kwargs):
+            navigation_calls.append((robot, target, dict(kwargs)))
+            repositioned["value"] = True
+            return runtime._test_state["objects"][0]
+
+        runtime.step = step
+        runtime.navigate_to_object = navigate
+
+        runtime.object_action("SliceObject", "robot1", "Tomato")
+
+        self.assertEqual(len(navigation_calls), 1)
+        self.assertEqual(navigation_calls[0][0:2], ("robot1", object_id))
+        self.assertEqual(
+            navigation_calls[0][2]["next_action"],
+            PlannedAction("SliceObject", (object_id,)),
+        )
+        self.assertTrue(navigation_calls[0][2]["exclude_current_position"])
+        self.assertEqual(
+            runtime.navigation_metrics.to_dict()["interaction_repositions"],
+            1,
+        )
+        self.assertEqual(
+            [call["action"] for call in calls].count("SliceObject"),
+            8,
+        )
+        self.assertEqual(runtime.total_exec, 1)
+        self.assertEqual(runtime.success_exec, 1)
+
     def test_break_non_visibility_error_does_not_scan_or_backoff(self):
         object_id = "Vase|+00.00|+00.90|+01.00"
         runtime, calls = object_action_runtime(
@@ -1281,6 +1454,48 @@ class ExecutorRetryPolicyTest(unittest.TestCase):
 
         self.assertEqual(runtime.step_calls, 1)
         self.assertTrue(executor.state.finished())
+
+    def test_navigation_deferred_retries_same_cursor_without_failure_handler(self):
+        class DeferredRuntime:
+            physical_agent_count = 1
+
+            def physical_agent_id(self, _robot_id):
+                return 0
+
+            def current_agent_position(self, _agent_id):
+                return {"x": 0.0, "y": 0.0, "z": 0.0}
+
+            def agent_event(self, _agent_id):
+                return FakeEvent(True)
+
+            def agent_held_objects_for(self, _agent_id):
+                return set()
+
+        runtime = DeferredRuntime()
+        executor = Executor(
+            runtime,
+            "robot1",
+            [Action("GoToObject", {"args": ("Apple",)})],
+        )
+        calls = {"count": 0}
+
+        def execute_action(_action, **_kwargs):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise NavigationDeferred(0, fallback_status="NO_PLAN_FOUND")
+            return FakeEvent(True)
+
+        executor.execute_action = execute_action
+        executor.handle_failure = lambda *_args, **_kwargs: self.fail(
+            "deferred navigation must not call the failure handler"
+        )
+
+        executor.execute()
+
+        self.assertEqual(calls["count"], 2)
+        self.assertEqual(executor.state.action_cursor, 1)
+        self.assertEqual(len(executor.logger.records), 1)
+        self.assertEqual(executor.logger.records[0].status, "SUCCESS")
 
     def test_teleport_and_face_retries_next_candidate_after_rotation_failure(self):
         runtime = runtime_without_init()

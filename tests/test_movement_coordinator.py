@@ -16,6 +16,8 @@ from executor_system.executor import PhaseCoordinator
 from executor_system.movement import (
     MovementConfig,
     NavigationBatchAborted,
+    NavigationBatchResult,
+    NavigationDeferred,
     NavigationMetrics,
     NavigationRequest,
     NavigationResult,
@@ -143,6 +145,53 @@ class ActionWaveCoordinatorTest(unittest.TestCase):
         self.assertEqual(executed_batches, [((0, 1), frozenset())])
         self.assertEqual(results[0].position, requests[0].candidate_positions[0])
         self.assertEqual(results[1].position, requests[1].candidate_positions[0])
+
+    def test_batch_can_return_success_and_deferred_without_aborting_wave(self):
+        coordinator = PhaseCoordinator(
+            CoordinatorRuntime("step", 2),
+            active_agent_ids=[0, 1],
+        )
+        requests = {agent_id: navigation_request(agent_id) for agent_id in (0, 1)}
+        results = {}
+        errors = {}
+
+        def execute_batch(batch, _completed_agent_ids):
+            return NavigationBatchResult(
+                results={0: navigation_result(batch[0])},
+                deferred_agent_ids=frozenset({1}),
+                fallback_status="NO_PLAN_FOUND",
+            )
+
+        def worker(agent_id):
+            try:
+                wave = coordinator.before_action(agent_id, "GoToObject", 0)
+                results[agent_id] = coordinator.submit_step_navigation(
+                    wave,
+                    requests[agent_id],
+                    execute_batch,
+                )
+            except BaseException as exc:
+                errors[agent_id] = exc
+
+        self.run_threads([lambda: worker(1), lambda: worker(0)])
+
+        self.assertEqual(set(results), {0})
+        self.assertIsInstance(errors[1], NavigationDeferred)
+        self.assertEqual(errors[1].fallback_status, "NO_PLAN_FOUND")
+        self.assertFalse(isinstance(errors[1], NavigationBatchAborted))
+
+        coordinator.mark_agent_done(0)
+        retry_wave = coordinator.before_action(1, "GoToObject", 0)
+        retry_result = coordinator.submit_step_navigation(
+            retry_wave,
+            requests[1],
+            lambda batch, _completed: NavigationBatchResult(
+                results={1: navigation_result(batch[0])},
+            ),
+        )
+
+        self.assertEqual(retry_wave.wave_id, 1)
+        self.assertEqual(retry_result.position, requests[1].candidate_positions[0])
 
     def test_non_navigation_action_waits_until_navigation_batch_finishes(self):
         coordinator = PhaseCoordinator(
@@ -425,6 +474,177 @@ class JointMovementWaveTest(unittest.TestCase):
             runtime.successful_edges[1:],
         ):
             self.assertNotEqual(previous, (current[1], current[0]))
+
+    def test_joint_failure_advances_first_solvable_request_and_defers_other(self):
+        walkable = [
+            *[thor_position(x, 0) for x in range(3)],
+            *[thor_position(x, 4) for x in range(3)],
+        ]
+        destinations = [
+            {
+                "objectId": "Target|0",
+                "objectType": "Target",
+                "visible": True,
+                "position": thor_position(2, 0),
+            },
+            {
+                "objectId": "Target|1",
+                "objectType": "Target",
+                "visible": True,
+                "position": thor_position(2, 0),
+            },
+        ]
+        runtime = GridThorRuntime(
+            positions={0: thor_position(0, 0), 1: thor_position(0, 4)},
+            walkable_by_agent={0: walkable, 1: walkable},
+            objects=destinations,
+        )
+        config = MovementConfig.resolve("step", environ={})
+        metrics = NavigationMetrics(config.mode)
+        coordinator = StepMovementStrategy(runtime, config, metrics).coordinator
+        requests = tuple(
+            NavigationRequest(
+                robot=f"robot{agent_id + 1}",
+                agent_id=agent_id,
+                dest_obj=destination["objectId"],
+                destination=dict(destination),
+                center=dict(destination["position"]),
+                candidate_positions=(dict(destination["position"]),),
+                object_resource=destination["objectId"],
+                next_action=None,
+                phase_coordinator=None,
+            )
+            for agent_id, destination in enumerate(destinations)
+        )
+
+        outcome = coordinator.execute_batch(requests)
+
+        self.assertIsInstance(outcome, NavigationBatchResult)
+        self.assertEqual(set(outcome.results), {0})
+        self.assertEqual(outcome.deferred_agent_ids, frozenset({1}))
+        self.assertEqual(outcome.fallback_status, "NO_PLAN_FOUND")
+        self.assertEqual(position_to_grid_key(outcome[0].position), (2, 0))
+        self.assertEqual(metrics.to_dict()["serial_fallback_batches"], 1)
+        self.assertEqual(metrics.to_dict()["deferred_requests"], 1)
+
+    def test_serial_fallback_preserves_results_completed_before_replan(self):
+        walkable = [
+            thor_position(x, z)
+            for x in range(5)
+            for z in range(5)
+        ]
+        destinations = [
+            {
+                "objectId": f"Target|{agent_id}",
+                "objectType": "Target",
+                "visible": True,
+                "position": thor_position(2, agent_id * 2),
+            }
+            for agent_id in range(3)
+        ]
+
+        class PositionSensitiveVisibilityRuntime(GridThorRuntime):
+            def find_object(self, target, *, agent_id, require_center=False):
+                destination = super().find_object(
+                    target,
+                    agent_id=agent_id,
+                    require_center=require_center,
+                )
+                if agent_id in {1, 2}:
+                    initial_candidate = (2, agent_id * 2)
+                    destination["visible"] = (
+                        position_to_grid_key(self.current_agent_position(agent_id))
+                        != initial_candidate
+                    )
+                return destination
+
+        runtime = PositionSensitiveVisibilityRuntime(
+            positions={
+                0: thor_position(0, 0),
+                1: thor_position(0, 2),
+                2: thor_position(0, 4),
+            },
+            walkable_by_agent={agent_id: walkable for agent_id in range(3)},
+            objects=destinations,
+        )
+        config = MovementConfig.resolve("step", environ={})
+        metrics = NavigationMetrics(config.mode)
+        coordinator = StepMovementStrategy(runtime, config, metrics).coordinator
+        shared_fallback = thor_position(4, 2)
+        requests = tuple(
+            NavigationRequest(
+                robot=f"robot{agent_id + 1}",
+                agent_id=agent_id,
+                dest_obj=destination["objectId"],
+                destination=dict(destination),
+                center=dict(destination["position"]),
+                candidate_positions=(
+                    dict(destination["position"]),
+                    dict(shared_fallback),
+                )
+                if agent_id
+                else (dict(destination["position"]),),
+                object_resource=destination["objectId"],
+                next_action=None,
+                phase_coordinator=None,
+            )
+            for agent_id, destination in enumerate(destinations)
+        )
+
+        outcome = coordinator.execute_batch(requests)
+
+        self.assertEqual(set(outcome.results), {0, 1})
+        self.assertEqual(outcome.deferred_agent_ids, frozenset({2}))
+        self.assertEqual(position_to_grid_key(outcome[0].position), (2, 0))
+        self.assertEqual(position_to_grid_key(outcome[1].position), (4, 2))
+
+    def test_all_unsolvable_single_requests_preserve_joint_planning_failure(self):
+        walkable = [
+            *[thor_position(x, 0) for x in range(3)],
+            *[thor_position(x, 4) for x in range(3)],
+        ]
+        destinations = [
+            {
+                "objectId": "Target|0",
+                "objectType": "Target",
+                "visible": True,
+                "position": thor_position(2, 4),
+            },
+            {
+                "objectId": "Target|1",
+                "objectType": "Target",
+                "visible": True,
+                "position": thor_position(2, 0),
+            },
+        ]
+        runtime = GridThorRuntime(
+            positions={0: thor_position(0, 0), 1: thor_position(0, 4)},
+            walkable_by_agent={0: walkable, 1: walkable},
+            objects=destinations,
+        )
+        config = MovementConfig.resolve("step", environ={})
+        metrics = NavigationMetrics(config.mode)
+        coordinator = StepMovementStrategy(runtime, config, metrics).coordinator
+        requests = tuple(
+            NavigationRequest(
+                robot=f"robot{agent_id + 1}",
+                agent_id=agent_id,
+                dest_obj=destination["objectId"],
+                destination=dict(destination),
+                center=dict(destination["position"]),
+                candidate_positions=(dict(destination["position"]),),
+                object_resource=destination["objectId"],
+                next_action=None,
+                phase_coordinator=None,
+            )
+            for agent_id, destination in enumerate(destinations)
+        )
+
+        with self.assertRaisesRegex(StepNavigationError, "NO_PLAN_FOUND"):
+            coordinator.execute_batch(requests)
+
+        self.assertEqual(metrics.to_dict()["serial_fallback_batches"], 0)
+        self.assertEqual(metrics.to_dict()["deferred_requests"], 0)
 
 
 class CompletedRobotParkingTest(unittest.TestCase):
