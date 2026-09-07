@@ -198,7 +198,22 @@ def _object_has_liquid(obj: Dict[str, Any]) -> bool:
     return bool(liquid)
 
 
+def _bound_helper_object(role):
+    from .action_resources import active_resources
+    runtime_obj = get_runtime()
+    admitted = active_resources(runtime_obj)
+    if admitted is None:
+        return None
+    object_id = admitted.resolved.bindings.get(role)
+    if object_id is None:
+        admitted.invalid(f'unbound helper role {role}')
+    return runtime_obj.find_object(object_id)
+
+
 def _find_sink_basin(robot: RobotRef, sink: Any) -> Dict[str, Any]:
+    bound = _bound_helper_object('@basin')
+    if bound is not None:
+        return bound
     runtime_obj = get_runtime()
     agent_id = runtime_obj.physical_agent_id(robot)
     matches = runtime_obj.find_objects(sink, agent_id=agent_id)
@@ -273,6 +288,9 @@ def _resolve_stove_burner(
     stove_burner: Any,
     supporting_obj: Optional[Any] = None,
 ) -> Dict[str, Any]:
+    bound = _bound_helper_object('@burner')
+    if bound is not None:
+        return bound
     runtime_obj = get_runtime()
     agent_id = runtime_obj.physical_agent_id(robot)
     if object_key(stove_burner) == "stoveburner" and supporting_obj is not None:
@@ -291,6 +309,9 @@ def _resolve_stove_knob_for_burner(
     robot: RobotRef,
     burner: Dict[str, Any],
 ) -> Dict[str, Any]:
+    bound = _bound_helper_object('@knob')
+    if bound is not None:
+        return bound
     runtime_obj = get_runtime()
     agent_id = runtime_obj.physical_agent_id(robot)
     knobs = runtime_obj.find_objects("StoveKnob", agent_id=agent_id)

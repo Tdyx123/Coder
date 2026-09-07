@@ -262,9 +262,10 @@ class StageSchedulerTest(unittest.TestCase):
         })
         scheduler = StageScheduler(runtime, stage, control=install_control(runtime, 1).child(),
                                    policy=ExecutionPolicy.LEGACY)
+        original_admit = scheduler._admit_resources
         def admit(pending):
             selected.append(pending.robot_id)
-            return True
+            return original_admit(pending)
         scheduler._admit_resources = admit
         outcome = scheduler.run()
         self.assertEqual(outcome.status, 'completed')
@@ -403,11 +404,12 @@ class StageSchedulerTest(unittest.TestCase):
         scheduler = StageScheduler(runtime, stage, control=install_control(runtime, 1).child(),
                                    policy=ExecutionPolicy.LEGACY)
         ages, timeout_ticks = [], []
+        original_admit = scheduler._admit_resources
         def admit(pending):
             if pending.robot_id == 'robot1':
                 ages.append(scheduler.wait_rounds['robot1'])
                 timeout_ticks.append(scheduler.executors['robot1'].state.wait_ticks)
-            return True
+            return original_admit(pending)
         scheduler._admit_resources = admit
         def execute(adapter, robot, action, **kwargs):
             if robot == 'robot2' and action.action_id == '3':

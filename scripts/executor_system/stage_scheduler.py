@@ -20,6 +20,8 @@ from .execution_policy import (
 from .executor import Executor, PhaseCoordinator
 from .movement import NavigationDeferred
 from .world_snapshot import SnapshotStore
+from .action_resources import (manager_for, resolve_action_resources,
+                               action_resource_scope, ResourceBindingDeferred)
 
 
 _IDLE_TICK = object()
@@ -56,6 +58,9 @@ class StageScheduler:
         self.executors = {}
         self.mailboxes = {}
         self.wait_rounds = {}
+        self.resource_manager = manager_for(runtime)
+        self.resource_leases = {}
+        self.resource_requests = {}
         self.results = queue.Queue()
         self.inflight = set()
         self.world = WorldState(runtime)
@@ -132,7 +137,9 @@ class StageScheduler:
                 action_wave = wave if agent_id in wave.navigation_agent_ids else None
                 if action_wave is None:
                     self.coordinator.wait_admitted_navigation(wave, agent_id)
-                event = executor.execute_action(pending.action, action_wave=action_wave)
+                with action_resource_scope(self.runtime, self._ledger_key(pending),
+                                           self.resource_requests[self._ledger_key(pending)]):
+                    event = executor.execute_action(pending.action, action_wave=action_wave)
                 self.control.check()
                 executor.record_temperature_goal_progress()
             except Exception as exc:
@@ -159,11 +166,65 @@ class StageScheduler:
             ) from exc
 
     def _admit_resources(self, pending):
-        """Task 4 replaces empty resource admission with atomic leases."""
-        return True
+        key = self._ledger_key(pending)
+        try:
+            resolved = self.resource_requests.get(key)
+            if resolved is None or pending.action.on_conflict == 'RETRY_NEXT_TICK':
+                resolved = resolve_action_resources(self.runtime, self.world.snapshot,
+                                                    pending.robot_id, pending.action)
+                self.resource_requests[key] = resolved
+            lease = self.resource_manager.try_acquire(key, resolved.keys)
+            if lease is not None:
+                self.resource_leases[key] = lease
+                return True
+            blockers = self.resource_manager.blockers(resolved.keys)
+            reason = f'resources held by {blockers}'
+            if pending.action.on_conflict == 'FAIL_STAGE':
+                result = ActionResult(pending.robot_id, pending.action, 'FAILED',
+                                      error_message=reason, failure_decision='fail_stage',
+                                      failure_error_code='resource_conflict')
+                self.executors[pending.robot_id].state.last_action_result = result
+                self.logger.result(self._tick, result)
+                ledger = getattr(self.runtime, 'action_ledger', None)
+                if ledger is not None:
+                    ledger.record_terminal(key, 'failed')
+                raise StageFailureDecisionError(f'RESOURCE_CONFLICT: {reason}')
+            if pending.action.on_conflict == 'SKIP':
+                executor = self.executors[pending.robot_id]
+                result = ActionResult(pending.robot_id, pending.action, 'SKIPPED',
+                                      error_message=reason, failure_decision='skip',
+                                      failure_error_code='resource_conflict')
+                executor.state.last_action_result = result
+                executor.state.action_cursor += 1
+                executor.state.wait_ticks = 0
+                self.wait_rounds[pending.robot_id] = 0
+                self.logger.result(self._tick, result)
+                ledger = getattr(self.runtime, 'action_ledger', None)
+                if ledger is not None:
+                    ledger.record_terminal(key, 'skipped')
+                self._release_resources(pending)
+                self._set_pending(executor)
+                return False
+            self.admissions[pending.robot_id] = RobotAdmission('WAITING_RESOURCE', pending, reason)
+            state = self.executors[pending.robot_id].state
+            if pending.action.timeout_ticks is not None and state.wait_ticks >= pending.action.timeout_ticks:
+                raise RuntimeError(f'RESOURCE_TIMEOUT: {reason}')
+        except StageFailureDecisionError:
+            raise
+        except Exception as exc:
+            raise_if_execution_aborted(self.runtime, exc)
+            self._release_resources(pending)
+            self._record_failure(self.executors[pending.robot_id], pending, exc)
+            self._set_pending(self.executors[pending.robot_id])
+        return False
 
     def _release_resources(self, pending):
-        """Release at the action boundary, including deferred and failed work."""
+        key = self._ledger_key(pending)
+        lease = self.resource_leases.pop(key, None)
+        self.resource_requests.pop(key, None)
+        if lease is not None:
+            lease.release()
+            self.notify_world_changed()
 
     def _record_failure(self, executor, pending, exc):
         executor.world_state.snapshot = self.world.snapshot
@@ -196,7 +257,7 @@ class StageScheduler:
             executor = self.executors[robot]
             self.inflight.remove(robot)
             self._release_resources(pending)
-            if isinstance(exc, NavigationDeferred):
+            if isinstance(exc, (NavigationDeferred, ResourceBindingDeferred)):
                 if self.stats is not None:
                     self.stats.record_deferred()
             elif exc is not None:
@@ -247,9 +308,7 @@ class StageScheduler:
         for pending in ready:
             if self._admit_resources(pending):
                 admitted.append(pending)
-            else:
-                self.admissions[pending.robot_id] = RobotAdmission(
-                    'WAITING_RESOURCE', pending, 'resource unavailable')
+
         if not admitted:
             return False
         wave = self.coordinator.admit_wave({
@@ -281,7 +340,7 @@ class StageScheduler:
                 'action': admission.pending.action.action_type if admission.pending else None,
                 'wait_rounds': self.wait_rounds[robot],
             } for robot, admission in self.admissions.items()},
-            'resource_holders': {},
+            'resource_holders': self.resource_manager.holders(),
         }
 
     def _drive(self):

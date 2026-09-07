@@ -1065,19 +1065,8 @@ class AI2ThorAdapter:
         if not callable(helper):
             raise RuntimeError(f"No generated helper registered for {action.action_type}.")
 
-        missing_runtime = object()
-        previous_global_runtime = globals().get("runtime", missing_runtime)
-        previous_context_runtime = runtime_context.runtime
-        globals()["runtime"] = self.runtime
-        runtime_context.runtime = self.runtime
-        try:
+        with runtime_context.runtime_scope(self.runtime):
             return helper(robot_id, *action.args())
-        finally:
-            runtime_context.runtime = previous_context_runtime
-            if previous_global_runtime is missing_runtime:
-                globals().pop("runtime", None)
-            else:
-                globals()["runtime"] = previous_global_runtime
 
     def to_planned_action(self, action: Optional[Action]) -> Optional[PlannedAction]:
         if action is None:

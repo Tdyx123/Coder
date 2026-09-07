@@ -11,7 +11,8 @@ import tempfile
 import threading
 import time
 from collections import deque
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
+from functools import wraps
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
@@ -142,6 +143,17 @@ INTERACTION_TARGET_ARGUMENT_INDEX = {
     "FillWater": 0,
     "PutObject": 1,
 }
+
+
+def navigation_operation(method):
+    """Serialize complete relocation/recovery sequences, never wave collection."""
+    @wraps(method)
+    def guarded(self, *args, **kwargs):
+        scope = (self.navigation_execution_scope()
+                 if hasattr(self, '_navigation_execution_lock') else nullcontext())
+        with scope:
+            return method(self, *args, **kwargs)
+    return guarded
 
 
 def navigation_interaction_target(
@@ -576,6 +588,10 @@ class ThorRuntime:
         retry_on_failure: Optional[bool] = None,
         max_retries: int = 3,
     ):
+        from .action_resources import active_resources
+        admitted = active_resources(self)
+        if admitted is not None:
+            admitted.before_step(payload, mark_effects=False)
         copied_payload = dict(payload)
         copied_payload.pop("objectResources", None)
         _normalize_look_payload(copied_payload)
@@ -583,13 +599,17 @@ class ThorRuntime:
         should_retry = bool(
             requested_retry and self.payload_allows_step_retry(copied_payload)
         )
-        return self._step_with_retries(
-            copied_payload,
-            check_success=check_success,
-            save_frame=save_frame,
-            retry_on_failure=should_retry,
-            max_retries=max_retries,
-        )
+        moves_agent = str(copied_payload.get('action', '')).startswith(('Move', 'Rotate', 'Look', 'Teleport'))
+        scope = (self.navigation_execution_scope()
+                 if moves_agent and hasattr(self, '_navigation_execution_lock') else nullcontext())
+        with scope:
+            return self._step_with_retries(
+                copied_payload,
+                check_success=check_success,
+                save_frame=save_frame,
+                retry_on_failure=should_retry,
+                max_retries=max_retries,
+            )
 
     def _step_with_retries(
         self,
@@ -661,6 +681,10 @@ class ThorRuntime:
         try:
             with self.controller_lock:
                 control.check()
+                from .action_resources import active_resources
+                admitted = active_resources(self)
+                if admitted is not None:
+                    admitted.before_step(payload)
                 try:
                     event = self.controller.step(dict(payload))
                 except BaseException as exc:
@@ -1116,6 +1140,8 @@ class ThorRuntime:
             if binding is None:
                 return None
             old_id = str(binding.get("object_id") or "")
+            from .action_resources import manager_for
+            manager_for(self).bind_identity(old_id, object_id)
             if old_id and old_id != object_id:
                 old_tokens = self.object_alias_by_object_id.get(old_id)
                 if old_tokens is not None:
@@ -1468,6 +1494,12 @@ class ThorRuntime:
 
     def find_objects(self, pattern: Any, agent_id: Optional[int] = None) -> List[Dict[str, Any]]:
         objects = list(self.current_objects(agent_id))
+        from .action_resources import active_resources
+        admitted = active_resources(self)
+        if admitted is not None:
+            bound = admitted.bound_objects(pattern, objects)
+            if bound is not None:
+                return bound
         resolved_pattern = self.resolve_object_alias(pattern, agent_id=agent_id)
         matches = [obj for obj in objects if matches_object(resolved_pattern, obj)]
         if not matches and resolved_pattern != pattern:
@@ -2074,6 +2106,7 @@ class ThorRuntime:
             max_requeues=max_requeues,
         )
 
+    @navigation_operation
     def move_to_position_direct(
         self,
         agent_id: int,
@@ -2103,6 +2136,7 @@ class ThorRuntime:
                 f"{agent_id} ({requeues_remaining} requeues left)."
             )
 
+    @navigation_operation
     def move_to_position_chunk(
         self,
         agent_id: int,
@@ -2155,6 +2189,7 @@ class ThorRuntime:
         start_position = self.nearest_reachable(current_position)
         return position_to_grid_key(start_position) == target_key
 
+    @navigation_operation
     def move_to_adjacent_position_direct(
         self,
         agent_id: int,
@@ -2264,6 +2299,7 @@ class ThorRuntime:
                 )
         return retry_event is not None and not step_event_failed(retry_event)
 
+    @navigation_operation
     def teleport_completed_agent_to_free_position(
         self,
         blocker_agent_id: int,
@@ -2358,6 +2394,7 @@ class ThorRuntime:
             f"to a free position: {last_error}"
         )
 
+    @navigation_operation
     def teleport_completed_agent_away_from_positions(
         self,
         blocker_agent_id: int,
@@ -2431,6 +2468,7 @@ class ThorRuntime:
             f"away from GoToObject candidates: {last_error}"
         )
 
+    @navigation_operation
     def face_position_direct(self, agent_id: int, target: Dict[str, float]) -> None:
         metadata = self.agent_event(agent_id).metadata
         agent = metadata.get("agent", {})
@@ -2448,6 +2486,7 @@ class ThorRuntime:
         action = "RotateRight" if delta > 0 else "RotateLeft"
         self._step_direct({"action": action, "degrees": abs(delta), "agentId": agent_id})
 
+    @navigation_operation
     def handoff_held_object_direct(
         self,
         from_agent_id: int,
@@ -2652,6 +2691,7 @@ class ThorRuntime:
             restrict_to_candidate_positions=restrict_to_candidate_positions,
         )
 
+    @navigation_operation
     def teleport_to_first_working_candidate(
         self,
         agent_id: int,
@@ -2706,6 +2746,7 @@ class ThorRuntime:
                 "trying another reachable position."
             )
 
+    @navigation_operation
     def teleport_and_face_first_working_candidate(
         self,
         agent_id: int,
@@ -2788,6 +2829,7 @@ class ThorRuntime:
 
             return dict(selected_position)
 
+    @navigation_operation
     def try_teleport_to_position_direct(
         self,
         agent_id: int,
@@ -2807,6 +2849,7 @@ class ThorRuntime:
             max_retries=max_retries,
         )
 
+    @navigation_operation
     def teleport_to_position_direct(
         self,
         agent_id: int,
@@ -2830,6 +2873,9 @@ class ThorRuntime:
         robot: RobotRef,
         next_action: Optional[PlannedAction],
     ) -> None:
+        from .action_resources import active_resources
+        if active_resources(self) is not None:
+            return
         if next_action is None or next_action.name != "PickupObject":
             return
         pickup_target = next_action.args[0] if next_action.args else None
@@ -2843,6 +2889,7 @@ class ThorRuntime:
             return
         self.place_held_objects_for_pickup(robot, pickup_target)
 
+    @navigation_operation
     def prepare_hand_for_pickup(
         self,
         robot: RobotRef,
@@ -2876,6 +2923,7 @@ class ThorRuntime:
         self.teleport_to_position(agent_id, original_position)
         return self.find_object(pickup_target, agent_id=agent_id)
 
+    @navigation_operation
     def place_held_objects_for_pickup(
         self,
         robot: RobotRef,
@@ -2899,6 +2947,14 @@ class ThorRuntime:
                 f"{held_object} ({held_object_type}) before PickupObject "
                 f"{pickup_target!r} for agent {agent_id}."
             )
+
+        from .action_resources import active_resources
+        admitted = active_resources(self)
+        if admitted is not None:
+            bound_id = admitted.resolved.bindings.get('@hand_receptacle')
+            if bound_id is None:
+                admitted.invalid('unbound automatic hand placement')
+            candidates = [self.find_object(bound_id, agent_id=agent_id)]
 
         last_error = "no candidate was attempted"
         for receptacle in candidates:
@@ -3238,6 +3294,7 @@ class ThorRuntime:
         self.navigation_metrics.record_request_succeeded()
         return dict(result.destination)
 
+    @navigation_operation
     def face_position(
         self,
         agent_id: int,
@@ -3360,6 +3417,7 @@ class ThorRuntime:
         position["z"] = float(position.get("z", 0.0)) - math.cos(yaw) * distance
         return position
 
+    @navigation_operation
     def retry_pickup_after_clip_error(
         self,
         agent_id: int,
@@ -3465,6 +3523,7 @@ class ThorRuntime:
         )
         return False
 
+    @navigation_operation
     def retry_object_action_after_target_visibility_error(
         self,
         action: str,

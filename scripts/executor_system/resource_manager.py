@@ -622,3 +622,70 @@ class ObjectResourceMgr:
             intents.clear()
         for held_objects in self.agent_held_objects.values():
             held_objects.clear()
+
+
+class ResourceLease:
+    """An atomic grant. Release is idempotent, including cancellation cleanup."""
+    def __init__(self, manager, owner, keys):
+        self.manager, self.owner, self.keys = manager, owner, keys
+        self.released = False
+
+    def release(self):
+        with self.manager._lock:
+            if not self.released:
+                self.released = True
+                self.manager._leases.remove(self)
+
+
+class ActionResourceManager:
+    """Short critical sections only; physical-id history survives transformations.
+
+    Old ObjectResourceMgr remains a compatibility identity/handoff API. It and
+    PositionResourceMgr are deliberately not enabled as another admission layer.
+    """
+    def __init__(self):
+        import threading
+        self._lock = threading.RLock()
+        self._identities = {}
+        self._leases = []
+
+    def _canonical(self, key):
+        key = str(key)
+        while key in self._identities and self._identities[key] != key:
+            key = self._identities[key]
+        return key
+
+    def canonical(self, object_id):
+        with self._lock:
+            return self._canonical(object_id)
+
+    def bind_identity(self, old_id, new_id):
+        if not old_id or not new_id:
+            return
+        with self._lock:
+            old, new = self._canonical(old_id), self._canonical(new_id)
+            if old != new:
+                self._identities[new] = old
+
+    def blockers(self, keys):
+        with self._lock:
+            requested = {self._canonical(key) for key in keys}
+            return tuple(sorted({lease.owner for lease in self._leases
+                                 if requested.intersection(self._canonical(key) for key in lease.keys)}))
+
+    def try_acquire(self, owner, keys):
+        with self._lock:
+            keys = tuple(sorted({self._canonical(key) for key in keys}))
+            if any(blocker != owner for blocker in self.blockers(keys)):
+                return None
+            lease = ResourceLease(self, owner, keys)
+            self._leases.append(lease)
+            return lease
+
+    def holders(self):
+        with self._lock:
+            result = {}
+            for lease in self._leases:
+                for key in lease.keys:
+                    result.setdefault(self._canonical(key), []).append(lease.owner)
+            return {key: tuple(sorted(set(owners))) for key, owners in result.items()}
