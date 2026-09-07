@@ -10,6 +10,14 @@ from .capability_checks import capability_failure
 from .utils import require_break_egg_target
 
 
+# Supported flat THOR payload fields. Nested parameters remain the canonical
+# representation; Action.from_any preserves these fields before normalization.
+DIRECT_PAYLOAD_FIELDS = (
+    'objectId', 'agentId', 'degrees', 'moveMagnitude', 'position', 'rotation',
+    'horizon', 'throwMagnitude', 'standing', 'forceAction', 'placeStationary',
+)
+
+
 @dataclass(frozen=True)
 class ActionSpec:
     name: str
@@ -50,6 +58,14 @@ def validate_runtime_capability(runtime, robot_id, action_type, obj=None):
                                  object_mass=(obj or {}).get('mass'))
     if failure:
         raise RuntimeError(f"{failure['reason']}: {robot_id}: {failure['message']}")
+
+
+def validate_recovery_capabilities(runtime, agent_id, *action_types):
+    """Preflight all additional recovery/restoration skills before any effect."""
+    robot_id = next((name for name, agent in runtime.robot_agent_map.items()
+                     if agent == agent_id), None)
+    for action_type in action_types:
+        validate_runtime_capability(runtime, robot_id, action_type)
 
 
 def _direct(runtime, robot_id, normalized, context):

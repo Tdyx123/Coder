@@ -157,6 +157,7 @@ def runtime_without_init():
 
 def object_action_runtime(objects, *, visible_when=None, horizon=35.0, yaw=0.0):
     runtime = runtime_without_init()
+    runtime.robots = SnapshotFakeRuntime().robots[:1]
     runtime.robot_agent_map = {"robot1": 0}
     runtime.physical_agent_count = 1
     runtime.stats_lock = threading.Lock()
@@ -438,6 +439,8 @@ class ExecutorRetryPolicyTest(unittest.TestCase):
 
     def test_move_retries_past_open_object_blocker_and_restores_it(self):
         runtime = runtime_without_init()
+        runtime.robot_agent_map = {'robot1': 0}
+        runtime.robots = SnapshotFakeRuntime().robots[:1]
         current_position = {"x": 0.0, "y": 0.9, "z": 0.0}
         target_position = {"x": 0.25, "y": 0.9, "z": 0.0}
         drawer = {

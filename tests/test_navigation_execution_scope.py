@@ -40,6 +40,8 @@ def recovery_runtime(agent_count=2, *, starts=None, targets=None, cells=None):
     runtime = object.__new__(ThorRuntime)
     runtime.physical_agent_count = agent_count
     runtime.robot_agent_map = {f"robot{i + 1}": i for i in range(agent_count)}
+    runtime.robots = [{'name': name, 'skills': ['GoToObject', 'SliceObject'], 'mass_capacity': 1}
+                      for name in runtime.robot_agent_map]
     runtime.global_reachable_positions = cells
     for name in (
         "physical_agent_id", "current_agent_position", "agent_position_items",
@@ -323,3 +325,15 @@ class NavigationExecutionScopeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RepositionCapabilityTests(unittest.TestCase):
+    def test_slice_reposition_requires_navigation_skill_before_effects(self):
+        runtime, grid = recovery_runtime()
+        runtime.robots = [{'name': 'robot1', 'skills': ['SliceObject'], 'mass_capacity': 1}]
+        effects = []
+        runtime.navigate_to_object = lambda *args, **kwargs: effects.append('navigate')
+        runtime.step = lambda *args, **kwargs: effects.append('slice')
+        with self.assertRaisesRegex(RuntimeError, 'missing_skill'):
+            runtime.retry_slice_after_interaction_reposition(0, {'action': 'SliceObject', 'agentId': 0, 'objectId': 'Tomato|0'}, None)
+        self.assertEqual(effects, [])

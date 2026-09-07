@@ -99,7 +99,8 @@ class Action:
         parameters = dict(value.get("parameters") or {})
         if "args" in value and "args" not in parameters:
             parameters["args"] = tuple(value["args"])
-        for key in ("objectId", "agentId", "degrees", "moveMagnitude", "position"):
+        from .action_registry import DIRECT_PAYLOAD_FIELDS
+        for key in DIRECT_PAYLOAD_FIELDS:
             if key in value and key not in parameters:
                 parameters[key] = value[key]
 

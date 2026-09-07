@@ -2323,6 +2323,9 @@ class ThorRuntime:
         object_id = str(blocker.get("objectId") or "")
         if not object_id:
             return None
+        from .action_registry import validate_recovery_capabilities
+        # A robot that can close but cannot restore must leave the blocker open.
+        validate_recovery_capabilities(self, agent_id, 'CloseObject', 'OpenObject')
         close_event = self._step_direct(
             {
                 "action": "CloseObject",
@@ -2990,6 +2993,8 @@ class ThorRuntime:
         if not held_objects:
             return
 
+        from .action_registry import validate_recovery_capabilities
+        validate_recovery_capabilities(self, agent_id, 'GoToObject', 'PutObject')
         held_object = held_objects[0]
         held_object_type = self.held_object_type(agent_id, held_object)
         candidates = self.compatible_receptacle_candidates(
@@ -3696,6 +3701,8 @@ class ThorRuntime:
         if not robot_names:
             return initial_event
 
+        from .action_registry import validate_recovery_capabilities
+        validate_recovery_capabilities(self, agent_id, 'GoToObject')
         state = self._interaction_reposition_state
         active_keys = set(getattr(state, "active_keys", set()))
         recovery_key = (int(agent_id), "SliceObject", str(target))

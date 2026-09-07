@@ -694,3 +694,21 @@ class AdmissionPublicationRaceTest(unittest.TestCase):
         self.assertEqual(resources.bindings['@hand_receptacle'], 'CounterTop|1')
         self.assertIn('CounterTop|1', resources.keys)
         self.assertNotIn('CounterTop|2', resources.keys)
+
+
+class AutomaticHandCapabilityTest(ResourceRuntimeMixin, unittest.TestCase):
+    def test_clearance_checks_navigation_and_put_before_any_side_effect(self):
+        for skills in (['PickupObject'], ['PickupObject', 'GoToObject'], ['PickupObject', 'PutObject']):
+            with self.subTest(skills=skills):
+                runtime = self.runtime([obj('Mug|1'), obj('Mug|2'), obj('CounterTop|1', position={'x': 0, 'y': 1, 'z': 0})])
+                runtime.robots[0]['skills'] = skills
+                runtime.agent_held_objects_for = lambda agent: {'Mug|2'} if agent == 0 else set()
+                runtime.snapshot = replace(runtime.snapshot, held_objects={'robot1': ('Mug|2',), 'robot2': ()})
+                resolved = resolve_action_resources(runtime, runtime.snapshot, 'robot1', Action('PickupObject', {'args': ('Mug|1',)}))
+                effects = []
+                runtime.navigate_to_object = lambda *args, **kwargs: effects.append('navigate')
+                runtime.put_held_object_in_receptacle = lambda *args: effects.append('put') or SimpleNamespace(metadata={'lastActionSuccess': True})
+                with action_resource_scope(runtime, 'owner', resolved):
+                    with self.assertRaisesRegex(RuntimeError, 'missing_skill'):
+                        runtime.place_held_objects_for_pickup('robot1', 'Mug|1')
+                self.assertEqual(effects, [])

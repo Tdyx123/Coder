@@ -189,3 +189,56 @@ class ActionRegistryTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'Missing'):
             ActionRegistry().prepare(runtime, snapshot(runtime), 'robot1', Action('GoToObject', {'args': ('Missing',)}))
         self.assertEqual(runtime.state_version, 0)
+
+    def test_flat_direct_payload_rejects_nonfinite_angles_and_throw(self):
+        for payload in (
+            {'action': 'Teleport', 'position': {'x': 0, 'y': 0, 'z': 0}, 'rotation': {'x': 0, 'y': float('inf'), 'z': 0}},
+            {'action': 'Teleport', 'position': {'x': 0, 'y': 0, 'z': 0}, 'horizon': float('nan')},
+            {'action': 'ThrowObject', 'throwMagnitude': float('inf')},
+        ):
+            with self.subTest(payload=payload), self.assertRaises(ValueError):
+                ActionRegistry().normalize(Action.from_any(payload))
+
+    def test_flat_direct_payload_preserves_angles_and_throw_on_submission(self):
+        runtime = runtime_with_objects()
+        runtime.robots[0]['skills'].extend(['Teleport', 'ThrowObject'])
+        payloads = []
+        runtime.step = lambda payload, **kwargs: payloads.append(payload) or payload
+        for payload in (
+            {'action': 'Teleport', 'position': {'x': 1, 'y': 0, 'z': 2}, 'rotation': {'x': 0, 'y': 90, 'z': 0}, 'horizon': 30, 'standing': True},
+            {'action': 'ThrowObject', 'throwMagnitude': 12},
+        ):
+            with self.subTest(payload=payload):
+                AI2ThorAdapter(runtime).execute('robot1', Action.from_any(payload))
+                self.assertEqual(payloads[-1], dict(payload, agentId=0))
+
+    def test_blocker_recovery_checks_close_and_restoration_before_submission(self):
+        from types import SimpleNamespace
+        from executor_system.runtime import ThorRuntime
+        from executor_system.action_resources import action_resource_scope
+        for skills in (['GoToObject'], ['GoToObject', 'CloseObject'], ['GoToObject', 'OpenObject']):
+            with self.subTest(skills=skills):
+                runtime = runtime_with_objects()
+                runtime.robots[0]['skills'] = skills
+                blocker = dict(objectId='Cabinet|1', name='Cabinet_1', objectType='Cabinet', openable=True, isOpen=True)
+                runtime.objects = runtime.objects + [blocker]
+                prepared = ActionRegistry().prepare(runtime, snapshot(runtime), 'robot1', Action('GoToObject', {'args': ('Apple',)}))
+                runtime.find_object = lambda *args, **kwargs: blocker
+                calls = []
+                runtime._step_direct = lambda payload, **kwargs: calls.append(payload) or SimpleNamespace(metadata={'lastActionSuccess': True})
+                failed = SimpleNamespace(metadata={'errorMessage': 'Cabinet_1 is blocking Agent 0 from moving by (0.2500, 0.0000, 0.0000).'})
+                with action_resource_scope(runtime, 'owner', prepared.resources):
+                    with self.assertRaisesRegex(RuntimeError, 'missing_skill'):
+                        ThorRuntime.retry_move_past_open_object_blocker(runtime, 0, {'action': 'MoveAhead', 'agentId': 0}, failed)
+                self.assertEqual(calls, [])
+                self.assertTrue(blocker['isOpen'])
+
+    def test_compound_declared_skill_does_not_require_normal_primitive_skills(self):
+        from executor_system.action_resources import action_resource_scope
+        runtime = runtime_with_objects()
+        runtime.robots[0]['skills'] = ['RunMicrowave']
+        runtime.objects = runtime.objects + [dict(objectId='Microwave|1', objectType='Microwave', openable=True, isOpen=False)]
+        prepared = ActionRegistry().prepare(runtime, snapshot(runtime), 'robot1', Action('RunMicrowave', {'args': ('Microwave', 'Apple')}))
+        with action_resource_scope(runtime, 'owner', prepared.resources) as scope:
+            scope.before_step({'action': 'OpenObject', 'objectId': 'Microwave|1', 'agentId': 0})
+            self.assertTrue(scope.effects_started)
