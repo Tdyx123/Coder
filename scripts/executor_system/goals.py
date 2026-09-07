@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from .demo_state import (
     get_ground_truth,
+    goal_bookkeeping,
     ground_truth_lock,
     verified_ground_truth_goal_signatures,
 )
@@ -54,21 +55,34 @@ def record_verified_goal_state(
     state: str,
     object_id: Optional[str] = None,
     evaluation_context: Optional[EvaluationContext] = None,
+    *,
+    runtime: Any = None,
 ) -> None:
+    if evaluation_context is None:
+        from .context import get_bound_runtime
+        if runtime is None:
+            runtime = get_bound_runtime()
+        evaluation_context = getattr(runtime, 'evaluation_context', None)
     if evaluation_context is not None:
         evaluation_context.record_observation(str(obj_name), state, object_id)
         return
     signature = state_goal_signature(obj_name, state)
     if not signature[0] or not signature[1]:
         return
-    with ground_truth_lock:
-        verified_ground_truth_goal_signatures.add(signature)
+    lock, verified = goal_bookkeeping(runtime)
+    with lock:
+        verified.add(signature)
 
 
 def goal_state_verified(obj_name: Any, state: str) -> bool:
     signature = state_goal_signature(obj_name, state)
-    with ground_truth_lock:
-        return signature in verified_ground_truth_goal_signatures
+    from .context import get_bound_runtime
+    evaluation_context = getattr(get_bound_runtime(), 'evaluation_context', None)
+    if evaluation_context is not None:
+        return evaluation_context.has_observation(str(obj_name), state)
+    lock, verified = goal_bookkeeping()
+    with lock:
+        return signature in verified
 
 
 def record_satisfied_temperature_goal_states(
@@ -204,6 +218,8 @@ def record_groundtruth_state(
     obj: Dict[str, Any],
     state: str,
     evaluation_context: Optional[EvaluationContext] = None,
+    *,
+    runtime: Any = None,
 ) -> None:
     name = ground_truth_name_for_object(obj_name, obj)
     record_verified_goal_state(
@@ -211,6 +227,7 @@ def record_groundtruth_state(
         state,
         str(obj.get("objectId") or "") or None,
         evaluation_context,
+        runtime=runtime,
     )
 
 

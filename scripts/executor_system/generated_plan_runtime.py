@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from executor_system import context as _context
-from executor_system import demo_state as _demo_state
 from executor_system.plan_types import (TaskPlan)
 from executor_system.config import CLOUD_RENDERING, RENDER_IMAGE
 from executor_system.evaluation import EvaluationContext
@@ -228,7 +227,6 @@ def finalize_runner_result(runtime, result, start_time, metrics_path):
                 result['cleanup_errors'].append(error_record(exc, phase='cleanup'))
             close_runtime(runtime, result['cleanup_errors'])
     finally:
-        _context.runtime = None
         result['phase_durations_seconds']['cleanup'] = time.monotonic() - cleanup_start
         result['run_time_seconds'] = time.monotonic() - start_time
         write_result_json(metrics_path, result)
@@ -238,10 +236,7 @@ def finalize_runner_result(runtime, result, start_time, metrics_path):
 def close_standalone_runtime(runtime, start_time, script_file, task_index, *, identity=None):
     cleanup_start = time.monotonic()
     errors = []
-    try:
-        close_runtime(runtime, errors)
-    finally:
-        _context.runtime = None
+    close_runtime(runtime, errors)
     if errors:
         # Ordinary entrypoints must also leave an artifact when closing fails.
         result = build_runner_result('failed', start_time)
@@ -319,7 +314,6 @@ def _runtime_inputs(
     robots = build_robot_team(task_record.get("robot list") or [])
     bundle = build_hardcoded_bundle(bundle_data)
     ground_truth = list(bundle.gcr)
-    _demo_state.set_ground_truth(ground_truth)
     return task_record, floor_no, robots, ground_truth, bundle
 
 
@@ -364,54 +358,54 @@ def run_standalone(
         allow_empty=bool(bundle.noop_subtasks) and not bundle.task_plan.stages,
     )
     runtime.register_object_id_bindings(bundle.object_id_bindings)
-    _context.runtime = runtime
-    try:
-        if bundle.task_plan.stages:
-            run_action_plan(bundle.task_plan, execution_policy=execution_policy, timeout_seconds=effective_timeout_seconds(
-                runtime.movement_config.mode.value, timeout_seconds))
-        elif not bundle.noop_subtasks:
-            run_action_plan(bundle.task_plan, execution_policy=execution_policy, timeout_seconds=effective_timeout_seconds(
-                runtime.movement_config.mode.value, timeout_seconds))
-        runtime.step({"action": "Done"}, check_success=False)
+    with _context.bind_runtime(runtime):
+        try:
+            if bundle.task_plan.stages:
+                run_action_plan(bundle.task_plan, execution_policy=execution_policy, timeout_seconds=effective_timeout_seconds(
+                    runtime.movement_config.mode.value, timeout_seconds))
+            elif not bundle.noop_subtasks:
+                run_action_plan(bundle.task_plan, execution_policy=execution_policy, timeout_seconds=effective_timeout_seconds(
+                    runtime.movement_config.mode.value, timeout_seconds))
+            runtime.step({"action": "Done"}, check_success=False)
 
-        metrics = runtime.evaluate(ground_truth)
-        no_trans_gt = int(task_record.get("trans", 0) or 0)
-        max_trans = int(task_record.get("min_trans", task_record.get("max_trans", 0)) or 0)
-        ru = transition_metric(bundle.no_trans, no_trans_gt, max_trans)
-        evaluation_valid = metrics["evaluation_status"] == "valid"
-        if not evaluation_valid:
-            ru = None
-        sr = (
-            1 if metrics["tc"] == 1.0 and ru == 1.0 else 0
-        ) if evaluation_valid else None
-        tc_display = int(metrics["tc"]) if metrics["tc"] is not None else None
-        print(
-            "SR:{sr}, TC:{tc}, GCR:{gcr}, Exec:{exec_rate}, RU:{ru}".format(
-                sr=sr,
-                tc=tc_display,
-                gcr=metrics["gcr"],
-                exec_rate=metrics["exec_rate"],
-                ru=ru,
+            metrics = runtime.evaluate(ground_truth)
+            no_trans_gt = int(task_record.get("trans", 0) or 0)
+            max_trans = int(task_record.get("min_trans", task_record.get("max_trans", 0)) or 0)
+            ru = transition_metric(bundle.no_trans, no_trans_gt, max_trans)
+            evaluation_valid = metrics["evaluation_status"] == "valid"
+            if not evaluation_valid:
+                ru = None
+            sr = (
+                1 if metrics["tc"] == 1.0 and ru == 1.0 else 0
+            ) if evaluation_valid else None
+            tc_display = int(metrics["tc"]) if metrics["tc"] is not None else None
+            print(
+                "SR:{sr}, TC:{tc}, GCR:{gcr}, Exec:{exec_rate}, RU:{ru}".format(
+                    sr=sr,
+                    tc=tc_display,
+                    gcr=metrics["gcr"],
+                    exec_rate=metrics["exec_rate"],
+                    ru=ru,
+                )
             )
-        )
-        runtime.log_unmet_goals(ground_truth)
-        runtime.generate_video()
-        runtime.write_final_metadata()
-        return 0
-    except BaseException as exc:
-        failure_result = build_runner_result('failed', start_time)
-        failure_result.update(identity)
-        failure_result['execution_policy'] = execution_policy
-        record_execution_error(failure_result, exc, runtime)
-        raise
-    finally:
-        if failure_result is not None:
-            finalize_runner_result(runtime, failure_result, start_time,
-                                   runner_metrics_path('', script_file))
-        else:
-            close_standalone_runtime(
-                runtime, start_time, script_file, task_index, identity=identity
-            )
+            runtime.log_unmet_goals(ground_truth)
+            runtime.generate_video()
+            runtime.write_final_metadata()
+            return 0
+        except BaseException as exc:
+            failure_result = build_runner_result('failed', start_time)
+            failure_result.update(identity)
+            failure_result['execution_policy'] = execution_policy
+            record_execution_error(failure_result, exc, runtime)
+            raise
+        finally:
+            if failure_result is not None:
+                finalize_runner_result(runtime, failure_result, start_time,
+                                       runner_metrics_path('', script_file))
+            else:
+                close_standalone_runtime(
+                    runtime, start_time, script_file, task_index, identity=identity
+                )
 
 
 def run_runner_mode(
@@ -463,7 +457,6 @@ def run_runner_mode(
         result["movement_mode"] = runtime.movement_config.mode.value
         result["navigation_metrics"] = runtime.navigation_metrics.to_dict()
         runtime.register_object_id_bindings(bundle.object_id_bindings)
-        _context.runtime = runtime
         result['phase_durations_seconds'][phase] = time.monotonic() - phase_start
         phase, phase_start = 'execution', time.monotonic()
 

@@ -140,7 +140,7 @@ def test_legacy_action_import_is_same_type(self):
 
 **接口：** `ObjectResolver(runtime).find_objects/find_object/register_object_id_bindings/resolve_object_alias` 保持对应 runtime 方法的参数；`ObjectInteractor(runtime)` 接收 PreparedAction 和第二批动作上下文。`context.bind_runtime(runtime)` 提供有作用域的兼容 ContextVar 绑定。
 
-- [ ] 添加同进程两个 runtime 的线程隔离测试；每个线程显式绑定自己的上下文，调用 helper 后只能改变所属 runtime 的动作记录和评估证据。
+- [x] 添加同进程两个 runtime 的线程隔离测试；每个线程显式绑定自己的上下文，调用 helper 后只能改变所属 runtime 的动作记录和评估证据。
 
 ```python
 def test_context_binding_is_restored(self):
@@ -153,13 +153,13 @@ def test_context_binding_is_restored(self):
         self.assertIs(get_runtime(), first)
 ```
 
-- [ ] 覆盖 helper 抛异常仍恢复上下文、切片别名不跨任务、两任务相同对象名不共享历史、并行解析不修改同一个函数 globals。
-- [ ] 运行 `/home/dwb/.pyenv/bin/pyenv exec python -m unittest tests/test_runtime_context_isolation.py`，确认 RED。
-- [ ] 按顺序提取对象查找/绑定，再提取交互/恢复。保留 runtime 门面，服务始终访问注入的 runtime，不访问模块全局 runtime。
-- [ ] 注册表生产入口直接调用显式服务。为兼容 actions helper，在每个实际工作线程入口使用 `bind_runtime`；ContextVar 不依赖线程自动继承。删除 `AI2ThorAdapter.call_generated_helper` 临时写模块 globals 的行为。初始化随机数使用 runtime 自己的 `random.Random(seed)`，默认 seed 仍为 0，不调用全局 random.seed 干扰其他 runtime。
-- [ ] `TaskPlanParser.record_subtask` 优先读取已存在的 `planned_actions`。没有显式动作时，创建共享原函数代码但拥有复制 globals 的 `types.FunctionType`，只在该副本替换 recorder，保留 defaults/closure/kwdefaults；若使用不支持的间接 helper/动态控制流则明确拒绝并要求显式计划，不能静默执行原函数产生真实副作用。
-- [ ] 动态函数录制兼容层在执行前用 AST 约束：仅允许直线动作 helper 调用和无副作用的局部赋值；拒绝循环、条件、任意函数调用、全局写入及无法取得源码的函数。已有 `planned_actions` 不需要动态录制。
-- [ ] 运行上下文测试、`test_runtime_object_aliases.py`、`test_action_plan_pre_task.py`、`test_executor_retry_policy.py`、`test_pddlrun_executor_adapter.py` 和资源租约测试。
+- [x] 覆盖 helper 抛异常仍恢复上下文、切片别名不跨任务、两任务相同对象名不共享历史、并行解析不修改同一个函数 globals。
+- [x] 运行 `/home/dwb/.pyenv/bin/pyenv exec python -m unittest tests/test_runtime_context_isolation.py`，确认 RED。
+- [x] 按顺序提取对象查找/绑定，再提取交互/恢复。保留 runtime 门面，服务始终访问注入的 runtime，不访问模块全局 runtime。
+- [x] 注册表生产入口直接调用显式服务。为兼容 actions helper，在每个实际工作线程入口使用 `bind_runtime`；ContextVar 不依赖线程自动继承。删除 `AI2ThorAdapter.call_generated_helper` 临时写模块 globals 的行为。初始化随机数使用 runtime 自己的 `random.Random(seed)`，默认 seed 仍为 0，不调用全局 random.seed 干扰其他 runtime。
+- [x] `TaskPlanParser.record_subtask` 优先读取已存在的 `planned_actions`。没有显式动作时，创建共享原函数代码但拥有复制 globals 的 `types.FunctionType`，只在该副本替换 recorder，保留 defaults/closure/kwdefaults；若使用不支持的间接 helper/动态控制流则明确拒绝并要求显式计划，不能静默执行原函数产生真实副作用。
+- [x] 动态函数录制兼容层在执行前用 AST 约束：仅允许直线动作 helper 调用和无副作用的局部赋值；拒绝循环、条件、任意函数调用、全局写入及无法取得源码的函数。已有 `planned_actions` 不需要动态录制。
+- [x] 运行上下文测试、`test_runtime_object_aliases.py`、`test_action_plan_pre_task.py`、`test_executor_retry_policy.py`、`test_pddlrun_executor_adapter.py` 和资源租约测试。
 
 **交付：** 显式 runtime 隔离成为生产路径，旧 helper 兼容不再依赖共享可变全局值。
 

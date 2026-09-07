@@ -151,7 +151,8 @@ def _current_object_by_id(agent_id: int, object_id: str) -> Dict[str, Any]:
 
 
 def _object_has_liquid(obj: Dict[str, Any]) -> bool:
-    return _interactor()._object_has_liquid(obj)
+    from .object_interactor import ObjectInteractor
+    return ObjectInteractor._object_has_liquid(obj)
 
 
 def _bound_helper_object(role):
@@ -166,27 +167,33 @@ def _fillwater_sinkbasin_putobject_has_no_positions(
     exc: BaseException,
     sink_basin: Dict[str, Any],
 ) -> bool:
-    return _interactor()._fillwater_sinkbasin_putobject_has_no_positions(exc, sink_basin)
+    from .object_interactor import ObjectInteractor
+    return ObjectInteractor._fillwater_sinkbasin_putobject_has_no_positions(exc, sink_basin)
 
 
 def _discount_skipped_runtime_attempt(runtime_obj: Any) -> None:
-    return _interactor()._discount_skipped_runtime_attempt(runtime_obj)
+    from .object_interactor import ObjectInteractor
+    return ObjectInteractor._discount_skipped_runtime_attempt(runtime_obj)
 
 
 def _object_is_toggled_on(obj: Dict[str, Any]) -> bool:
-    return _interactor()._object_is_toggled_on(obj)
+    from .object_interactor import ObjectInteractor
+    return ObjectInteractor._object_is_toggled_on(obj)
 
 
 def _object_parent_receptacles(obj: Dict[str, Any]) -> List[str]:
-    return _interactor()._object_parent_receptacles(obj)
+    from .object_interactor import ObjectInteractor
+    return ObjectInteractor._object_parent_receptacles(obj)
 
 
 def _object_on_receptacle(obj: Dict[str, Any], receptacle_id: str) -> bool:
-    return _interactor()._object_on_receptacle(obj, receptacle_id)
+    from .object_interactor import ObjectInteractor
+    return ObjectInteractor._object_on_receptacle(obj, receptacle_id)
 
 
 def _stove_parent_burner_id(obj: Dict[str, Any]) -> Optional[str]:
-    return _interactor()._stove_parent_burner_id(obj)
+    from .object_interactor import ObjectInteractor
+    return ObjectInteractor._stove_parent_burner_id(obj)
 
 
 def _resolve_stove_burner(

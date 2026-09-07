@@ -180,7 +180,9 @@ def run_workers(runtime, executors, coordinator, stage_id, *, drive=None):
         try:
             control.check()
             executor._execution_worker_ident = threading.get_ident()
-            executor.execute()
+            from .context import bind_runtime
+            with bind_runtime(runtime):
+                executor.execute()
         except BaseException as exc:
             with error_lock:
                 if accepting_errors:
@@ -262,7 +264,9 @@ def close_runtime(runtime, cleanup_errors):
     errors = []
     def close():
         try:
-            runtime.stop()
+            from .context import bind_runtime
+            with bind_runtime(runtime):
+                runtime.stop()
         except BaseException as exc:
             errors.append(error_record(exc, phase='cleanup'))
     worker = threading.Thread(target=close, name='runtime-cleanup', daemon=True)

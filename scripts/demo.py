@@ -137,14 +137,11 @@ def transition_metric(no_trans: int, no_trans_gt: int, max_trans: int) -> float:
 
 
 def main() -> int:
-    global floor_no, ground_truth, robots, runtime
-
     task_record = load_task_record(TASK_FILE, TASK_INDEX)
     identity = runner_identity(__file__, TASK_INDEX)
     floor_no = floor_plan_from_task_file(TASK_FILE)
     robots = build_robot_team(task_record.get("robot list") or [])
     ground_truth = list(task_record.get("object_states") or [])
-    _demo_state.set_ground_truth(ground_truth)
 
     bundle = build_task_plan_from_pddlrun_paths(
         task=str(task_record.get("task") or ""),
@@ -169,60 +166,60 @@ def main() -> int:
     )
     runtime.evaluation_context = EvaluationContext.from_goals(ground_truth)
     runtime.register_object_id_bindings(bundle.object_id_bindings)
-    _context.runtime = runtime
     start_time = time.monotonic()
     failure_result = None
-    try:
-        run_action_plan(bundle.task_plan)
-        runtime.step({"action": "Done"}, check_success=False)
-
-        metrics = runtime.evaluate(ground_truth)
-        no_trans_gt = int(task_record.get("trans", 0) or 0)
-        max_trans = int(task_record.get("min_trans", task_record.get("max_trans", 0)) or 0)
-        ru = transition_metric(bundle.no_trans, no_trans_gt, max_trans)
-        evaluation_valid = metrics["evaluation_status"] == "valid"
-        if not evaluation_valid:
-            ru = None
-        sr = (
-            1 if metrics["tc"] == 1.0 and ru == 1.0 else 0
-        ) if evaluation_valid else None
-        tc_display = int(metrics["tc"]) if metrics["tc"] is not None else None
-        print(
-            "SR:{sr}, TC:{tc}, GCR:{gcr}, Exec:{exec_rate}, RU:{ru}".format(
-                sr=sr,
-                tc=tc_display,
-                gcr=metrics["gcr"],
-                exec_rate=metrics["exec_rate"],
-                ru=ru,
-            )
-        )
-        runtime.log_unmet_goals(ground_truth)
-        runtime.generate_video()
-        runtime.write_final_metadata()
-        return 0
-    except BaseException as exc:
-        failure_result = build_runner_result('failed', start_time)
-        failure_result.update(identity)
-        record_execution_error(failure_result, exc, runtime)
-        raise
-    finally:
+    with _context.bind_runtime(runtime):
         try:
-            if failure_result is not None:
-                finalize_runner_result(runtime, failure_result, start_time,
-                                       Path(__file__).with_name('parallel_run_result.json'))
-            else:
-                close_standalone_runtime(
-                    runtime, start_time, __file__, TASK_INDEX, identity=identity
+            run_action_plan(bundle.task_plan)
+            runtime.step({"action": "Done"}, check_success=False)
+
+            metrics = runtime.evaluate(ground_truth)
+            no_trans_gt = int(task_record.get("trans", 0) or 0)
+            max_trans = int(task_record.get("min_trans", task_record.get("max_trans", 0)) or 0)
+            ru = transition_metric(bundle.no_trans, no_trans_gt, max_trans)
+            evaluation_valid = metrics["evaluation_status"] == "valid"
+            if not evaluation_valid:
+                ru = None
+            sr = (
+                1 if metrics["tc"] == 1.0 and ru == 1.0 else 0
+            ) if evaluation_valid else None
+            tc_display = int(metrics["tc"]) if metrics["tc"] is not None else None
+            print(
+                "SR:{sr}, TC:{tc}, GCR:{gcr}, Exec:{exec_rate}, RU:{ru}".format(
+                    sr=sr,
+                    tc=tc_display,
+                    gcr=metrics["gcr"],
+                    exec_rate=metrics["exec_rate"],
+                    ru=ru,
                 )
+            )
+            runtime.log_unmet_goals(ground_truth)
+            runtime.generate_video()
+            runtime.write_final_metadata()
+            return 0
+        except BaseException as exc:
+            failure_result = build_runner_result('failed', start_time)
+            failure_result.update(identity)
+            record_execution_error(failure_result, exc, runtime)
+            raise
         finally:
-            runtime = None
-            _context.runtime = None
+            try:
+                if failure_result is not None:
+                    finalize_runner_result(runtime, failure_result, start_time,
+                                           Path(__file__).with_name('parallel_run_result.json'))
+                else:
+                    close_standalone_runtime(
+                        runtime, start_time, __file__, TASK_INDEX, identity=identity
+                    )
+            finally:
+                runtime = None
 
 
 class _Demo2Facade(types.ModuleType):
     def __getattribute__(self, name):
         if name == "runtime":
-            return _context.runtime
+            bound = _context.get_bound_runtime()
+            return bound if bound is not None else _context.runtime
         if name == "cv2":
             return _dependencies.cv2
         return super().__getattribute__(name)

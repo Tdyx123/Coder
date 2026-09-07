@@ -3,74 +3,10 @@ import math
 import threading
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
-from .config import (
-    AGENT_CLEARANCE_DISTANCE,
-    DIRECTIONAL_VIEW_NAMES,
-    GENERATE_METADATA,
-    LOCAL_TOP_VIEW_EXTENT_SCALE,
-    LOCAL_TOP_VIEW_MIN_HEIGHT,
-    NAVIGATION_CHUNK_STEPS,
-    NAVIGATION_GRID_SIZE,
-    PLACEMENT_RESTRICTIONS,
-    parse_env_bool,
-    TELEPORT_CANDIDATE_LIMIT,
-    THIRD_PARTY_VIEW_NAMES,
-    TOP_VIEW_CAMERA_FOV,
-    TOP_VIEW_NAME,
-    TOP_VIEW_HEIGHT_OFFSET,
-    SceneObjectFootprint,
-)
-from .utils import (
-    RobotRef,
-    distance_pts,
-    distance_to_aabb_footprint,
-    event_cv2_frame,
-    event_error_message,
-    is_broken_egg_object,
-    is_egg_query,
-    is_sliced_food_object_for_base,
-    matches_object,
-    object_aabb_bounds,
-    object_center,
-    object_distance,
-    object_footprint_clearance,
-    object_key,
-    object_mass,
-    operated_object_name,
-    operated_object_name_candidate_keys,
-    operated_sliced_food_query_rank,
-    position_inside_aabb_footprint,
-    position_to_grid_key,
-    position_to_tuple,
-    robot_agent_id,
-    robot_name,
-    shortest_yaw_delta,
-    sliceable_food_query_key,
-    stable_object_name,
-    step_event_failed,
-    teleport_collision_object_id,
-    yaw_to_face,
-    log,
-)
-from .movement import (
-    ActionWave,
-    MovementConfig,
-    NavigationMetrics,
-    NavigationDeferred,
-    NavigationRequest,
-    NoInteractionPoseError,
-    create_movement_strategy,
-)
-from .execution_control import (
-    ensure_control,
-    ExecutionShutdownTimeout,
-    raise_if_execution_aborted,
-    close_runtime,
-)
-from .goals import (
-    format_goal,
-    record_verified_goal_state,
-)
+from .config import PLACEMENT_RESTRICTIONS
+from .utils import RobotRef, event_error_message, is_egg_query, matches_object, object_center, object_distance, object_key, operated_object_name, stable_object_name, step_event_failed, log
+from .execution_control import raise_if_execution_aborted
+from .goals import record_verified_goal_state
 
 from .plan_types import PlannedAction
 from .config import INTERACTION_MAX_PASS_STEPS
@@ -113,11 +49,8 @@ class ObjectInteractor:
             held_objects = []
         return ", ".join(held_objects) if held_objects else "nothing"
 
-
     def object_name_for_log(self, obj: Dict[str, Any]) -> str:
-        runtime = self.runtime
         return stable_object_name(obj) or str(obj.get("objectId") or "")
-
 
     def object_id_name_for_log(self, agent_id: int, object_id: Any) -> str:
         runtime = self.runtime
@@ -126,7 +59,6 @@ class ObjectInteractor:
             if str(obj.get("objectId") or "") == object_id_text:
                 return runtime.object_name_for_log(obj)
         return object_id_text.split("|", 1)[0] if object_id_text else ""
-
 
     def current_object_by_id(
         self,
@@ -140,24 +72,19 @@ class ObjectInteractor:
                 return obj
         return None
 
-
     def toggle_action_target_state(self, action: str) -> Optional[bool]:
-        runtime = self.runtime
         if action == "ToggleObjectOn":
             return True
         if action == "ToggleObjectOff":
             return False
         return None
 
-
     def object_toggle_state(self, obj: Dict[str, Any]) -> Optional[bool]:
-        runtime = self.runtime
         if "isToggled" in obj and obj.get("isToggled") is not None:
             return bool(obj.get("isToggled"))
         if "isOn" in obj and obj.get("isOn") is not None:
             return bool(obj.get("isOn"))
         return None
-
 
     def toggle_state_matches(self, action: str, obj: Dict[str, Any]) -> bool:
         runtime = self.runtime
@@ -165,9 +92,7 @@ class ObjectInteractor:
         current_state = runtime.object_toggle_state(obj)
         return desired_state is not None and current_state is not None and desired_state == current_state
 
-
     def toggle_error_matches_desired_state(self, action: str, error: str) -> bool:
-        runtime = self.runtime
         error_text = str(error or "").lower()
         if action == "ToggleObjectOn":
             return "already on" in error_text
@@ -175,14 +100,12 @@ class ObjectInteractor:
             return "already off" in error_text
         return False
 
-
     def held_object_names_for_log(self, agent_id: int) -> List[str]:
         runtime = self.runtime
         return [
             runtime.object_id_name_for_log(agent_id, object_id)
             for object_id in sorted(runtime.agent_held_objects_for(agent_id))
         ]
-
 
     def log_put_object_failure_held_items(self, agent_id: Any) -> None:
         runtime = self.runtime
@@ -192,7 +115,6 @@ class ObjectInteractor:
             f"PutObject failed for agent {agent_id}; "
             f"currently holding: {held_description}."
         )
-
 
     def retry_move_past_open_object_blocker(
         self,
@@ -250,7 +172,6 @@ class ObjectInteractor:
                     f"{event_error_message(reopen_event) or 'no error message returned'}"
                 )
         return retry_event is not None and not step_event_failed(retry_event)
-
 
     def handoff_held_object_direct(
         self,
@@ -318,11 +239,9 @@ class ObjectInteractor:
             raise RuntimeError(f"PickupObject handoff failed for agent {to_agent_id}: {error}")
         return pickup_event
 
-
     def agent_holds_object(self, agent_id: int, object_resource: str) -> bool:
         runtime = self.runtime
         return object_resource in runtime.agent_held_objects_for(agent_id)
-
 
     def agent_held_object_matching(self, agent_id: int, pattern: Any) -> Optional[str]:
         runtime = self.runtime
@@ -338,13 +257,11 @@ class ObjectInteractor:
                 return object_resource
         return None
 
-
     def agent_held_objects_for(self, agent_id: int) -> Set[str]:
         runtime = self.runtime
         held_objects = runtime.agent_held_object_overrides_snapshot(agent_id)
         held_objects.update(runtime.metadata_held_objects(agent_id))
         return held_objects
-
 
     def _held_object_override_state(self) -> Tuple[Dict[int, Set[str]], threading.Lock]:
         runtime = self.runtime
@@ -358,13 +275,11 @@ class ObjectInteractor:
             runtime.agent_held_object_overrides_lock = lock
         return overrides, lock
 
-
     def agent_held_object_overrides_snapshot(self, agent_id: int) -> Set[str]:
         runtime = self.runtime
         overrides, lock = runtime._held_object_override_state()
         with lock:
             return set(overrides.get(agent_id, set()))
-
 
     def record_agent_held_object(self, agent_id: int, object_id: str) -> None:
         runtime = self.runtime
@@ -374,13 +289,11 @@ class ObjectInteractor:
         with lock:
             overrides.setdefault(agent_id, set()).add(str(object_id))
 
-
     def release_agent_held_objects(self, agent_id: int) -> None:
         runtime = self.runtime
         overrides, lock = runtime._held_object_override_state()
         with lock:
             overrides.setdefault(agent_id, set()).clear()
-
 
     def metadata_held_objects(self, agent_id: int) -> Set[str]:
         runtime = self.runtime
@@ -396,7 +309,6 @@ class ObjectInteractor:
             if object_id:
                 held_objects.add(str(object_id))
         return held_objects
-
 
     def prepare_hand_for_goto_if_needed(
         self,
@@ -419,7 +331,6 @@ class ObjectInteractor:
         ):
             return
         runtime.place_held_objects_for_pickup(robot, pickup_target)
-
 
     def prepare_hand_for_pickup(
         self,
@@ -455,7 +366,6 @@ class ObjectInteractor:
 
         runtime.teleport_to_position(agent_id, original_position)
         return runtime.find_object(pickup_target, agent_id=agent_id)
-
 
     def place_held_objects_for_pickup(
         self,
@@ -529,7 +439,6 @@ class ObjectInteractor:
             f"{pickup_target!r} for agent {agent_id}: {last_error}"
         )
 
-
     def held_object_type(self, agent_id: int, held_object: str) -> str:
         runtime = self.runtime
         for obj in runtime.current_objects(agent_id):
@@ -540,15 +449,12 @@ class ObjectInteractor:
                 return str(object_type)
         return held_object.split("|", 1)[0]
 
-
     def allowed_receptacle_type_keys(self, held_object_type: str) -> Set[str]:
-        runtime = self.runtime
         held_key = object_key(held_object_type)
         for object_type, receptacle_types in PLACEMENT_RESTRICTIONS.items():
             if object_key(object_type) == held_key:
                 return {object_key(receptacle_type) for receptacle_type in receptacle_types}
         return set()
-
 
     def compatible_receptacle_candidates(
         self,
@@ -581,7 +487,6 @@ class ObjectInteractor:
             )
         )
         return candidates
-
 
     def put_held_object_in_receptacle(
         self,
@@ -617,14 +522,11 @@ class ObjectInteractor:
             runtime.record_operated_object_name(receptacle)
         return event
 
-
     def held_item_rotation_failure(self, exc: BaseException) -> bool:
-        runtime = self.runtime
         message = str(exc).lower()
         if "held item" not in message:
             return False
         return "rotateright failed" in message or "rotateleft failed" in message
-
 
     def object_action(
         self,
@@ -674,7 +576,6 @@ class ObjectInteractor:
             goal_object_name=obj_name,
         )
 
-
     def teleport_object_to_hand(self, robot: RobotRef, obj_name: Any):
         runtime = self.runtime
         settings = runtime._object_interaction_settings()
@@ -713,7 +614,6 @@ class ObjectInteractor:
             goal_object_name=obj_name,
         )
 
-
     def pickup_clip_backoff_position(
         self,
         agent_id: int,
@@ -728,7 +628,6 @@ class ObjectInteractor:
         position["x"] = float(position.get("x", 0.0)) - math.sin(yaw) * distance
         position["z"] = float(position.get("z", 0.0)) - math.cos(yaw) * distance
         return position
-
 
     def retry_pickup_after_clip_error(
         self,
@@ -779,7 +678,6 @@ class ObjectInteractor:
             )
         return last_event
 
-
     def camera_horizon(
         self,
         agent_id: int,
@@ -801,7 +699,6 @@ class ObjectInteractor:
             return float(horizon)
         except (TypeError, ValueError):
             return None
-
 
     def try_look_to_camera_horizon(
         self,
@@ -841,7 +738,6 @@ class ObjectInteractor:
             f"{agent_id}: {error or 'no error message returned'}"
         )
         return False
-
 
     def retry_object_action_after_target_visibility_error(
         self,
@@ -940,7 +836,6 @@ class ObjectInteractor:
             )
         return last_event
 
-
     def retry_slice_after_interaction_reposition(
         self,
         agent_id: int,
@@ -1014,7 +909,6 @@ class ObjectInteractor:
             active_keys.discard(recovery_key)
             state.active_keys = active_keys
 
-
     def retry_pickup_after_target_visibility_error(
         self,
         agent_id: int,
@@ -1028,7 +922,6 @@ class ObjectInteractor:
             payload,
             initial_event,
         )
-
 
     def object_action_by_object(
         self,
@@ -1225,6 +1118,7 @@ class ObjectInteractor:
                 "SLICED",
                 str(obj.get("objectId") or "") or None,
                 getattr(runtime, "evaluation_context", None),
+                runtime=runtime,
             )
         if breaks_egg:
             runtime.record_created_broken_egg_object_names(obj, event, known_object_ids)
@@ -1238,10 +1132,10 @@ class ObjectInteractor:
                 "BROKEN",
                 str(obj.get("objectId") or "") or None,
                 getattr(runtime, "evaluation_context", None),
+                runtime=runtime,
             )
         runtime.record_operated_object_name(obj)
         return event
-
 
     def throw_object(self, robot: RobotRef, move_magnitude: float = 7):
         runtime = self.runtime
@@ -1276,7 +1170,6 @@ class ObjectInteractor:
         )
         return event
 
-
     def toggle_objects(self, action: str, robot: RobotRef, obj_name: Any) -> None:
         runtime = self.runtime
         agent_id = runtime.physical_agent_id(robot)
@@ -1293,10 +1186,8 @@ class ObjectInteractor:
             goal_object_name=obj_name,
         )
 
-
     def current_objects(self, agent_id: Optional[int] = None) -> List[Dict[str, Any]]:
         return self.runtime.current_objects(agent_id)
-
 
     def find_object(
         self,
@@ -1306,28 +1197,23 @@ class ObjectInteractor:
     ) -> Dict[str, Any]:
         return self.runtime.find_object(pattern, agent_id=agent_id, require_center=require_center)
 
-
     def WaitOneTick(self, robot: RobotRef) -> None:
         self._consume_planned_action("WaitOneTick")
         runtime = self.runtime
         agent_id = runtime.physical_agent_id(robot)
         runtime.step({"action": "Pass", "agentId": agent_id}, check_success=False)
 
-
     def GoToObject(self, robot: RobotRef, dest_obj: Any) -> None:
         next_action = self._consume_planned_action("GoToObject", dest_obj)
         self.runtime.navigate_to_object(robot, dest_obj, next_action=next_action)
-
 
     def PickupObject(self, robot: RobotRef, pick_obj: Any) -> None:
         self._consume_planned_action("PickupObject", pick_obj)
         self.runtime.object_action("PickupObject", robot, pick_obj)
 
-
     def TeleportObjectToHand(self, robot: RobotRef, pick_obj: Any) -> None:
         self._consume_planned_action("TeleportObjectToHand", pick_obj)
         self.runtime.teleport_object_to_hand(robot, pick_obj)
-
 
     def PutObject(self, robot: RobotRef, put_obj: Any, recp: Any) -> None:
         self._consume_planned_action("PutObject", put_obj, recp)
@@ -1349,63 +1235,51 @@ class ObjectInteractor:
             extra_object_resources=(held_object,),
         )
 
-
     def SwitchOn(self, robot: RobotRef, sw_obj: Any) -> None:
         self._consume_planned_action("SwitchOn", sw_obj)
         self.runtime.toggle_objects("ToggleObjectOn", robot, sw_obj)
-
 
     def SwitchOff(self, robot: RobotRef, sw_obj: Any) -> None:
         self._consume_planned_action("SwitchOff", sw_obj)
         self.runtime.toggle_objects("ToggleObjectOff", robot, sw_obj)
 
-
     def OpenObject(self, robot: RobotRef, obj_name: Any) -> None:
         self._consume_planned_action("OpenObject", obj_name)
         self.runtime.object_action("OpenObject", robot, obj_name)
-
 
     def CloseObject(self, robot: RobotRef, obj_name: Any) -> None:
         self._consume_planned_action("CloseObject", obj_name)
         self.runtime.object_action("CloseObject", robot, obj_name)
 
-
     def BreakObject(self, robot: RobotRef, obj_name: Any) -> None:
         self._consume_planned_action("BreakObject", obj_name)
         self.runtime.object_action("BreakObject", robot, obj_name)
-
 
     def BreakEgg(self, robot: RobotRef, obj_name: Any) -> None:
         require_break_egg_target(obj_name)
         self._consume_planned_action("BreakEgg", obj_name)
         self.runtime.object_action("BreakObject", robot, obj_name)
 
-
     def PrepareEgg(self, robot: RobotRef, obj_name: Any, container_name: Any) -> None:
         require_break_egg_target(obj_name)
         self._consume_planned_action("PrepareEgg", obj_name, container_name)
         self.runtime.object_action("BreakObject", robot, obj_name)
 
-
     def SliceObject(self, robot: RobotRef, obj_name: Any) -> None:
         self._consume_planned_action("SliceObject", obj_name)
         self.runtime.object_action("SliceObject", robot, obj_name)
-
 
     def CleanObject(self, robot: RobotRef, obj_name: Any) -> None:
         self._consume_planned_action("CleanObject", obj_name)
         self.runtime.object_action("CleanObject", robot, obj_name)
 
-
     def DirtyObject(self, robot: RobotRef, obj_name: Any) -> None:
         self._consume_planned_action("DirtyObject", obj_name)
         self.runtime.object_action("DirtyObject", robot, obj_name)
 
-
     def EmptyLiquid(self, robot: RobotRef, obj_name: Any) -> None:
         self._consume_planned_action("EmptyLiquid", obj_name)
         self.runtime.object_action("EmptyLiquidFromObject", robot, obj_name)
-
 
     def _current_object_by_id(self, agent_id: int, object_id: str) -> Dict[str, Any]:
         for obj in self.current_objects(agent_id):
@@ -1413,8 +1287,8 @@ class ObjectInteractor:
                 return obj
         raise RuntimeError(f"Could not find AI2-THOR object with objectId {object_id!r}")
 
-
-    def _object_has_liquid(self, obj: Dict[str, Any]) -> bool:
+    @staticmethod
+    def _object_has_liquid(obj: Dict[str, Any]) -> bool:
         if bool(obj.get("isFilledWithLiquid")):
             return True
         if bool(obj.get("isFilledWithWater")) or bool(obj.get("isFilledWithCoffee")):
@@ -1429,7 +1303,6 @@ class ObjectInteractor:
         )
         return bool(liquid)
 
-
     def _bound_helper_object(self, role):
         from .action_resources import active_resources
         runtime_obj = self.runtime
@@ -1440,7 +1313,6 @@ class ObjectInteractor:
         if object_id is None:
             admitted.invalid(f'unbound helper role {role}')
         return runtime_obj.find_object(object_id)
-
 
     def _find_sink_basin(self, robot: RobotRef, sink: Any) -> Dict[str, Any]:
         bound = self._bound_helper_object('@basin')
@@ -1459,9 +1331,8 @@ class ObjectInteractor:
 
         raise RuntimeError(f"Could not find SinkBasin for sink {sink!r}.")
 
-
+    @staticmethod
     def _fillwater_sinkbasin_putobject_has_no_positions(
-        self,
         exc: BaseException,
         sink_basin: Dict[str, Any],
     ) -> bool:
@@ -1483,8 +1354,8 @@ class ObjectInteractor:
             and "no valid positions to place object found" in normalized
         )
 
-
-    def _discount_skipped_runtime_attempt(self, runtime_obj: Any) -> None:
+    @staticmethod
+    def _discount_skipped_runtime_attempt(runtime_obj: Any) -> None:
         lock = getattr(runtime_obj, "stats_lock", None)
         if lock is None:
             runtime_obj.total_exec = max(0, int(getattr(runtime_obj, "total_exec", 0)) - 1)
@@ -1492,29 +1363,28 @@ class ObjectInteractor:
         with lock:
             runtime_obj.total_exec = max(0, int(getattr(runtime_obj, "total_exec", 0)) - 1)
 
-
-    def _object_is_toggled_on(self, obj: Dict[str, Any]) -> bool:
+    @staticmethod
+    def _object_is_toggled_on(obj: Dict[str, Any]) -> bool:
         return (
             bool(obj.get("isToggled"))
             or bool(obj.get("isOn"))
         )
 
-
-    def _object_parent_receptacles(self, obj: Dict[str, Any]) -> List[str]:
+    @staticmethod
+    def _object_parent_receptacles(obj: Dict[str, Any]) -> List[str]:
         parents = obj.get("parentReceptacles") or []
         return [str(parent) for parent in parents if parent]
 
+    @staticmethod
+    def _object_on_receptacle(obj: Dict[str, Any], receptacle_id: str) -> bool:
+        return receptacle_id in ObjectInteractor._object_parent_receptacles(obj)
 
-    def _object_on_receptacle(self, obj: Dict[str, Any], receptacle_id: str) -> bool:
-        return receptacle_id in self._object_parent_receptacles(obj)
-
-
-    def _stove_parent_burner_id(self, obj: Dict[str, Any]) -> Optional[str]:
-        for parent in self._object_parent_receptacles(obj):
+    @staticmethod
+    def _stove_parent_burner_id(obj: Dict[str, Any]) -> Optional[str]:
+        for parent in ObjectInteractor._object_parent_receptacles(obj):
             if object_key(parent.split("|", 1)[0]) == "stoveburner":
                 return parent
         return None
-
 
     def _resolve_stove_burner(
         self,
@@ -1537,7 +1407,6 @@ class ObjectInteractor:
                 if burner_id:
                     return self._current_object_by_id(agent_id, burner_id)
         return runtime_obj.find_object(stove_burner, agent_id=agent_id)
-
 
     def _resolve_stove_knob_for_burner(
         self,
@@ -1573,7 +1442,6 @@ class ObjectInteractor:
 
         return min(knobs, key=knob_distance_sq)
 
-
     def _set_stove_knob_state(
         self,
         robot: RobotRef,
@@ -1591,7 +1459,6 @@ class ObjectInteractor:
             self.SwitchOff(robot, current_knob["objectId"])
         return True
 
-
     def _ensure_object_on_receptacle(
         self,
         robot: RobotRef,
@@ -1605,7 +1472,6 @@ class ObjectInteractor:
             return False
         self.PutObject(robot, obj_name, receptacle_id)
         return True
-
 
     def _wait_for_object_cooked(self, robot: RobotRef, obj_name: Any, action_name: str) -> None:
         runtime_obj = self.runtime
@@ -1623,7 +1489,6 @@ class ObjectInteractor:
 
         raise RuntimeError(f"{action_name} timed out waiting for {target_id} to become Cooked.")
 
-
     def _wait_for_object_hot(self, robot: RobotRef, obj_name: Any, action_name: str) -> None:
         runtime_obj = self.runtime
         agent_id = runtime_obj.physical_agent_id(robot)
@@ -1638,6 +1503,7 @@ class ObjectInteractor:
                     current,
                     "HOT",
                     getattr(runtime_obj, "evaluation_context", None),
+                    runtime=runtime_obj,
                 )
                 return
             if pass_step == self.max_pass_steps:
@@ -1645,7 +1511,6 @@ class ObjectInteractor:
             runtime_obj.step({"action": "Pass", "agentId": agent_id}, check_success=False)
 
         raise RuntimeError(f"{action_name} timed out waiting for {target_id} to become Hot.")
-
 
     def _wait_for_object_cold(self, robot: RobotRef, obj_name: Any, action_name: str) -> None:
         runtime_obj = self.runtime
@@ -1663,6 +1528,7 @@ class ObjectInteractor:
                     current,
                     "COLD",
                     getattr(runtime_obj, "evaluation_context", None),
+                    runtime=runtime_obj,
                 )
                 return
             if pass_step > 5:  # Some floor plans cannot cool objects in the fridge.
@@ -1675,7 +1541,6 @@ class ObjectInteractor:
             f"{action_name} timed out waiting for {target_id} to become Cold. "
             f"{obj_name} temperature: {current_temperature}."
         )
-
 
     def _wait_for_object_on(self, robot: RobotRef, obj_name: Any, action_name: str) -> None:
         runtime_obj = self.runtime
@@ -1692,7 +1557,6 @@ class ObjectInteractor:
             runtime_obj.step({"action": "Pass", "agentId": agent_id}, check_success=False)
 
         raise RuntimeError(f"{action_name} timed out waiting for {target_id} to switch on.")
-
 
     def _wait_for_microwave_result(self, robot: RobotRef, item: Any) -> None:
         runtime_obj = self.runtime
@@ -1713,6 +1577,7 @@ class ObjectInteractor:
                     current,
                     "HOT",
                     getattr(runtime_obj, "evaluation_context", None),
+                    runtime=runtime_obj,
                 )
                 return
             if pass_step == self.max_pass_steps:
@@ -1724,7 +1589,6 @@ class ObjectInteractor:
             f"RunMicrowave timed out waiting for {target_id} to become {required_state}. "
             f"Last observed: hot={is_hot}, cooked={is_cooked}."
         )
-
 
     def _wait_for_coffee_machine_result(self, robot: RobotRef, mug: Any) -> None:
         runtime_obj = self.runtime
@@ -1744,7 +1608,6 @@ class ObjectInteractor:
             f"RunCoffeeMachine timed out waiting for {target_id} to be filled with Coffee."
         )
 
-
     def _wait_for_object_filled_with_water(self, robot: RobotRef, obj_name: Any) -> None:
         runtime_obj = self.runtime
         agent_id = runtime_obj.physical_agent_id(robot)
@@ -1761,10 +1624,8 @@ class ObjectInteractor:
 
         raise RuntimeError(f"FillWater timed out waiting for {target_id} to be filled with Water.")
 
-
     def _wait_for_toaster_result(self, robot: RobotRef, bread: Any) -> None:
         self._wait_for_object_cooked(robot, bread, "RunToaster")
-
 
     def RunMicrowave(self, robot: RobotRef, microwave: Any, item: Any) -> None:
         self._consume_planned_action("RunMicrowave", microwave, item)
@@ -1774,7 +1635,6 @@ class ObjectInteractor:
         finally:
             self.SwitchOff(robot, microwave)
 
-
     def RunCoffeeMachine(self, robot: RobotRef, coffee_machine: Any, mug: Any) -> None:
         self._consume_planned_action("RunCoffeeMachine", coffee_machine, mug)
         self.SwitchOn(robot, coffee_machine)
@@ -1782,7 +1642,6 @@ class ObjectInteractor:
             self._wait_for_coffee_machine_result(robot, mug)
         finally:
             self.SwitchOff(robot, coffee_machine)
-
 
     def RunToaster(self, robot: RobotRef, toaster: Any, bread: Any) -> None:
         self._consume_planned_action("RunToaster", toaster, bread)
@@ -1793,7 +1652,6 @@ class ObjectInteractor:
         finally:
             self.SwitchOff(robot, toaster)
         self.PickupObject(robot, bread)
-
 
     def CookByStoveBurner(
         self,
@@ -1817,7 +1675,6 @@ class ObjectInteractor:
         if cooked:
             self.PickupObject(robot, container)
 
-
     def HeatByStoveBurner(self, robot: RobotRef, stove_burner: Any, obj: Any) -> None:
         self._consume_planned_action("HeatByStoveBurner", stove_burner, obj)
         burner = self._resolve_stove_burner(robot, stove_burner, supporting_obj=obj)
@@ -1834,7 +1691,6 @@ class ObjectInteractor:
         if heated:
             self.PickupObject(robot, obj)
 
-
     def FireByStoveBurner(self, robot: RobotRef, stove_burner: Any, candle: Any) -> None:
         self._consume_planned_action("FireByStoveBurner", stove_burner, candle)
         burner = self._resolve_stove_burner(robot, stove_burner, supporting_obj=candle)
@@ -1847,7 +1703,6 @@ class ObjectInteractor:
         finally:
             if turned_on:
                 self._set_stove_knob_state(robot, knob, False)
-
 
     def FillWater(self, robot: RobotRef, sink: Any, obj: Any) -> None:
         self._consume_planned_action("FillWater", sink, obj)
@@ -1882,16 +1737,13 @@ class ObjectInteractor:
         if filled:
             self.PickupObject(robot, obj)
 
-
     def ColdObject(self, robot: RobotRef, fridge: Any, obj: Any) -> None:
         self._consume_planned_action("ColdObject", fridge, obj)
         self._wait_for_object_cold(robot, obj, "ColdObject")
 
-
     def ThrowObject(self, robot: RobotRef) -> None:
         self._consume_planned_action("ThrowObject")
         self.runtime.throw_object(robot)
-
 
     def _consume_planned_action(self, name, *args):
         if self.planned_action_consumer is not None:

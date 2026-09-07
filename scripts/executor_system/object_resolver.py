@@ -1,40 +1,8 @@
 """Deterministic object selection, aliases and per-runtime operation history."""
-import re
 import threading
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
-from .utils import (
-    RobotRef,
-    distance_pts,
-    distance_to_aabb_footprint,
-    event_cv2_frame,
-    event_error_message,
-    is_broken_egg_object,
-    is_egg_query,
-    is_sliced_food_object_for_base,
-    matches_object,
-    object_aabb_bounds,
-    object_center,
-    object_distance,
-    object_footprint_clearance,
-    object_key,
-    object_mass,
-    operated_object_name,
-    operated_object_name_candidate_keys,
-    operated_sliced_food_query_rank,
-    position_inside_aabb_footprint,
-    position_to_grid_key,
-    position_to_tuple,
-    robot_agent_id,
-    robot_name,
-    shortest_yaw_delta,
-    sliceable_food_query_key,
-    stable_object_name,
-    step_event_failed,
-    teleport_collision_object_id,
-    yaw_to_face,
-    log,
-)
+from .utils import distance_pts, is_broken_egg_object, is_egg_query, is_sliced_food_object_for_base, matches_object, object_center, object_distance, object_key, object_mass, operated_object_name, operated_object_name_candidate_keys, operated_sliced_food_query_rank, position_to_tuple, sliceable_food_query_key, log
 
 
 class ObjectResolver:
@@ -54,7 +22,6 @@ class ObjectResolver:
         if not hasattr(runtime, "object_alias_lock"):
             runtime.object_alias_lock = threading.Lock()
 
-
     def _iter_object_id_bindings(self, bindings: Any) -> List[Dict[str, Any]]:
         runtime = self.runtime
         if bindings is None:
@@ -71,9 +38,7 @@ class ObjectResolver:
             return flattened
         return []
 
-
     def object_alias_keys_for_binding(self, binding: Dict[str, Any]) -> List[str]:
-        runtime = self.runtime
         keys: List[str] = []
         object_token = binding.get("object")
         if isinstance(object_token, str) and object_token:
@@ -91,7 +56,6 @@ class ObjectResolver:
             if not bool(binding.get("multiple")):
                 keys.append(object_key(object_type))
         return list(dict.fromkeys(key for key in keys if key))
-
 
     def register_object_id_bindings(self, bindings: Any) -> None:
         runtime = self.runtime
@@ -126,13 +90,11 @@ class ObjectResolver:
                 for key in runtime.object_alias_keys_for_binding(binding):
                     runtime.object_alias_key_to_token[key] = object_token
 
-
     def _refresh_binding_from_object(
         self,
         binding: Dict[str, Any],
         obj: Dict[str, Any],
     ) -> None:
-        runtime = self.runtime
         object_id = str(obj.get("objectId") or "")
         if object_id:
             binding["object_id"] = object_id
@@ -142,7 +104,6 @@ class ObjectResolver:
         position = object_center(obj)
         if position:
             binding["last_position"] = dict(position)
-
 
     def _current_object_by_id_optional(
         self,
@@ -164,7 +125,6 @@ class ObjectResolver:
                 return dict(obj)
         return None
 
-
     def object_alias_token_for_pattern(self, pattern: Any) -> Optional[str]:
         runtime = self.runtime
         runtime._ensure_object_alias_state()
@@ -173,7 +133,6 @@ class ObjectResolver:
             return None
         with runtime.object_alias_lock:
             return runtime.object_alias_key_to_token.get(key)
-
 
     def object_alias_current_id(self, pattern: Any) -> Optional[str]:
         runtime = self.runtime
@@ -185,14 +144,12 @@ class ObjectResolver:
             object_id = str((binding or {}).get("object_id") or "")
         return object_id or None
 
-
     def _object_alias_binding_snapshot(self, token: str) -> Optional[Dict[str, Any]]:
         runtime = self.runtime
         runtime._ensure_object_alias_state()
         with runtime.object_alias_lock:
             binding = runtime.object_alias_bindings.get(token)
             return dict(binding) if binding else None
-
 
     def _warn_object_alias_once(self, message: str) -> None:
         runtime = self.runtime
@@ -202,7 +159,6 @@ class ObjectResolver:
                 return
             runtime.object_alias_warnings.add(message)
         log(f"WARNING: {message}")
-
 
     def resolve_object_alias(self, pattern: Any, agent_id: Optional[int] = None) -> Any:
         runtime = self.runtime
@@ -227,7 +183,6 @@ class ObjectResolver:
             )
             return object_id
         return pattern
-
 
     def _set_object_alias_current_object(
         self,
@@ -255,7 +210,6 @@ class ObjectResolver:
             for key in runtime.object_alias_keys_for_binding(binding):
                 runtime.object_alias_key_to_token[key] = token
         return object_id
-
 
     def _record_object_alias_match(
         self,
@@ -297,13 +251,10 @@ class ObjectResolver:
                 runtime.object_alias_key_to_token[key] = token
         return object_id
 
-
     def _event_objects(self, event: Any) -> List[Dict[str, Any]]:
-        runtime = self.runtime
         metadata = getattr(event, "metadata", {}) or {}
         objects = metadata.get("objects") or []
         return [dict(obj) for obj in objects if isinstance(obj, dict)]
-
 
     def repair_object_alias(
         self,
@@ -396,7 +347,6 @@ class ObjectResolver:
         selected = min(matched, key=candidate_score)
         return runtime._set_object_alias_current_object(token, selected)
 
-
     def update_object_alias_for_pattern(
         self,
         pattern: Any,
@@ -416,7 +366,6 @@ class ObjectResolver:
             if obj is None:
                 obj = {"objectId": str(obj_or_object_id or "")}
         return runtime._set_object_alias_current_object(token, obj)
-
 
     def update_object_aliases_for_object_ids(
         self,
@@ -446,7 +395,6 @@ class ObjectResolver:
                     transform=transform,
                     exclude_object_ids=exclude_object_ids,
                 )
-
 
     def update_object_alias_after_action(
         self,
@@ -495,7 +443,6 @@ class ObjectResolver:
                 preferred_parent_id=str(obj.get("objectId") or ""),
             )
 
-
     def _operated_object_name_state(self) -> Tuple[Set[str], threading.Lock]:
         runtime = self.runtime
         names = getattr(runtime, "operated_object_names", None)
@@ -508,13 +455,11 @@ class ObjectResolver:
             runtime.operated_object_names_lock = lock
         return names, lock
 
-
     def operated_object_names_snapshot(self) -> Set[str]:
         runtime = self.runtime
         names, lock = runtime._operated_object_name_state()
         with lock:
             return set(names)
-
 
     def record_operated_object_name(self, obj: Dict[str, Any]) -> None:
         runtime = self.runtime
@@ -526,7 +471,6 @@ class ObjectResolver:
         names, lock = runtime._operated_object_name_state()
         with lock:
             names.add(name_key)
-
 
     def record_created_slice_object_names(
         self,
@@ -554,7 +498,6 @@ class ObjectResolver:
                 runtime.record_operated_object_name(obj)
                 created_objects.append(dict(obj))
         return created_objects
-
 
     def record_created_broken_egg_object_names(
         self,
@@ -585,7 +528,6 @@ class ObjectResolver:
                 created_objects.append(dict(obj))
         return created_objects
 
-
     def object_name_was_operated(
         self,
         obj: Dict[str, Any],
@@ -599,13 +541,11 @@ class ObjectResolver:
         )
         return bool(operated_object_name_candidate_keys(obj) & names)
 
-
     def stove_burner_occupied(
         self,
         burner: Dict[str, Any],
         objects: Sequence[Dict[str, Any]],
     ) -> bool:
-        runtime = self.runtime
         if burner.get("receptacleObjectIds"):
             return True
 
@@ -619,7 +559,6 @@ class ObjectResolver:
             if any(burner_id == str(parent) for parent in parent_receptacles if parent):
                 return True
         return False
-
 
     def find_objects(self, pattern: Any, agent_id: Optional[int] = None) -> List[Dict[str, Any]]:
         runtime = self.runtime
@@ -714,7 +653,6 @@ class ObjectResolver:
         if matches:
             runtime._record_object_alias_match(pattern, matches[0], len(matches))
         return matches
-
 
     def find_object(
         self,

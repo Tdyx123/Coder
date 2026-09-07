@@ -1384,7 +1384,9 @@ class ExecutorRetryPolicyTest(unittest.TestCase):
             [call["action"] for call in calls],
             ["BreakObject", "LookUp", "BreakObject"],
         )
-        self.assertTrue(goal_state_verified("Egg", "BROKEN"))
+        from executor_system.context import bind_runtime
+        with bind_runtime(runtime):
+            self.assertTrue(goal_state_verified("Egg", "BROKEN"))
         self.assertIn("egg", runtime.operated_object_names)
         self.assertIn("eggcracked", runtime.operated_object_names)
         self.assertEqual(runtime.total_exec, 1)

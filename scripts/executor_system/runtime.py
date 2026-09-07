@@ -20,7 +20,10 @@ from .plan_types import (PlannedAction)
 from .controller_client import ControllerClient
 from .runtime_artifacts import RuntimeArtifacts
 from .object_resolver import ObjectResolver
-from .object_interactor import ObjectInteractor
+from .object_interactor import (
+    ObjectInteractor, is_pickup_object_clip_error,
+    is_object_action_target_visibility_error, is_pickup_object_target_visibility_error,
+)
 from .config import (
     AGENT_CLEARANCE_DISTANCE,
     DIRECTIONAL_VIEW_NAMES,
@@ -181,18 +184,6 @@ def navigation_interaction_target(
         )
     target = next_action.args[argument_index]
     return target, object_key(target) != object_key(dest_obj)
-
-
-def is_pickup_object_clip_error(value: Any) -> bool:
-    return PICKUP_OBJECT_CLIP_ERROR.casefold() in str(value or "").casefold()
-
-
-def is_object_action_target_visibility_error(value: Any) -> bool:
-    return PICKUP_OBJECT_TARGET_VISIBILITY_ERROR.casefold() in str(value or "").casefold()
-
-
-def is_pickup_object_target_visibility_error(value: Any) -> bool:
-    return is_object_action_target_visibility_error(value)
 
 
 def _normalize_look_degrees(degrees: Any) -> float:
@@ -464,7 +455,7 @@ class ThorRuntime:
                 log("Adding local top-view camera.")
                 self.add_third_party_view(TOP_VIEW_NAME, self.local_top_view_camera_props())
 
-        random.seed(0)
+        self.random = random.Random(0)
         initial_positions = []
         for agent_id in range(self.physical_agent_count):
             log(f"Placing agent {agent_id}.")

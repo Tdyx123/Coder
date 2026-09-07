@@ -1,4 +1,9 @@
 """Task plan parser and phase execution helpers."""
+import ast
+import inspect
+import textwrap
+from types import FunctionType
+
 from typing import Any, Dict, List, Sequence, Tuple
 
 from .plan_types import (Action, PlannedAction, StagePlan, TaskPlan)
@@ -77,7 +82,112 @@ _ACTION_HELPER_NAMES = (
     "ThrowObject",
 )
 
-_MISSING_GLOBAL = object()
+
+def _validate_recordable_subtask(function, robot):
+    """Validate the whole body before executing a globals-isolated recorder copy.
+
+    Even attribute/subscript reads and operators may run arbitrary user code;
+    the compatibility subset permits only names and literal data containers.
+    More expressive tasks must provide explicit planned_actions.
+    """
+    def reject():
+        raise RuntimeError('Cannot safely record this subtask; provide explicit planned_actions.')
+
+    if not isinstance(function, FunctionType):
+        reject()
+    try:
+        module = ast.parse(textwrap.dedent(inspect.getsource(function.__code__)))
+    except (OSError, IOError, TypeError, SyntaxError, IndentationError):
+        reject()
+    if len(module.body) != 1 or not isinstance(module.body[0], ast.FunctionDef):
+        reject()
+    definition = module.body[0]
+    if definition.name != function.__name__:
+        reject()
+    helper_names = set(_ACTION_HELPER_NAMES)
+    arguments = definition.args
+    parameter_names = {arg.arg for arg in arguments.posonlyargs + arguments.args + arguments.kwonlyargs}
+    parameter_names.update(arg.arg for arg in (arguments.vararg, arguments.kwarg) if arg)
+    if helper_names.intersection(parameter_names | set(function.__code__.co_freevars)):
+        reject()
+
+    values = dict(function.__globals__)
+    values.update(zip(function.__code__.co_freevars,
+                      (cell.cell_contents for cell in function.__closure__ or ())))
+    positional = function.__code__.co_varnames[:function.__code__.co_argcount]
+    defaults = function.__defaults__ or ()
+    if defaults:
+        values.update(zip(positional[-len(defaults):], defaults))
+    values.update(function.__kwdefaults__ or {})
+    if positional:
+        values[positional[0]] = robot
+    if arguments.vararg:
+        values[arguments.vararg.arg] = ()
+    if arguments.kwarg:
+        values[arguments.kwarg.arg] = {}
+    safe_locals = set()
+
+    def inert(value, seen=None):
+        if type(value) in (str, bytes, int, float, bool, type(None)):
+            return True
+        if type(value) not in (list, tuple, dict):
+            return False
+        seen = set() if seen is None else seen
+        if id(value) in seen:
+            return False
+        seen = seen | {id(value)}
+        entries = list(value.items()) if type(value) is dict else value
+        return all(inert(entry, seen) for entry in entries)
+
+    def literal(expression):
+        if isinstance(expression, ast.Constant):
+            return
+        if isinstance(expression, ast.Name) and expression.id not in helper_names:
+            if expression.id in safe_locals:
+                return
+            if expression.id in values and inert(values[expression.id]):
+                return
+            reject()
+        if isinstance(expression, (ast.List, ast.Tuple)):
+            for element in expression.elts:
+                literal(element)
+            return
+        if isinstance(expression, ast.Dict):
+            for key, value in zip(expression.keys, expression.values):
+                # Dict keys must not dispatch user-defined __hash__/__eq__.
+                if not isinstance(key, ast.Constant):
+                    reject()
+                literal(value)
+            return
+        if (isinstance(expression, ast.UnaryOp) and isinstance(expression.op, (ast.USub, ast.UAdd))
+                and isinstance(expression.operand, ast.Constant)
+                and type(expression.operand.value) in (int, float)):
+            return
+        reject()
+
+    for statement in definition.body:
+        if isinstance(statement, ast.Assign):
+            if any(not isinstance(target, ast.Name) or target.id in helper_names
+                   for target in statement.targets):
+                reject()
+            literal(statement.value)
+            safe_locals.update(target.id for target in statement.targets)
+        elif isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call):
+            call = statement.value
+            if not isinstance(call.func, ast.Name) or call.func.id not in helper_names:
+                reject()
+            for argument in call.args:
+                literal(argument)
+            for keyword in call.keywords:
+                if keyword.arg is None:
+                    reject()
+                literal(keyword.value)
+        elif isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Constant):
+            continue  # docstrings/literals have no runtime side effects
+        elif isinstance(statement, ast.Pass):
+            continue
+        else:
+            reject()
 
 
 class TaskPlanParser:
@@ -123,35 +233,22 @@ class TaskPlanParser:
         robot: RobotRef,
         subtask_function: Any,
     ) -> List[Action]:
+        if hasattr(subtask_function, 'planned_actions'):
+            return [Action.from_any(action) for action in
+                    (subtask_function.planned_actions or ())]
+        _validate_recordable_subtask(subtask_function, robot)
         recorded_actions: List[Action] = []
-        planned_actions = tuple(getattr(subtask_function, "planned_actions", ()) or ())
-
-        subtask_globals = getattr(subtask_function, "__globals__", None)
-        if not isinstance(subtask_globals, dict):
-            if planned_actions:
-                return [Action.from_any(action) for action in planned_actions]
-            raise RuntimeError(f"Cannot record actions from {subtask_function!r}.")
-
-        originals = {
-            name: subtask_globals.get(name, _MISSING_GLOBAL)
-            for name in _ACTION_HELPER_NAMES
-        }
-        try:
-            for action_name in _ACTION_HELPER_NAMES:
-                subtask_globals[action_name] = self._make_action_recorder(
-                    action_name,
-                    recorded_actions,
-                )
-            subtask_function(robot)
-        finally:
-            for action_name, original in originals.items():
-                if original is _MISSING_GLOBAL:
-                    subtask_globals.pop(action_name, None)
-                else:
-                    subtask_globals[action_name] = original
-
-        if not recorded_actions and planned_actions:
-            return [Action.from_any(action) for action in planned_actions]
+        copied_globals = dict(subtask_function.__globals__)
+        for action_name in _ACTION_HELPER_NAMES:
+            copied_globals[action_name] = self._make_action_recorder(
+                action_name, recorded_actions)
+        recorded_function = FunctionType(
+            subtask_function.__code__, copied_globals, subtask_function.__name__,
+            subtask_function.__defaults__, subtask_function.__closure__)
+        recorded_function.__kwdefaults__ = (
+            dict(subtask_function.__kwdefaults__)
+            if subtask_function.__kwdefaults__ is not None else None)
+        recorded_function(robot)
         return recorded_actions
 
     def _make_action_recorder(

@@ -1,30 +1,34 @@
-"""Shared runtime context for compatibility wrappers."""
-
-from typing import Any, Optional
-import threading
+"""Scoped runtime context for legacy helper entry points."""
 from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Any, Optional
 
-_local = threading.local()
-
+_active_runtime = ContextVar('executor_runtime', default=None)
+# Legacy single-runtime callers may still assign this value. Production paths
+# pass their runtime explicitly and bind at each worker entrance.
 runtime: Optional[Any] = None
 
 
+def get_bound_runtime() -> Optional[Any]:
+    return _active_runtime.get()
+
+
 def get_runtime() -> Any:
-    active = getattr(_local, "runtime", runtime)
+    active = get_bound_runtime()
     if active is None:
-        raise RuntimeError("AI2-THOR runtime has not been initialized.")
+        active = runtime
+    if active is None:
+        raise RuntimeError('AI2-THOR runtime has not been initialized.')
     return active
 
 
 @contextmanager
-def runtime_scope(value):
-    sentinel = object()
-    previous = getattr(_local, "runtime", sentinel)
-    _local.runtime = value
+def bind_runtime(value):
+    token = _active_runtime.set(value)
     try:
         yield value
     finally:
-        if previous is sentinel:
-            del _local.runtime
-        else:
-            _local.runtime = previous
+        _active_runtime.reset(token)
+
+
+runtime_scope = bind_runtime

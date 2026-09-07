@@ -19,8 +19,8 @@ HELPERS = {
 }
 
 
-def runtime_with_objects():
-    runtime = FakeRuntime()
+def runtime_with_objects(runtime_type=FakeRuntime):
+    runtime = runtime_type()
     runtime.robots = [{'name': 'robot1', 'skills': ['PickupObject', 'PutObject', 'GoToObject', 'OpenObject', 'FillWater'], 'mass_capacity': 2},
                       {'name': 'robot2', 'skills': ['PickupObject'], 'mass_capacity': 2}]
     runtime.objects = [dict(objectId='Apple|1', name='Apple', objectType='Apple', mass=1, pickupable=True),
@@ -216,9 +216,12 @@ class ActionRegistryTest(unittest.TestCase):
         from types import SimpleNamespace
         from executor_system.runtime import ThorRuntime
         from executor_system.action_resources import action_resource_scope
+        class RuntimeWithInteractionService(FakeRuntime, ThorRuntime):
+            pass
+
         for skills in (['GoToObject'], ['GoToObject', 'CloseObject'], ['GoToObject', 'OpenObject']):
             with self.subTest(skills=skills):
-                runtime = runtime_with_objects()
+                runtime = runtime_with_objects(RuntimeWithInteractionService)
                 runtime.robots[0]['skills'] = skills
                 blocker = dict(objectId='Cabinet|1', name='Cabinet_1', objectType='Cabinet', openable=True, isOpen=True)
                 runtime.objects = runtime.objects + [blocker]
