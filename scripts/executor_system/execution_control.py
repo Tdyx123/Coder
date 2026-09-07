@@ -179,6 +179,7 @@ def run_workers(runtime, executors, coordinator, stage_id, *, drive=None):
     def run(executor, exited):
         try:
             control.check()
+            executor._execution_worker_ident = threading.get_ident()
             executor.execute()
         except BaseException as exc:
             with error_lock:

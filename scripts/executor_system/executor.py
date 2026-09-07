@@ -106,6 +106,63 @@ class PhaseCoordinator:
         self._action_wave = _ActionWaveState(wave_id=0)
         self._admitted_waves = {}
         self._next_admitted_wave = 1
+        self._registered_executors = {}
+        self._compat_running = False
+        self._compat_done = False
+        self._compat_error = None
+
+    def execute_registered(self, executor):
+        """Bridge concurrent legacy callers into one supervised stage scheduler."""
+        from .action_plan import StagePlan, TaskPlan, PlanValidator
+        from .stage_scheduler import StageScheduler
+        from .run_results import ActionLedger
+        with self.condition:
+            self._registered_executors[self.runtime.physical_agent_id(executor.robot_id)] = executor
+            self.condition.notify_all()
+            while not self.active_agent_ids <= set(self._registered_executors):
+                self.control.check()
+                self.condition.wait(timeout=self._condition_wait_seconds())
+            leader = not self._compat_running
+            if leader:
+                self._compat_running = True
+                executors = {item.robot_id: item for agent, item in self._registered_executors.items()
+                             if agent in self.active_agent_ids}
+            else:
+                while not self._compat_done:
+                    self.condition.wait(timeout=.05)
+                if self._compat_error is not None:
+                    raise self._compat_error
+                return executor.world_state
+        try:
+            stage = StagePlan(executor.state.current_stage_id,
+                              {robot: item.state.action_queue for robot, item in executors.items()})
+            PlanValidator(self.runtime).validate(TaskPlan('standalone', [stage]))
+            stats = getattr(executor, 'stats', None)
+            keys = [f'{item.stage_index}:{robot}:{cursor}' for robot, item in executors.items()
+                    for cursor in range(len(item.state.action_queue))]
+            self.runtime.action_ledger = stats.action_ledger if stats is not None else ActionLedger(keys)
+            deadlines = [item.deadline for item in executors.values() if getattr(item, 'deadline', None) is not None]
+            scheduler = StageScheduler(self.runtime, stage,
+                control=self.control.child(deadline=min(deadlines) if deadlines else None),
+                policy=executor.execution_policy, stats=stats, logger=executor.logger,
+                stage_index=executor.stage_index, executors=executors, coordinator=self)
+            outcome = scheduler.run()
+            for item in executors.values():
+                item.world_state.snapshot = outcome.snapshot
+            if outcome.status == 'failed' and executor.execution_policy is ExecutionPolicy.STRICT:
+                raise PlanExecutionError({'execution_status': 'failed', 'stages': [scheduler.report],
+                    'actions': scheduler.report['actions'], 'errors': list(outcome.errors)})
+            return executor.world_state
+        except BaseException as exc:
+            with self.condition:
+                self._compat_error = exc
+            raise
+        finally:
+            with self.condition:
+                for item in executors.values():
+                    item.scheduler = None
+                self._compat_done = True
+                self.condition.notify_all()
 
     def admit_wave(self, actions) -> ActionWave:
         """Freeze only scheduler-admitted actions, independent of older waves."""
@@ -500,6 +557,7 @@ class Executor:
         self.active_agent_ids = set()
         self.agent_phase_done = set()
         self.phase_coordinator = phase_coordinator
+        self._provided_phase_coordinator = phase_coordinator
         self.stage_index = int(stage_index)
         self.execution_policy = ExecutionPolicy(execution_policy)
         self.control = phase_coordinator.control if phase_coordinator else ensure_control(runtime)
@@ -521,8 +579,11 @@ class Executor:
         self.agent_phase_done.add(agent_id)
 
     def execute(self) -> WorldState:
-        if getattr(self, 'scheduler', None) is not None:
+        if (getattr(self, 'scheduler', None) is not None
+                and getattr(self, '_execution_worker_ident', None) == threading.get_ident()):
             return self._execute_queue()
+        if self._provided_phase_coordinator is not None:
+            return self._provided_phase_coordinator.execute_registered(self)
         if not self.robot_id:
             raise RuntimeError("Executor requires a robot_id to execute an action queue.")
         from .action_plan import StagePlan, TaskPlan, PlanValidator
@@ -657,15 +718,18 @@ class Executor:
             raise_if_execution_aborted(self.runtime, exc)
             log(f"Skipping HOT/COLD ground-truth check: {exc}")
 
-    def handle_failure(self, action: Action, exc: BaseException, tick: int) -> bool:
-        raise_if_execution_aborted(self.runtime, exc)
-        self.control.check()
+    def handle_failure(self, action: Action, exc: BaseException, tick: int, *, finalizing=False) -> bool:
+        if not finalizing:
+            raise_if_execution_aborted(self.runtime, exc)
+            self.control.check()
+        elif not getattr(self.runtime, 'execution_quiescent', True):
+            raise RuntimeError('cannot finalize outcomes before worker exit')
         action_index = self.state.action_cursor
         action_key = action.stable_id(self.robot_id, self.state.action_cursor)
         ledger_key = f"{self.stage_index}:{self.robot_id}:{self.state.action_cursor}"
         retries = self.state.retries_by_action.get(action_key, 0)
         attempts = retries + 1
-        effects_satisfied = self.effects_satisfied_after_failure(action)
+        effects_satisfied = (None if finalizing else self.effects_satisfied_after_failure(action))
         if (
             action.on_failure == FAILURE_SKIP_IF_EFFECT_ALREADY_TRUE
             and action.expected_effects
@@ -701,6 +765,10 @@ class Executor:
             attempts=attempts,
             effects_satisfied=effects_satisfied,
         )
+        if finalizing and decision.kind in {'retry', 'wait_retry'}:
+            from .execution_policy import FailureDecision
+            decision = FailureDecision('fail_stage' if self.execution_policy is ExecutionPolicy.STRICT else 'skip',
+                                       'stage_stopped_before_retry', decision.retry_number)
         result = ActionResult(
             self.robot_id,
             action,
@@ -741,7 +809,7 @@ class Executor:
                 "failed",
                 ignored_for_legacy=self.ignored_failure(action, exc),
             )
-        if decision.kind == "fail_stage":
+        if decision.kind == "fail_stage" and not finalizing:
             raise StageFailureDecisionError(
                 f"Stage {self.state.current_stage_id} failed on {self.robot_id} "
                 f"{action.action_type}: {exc}"

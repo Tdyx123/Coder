@@ -1133,7 +1133,7 @@ class StageRunner:
         from .execution_control import ensure_control
         root_control = self.control or ensure_control(self.runtime)
         self.scheduler = StageScheduler(
-            self.runtime, stage, control=root_control.child(),
+            self.runtime, stage, control=root_control.child(deadline=getattr(self, 'deadline', None)),
             policy=self.execution_policy, logger=self.logger, stage_index=self.stage_index,
             stats=getattr(self, 'stats', None),
         )

@@ -319,12 +319,15 @@ class NavigationBatchFailureTest(unittest.TestCase):
             event.metadata["agent"]["position"] = runtime.positions[agent_id]
             event.metadata["objects"] = list(runtime.objects.values())
         runtime.agent_event = snapshot_runtime.agent_event
+        runtime.current_objects = lambda _agent_id=None: list(runtime.objects.values())
         runtime.agent_held_objects_for = lambda _agent_id: set()
         seen = []
 
         def build_request(robot, target, *, next_action, phase_coordinator, action_wave):
             agent_id = runtime.physical_agent_id(robot)
-            state = phase_coordinator._action_wave
+            self.assertIs(phase_coordinator, phase)
+            state = phase_coordinator._state_for_wave(action_wave)
+            self.assertEqual(state.navigation_agent_ids, (0, 1) if not seen or len(seen) < 2 else (1,))
             seen.append((agent_id, action_wave.wave_id, state.announced[agent_id][1], target))
             return replace(
                 requests[agent_id],
@@ -358,7 +361,9 @@ class NavigationBatchFailureTest(unittest.TestCase):
         self.run_workers([lambda executor=executor: execute(executor) for executor in executors])
 
         self.assertEqual(errors, [])
-        self.assertEqual(sorted(seen), [(0, 0, 0, "Target|0"), (1, 0, 0, "Target|1"), (1, 1, 0, "Target|1")])
+        first_wave = min(item[1] for item in seen)
+        self.assertEqual(sorted(seen), [(0, first_wave, 0, "Target|0"), (1, first_wave, 0, "Target|1"), (1, first_wave + 1, 0, "Target|1")])
+        self.assertEqual(phase.completed_agent_ids, {0, 1})
         self.assertEqual(position_to_grid_key(runtime.positions[1]), (2, 0))
         self.assertEqual([executor.state.action_cursor for executor in executors], [1, 1])
         self.assertEqual([executor.state.retries_by_action for executor in executors], [{}, {}])

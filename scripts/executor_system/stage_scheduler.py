@@ -3,7 +3,7 @@ import queue
 import threading
 import time
 from contextlib import nullcontext
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Optional
 
 from .action_plan import (
@@ -46,15 +46,17 @@ class RobotAdmission:
 class StageScheduler:
     IDLE_TICK = _IDLE_TICK
     def __init__(self, runtime, stage, *, control, policy, stats=None,
-                 logger=None, stage_index=0, executors=None):
+                 logger=None, stage_index=0, executors=None, coordinator=None):
         self.runtime, self.stage, self.control = runtime, stage, control
         self.policy = ExecutionPolicy(policy)
         self.stats, self.stage_index = stats, stage_index
         self.logger = logger or ExecutionLogger()
-        self.coordinator = PhaseCoordinator(
+        self.coordinator = coordinator or PhaseCoordinator(
             runtime, [runtime.physical_agent_id(robot) for robot in stage.robot_action_queues],
             control=control,
         )
+        self.coordinator.control = control
+        self.coordinator.deadline = control.deadline
         self.coordinator.scheduler_admissions = True
         self.condition = self.coordinator.condition
         self.admissions = {}
@@ -233,11 +235,14 @@ class StageScheduler:
         if result.failure_decision not in ('retry', 'wait_retry'):
             self.action_records[self._ledger_key(pending)] = record
 
-    def _record_failure(self, executor, pending, exc):
+    def _record_failure(self, executor, pending, exc, *, finalizing=False):
         executor.world_state.snapshot = self.world.snapshot
         executor.state.last_action_result = None
         try:
-            executor.handle_failure(pending.action, exc, self._tick)
+            if finalizing:
+                executor.handle_failure(pending.action, exc, self._tick, finalizing=True)
+            else:
+                executor.handle_failure(pending.action, exc, self._tick)
         finally:
             result = executor.state.last_action_result
             self._observe_result(pending, result)
@@ -419,25 +424,36 @@ class StageScheduler:
                     continue
                 self.condition.wait(timeout=max(0, min(.05, remaining)))
 
-    def _harvest_completed_successes(self):
-        """Keep completed evidence when a peer stops the stage before dequeue."""
+    def _harvest_completed_results(self):
+        """Preserve returned outcomes after quiescence without resuming retries."""
         while True:
             try:
                 pending, event, exc = self.results.get_nowait()
             except queue.Empty:
                 return
-            if pending is None or exc is not None or self._ledger_key(pending) in self.action_records:
+            if pending is None or self._ledger_key(pending) in self.action_records:
                 continue
             executor = self.executors[pending.robot_id]
-            result = ActionResult(pending.robot_id, pending.action, ACTION_SUCCESS, event=event)
-            executor.state.last_action_result = result
-            executor.state.action_cursor = pending.cursor + 1
+            if isinstance(exc, (NavigationDeferred, ResourceBindingDeferred)):
+                self.report['attempts'].append({'action_key': self._ledger_key(pending),
+                    'status': 'deferred', 'reason': type(exc).__name__, 'error': str(exc),
+                    'world_version': executor.world_state.version})
+                if self.stats is not None:
+                    self.stats.record_deferred()
+                # This attempt yielded instead of completing its logical action.
+                continue
+            if exc is not None:
+                self._record_failure(executor, pending, exc, finalizing=True)
+            else:
+                result = ActionResult(pending.robot_id, pending.action, ACTION_SUCCESS, event=event)
+                executor.state.last_action_result = result
+                executor.state.action_cursor = pending.cursor + 1
+                self.logger.result(self._tick, result)
+                self._observe_result(pending, result)
+                ledger = getattr(self.runtime, 'action_ledger', None)
+                if ledger is not None:
+                    ledger.record_terminal(self._ledger_key(pending), 'succeeded')
             self.inflight.discard(pending.robot_id)
-            self.logger.result(self._tick, result)
-            self._observe_result(pending, result)
-            ledger = getattr(self.runtime, 'action_ledger', None)
-            if ledger is not None:
-                ledger.record_terminal(self._ledger_key(pending), 'succeeded')
             self._release_resources(pending)
             self._set_pending(executor)
 
@@ -489,7 +505,6 @@ class StageScheduler:
             base = StageOutcome('failed' if failed_robot else 'partial' if self._errors else 'completed',
                                 True, tuple(self._errors), self.world.snapshot)
             self.outcome = resolve_stage_outcome(self.policy, self.stage, [base], final)
-            return self.outcome
         except (StageFailureDecisionError, ConditionEvaluationError) as exc:
             root = getattr(self.runtime, 'execution_control', None)
             if root is not None and not root.cancelled:
@@ -510,7 +525,6 @@ class StageScheduler:
                         root.cancel(str(condition_error))
                     self.outcome = StageOutcome('failed', False, errors + (error_record(condition_error, phase=self.stage.stage_id),), self.world.snapshot)
                     raise
-            return self.outcome
         except BaseException as exc:
             status = 'timeout' if isinstance(exc, PlanExecutionTimeout) else 'cancelled' if isinstance(exc, ExecutionCancelled) else 'failed'
             tail_reason = status
@@ -518,7 +532,10 @@ class StageScheduler:
             raise
         finally:
             if getattr(self.runtime, 'execution_quiescent', True):
-                self._harvest_completed_successes()
+                self._harvest_completed_results()
+                if self.outcome is not None:
+                    errors = tuple(self._errors) + tuple(error for error in self.outcome.errors if error not in self._errors)
+                    self.outcome = replace(self.outcome, errors=errors)
             self._diagnose()
             self._tail_records(tail_reason)
             self.report['actions'] = [self.action_records[key] for key in sorted(self.action_records,
@@ -536,3 +553,4 @@ class StageScheduler:
                                                      'world_version': self.world.version})
                     self.resource_leases.pop(key, None)
                     self.resource_requests.pop(key, None)
+        return self.outcome

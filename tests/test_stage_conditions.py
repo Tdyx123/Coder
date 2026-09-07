@@ -151,3 +151,80 @@ class StageConditionsTest(unittest.TestCase):
         self.assertEqual(report['execution_status'], 'failed')
         self.assertEqual(len(calls), 2)
         self.assertIs(report['stages'][0]['condition']['final'], False)
+
+    def test_shutdown_drain_keeps_peer_failure_and_attempt(self):
+        import time
+        from executor_system.stage_scheduler import StageScheduler
+        original_receive = StageScheduler._receive_results
+        def receive(scheduler):
+            if scheduler.inflight and not scheduler.action_records:
+                deadline = time.monotonic() + .5
+                while scheduler.results.qsize() < 2 and time.monotonic() < deadline:
+                    time.sleep(.001)
+                self.assertEqual(scheduler.results.qsize(), 2)
+                pending_results = [scheduler.results.get_nowait(), scheduler.results.get_nowait()]
+                for result in sorted(pending_results, key=lambda item: item[0].robot_id):
+                    scheduler.results.put(result)
+            return original_receive(scheduler)
+        def fail(adapter, robot, action, **kwargs):
+            raise RuntimeError(robot + ' original failure')
+        with patch.object(StageScheduler, '_receive_results', receive), patch(
+                'executor_system.action_plan.AI2ThorAdapter.execute', fail):
+            report = self.run_plan([StagePlan('s', {
+                'robot1': [Action('Wait')],
+                'robot2': [Action('Wait', on_failure='SKIP')]})])
+        self.assertEqual(report['action_counts']['failed'], 2)
+        self.assertEqual(report['action_counts']['cancelled'], 0)
+        self.assertEqual(len(report['stages'][0]['attempts']), 2)
+        self.assertIn('robot2 original failure', json.dumps(report['errors']))
+        self.assertEqual(report['actions'][1]['failure_decision'], 'skip')
+
+    def test_tolerant_stage_deadline_tightens_explicit_control(self):
+        import time
+        from executor_system.execution_control import install_control, PlanExecutionTimeout
+        from executor_system.parallel_runner import TolerantStageRunner, TolerantRunStats
+        root = install_control(self.runtime, 1)
+        runner = TolerantStageRunner(self.runtime, stats=TolerantRunStats(),
+            deadline=time.monotonic() - 1, stage_index=0, control=root)
+        with self.assertRaises(PlanExecutionTimeout):
+            runner.execute_stage(StagePlan('s', {'robot1': [Action('Wait')]}))
+        self.assertEqual(self.runtime.state_version, 0)
+
+    def test_shutdown_drain_records_deferred_and_never_retries(self):
+        import time
+        from executor_system.stage_scheduler import StageScheduler
+        from executor_system.movement import NavigationDeferred
+        for deferred in (False, True):
+            with self.subTest(deferred=deferred):
+                self.runtime = FakeRuntime()
+                calls = []
+                original_receive = StageScheduler._receive_results
+                def receive(scheduler):
+                    if scheduler.inflight and not scheduler.action_records:
+                        deadline = time.monotonic() + .5
+                        while scheduler.results.qsize() < 2 and time.monotonic() < deadline:
+                            time.sleep(.001)
+                        self.assertEqual(scheduler.results.qsize(), 2)
+                        results = [scheduler.results.get_nowait(), scheduler.results.get_nowait()]
+                        for result in sorted(results, key=lambda item: item[0].robot_id):
+                            scheduler.results.put(result)
+                    return original_receive(scheduler)
+                def fail(adapter, robot, action, **kwargs):
+                    calls.append(robot)
+                    if deferred and robot == 'robot2':
+                        raise NavigationDeferred(1, fallback_status='NO_PLAN_FOUND')
+                    raise RuntimeError(robot + ' failure')
+                with patch.object(StageScheduler, '_receive_results', receive), patch(
+                        'executor_system.action_plan.AI2ThorAdapter.execute', fail):
+                    report = self.run_plan([StagePlan('s', {
+                        'robot1': [Action('Wait')],
+                        'robot2': [Action('Teleport', on_failure='RETRY', max_retries=3)]})])
+                self.assertEqual(sorted(calls), ['robot1', 'robot2'])
+                self.assertEqual(report['action_counts']['attempts'], 2)
+                self.assertEqual(len(report['stages'][0]['attempts']), 2)
+                if deferred:
+                    self.assertEqual(report['stages'][0]['attempts'][1]['status'], 'deferred')
+                    self.assertEqual(report['action_counts']['cancelled'], 1)
+                else:
+                    self.assertEqual(report['action_counts']['failed'], 2)
+                    self.assertEqual(report['actions'][1]['reason'], 'stage_stopped_before_retry')
