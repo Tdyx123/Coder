@@ -1,4 +1,6 @@
 import copy
+import io
+from contextlib import ExitStack, redirect_stdout, redirect_stderr
 import json
 import sys
 import tempfile
@@ -11,6 +13,16 @@ sys.path.insert(0, str(ROOT / 'scripts'))
 import benchmark_executor_regression as benchmark
 
 
+def clean_metadata():
+    return {'code_sha': 'a' * 40, 'code_root': str(ROOT), 'code_dirty': False}
+
+
+def build_report(manifest, rows):
+    report = benchmark.build_report(manifest, rows)
+    report['reproducibility'] = clean_metadata()
+    return report
+
+
 def record(case='a', refresh='full', repetition=1, **changes):
     result = dict(case=case, movement_mode='step', execution_policy='legacy',
                   reachable_refresh_mode=refresh, repetition=repetition,
@@ -19,16 +31,23 @@ def record(case='a', refresh='full', repetition=1, **changes):
                   evaluation_status='valid', task_success=True, gcr=1.0, timed_out=False,
                   run_time_seconds=12, phase_durations_seconds={'execution': 10},
                   navigation_metrics={'requests': 1, 'successes': 1, 'failures': 0, 'action_counts': {}},
-                  runtime_metrics={'counters': {}}, reproducibility={'code_sha': 'abc'})
+                  runtime_metrics={'counters': {}}, reproducibility=clean_metadata())
     result.update(changes)
     return result
 
 
 class BenchmarkTests(unittest.TestCase):
+    def setUp(self):
+        self.stdout, self.stderr = io.StringIO(), io.StringIO()
+        stack = ExitStack()
+        self.addCleanup(stack.close)
+        stack.enter_context(redirect_stdout(self.stdout))
+        stack.enter_context(redirect_stderr(self.stderr))
+
     def test_keeps_repetitions_failures_and_splits_versions(self):
         results = [record(), record(repetition=2, timed_out=True, evaluation_status='incomplete', gcr=None),
                    record(repetition=3, scheduler_version=1)]
-        report = benchmark.build_report({'cases': [{'task_id': 'a'}]}, results)
+        report = build_report({'cases': [{'task_id': 'a'}]}, results)
         self.assertEqual(report['results'], results)
         self.assertEqual(len(report['groups']), 2)
         self.assertEqual(report['raw_counts']['timeouts'], 1)
@@ -38,18 +57,18 @@ class BenchmarkTests(unittest.TestCase):
     def test_pair_regression_not_hidden_by_mean(self):
         rows = [record('a'), record('b', gcr=0),
                 record('a', 'event', gcr=0, task_success=False), record('b', 'event')]
-        failures = benchmark.acceptance_failures(benchmark.build_report({'cases': []}, rows))
+        failures = benchmark.acceptance_failures(build_report({'cases': []}, rows))
         self.assertTrue(any(f['code'] == 'paired_regression' and f['case'] == 'a' and f['repetition'] == 1 for f in failures))
 
     def test_per_policy_performance_median_and_p95_gate(self):
         rows = [record(refresh=refresh, repetition=i, phase_durations_seconds={'execution': 10 if refresh == 'full' else 10.6})
                 for refresh in ('full', 'event') for i in range(1, 6)]
-        failures = benchmark.acceptance_failures(benchmark.build_report({'cases': []}, rows))
+        failures = benchmark.acceptance_failures(build_report({'cases': []}, rows))
         self.assertIn('execution_p50', {f['code'] for f in failures})
         self.assertIn('execution_p95', {f['code'] for f in failures})
         for row in rows:
             if row['reachable_refresh_mode'] == 'event': row['phase_durations_seconds']['execution'] = 10.5
-        self.assertEqual(benchmark.acceptance_failures(benchmark.build_report({'cases': []}, rows)), [])
+        self.assertEqual(benchmark.acceptance_failures(build_report({'cases': []}, rows)), [])
 
     def test_missing_fixed_cases_nonzero_without_reselection(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -92,7 +111,7 @@ class BenchmarkTests(unittest.TestCase):
 
     def test_event_without_full_and_missing_execution_timing_fail(self):
         for rows in ([record(refresh='event')], [record(), record(refresh='event', phase_durations_seconds={})]):
-            self.assertTrue(benchmark.acceptance_failures(benchmark.build_report({'cases': []}, rows)))
+            self.assertTrue(benchmark.acceptance_failures(build_report({'cases': []}, rows)))
 
     def test_defaults(self):
         args = benchmark.parse_arguments(['--output-dir', '/tmp/unused'])
@@ -129,7 +148,11 @@ Path(args.metrics_output).write_text(json.dumps(result))
             output = root / 'output'
             code = benchmark.main(['--manifest', str(manifest), '--output-dir', str(output), '--repetitions', '2', '--check'])
             report = json.loads((output / 'report.json').read_text())
-            self.assertEqual(code, 0, report['acceptance_failures'])
+            # Source edits while running tests must not be certified clean.
+            expected_failure = report['reproducibility']['code_dirty'] is not False
+            self.assertEqual(code, int(expected_failure), report['acceptance_failures'])
+            self.assertTrue(all(f['code'] == 'invalid_code_identity' for f in report['acceptance_failures']))
+            self.assertIn('check_passed', self.stdout.getvalue())
             self.assertEqual(report['raw_counts']['missing_results'], 0)
             self.assertEqual({r['reproducibility']['code_root'] for r in report['results']}, {str(ROOT)})
             self.assertEqual(len({r['child_result']['attempt'] for r in report['results']}), 2)
@@ -138,14 +161,14 @@ Path(args.metrics_output).write_text(json.dumps(result))
         rows = [record(refresh=refresh, execution_policy=policy,
                        phase_durations_seconds={'execution': 10 if refresh == 'full' else (1 if policy == 'legacy' else 11)})
                 for policy in ('legacy', 'strict') for refresh in ('full', 'event')]
-        failures = benchmark.acceptance_failures(benchmark.build_report({'cases': []}, rows))
+        failures = benchmark.acceptance_failures(build_report({'cases': []}, rows))
         self.assertTrue(any(f['code'] == 'execution_p50' and f['execution_policy'] == 'strict' for f in failures))
 
     def test_safety_and_pair_missing_repetition_checks(self):
         rows = [record(repetition=1), record(repetition=2),
                 record(refresh='event', navigation_metrics={'requests': 1, 'successes': 1, 'action_counts': {'Teleport': 1}},
                        runtime_metrics={'counters': {'lease_leaks': 1}})]
-        codes = {f['code'] for f in benchmark.acceptance_failures(benchmark.build_report({'cases': []}, rows))}
+        codes = {f['code'] for f in benchmark.acceptance_failures(build_report({'cases': []}, rows))}
         self.assertTrue({'lease_leaks', 'step_navigation_teleports', 'missing_comparison_pair'} <= codes)
 
     def test_invalid_plan_still_has_one_failure_per_repetition(self):
@@ -169,7 +192,7 @@ Path(args.metrics_output).write_text(json.dumps(result))
         event = record(refresh='event', task_success=False, execution_status='partial', actions=[
             {'action_key': '0:robot1:0', 'status': 'failed'},
             {'action_key': '0:robot1:1', 'status': 'succeeded'}])
-        failures = benchmark.acceptance_failures(benchmark.build_report({'cases': []}, [full, event]))
+        failures = benchmark.acceptance_failures(build_report({'cases': []}, [full, event]))
         self.assertTrue(any(f['code'] == 'paired_action_regression' and f['action_key'] == '0:robot1:0' for f in failures))
 
     def test_missing_case_reports_unstarted_denominator(self):
@@ -188,4 +211,60 @@ Path(args.metrics_output).write_text(json.dumps(result))
             (root / 'report.json').write_text('historical')
             code = benchmark.main(['--output-dir', str(root)])
             self.assertEqual(code, 2)
+            self.assertIn('output directory must be new or empty', self.stderr.getvalue())
             self.assertEqual((root / 'report.json').read_text(), 'historical')
+
+
+    def test_full_baseline_requires_parent_success_valid_evaluation_and_timing(self):
+        for changes, expected in (
+            ({'process_status': 'failed'}, 'baseline_process_failed'),
+            ({'evaluation_status': 'incomplete'}, 'baseline_evaluation_invalid'),
+            ({'evaluation_status': 'invalid'}, 'baseline_evaluation_invalid'),
+            ({'gcr': None}, 'baseline_evaluation_invalid'),
+            ({'phase_durations_seconds': {}}, 'baseline_execution_timing_invalid'),
+        ):
+            with self.subTest(changes=changes):
+                failures = benchmark.acceptance_failures(build_report({'cases': []}, [record(**changes)]))
+                self.assertIn(expected, {f['code'] for f in failures})
+        for value in (None, -1, float('nan'), float('inf'), '10', True):
+            with self.subTest(execution=value):
+                failures = benchmark.acceptance_failures(build_report({'cases': []}, [record(phase_durations_seconds={'execution': value})]))
+                self.assertIn('baseline_execution_timing_invalid', {f['code'] for f in failures})
+
+    def test_valid_task_failure_is_still_baseline_evidence(self):
+        for status in ('partial', 'failed'):
+            row = record(execution_status=status, task_success=False, gcr=0)
+            self.assertEqual(benchmark.acceptance_failures(build_report({'cases': []}, [row])), [])
+
+    def test_paired_comparison_also_requires_a_usable_full_baseline(self):
+        rows = [record(process_status='failed', evaluation_status='incomplete', gcr=None), record(refresh='event')]
+        codes = {f['code'] for f in benchmark.acceptance_failures(build_report({'cases': []}, rows))}
+        self.assertIn('baseline_process_failed', codes)
+        self.assertIn('baseline_evaluation_invalid', codes)
+
+    def test_parent_and_child_require_clean_known_code_identity(self):
+        invalid = ({'code_dirty': True}, {'code_dirty': None}, {'code_dirty': 0},
+                   {'code_dirty': 'false'}, {'code_sha': None}, {'code_sha': ''},
+                   {'code_sha': 'unknown'}, {'code_root': ''}, {'code_root': None},
+                   {'code_root': 'unknown'})
+        for owner in ('parent', 'child'):
+            for changes in invalid:
+                with self.subTest(owner=owner, changes=changes):
+                    report = build_report({'cases': []}, [record()])
+                    metadata = report['reproducibility'] if owner == 'parent' else report['results'][0]['reproducibility']
+                    metadata.update(changes)
+                    failures = benchmark.acceptance_failures(report)
+                    self.assertTrue(any(f['code'] == 'invalid_code_identity' and f['owner'] == owner for f in failures))
+            for field in ('code_sha', 'code_root', 'code_dirty'):
+                report = build_report({'cases': []}, [record()])
+                metadata = report['reproducibility'] if owner == 'parent' else report['results'][0]['reproducibility']
+                metadata.pop(field)
+                self.assertTrue(benchmark.acceptance_failures(report))
+
+    def test_dirty_event_and_different_parent_root_cannot_pass_same_sha(self):
+        event = record(refresh='event')
+        event['reproducibility']['code_dirty'] = True
+        self.assertTrue(benchmark.acceptance_failures(build_report({'cases': []}, [record(), event])))
+        report = build_report({'cases': []}, [record()])
+        report['reproducibility']['code_root'] = '/different/checkout'
+        self.assertTrue(benchmark.acceptance_failures(report))

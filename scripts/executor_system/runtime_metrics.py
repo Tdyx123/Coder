@@ -119,9 +119,10 @@ def runtime_metadata(repo_root, *, config, plan=None):
         thor_version = importlib.metadata.version('ai2thor')
     except importlib.metadata.PackageNotFoundError:
         thor_version = None
+    git_status = _command_output(['git', 'status', '--porcelain', '--untracked-files=no'], cwd=repo_root)
     return {
         'code_sha': _command_output(['git', 'rev-parse', 'HEAD'], cwd=repo_root),
-        'code_dirty': bool(_command_output(['git', 'status', '--porcelain', '--untracked-files=no'], cwd=repo_root)),
+        'code_dirty': None if git_status is None else bool(git_status),
         'code_root': str(Path(repo_root).resolve()),
         'python_version': platform.python_version(),
         'ai2thor_version': thor_version,

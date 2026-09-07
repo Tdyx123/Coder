@@ -14,6 +14,7 @@ import ast
 import itertools
 import json
 import math
+import re
 import statistics
 import sys
 import time
@@ -102,10 +103,29 @@ def build_report(manifest, results):
     }
 
 
+def code_identity_errors(metadata):
+    if not isinstance(metadata, dict):
+        return ['missing metadata']
+    errors = []
+    sha = metadata.get('code_sha')
+    if not isinstance(sha, str) or re.fullmatch(r'[0-9a-fA-F]{40}|[0-9a-fA-F]{64}', sha) is None:
+        errors.append('code_sha must be a full Git object id')
+    root = metadata.get('code_root')
+    if not isinstance(root, str) or not root.strip() or not Path(root).is_absolute():
+        errors.append('code_root must be a known absolute path')
+    if metadata.get('code_dirty') is not False:
+        errors.append('code_dirty must be the boolean false; dirty or unknown code is not reproducible')
+    return errors
+
+
 def acceptance_failures(report):
     failures = []
     def reject(code, **details):
         failures.append(dict(code=code, **details))
+    parent_metadata = report.get('reproducibility')
+    parent_identity_errors = code_identity_errors(parent_metadata)
+    if parent_identity_errors:
+        reject('invalid_code_identity', owner='parent', details=parent_identity_errors)
     if report.get('missing_cases'):
         reject('missing_fixed_cases', cases=report['missing_cases'])
     if report.get('expected_run_count') is not None and len(report['results']) != report['expected_run_count']:
@@ -116,12 +136,30 @@ def acceptance_failures(report):
     pairs = {}
     for row in rows:
         identity = {key: row.get(key) for key in ('case', 'movement_mode', 'execution_policy', 'repetition')}
+        child_metadata = row.get('reproducibility')
+        child_identity_errors = code_identity_errors(child_metadata)
+        if child_identity_errors:
+            reject('invalid_code_identity', owner='child', **identity, details=child_identity_errors)
+        if not parent_identity_errors and not child_identity_errors:
+            for field in ('code_sha', 'code_root'):
+                if child_metadata[field] != parent_metadata[field]:
+                    reject('reproducibility_mismatch', **identity, field=field,
+                           parent=parent_metadata[field], child=child_metadata[field])
         key = tuple(identity.values())
         refresh = row.get('reachable_refresh_mode')
         pair = pairs.setdefault(key, {})
         if refresh in pair:
             reject('duplicate_run', **identity, reachable_refresh_mode=refresh)
         pair[refresh] = row
+        # A baseline must yield usable measurements even when task goals fail.
+        # Apply this to full rows both alone and in full/event comparisons.
+        if refresh == 'full':
+            if row.get('process_status') != 'completed':
+                reject('baseline_process_failed', **identity, actual=row.get('process_status'))
+            if row.get('evaluation_status') != 'valid' or not finite_number(row.get('gcr')):
+                reject('baseline_evaluation_invalid', **identity, actual=row.get('evaluation_status'))
+            if execution_seconds(row) is None:
+                reject('baseline_execution_timing_invalid', **identity)
         if tuple(row.get(f) for f in PROTOCOL_FIELDS) != (2, 'fixed_goals_v2', 2):
             reject('protocol_version', **identity, actual={f: row.get(f) for f in PROTOCOL_FIELDS})
         if row.get('missing_result'):

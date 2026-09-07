@@ -136,3 +136,10 @@ class RuntimeMetricsTests(unittest.TestCase):
             'planning_durations_seconds': [.1], 'planning_durations_truncated': True}}])
         self.assertFalse(result['planner_fixture_p95_is_complete'])
         self.assertIsNone(result['planner_fixture_p95_seconds'])
+
+
+    def test_git_status_failure_remains_unknown(self):
+        with patch('executor_system.runtime_metrics._command_output', return_value=None):
+            metadata = runtime_metadata(ROOT, config={})
+        self.assertIsNone(metadata['code_sha'])
+        self.assertIsNone(metadata['code_dirty'])
