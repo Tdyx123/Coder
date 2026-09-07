@@ -5,13 +5,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 import uuid
+import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -55,14 +56,29 @@ from executor_system.run_results import (  # noqa: E402
     task_key_for_executable,
     validate_result,
 )
+from executor_system.process_supervisor import (  # noqa: E402
+    ProcessOutcome,
+    cleanup_owned_processes,
+    run_owned_process,
+)
 from baseline_converters import pddlrun  # noqa: E402
 
 
 DEFAULT_TIMEOUT_SECONDS = 30.0
+DEFAULT_STARTUP_GRACE_SECONDS = 60.0
+DEFAULT_FINALIZATION_GRACE_SECONDS = 10.0
+DEFAULT_TERMINATION_GRACE_SECONDS = 5.0
 MAX_TIMEOUT_RETRIES = 2
 GPU_CLEANUP_PROCESS_SUFFIX = "0d69f666c7f282e54abfe58f1e917"
 IGNORED_FAILURE_ACTION_TYPES = {"Teleport", "TeleportObjectToHand"}
 BASE_LINE_CHOICES = ("LaMMA-P", "SMART-LLM", "Scale-Plan", "KGLAMP", "COT")
+
+
+def finite_positive_seconds(value: str) -> float:
+    seconds = float(value)
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise argparse.ArgumentTypeError("must be a finite positive number")
+    return seconds
 
 
 def effective_timeout_seconds(
@@ -769,56 +785,19 @@ def parse_gpu_cleanup_pids(
 
 
 def cleanup_gpu_processes(round_index: int) -> Dict[str, Any]:
-    event: Dict[str, Any] = {
+    """Deprecated compatibility entrypoint; owned process groups replace it."""
+
+    warnings.warn(
+        "cleanup_gpu_processes is deprecated; process groups are cleaned by owner",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return {
         "round": round_index,
         "matched_pids": [],
         "killed_pids": [],
-        "error": "",
+        "error": "deprecated no-op",
     }
-    try:
-        query = subprocess.run(
-            [
-                "nvidia-smi",
-                "--query-compute-apps=pid,process_name",
-                "--format=csv,noheader",
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-    except OSError as exc:
-        event["error"] = str(exc)
-        return event
-
-    if query.returncode != 0:
-        event["error"] = query.stderr.strip() or (
-            f"nvidia-smi exited with status {query.returncode}"
-        )
-        return event
-
-    matched_pids = parse_gpu_cleanup_pids(query.stdout)
-    event["matched_pids"] = matched_pids
-    if not matched_pids:
-        return event
-
-    try:
-        kill_result = subprocess.run(
-            ["kill", "-9", *[str(pid) for pid in matched_pids]],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-    except OSError as exc:
-        event["error"] = str(exc)
-        return event
-
-    if kill_result.returncode == 0:
-        event["killed_pids"] = matched_pids
-    else:
-        event["error"] = kill_result.stderr.strip() or (
-            f"kill exited with status {kill_result.returncode}"
-        )
-    return event
 
 
 def gpu_cleanup_error_event(round_index: int, exc: BaseException) -> Dict[str, Any]:
@@ -907,6 +886,23 @@ def compact_attempt_result(result: Dict[str, Any], attempt: int) -> Dict[str, An
     }
 
 
+def _read_process_log(path: Path) -> str:
+    try:
+        return normalize_output(path.read_bytes())
+    except OSError:
+        return ""
+
+
+def process_cleanup_event(outcome: ProcessOutcome) -> Dict[str, Any]:
+    return {
+        "pid": outcome.pid,
+        "pgid": outcome.pgid,
+        "timed_out": outcome.timed_out,
+        "returncode": outcome.returncode,
+        "termination_events": [dict(event) for event in outcome.termination_events],
+    }
+
+
 def run_generated_executable(
     executable_path: Path,
     *,
@@ -917,6 +913,9 @@ def run_generated_executable(
     run_id: Optional[str] = None,
     task_key: Optional[str] = None,
     attempt: int = 1,
+    startup_grace_seconds: float = DEFAULT_STARTUP_GRACE_SECONDS,
+    finalization_grace_seconds: float = DEFAULT_FINALIZATION_GRACE_SECONDS,
+    termination_grace_seconds: float = DEFAULT_TERMINATION_GRACE_SECONDS,
 ) -> Dict[str, Any]:
     start_time = time.monotonic()
     child_env = os.environ.copy()
@@ -943,21 +942,43 @@ def run_generated_executable(
         "--movement-mode",
         str(movement_mode),
     ]
+    total_timeout_seconds = (
+        startup_grace_seconds + timeout_seconds + finalization_grace_seconds
+    )
+    stdout_path = metrics_output.with_suffix(".stdout.log")
+    stderr_path = metrics_output.with_suffix(".stderr.log")
     try:
-        completed = subprocess.run(
+        outcome = run_owned_process(
             command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=timeout_seconds,
+            timeout_seconds=total_timeout_seconds,
+            termination_grace_seconds=termination_grace_seconds,
+            stdout_path=stdout_path,
+            stderr_path=stderr_path,
             env=child_env,
         )
-    except subprocess.TimeoutExpired as exc:
+    except OSError as exc:
+        return invalid_runner_result(
+            executable_path,
+            movement_mode=movement_mode,
+            run_time_seconds=time.monotonic() - start_time,
+            returncode=1,
+            identity=identity,
+            error=f"could not start runner process: {exc}",
+        )
+
+    stdout = _read_process_log(stdout_path)
+    stderr = _read_process_log(stderr_path)
+    cleanup_events = [process_cleanup_event(outcome)]
+    if outcome.timed_out:
         result = {
             "status": "timeout",
             "timed_out": True,
-            "timeout_message": f"subprocess exceeded {timeout_seconds:g} seconds",
-            "run_time_seconds": time.monotonic() - start_time,
+            "timeout_message": (
+                f"subprocess exceeded total budget {total_timeout_seconds:g} seconds "
+                f"(startup {startup_grace_seconds:g}, execution {timeout_seconds:g}, "
+                f"finalization {finalization_grace_seconds:g})"
+            ),
+            "run_time_seconds": outcome.wall_time_seconds,
             "gcr": None,
             "executed_actions": 0,
             "failed_actions": 0,
@@ -968,8 +989,11 @@ def run_generated_executable(
             "executable_path": str(executable_path),
             "movement_mode": str(movement_mode),
             "navigation_metrics": {},
-            "stdout": normalize_output(exc.stdout),
-            "stderr": normalize_output(exc.stderr),
+            "stdout": stdout,
+            "stderr": stderr,
+            "stdout_path": str(stdout_path),
+            "stderr_path": str(stderr_path),
+            "process_cleanup_events": cleanup_events,
             "process_status": "timeout",
             "execution_status": "timeout",
             "evaluation_status": "incomplete",
@@ -996,8 +1020,8 @@ def run_generated_executable(
         result = invalid_runner_result(
             executable_path,
             movement_mode=movement_mode,
-            run_time_seconds=time.monotonic() - start_time,
-            returncode=completed.returncode,
+            run_time_seconds=outcome.wall_time_seconds,
+            returncode=int(outcome.returncode if outcome.returncode is not None else 1),
             identity=identity,
             error=metrics_error or "runner metrics must be a non-empty JSON object",
         )
@@ -1005,15 +1029,15 @@ def run_generated_executable(
         try:
             result = validate_result(
                 result,
-                returncode=completed.returncode,
+                returncode=int(outcome.returncode if outcome.returncode is not None else 1),
                 expected_identity=identity,
             )
         except ValueError as exc:
             result = invalid_runner_result(
                 executable_path,
                 movement_mode=movement_mode,
-                run_time_seconds=time.monotonic() - start_time,
-                returncode=completed.returncode,
+                run_time_seconds=outcome.wall_time_seconds,
+                returncode=int(outcome.returncode if outcome.returncode is not None else 1),
                 identity=identity,
                 error=f"invalid runner metrics: {exc}",
             )
@@ -1022,7 +1046,7 @@ def run_generated_executable(
         "success" if result.get("process_status") == "completed" else "failed",
     )
     result.setdefault("timed_out", False)
-    result.setdefault("run_time_seconds", time.monotonic() - start_time)
+    result.setdefault("run_time_seconds", outcome.wall_time_seconds)
     result.setdefault("gcr", None)
     result.setdefault("executed_actions", 0)
     result.setdefault("failed_actions", 0)
@@ -1031,10 +1055,13 @@ def run_generated_executable(
     result.setdefault("movement_mode", str(movement_mode))
     result.setdefault("navigation_metrics", {})
     normalize_result_metrics(result)
-    result["returncode"] = completed.returncode
+    result["returncode"] = outcome.returncode
     result["executable_path"] = str(executable_path)
-    result["stdout"] = completed.stdout
-    result["stderr"] = completed.stderr
+    result["stdout"] = stdout
+    result["stderr"] = stderr
+    result["stdout_path"] = str(stdout_path)
+    result["stderr_path"] = str(stderr_path)
+    result["process_cleanup_events"] = cleanup_events
     prune_stdout_for_result(result, save_all_stdout=save_all_stdout)
     return result
 
@@ -1049,6 +1076,10 @@ def run_executable_round(
     movement_mode: str,
     save_all_stdout: bool,
     run_id: str,
+    startup_grace_seconds: float,
+    finalization_grace_seconds: float,
+    termination_grace_seconds: float,
+    completed_results: Optional[Dict[Path, Dict[str, Any]]] = None,
 ) -> Dict[Path, Dict[str, Any]]:
     future_to_path = {}
     for index, executable_path in enumerate(executable_paths, start=1):
@@ -1065,27 +1096,46 @@ def run_executable_round(
             run_id=run_id,
             task_key=task_key_for_executable(executable_path),
             attempt=round_index + 1,
+            startup_grace_seconds=startup_grace_seconds,
+            finalization_grace_seconds=finalization_grace_seconds,
+            termination_grace_seconds=termination_grace_seconds,
         )
         future_to_path[future] = executable_path
 
     round_results: Dict[Path, Dict[str, Any]] = {}
-    for future in as_completed(future_to_path):
-        executable_path = future_to_path[future]
-        try:
-            result = future.result()
-        except Exception as exc:
-            result = failed_result_for_exception(
-                executable_path,
-                exc,
-                movement_mode,
-            )
-            prune_stdout_for_result(
-                result,
-                save_all_stdout=save_all_stdout,
-            )
-        round_results[executable_path] = result
-        status = result.get("status", "unknown")
-        print(f"{status}: {executable_path}")
+    try:
+        for future in as_completed(future_to_path):
+            executable_path = future_to_path[future]
+            try:
+                result = future.result()
+            except Exception as exc:
+                result = failed_result_for_exception(
+                    executable_path,
+                    exc,
+                    movement_mode,
+                )
+                prune_stdout_for_result(
+                    result,
+                    save_all_stdout=save_all_stdout,
+                )
+            round_results[executable_path] = result
+            if completed_results is not None:
+                completed_results[executable_path] = dict(result)
+            status = result.get("status", "unknown")
+            print(f"{status}: {executable_path}")
+    finally:
+        if completed_results is not None:
+            for future, executable_path in future_to_path.items():
+                if executable_path in round_results or not future.done():
+                    continue
+                try:
+                    completed_results[executable_path] = dict(future.result())
+                except Exception as exc:
+                    completed_results[executable_path] = failed_result_for_exception(
+                        executable_path,
+                        exc,
+                        movement_mode,
+                    )
     return round_results
 
 
@@ -1112,6 +1162,10 @@ def run_executables_with_retries(
     movement_mode: str = "step",
     save_all_stdout: bool,
     run_id: Optional[str] = None,
+    startup_grace_seconds: float = DEFAULT_STARTUP_GRACE_SECONDS,
+    finalization_grace_seconds: float = DEFAULT_FINALIZATION_GRACE_SECONDS,
+    termination_grace_seconds: float = DEFAULT_TERMINATION_GRACE_SECONDS,
+    completed_results: Optional[Dict[Path, Dict[str, Any]]] = None,
 ) -> tuple[List[Dict[str, Any]], List[str], List[Dict[str, Any]]]:
     resolved_run_id = str(run_id or uuid.uuid4().hex)
     attempts_by_path: Dict[Path, List[Dict[str, Any]]] = {
@@ -1119,9 +1173,10 @@ def run_executables_with_retries(
     }
     final_results_by_path: Dict[Path, Dict[str, Any]] = {}
     pending_paths = list(executable_paths)
-    gpu_cleanup_events: List[Dict[str, Any]] = []
+    process_cleanup_events: List[Dict[str, Any]] = []
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+    executor = ThreadPoolExecutor(max_workers=max_workers)
+    try:
         for round_index in range(MAX_TIMEOUT_RETRIES + 1):
             if not pending_paths:
                 break
@@ -1134,12 +1189,11 @@ def run_executables_with_retries(
                 movement_mode=movement_mode,
                 save_all_stdout=save_all_stdout,
                 run_id=resolved_run_id,
+                startup_grace_seconds=startup_grace_seconds,
+                finalization_grace_seconds=finalization_grace_seconds,
+                termination_grace_seconds=termination_grace_seconds,
+                completed_results=completed_results,
             )
-
-            try:
-                gpu_cleanup_events.append(cleanup_gpu_processes(round_index))
-            except Exception as exc:
-                gpu_cleanup_events.append(gpu_cleanup_error_event(round_index, exc))
 
             next_pending_paths: List[Path] = []
             attempt_number = round_index + 1
@@ -1150,12 +1204,23 @@ def run_executables_with_retries(
                     compact_attempt_result(result, attempt_number)
                 )
                 final_results_by_path[executable_path] = result
+                process_cleanup_events.extend(result.get("process_cleanup_events", []))
                 if result.get("timed_out"):
                     next_pending_paths.append(executable_path)
 
             if round_index >= MAX_TIMEOUT_RETRIES:
                 break
             pending_paths = next_pending_paths
+    finally:
+        # This happens before waiting for worker threads so Ctrl-C cannot leave
+        # a child process group alive behind a blocked worker.
+        process_cleanup_events.extend(
+            cleanup_owned_processes(
+                termination_grace_seconds,
+                reason="parallel-runner-interrupted",
+            )
+        )
+        executor.shutdown(wait=True)
 
     results: List[Dict[str, Any]] = []
     timeout_retry_tasks: List[str] = []
@@ -1169,7 +1234,7 @@ def run_executables_with_retries(
                 attempts,
             )
         )
-    return results, timeout_retry_tasks, gpu_cleanup_events
+    return results, timeout_retry_tasks, process_cleanup_events
 
 
 def build_summary(
@@ -1182,6 +1247,7 @@ def build_summary(
     movement_mode: str = "step",
     timeout_retry_tasks: Optional[Iterable[str]] = None,
     gpu_cleanup_events: Optional[Sequence[Dict[str, Any]]] = None,
+    process_cleanup_events: Optional[Sequence[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     resolved_timeout_seconds = effective_timeout_seconds(
         movement_mode,
@@ -1236,6 +1302,9 @@ def build_summary(
         "timeout_retry_tasks": list(timeout_retry_tasks or []),
         "gpu_cleanup_events": [
             dict(event) for event in (gpu_cleanup_events or [])
+        ],
+        "process_cleanup_events": [
+            dict(event) for event in (process_cleanup_events or [])
         ],
         "total_run_time_seconds": time.monotonic() - start_time,
         "results": result_list,
@@ -1292,9 +1361,27 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--timeout-seconds",
-        type=float,
+        type=finite_positive_seconds,
         default=None,
         help="Per-executable timeout; defaults to 30s for teleport and 120s for step.",
+    )
+    parser.add_argument(
+        "--startup-grace-seconds",
+        type=finite_positive_seconds,
+        default=DEFAULT_STARTUP_GRACE_SECONDS,
+        help="Startup allowance added to each parent process budget.",
+    )
+    parser.add_argument(
+        "--finalization-grace-seconds",
+        type=finite_positive_seconds,
+        default=DEFAULT_FINALIZATION_GRACE_SECONDS,
+        help="Finalization allowance added to each parent process budget.",
+    )
+    parser.add_argument(
+        "--termination-grace-seconds",
+        type=finite_positive_seconds,
+        default=DEFAULT_TERMINATION_GRACE_SECONDS,
+        help="Maximum TERM/KILL cleanup window for an owned process group.",
     )
     parser.add_argument(
         "--movement-mode",
@@ -1329,8 +1416,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.max_workers < 1:
         print("ERROR: --max-workers must be at least 1")
         return 1
-    if timeout_seconds <= 0:
-        print("ERROR: --timeout-seconds must be positive")
+    if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+        print("ERROR: --timeout-seconds must be a finite positive number")
         return 1
     if args.parallel_run and (
         args.executable_plans or args.root or args.py_dir or args.base_line
@@ -1362,18 +1449,42 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     start_time = time.monotonic()
     results: List[Dict[str, Any]] = []
     timeout_retry_tasks: List[str] = []
-    gpu_cleanup_events: List[Dict[str, Any]] = []
-
-    with tempfile.TemporaryDirectory(prefix="parallel_runner_metrics_") as temp_dir:
-        temp_metrics_dir = Path(temp_dir)
-        results, timeout_retry_tasks, gpu_cleanup_events = run_executables_with_retries(
+    process_cleanup_events: List[Dict[str, Any]] = []
+    completed_results: Dict[Path, Dict[str, Any]] = {}
+    temp_metrics_dir = output_dir / "process_logs"
+    temp_metrics_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        results, timeout_retry_tasks, process_cleanup_events = run_executables_with_retries(
             executable_paths,
             max_workers=args.max_workers,
             temp_metrics_dir=temp_metrics_dir,
             timeout_seconds=timeout_seconds,
             movement_mode=movement_mode,
             save_all_stdout=args.save_all_stdout,
+            startup_grace_seconds=args.startup_grace_seconds,
+            finalization_grace_seconds=args.finalization_grace_seconds,
+            termination_grace_seconds=args.termination_grace_seconds,
+            completed_results=completed_results,
         )
+    except (KeyboardInterrupt, SystemExit):
+        # Keep finished children visible to the caller. Task 5 adds durable
+        # attempt storage; this summary is the minimal interruption artifact.
+        results = [
+            completed_results[path]
+            for path in executable_paths
+            if path in completed_results
+        ]
+        summary = build_summary(
+            results,
+            start_time,
+            base_line=args.base_line,
+            timeout_seconds=timeout_seconds,
+            movement_mode=movement_mode,
+            gpu_cleanup_events=[],
+        )
+        summary_path = summary_output_path(output_dir, args.base_line)
+        write_result_json(summary_path, summary)
+        raise
 
     results.sort(key=lambda result: str(result.get("executable_path", "")))
     discovery_root = None
@@ -1391,7 +1502,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         timeout_seconds=timeout_seconds,
         movement_mode=movement_mode,
         timeout_retry_tasks=timeout_retry_tasks,
-        gpu_cleanup_events=gpu_cleanup_events,
+        gpu_cleanup_events=[],
+        process_cleanup_events=process_cleanup_events,
     )
     summary_path = summary_output_path(output_dir, args.base_line)
     write_result_json(summary_path, summary)

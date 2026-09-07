@@ -666,14 +666,36 @@ class ParallelRunnerCliTest(unittest.TestCase):
         self.assertIsNone(parse_generated_arguments([]).movement_mode)
         self.assertIsNone(parse_parallel_arguments([]).movement_mode)
 
+    def test_runner_grace_budgets_have_finite_positive_defaults(self):
+        args = parse_parallel_arguments([])
+
+        self.assertEqual(args.startup_grace_seconds, 60.0)
+        self.assertEqual(args.finalization_grace_seconds, 10.0)
+        self.assertEqual(args.termination_grace_seconds, 5.0)
+        with self.assertRaises(SystemExit):
+            parse_parallel_arguments(["--startup-grace-seconds", "nan"])
+        with self.assertRaises(SystemExit):
+            parse_parallel_arguments(["--finalization-grace-seconds", "0"])
+        with self.assertRaises(SystemExit):
+            parse_parallel_arguments(["--termination-grace-seconds", "inf"])
+        with self.assertRaises(SystemExit):
+            parse_generated_arguments(["--timeout-seconds", "0"])
+
     def test_run_generated_executable_defaults_to_step_movement_mode(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             executable_path = root / "executable_plan.py"
             metrics_path = root / "metrics.json"
             with patch(
-                "executor_system.parallel_runner.subprocess.run",
-                return_value=SimpleNamespace(returncode=0, stdout="", stderr=""),
+                "executor_system.parallel_runner.run_owned_process",
+                return_value=SimpleNamespace(
+                    returncode=0,
+                    timed_out=False,
+                    pid=1,
+                    pgid=1,
+                    termination_events=[],
+                    wall_time_seconds=0.01,
+                ),
             ) as run:
                 run_generated_executable(
                     executable_path,
@@ -1796,6 +1818,12 @@ class ParallelRunnerCliTest(unittest.TestCase):
                     "2",
                     "--timeout-seconds",
                     "0.2",
+                    "--startup-grace-seconds",
+                    "0.01",
+                    "--finalization-grace-seconds",
+                    "0.01",
+                    "--termination-grace-seconds",
+                    "0.02",
                 ]
             )
 
@@ -1826,30 +1854,24 @@ class ParallelRunnerCliTest(unittest.TestCase):
             )
             write_fake_generated_script(fast)
 
-            def fake_cleanup(round_index):
-                return {
-                    "round": round_index,
-                    "matched_pids": [],
-                    "killed_pids": [],
-                    "error": "",
-                }
-
-            with patch(
-                "executor_system.parallel_runner.cleanup_gpu_processes",
-                side_effect=fake_cleanup,
-            ):
-                result_code = parallel_runner_main(
-                    [
-                        str(slow),
-                        str(fast),
-                        "--output-dir",
-                        str(output_dir),
-                        "--max-workers",
-                        "2",
-                        "--timeout-seconds",
-                        "0.1",
-                    ]
-                )
+            result_code = parallel_runner_main(
+                [
+                    str(slow),
+                    str(fast),
+                    "--output-dir",
+                    str(output_dir),
+                    "--max-workers",
+                    "2",
+                    "--timeout-seconds",
+                    "0.1",
+                    "--startup-grace-seconds",
+                    "0.01",
+                    "--finalization-grace-seconds",
+                    "0.01",
+                    "--termination-grace-seconds",
+                    "0.02",
+                ]
+            )
 
             self.assertEqual(result_code, 0)
             _summary_path, summary = load_only_summary(output_dir)
@@ -1857,7 +1879,7 @@ class ParallelRunnerCliTest(unittest.TestCase):
             self.assertEqual(summary["success_count"], 2)
             self.assertEqual(summary["timeout_count"], 0)
             self.assertEqual(summary["timeout_retry_tasks"], [str(slow)])
-            self.assertEqual(len(summary["gpu_cleanup_events"]), 2)
+            self.assertEqual(summary["gpu_cleanup_events"], [])
             slow_result = next(
                 result
                 for result in summary["results"]
@@ -1884,34 +1906,28 @@ class ParallelRunnerCliTest(unittest.TestCase):
                 ],
             )
 
-            def fake_cleanup(round_index):
-                return {
-                    "round": round_index,
-                    "matched_pids": [],
-                    "killed_pids": [],
-                    "error": "",
-                }
-
-            with patch(
-                "executor_system.parallel_runner.cleanup_gpu_processes",
-                side_effect=fake_cleanup,
-            ):
-                result_code = parallel_runner_main(
-                    [
-                        str(slow),
-                        "--output-dir",
-                        str(output_dir),
-                        "--timeout-seconds",
-                        "0.05",
-                    ]
-                )
+            result_code = parallel_runner_main(
+                [
+                    str(slow),
+                    "--output-dir",
+                    str(output_dir),
+                    "--timeout-seconds",
+                    "0.05",
+                    "--startup-grace-seconds",
+                    "0.01",
+                    "--finalization-grace-seconds",
+                    "0.01",
+                    "--termination-grace-seconds",
+                    "0.02",
+                ]
+            )
 
             self.assertEqual(result_code, 1)
             _summary_path, summary = load_only_summary(output_dir)
             self.assertEqual(summary["success_count"], 0)
             self.assertEqual(summary["timeout_count"], 1)
             self.assertEqual(summary["timeout_retry_tasks"], [str(slow)])
-            self.assertEqual(len(summary["gpu_cleanup_events"]), 3)
+            self.assertEqual(summary["gpu_cleanup_events"], [])
             result = summary["results"][0]
             self.assertTrue(result["timed_out"])
             self.assertEqual(result["attempt_count"], 3)
@@ -1921,7 +1937,7 @@ class ParallelRunnerCliTest(unittest.TestCase):
                 [1, 2, 3],
             )
 
-    def test_gpu_cleanup_runs_after_each_full_round(self):
+    def test_parallel_retries_never_call_gpu_cleanup(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             slow = root / "slow" / "plan_to_code" / "executable_plan.py"
@@ -1952,22 +1968,13 @@ class ParallelRunnerCliTest(unittest.TestCase):
                     "executable_path": str(path),
                 }
 
-            def fake_cleanup(round_index):
-                events.append(("cleanup", round_index))
-                return {
-                    "round": round_index,
-                    "matched_pids": [],
-                    "killed_pids": [],
-                    "error": "",
-                }
-
             with patch(
                 "executor_system.parallel_runner.run_generated_executable",
                 side_effect=fake_run_generated_executable,
             ), patch(
                 "executor_system.parallel_runner.cleanup_gpu_processes",
-                side_effect=fake_cleanup,
-            ):
+                side_effect=AssertionError("GPU cleanup must not run"),
+            ) as cleanup:
                 result_code = parallel_runner_main(
                     [
                         str(slow),
@@ -1982,36 +1989,26 @@ class ParallelRunnerCliTest(unittest.TestCase):
                 )
 
             self.assertEqual(result_code, 0)
+            cleanup.assert_not_called()
             self.assertEqual(
                 events,
                 [
                     ("run", "slow", 1),
                     ("run", "fast", 1),
-                    ("cleanup", 0),
                     ("run", "slow", 2),
-                    ("cleanup", 1),
                 ],
             )
 
-    def test_gpu_cleanup_handles_unavailable_nvidia_smi(self):
-        completed = SimpleNamespace(
-            returncode=9,
-            stdout="",
-            stderr="NVIDIA-SMI has failed",
-        )
-
-        with patch(
-            "executor_system.parallel_runner.subprocess.run",
-            return_value=completed,
-        ):
+    def test_deprecated_gpu_cleanup_is_a_noop(self):
+        with self.assertWarns(DeprecationWarning):
             event = cleanup_gpu_processes(0)
 
         self.assertEqual(event["round"], 0)
         self.assertEqual(event["matched_pids"], [])
         self.assertEqual(event["killed_pids"], [])
-        self.assertIn("NVIDIA-SMI has failed", event["error"])
+        self.assertEqual(event["error"], "deprecated no-op")
 
-    def test_gpu_cleanup_exception_is_recorded_without_failing_tasks(self):
+    def test_parallel_runner_does_not_call_deprecated_gpu_cleanup(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             script = root / "run" / "plan_to_code" / "executable_plan.py"
@@ -2020,8 +2017,8 @@ class ParallelRunnerCliTest(unittest.TestCase):
 
             with patch(
                 "executor_system.parallel_runner.cleanup_gpu_processes",
-                side_effect=RuntimeError("cleanup exploded"),
-            ):
+                side_effect=AssertionError("GPU cleanup must not run"),
+            ) as cleanup:
                 result_code = parallel_runner_main(
                     [
                         str(script),
@@ -2033,35 +2030,18 @@ class ParallelRunnerCliTest(unittest.TestCase):
                 )
 
             self.assertEqual(result_code, 0)
+            cleanup.assert_not_called()
             _summary_path, summary = load_only_summary(output_dir)
             self.assertEqual(summary["success_count"], 1)
-            self.assertEqual(len(summary["gpu_cleanup_events"]), 1)
-            self.assertIn("cleanup exploded", summary["gpu_cleanup_events"][0]["error"])
+            self.assertEqual(summary["gpu_cleanup_events"], [])
 
-    def test_gpu_cleanup_only_kills_matching_process_suffix(self):
-        query_output = "\n".join(
-            [
-                "1234, /tmp/not_this_process",
-                "5678, /tmp/worker_0d69f666c7f282e54abfe58f1e917",
-            ]
-        )
-        completed_query = SimpleNamespace(returncode=0, stdout=query_output, stderr="")
-        completed_kill = SimpleNamespace(returncode=0, stdout="", stderr="")
-
-        with patch(
-            "executor_system.parallel_runner.subprocess.run",
-            side_effect=[completed_query, completed_kill],
-        ) as run_mock:
+    def test_deprecated_gpu_cleanup_never_kills_matching_processes(self):
+        with self.assertWarns(DeprecationWarning):
             event = cleanup_gpu_processes(2)
 
-        self.assertEqual(
-            parse_gpu_cleanup_pids(query_output),
-            [5678],
-        )
         self.assertEqual(event["round"], 2)
-        self.assertEqual(event["matched_pids"], [5678])
-        self.assertEqual(event["killed_pids"], [5678])
-        self.assertEqual(run_mock.call_args_list[1].args[0], ["kill", "-9", "5678"])
+        self.assertEqual(event["matched_pids"], [])
+        self.assertEqual(event["killed_pids"], [])
 
     def test_failed_task_is_recorded_without_blocking_other_tasks(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

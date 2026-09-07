@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import math
 import os
 import re
 import time
@@ -133,7 +134,7 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--timeout-seconds",
-        type=float,
+        type=finite_positive_seconds,
         default=None,
         help="Runner timeout; defaults to 30s for teleport and 120s for step.",
     )
@@ -144,6 +145,13 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Robot movement mode; otherwise LAMMAP_MOVEMENT_MODE or step.",
     )
     return parser.parse_args(argv)
+
+
+def finite_positive_seconds(value: str) -> float:
+    seconds = float(value)
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise argparse.ArgumentTypeError("must be a finite positive number")
+    return seconds
 
 
 def runner_metrics_path(raw_path: str, script_file: str) -> Path:
