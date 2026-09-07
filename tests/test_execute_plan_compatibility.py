@@ -219,6 +219,36 @@ class ExecutePlanCompatibilityTests(unittest.TestCase):
 
         self.assertIn("does not invoke", problem)
 
+    def test_rebound_shared_runtime_alias_is_rejected_without_execution(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            command_dir = root / "selected"
+            generated = command_dir / "executable_plan.py"
+            command_dir.mkdir()
+            self.write_shared_runtime_stub(root, return_code=23)
+            generated.write_text(
+                "\n".join(
+                    [
+                        "from executor_system.generated_plan_runtime import main as run_generated_plan",
+                        "BUNDLE_DATA = {'task_plan': {'task_id': 'fixture'}, 'gcr': []}",
+                        "TASK_FILE = 'FloorPlan1.jsonl'",
+                        "TASK_INDEX = 0",
+                        "run_generated_plan = lambda *args: 0",
+                        "if __name__ == '__main__':",
+                        "    raise SystemExit(run_generated_plan(BUNDLE_DATA, TASK_FILE, TASK_INDEX, __file__))",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            (command_dir / "log.txt").write_text("robots = []\n", encoding="utf-8")
+
+            completed = self.run_cli(root, "--command", str(command_dir))
+
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("rebound", completed.stderr)
+        self.assertNotIn("SHARED_MAIN", completed.stdout)
+
     def test_legacy_robot_placeholders_use_recorded_robot_context(self):
         actual_robots = [{"name": "recorded-robot", "skills": ["NavigateTo"]}]
         for placeholder in ([], ["robot1"], ["Robot2"]):

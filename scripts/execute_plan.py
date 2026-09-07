@@ -20,6 +20,7 @@ REQUIRED_LEGACY_CONTEXT = (
     "no_trans_gt",
     "max_trans",
 )
+REQUIRED_GENERATED_BINDINGS = ("BUNDLE_DATA", "TASK_FILE", "TASK_INDEX")
 
 
 class ExecutePlanError(RuntimeError):
@@ -106,6 +107,39 @@ def _is_main_guard(node: ast.AST) -> bool:
     )
 
 
+def _has_canonical_generated_bindings(tree: ast.Module, runtime_alias: str) -> bool:
+    imports = []
+    guards = []
+    for index, node in enumerate(tree.body):
+        if _is_main_guard(node):
+            guards.append(index)
+        if not isinstance(node, ast.ImportFrom) or node.module != GENERATED_RUNTIME_IMPORT:
+            continue
+        if len(node.names) != 1:
+            continue
+        imported = node.names[0]
+        if imported.name == "main" and (imported.asname or imported.name) == runtime_alias:
+            imports.append(index)
+    if len(imports) != 1 or len(guards) != 1 or imports[0] >= guards[0]:
+        return False
+
+    seen = set()
+    for statement in tree.body[imports[0] + 1:guards[0]]:
+        if isinstance(statement, ast.Assign):
+            targets = statement.targets
+        elif isinstance(statement, ast.AnnAssign):
+            targets = [statement.target]
+        else:
+            return False
+        if len(targets) != 1 or not isinstance(targets[0], ast.Name):
+            return False
+        name = targets[0].id
+        if name not in REQUIRED_GENERATED_BINDINGS or name in seen:
+            return False
+        seen.add(name)
+    return seen == set(REQUIRED_GENERATED_BINDINGS)
+
+
 def _is_shared_runtime_call(node: ast.AST, aliases: Sequence[str]) -> bool:
     if not isinstance(node, ast.Call) or node.keywords:
         return False
@@ -178,6 +212,8 @@ def verify_generated_runtime(path: Path) -> Optional[str]:
     aliases = _shared_runtime_aliases(tree)
     if not aliases:
         return f"it does not import {GENERATED_RUNTIME_IMPORT}.main"
+    if len(aliases) != 1 or not _has_canonical_generated_bindings(tree, aliases[0]):
+        return "the imported shared runtime alias is rebound or generated bindings are ambiguous"
     if not _exits_with_shared_runtime(tree, aliases):
         return "it does not invoke the imported shared runtime main from the __main__ exit path"
 
