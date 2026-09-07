@@ -44,3 +44,9 @@
 - 最终真实 48 次 Unity 仿真 **pending**，由主代理在独立审查通过和最终 production SHA 确定后运行。本任务没有伪造该验收。主代理报告 /tmp/executor-batch-2-smoke-01/report.json 的单例 legacy/teleport 预检成功（exit0、completed、valid、固定分母/契约成立、无worker/cleanup errors）；它使用尚未提交树，仅预检，不计最终验收。
 - benchmark 顶层 compatibility aggregates 保留旧接口；跨策略/版本比较应读取 result_groups。输出策略分目录是新增行为，文档说明指定文件名也位于政策子目录。
 - 未改导航预算、网格、隐式传送策略；未新增依赖，未启动子代理，未 merge/push。
+
+## Task6 Fix1：可运行文档入口
+
+独立审查唯一 P2：新增直接脚本启动示例触发基线相对导入错误。已将 docs/executor_batch_2.md 中父CLI改为 `/home/dwb/.pyenv/bin/pyenv exec python -m scripts.executor_system.parallel_runner`；未改旧生产入口。
+
+从仓库根目录定向验证以下四条命令，退出码全部为0：模块入口 `-m scripts.executor_system.parallel_runner --help`、`scripts/benchmark_movement_modes.py --help`、`reports/executor_batch_2/semantic_examples.py --help`、`reports/executor_batch_2/run_real_validation.py --help`；统一使用显式pyenv Python。前两项help包含 execution-policy选项。`git diff --check` 退出0。只改文档/报告，没有重复575测试或真实Unity。

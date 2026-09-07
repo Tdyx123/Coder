@@ -5,7 +5,7 @@
 ## 入口
 
 ```bash
-/home/dwb/.pyenv/bin/pyenv exec python scripts/executor_system/parallel_runner.py \
+/home/dwb/.pyenv/bin/pyenv exec python -m scripts.executor_system.parallel_runner \
   path/to/executable_plan.py --execution-policy strict --movement-mode step \
   --output-dir coderun_results/strict
 
