@@ -381,13 +381,14 @@ def _aggregate_mode(mode: str, results: Sequence[Mapping[str, Any]]) -> Dict[str
 
 
 def _result_groups(results: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]]:
-    grouped: Dict[Tuple[Any, Any, Any, Any], Dict[str, Any]] = {}
+    grouped: Dict[Tuple[Any, ...], Dict[str, Any]] = {}
     for result in results:
         key = (
             result.get("metrics_schema_version", 1),
             result.get("evaluation_version", "legacy_v1"),
             result.get("execution_policy", "legacy"),
             result.get("mode", result.get("movement_mode", "step")),
+            result.get("scheduler_version", 1),
         )
         group = grouped.setdefault(
             key,
@@ -396,6 +397,7 @@ def _result_groups(results: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]]
                 "evaluation_version": key[1],
                 "execution_policy": key[2],
                 "movement_mode": key[3],
+                "scheduler_version": key[4],
                 "total_task_count": 0,
                 "valid_evaluation_count": 0,
                 "task_success_count": 0,
@@ -425,6 +427,7 @@ def build_benchmark_report(
             == group["evaluation_version"]
             and result.get("execution_policy", "legacy")
             == group["execution_policy"]
+            and result.get("scheduler_version", 1) == group["scheduler_version"]
             and result.get("mode", result.get("movement_mode", "step"))
             == group["movement_mode"]
         ]
@@ -490,6 +493,10 @@ def _failure_category(result: Mapping[str, Any]) -> str:
         return "timeout"
     if result.get("status") != "success":
         return "process_failure"
+    if result.get("execution_status") in {"failed", "partial", "cancelled"}:
+        return "execution_failure"
+    if result.get("evaluation_status") == "valid" and result.get("task_success") is False:
+        return "goal_failure"
     metrics = result.get("navigation_metrics") or {}
     if int(metrics.get("failures", 0) or 0):
         return "navigation_failure"
@@ -501,11 +508,13 @@ def run_benchmark(
     *,
     repo_root: Path = _REPO_ROOT,
     explicit_timeout: Optional[float] = None,
+    execution_policy: str = "legacy",
 ) -> Dict[str, Any]:
     cases = manifest.get("cases") or []
     results = []
     with tempfile.TemporaryDirectory(prefix="movement_benchmark_") as temp_dir:
-        metrics_root = Path(temp_dir)
+        metrics_root = Path(temp_dir) / execution_policy
+        metrics_root.mkdir()
         for case_index, case in enumerate(cases):
             executable_path = (repo_root / str(case["path"])).resolve()
             if not executable_path.is_file():
@@ -518,6 +527,7 @@ def run_benchmark(
                     metrics_output=metrics_path,
                     timeout_seconds=timeout_seconds,
                     movement_mode=mode,
+                    execution_policy=execution_policy,
                     save_all_stdout=False,
                 )
                 result = {
@@ -616,6 +626,7 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--output-md", default="reports/movement_modes_benchmark.md")
     parser.add_argument("--timeout-seconds", type=float, default=None)
     parser.add_argument("--check", action="store_true")
+    parser.add_argument("--execution-policy", choices=("legacy", "strict"), default="legacy")
     return parser.parse_args(argv)
 
 
@@ -637,9 +648,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             manifest,
             repo_root=_REPO_ROOT,
             explicit_timeout=args.timeout_seconds,
+            execution_policy=args.execution_policy,
         )
         output_json = Path(args.output_json).expanduser()
+        output_json = output_json.parent / args.execution_policy / output_json.name
         output_md = Path(args.output_md).expanduser()
+        output_md = output_md.parent / args.execution_policy / output_md.name
         _write_json(output_json, report)
         output_md.parent.mkdir(parents=True, exist_ok=True)
         output_md.write_text(render_markdown(report), encoding="utf-8")

@@ -318,3 +318,5 @@ If you find this work useful for your research, please consider citing:
 ## Acknowledgement
 
 We sincerely thank the researchers and developers for [SMART-LLM](https://github.com/SMARTlab-Purdue/SMART-LLM), [AI2THOR](https://github.com/allenai/ai2thor), and [Fast Downward](https://github.com/aibasel/downward/) for their amazing work.
+
+执行器第二批支持 `--execution-policy legacy|strict`（默认 legacy）、条件准入和共享资源租约，结果记录实际策略与 `scheduler_version=2`。用法、资源表、可复现语义示例及验收状态见 [第二批执行语义说明](docs/executor_batch_2.md)。

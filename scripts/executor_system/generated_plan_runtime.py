@@ -145,6 +145,7 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         default=None,
         help="Robot movement mode; otherwise LAMMAP_MOVEMENT_MODE or step.",
     )
+    parser.add_argument("--execution-policy", choices=("legacy", "strict"), default="legacy")
     return parser.parse_args(argv)
 
 
@@ -329,6 +330,8 @@ def run_standalone(
     movement_mode: Optional[str] = None,
     timeout_seconds: Optional[float] = None,
     script_file: Optional[str] = None,
+    *,
+    execution_policy: str = "legacy",
 ) -> int:
     start_time = time.monotonic()
     failure_result = None
@@ -360,10 +363,10 @@ def run_standalone(
     _context.runtime = runtime
     try:
         if bundle.task_plan.stages:
-            run_action_plan(bundle.task_plan, timeout_seconds=effective_timeout_seconds(
+            run_action_plan(bundle.task_plan, execution_policy=execution_policy, timeout_seconds=effective_timeout_seconds(
                 runtime.movement_config.mode.value, timeout_seconds))
         elif not bundle.noop_subtasks:
-            run_action_plan(bundle.task_plan, timeout_seconds=effective_timeout_seconds(
+            run_action_plan(bundle.task_plan, execution_policy=execution_policy, timeout_seconds=effective_timeout_seconds(
                 runtime.movement_config.mode.value, timeout_seconds))
         runtime.step({"action": "Done"}, check_success=False)
 
@@ -394,6 +397,7 @@ def run_standalone(
     except BaseException as exc:
         failure_result = build_runner_result('failed', start_time)
         failure_result.update(identity)
+        failure_result['execution_policy'] = execution_policy
         record_execution_error(failure_result, exc, runtime)
         raise
     finally:
@@ -417,6 +421,7 @@ def run_runner_mode(
     metrics_path = runner_metrics_path(args.metrics_output, script_file)
     result = build_runner_result("failed", start_time)
     result.update(runner_identity(script_file, task_index))
+    result["execution_policy"] = getattr(args, "execution_policy", "legacy")
     return_code = 1
     runtime = None
     interrupt = None
@@ -458,16 +463,24 @@ def run_runner_mode(
             execution_report = run_action_plan_tolerant(
                 runtime,
                 bundle.task_plan,
+                execution_policy=result["execution_policy"],
                 timeout_seconds=effective_timeout_seconds(
                     runtime.movement_config.mode.value,
                     args.timeout_seconds,
                 ),
             )
         else:
-            execution_report = TolerantRunStats().to_dict()
+            execution_report = TolerantRunStats(execution_policy=result["execution_policy"]).to_dict()
+            execution_report.update(execution_status="completed", execution_quiescent=True, scheduler_version=2)
         result.update(execution_report)
         if execution_report.get('timed_out'):
             raise PlanExecutionTimeout(execution_report.get('timeout_message', 'execution timed out'))
+        if (execution_report.get('execution_quiescent') is False
+                or (execution_report.get('scheduler_version') == 2
+                    and execution_report.get('execution_quiescent') is not True)):
+            raise RuntimeError('execution did not become quiescent; final evaluation is unavailable')
+        if execution_report.get('execution_status') == 'cancelled':
+            raise ExecutionCancelled('execution cancelled')
         result['phase_durations_seconds'][phase] = time.monotonic() - phase_start
         phase, phase_start = 'evaluation', time.monotonic()
         try:
@@ -497,15 +510,10 @@ def run_runner_mode(
             {
                 "status": "timeout" if execution_report.get("timed_out") else "success",
                 "process_status": "timeout" if execution_report.get("timed_out") else "completed",
-                "execution_status": (
-                    "timeout"
-                    if execution_report.get("timed_out")
-                    else (
-                        "partial"
-                        if execution_report.get("action_counts", {}).get("failed", 0)
-                        else "completed"
-                    )
-                ),
+                "execution_status": execution_report.get("execution_status", (
+                    "partial" if execution_report.get("action_counts", {}).get("failed", 0)
+                    else "completed")),
+                "execution_quiescent": execution_report.get("execution_quiescent", True),
                 "gcr": metrics["gcr"] if evaluation_valid else None,
                 "tc": metrics["tc"] if evaluation_valid else None,
                 "sr": (
@@ -559,4 +567,5 @@ def main(
         movement_mode=args.movement_mode,
         timeout_seconds=args.timeout_seconds,
         script_file=script_file,
+        execution_policy=args.execution_policy,
     )

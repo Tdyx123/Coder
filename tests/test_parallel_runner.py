@@ -580,6 +580,31 @@ def load_only_summary(output_dir: Path):
 
 
 class ParallelRunnerCliTest(unittest.TestCase):
+    def test_execution_policy_cli_defaults_and_rejection(self):
+        for parser in (parse_parallel_arguments, parse_generated_arguments):
+            self.assertEqual(getattr(parser([]), 'execution_policy', None), 'legacy')
+            self.assertEqual(parser(['--execution-policy', 'strict']).execution_policy, 'strict')
+            with self.assertRaises(SystemExit):
+                parser(['--execution-policy', 'unsafe'])
+
+    def test_strict_policy_reaches_child_and_failure_records(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            script = root / 'policy.py'
+            script.write_text("import argparse,json\np=argparse.ArgumentParser()\np.add_argument('--runner-mode',action='store_true')\np.add_argument('--metrics-output')\np.add_argument('--timeout-seconds')\np.add_argument('--movement-mode')\np.add_argument('--execution-policy',choices=['legacy','strict'],default='legacy')\na=p.parse_args()\njson.dump({'execution_policy':a.execution_policy},open(a.metrics_output,'w'))\n")
+            result = run_generated_executable(script, metrics_output=root/'result.json',
+                timeout_seconds=1, execution_policy='strict')
+            self.assertEqual(result['execution_policy'], 'strict')
+            self.assertEqual(result['returncode'], 0)
+            result = run_generated_executable(root/'missing.py', metrics_output=root/'missing.json',
+                timeout_seconds=1, execution_policy='strict')
+            self.assertEqual(result['execution_policy'], 'strict')
+
+    def test_summary_separates_scheduler_versions(self):
+        result = {'metrics_schema_version': 2, 'execution_policy': 'legacy'}
+        groups = build_summary([result, dict(result, scheduler_version=2)], time.monotonic())['result_groups']
+        self.assertEqual({g['scheduler_version'] for g in groups}, {1, 2})
+
     def test_raw_action_sr_does_not_replace_existing_legacy_action_sr(self):
         result = normalize_result_metrics({"action_sr": 1.0, "raw_action_sr": 0.5})
 

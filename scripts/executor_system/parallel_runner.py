@@ -626,6 +626,7 @@ def failed_result_for_exception(
     executable_path: Path,
     exc: BaseException,
     movement_mode: str = "step",
+    execution_policy: str = "legacy",
 ) -> Dict[str, Any]:
     result = {
         "status": "failed",
@@ -641,7 +642,9 @@ def failed_result_for_exception(
         "executable_path": str(executable_path),
         "movement_mode": str(movement_mode),
         "navigation_metrics": {},
+        "requested_execution_policy": ExecutionPolicy(execution_policy).value,
         "error": str(exc),
+        "execution_policy": ExecutionPolicy(execution_policy).value,
     }
     return normalize_result_metrics(result)
 
@@ -650,6 +653,7 @@ def invalid_runner_result(
     executable_path: Path,
     *,
     movement_mode: str,
+    execution_policy: str = "legacy",
     run_time_seconds: float,
     returncode: int,
     identity: Dict[str, Any],
@@ -664,7 +668,7 @@ def invalid_runner_result(
         "evaluation_status": "incomplete",
         "task_success": None,
         "evaluation_version": "legacy_v1",
-        "execution_policy": "legacy",
+        "execution_policy": ExecutionPolicy(execution_policy).value,
         "run_time_seconds": run_time_seconds,
         "gcr": None,
         "tc": None,
@@ -679,6 +683,7 @@ def invalid_runner_result(
         "executable_path": str(executable_path),
         "movement_mode": str(movement_mode),
         "navigation_metrics": {},
+        "requested_execution_policy": ExecutionPolicy(execution_policy).value,
         "error": error,
         **identity,
     }
@@ -722,6 +727,7 @@ def run_generated_executable(
     metrics_output: Path,
     timeout_seconds: float,
     movement_mode: str = "step",
+    execution_policy: str = "legacy",
     save_all_stdout: bool = False,
     run_id: Optional[str] = None,
     task_key: Optional[str] = None,
@@ -731,6 +737,7 @@ def run_generated_executable(
     termination_grace_seconds: float = DEFAULT_TERMINATION_GRACE_SECONDS,
     process_scope: Optional[OwnedProcessScope] = None,
 ) -> Dict[str, Any]:
+    execution_policy = ExecutionPolicy(execution_policy).value
     start_time = time.monotonic()
     child_env = os.environ.copy()
     identity = {
@@ -756,6 +763,8 @@ def run_generated_executable(
         "--movement-mode",
         str(movement_mode),
     ]
+    if execution_policy != "legacy":
+        command.extend(["--execution-policy", execution_policy])
     total_timeout_seconds = parent_timeout_seconds(
         startup_grace_seconds,
         timeout_seconds,
@@ -779,6 +788,7 @@ def run_generated_executable(
         result = invalid_runner_result(
             executable_path,
             movement_mode=movement_mode,
+            execution_policy=execution_policy,
             run_time_seconds=time.monotonic() - start_time,
             returncode=1,
             identity=identity,
@@ -794,6 +804,7 @@ def run_generated_executable(
         return invalid_runner_result(
             executable_path,
             movement_mode=movement_mode,
+            execution_policy=execution_policy,
             run_time_seconds=time.monotonic() - start_time,
             returncode=1,
             identity=identity,
@@ -825,6 +836,7 @@ def run_generated_executable(
         result = invalid_runner_result(
             executable_path,
             movement_mode=movement_mode,
+            execution_policy=execution_policy,
             run_time_seconds=outcome.wall_time_seconds,
             returncode=parent_returncode,
             identity=identity,
@@ -832,6 +844,8 @@ def run_generated_executable(
         )
     else:
         try:
+            if result.get("execution_policy", "legacy") != execution_policy:
+                raise ValueError("child execution_policy does not match requested policy")
             result = validate_result(
                 result,
                 returncode=parent_returncode,
@@ -841,6 +855,7 @@ def run_generated_executable(
             result = invalid_runner_result(
                 executable_path,
                 movement_mode=movement_mode,
+                execution_policy=execution_policy,
                 run_time_seconds=outcome.wall_time_seconds,
                 returncode=parent_returncode,
                 identity=identity,
@@ -858,6 +873,8 @@ def run_generated_executable(
     result.setdefault("failure_action_ratio", 0.0)
     result.setdefault("robot_failures", [])
     result.setdefault("movement_mode", str(movement_mode))
+    result.setdefault("execution_policy", execution_policy)
+    result["requested_execution_policy"] = execution_policy
     result.setdefault("navigation_metrics", {})
     normalize_result_metrics(result)
     if outcome.timed_out:
@@ -888,7 +905,7 @@ def _run_and_record(executable_path: Path, *, result_store: Optional[RunResultSt
     try:
         result = run_generated_executable(executable_path, **kwargs)
     except Exception as exc:
-        result = failed_result_for_exception(executable_path, exc, kwargs["movement_mode"])
+        result = failed_result_for_exception(executable_path, exc, kwargs["movement_mode"], kwargs.get("execution_policy", "legacy"))
         result.update(process_status="failed", execution_status="failed", evaluation_status="incomplete",
                       task_success=None, tc=None, sr=None, ru=None)
     identity = dict(run_id=kwargs["run_id"], task_key=kwargs["task_key"], attempt=kwargs["attempt"])
@@ -911,6 +928,7 @@ def run_executable_round(
     round_index: int,
     timeout_seconds: float,
     movement_mode: str,
+    execution_policy: str = "legacy",
     save_all_stdout: bool,
     run_id: str,
     startup_grace_seconds: float,
@@ -935,6 +953,7 @@ def run_executable_round(
             metrics_output=metrics_output,
             timeout_seconds=timeout_seconds,
             movement_mode=movement_mode,
+            execution_policy=execution_policy,
             save_all_stdout=save_all_stdout,
             run_id=run_id,
             task_key=task_key_for_executable(executable_path),
@@ -961,6 +980,7 @@ def run_executable_round(
                     executable_path,
                     exc,
                     movement_mode,
+                    execution_policy,
                 )
                 prune_stdout_for_result(
                     result,
@@ -983,6 +1003,7 @@ def run_executable_round(
                         executable_path,
                         exc,
                         movement_mode,
+                        execution_policy,
                     )
     return round_results
 
@@ -1008,6 +1029,7 @@ def run_executables_with_retries(
     temp_metrics_dir: Path,
     timeout_seconds: float,
     movement_mode: str = "step",
+    execution_policy: str = "legacy",
     save_all_stdout: bool,
     run_id: Optional[str] = None,
     startup_grace_seconds: float = DEFAULT_STARTUP_GRACE_SECONDS,
@@ -1039,6 +1061,7 @@ def run_executables_with_retries(
                 round_index=round_index,
                 timeout_seconds=timeout_seconds,
                 movement_mode=movement_mode,
+                execution_policy=execution_policy,
                 save_all_stdout=save_all_stdout,
                 run_id=resolved_run_id,
                 startup_grace_seconds=startup_grace_seconds,
@@ -1109,6 +1132,7 @@ def build_summary(
     discovery_root: Optional[Path] = None,
     timeout_seconds: Optional[float] = None,
     movement_mode: str = "step",
+    execution_policy: str = "legacy",
     timeout_retry_tasks: Optional[Iterable[str]] = None,
     gpu_cleanup_events: Optional[Sequence[Dict[str, Any]]] = None,
     process_cleanup_events: Optional[Sequence[Dict[str, Any]]] = None,
@@ -1125,6 +1149,7 @@ def build_summary(
             result.get("evaluation_version", "legacy_v1"),
             result.get("execution_policy", "legacy"),
             result.get("movement_mode", str(movement_mode)),
+            result.get("scheduler_version", 1),
         )
         group = grouped_results.setdefault(
             key,
@@ -1133,6 +1158,7 @@ def build_summary(
                 "evaluation_version": key[1],
                 "execution_policy": key[2],
                 "movement_mode": key[3],
+                "scheduler_version": key[4],
                 "total_task_count": 0,
                 "valid_evaluation_count": 0,
                 "task_success_count": 0,
@@ -1163,6 +1189,7 @@ def build_summary(
         },
         "movement_mode": str(movement_mode),
         "effective_timeout_seconds": resolved_timeout_seconds,
+        "execution_policy": ExecutionPolicy(execution_policy).value,
         "timeout_retry_tasks": list(timeout_retry_tasks or []),
         "gpu_cleanup_events": [
             dict(event) for event in (gpu_cleanup_events or [])
@@ -1265,11 +1292,13 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument("--rebuild-summary", metavar="RUN_DIR",
                         help="Rebuild a summary from completed durable attempts without running tasks.")
+    parser.add_argument("--execution-policy", choices=("legacy", "strict"), default="legacy")
     return parser.parse_args(argv)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_arguments(argv)
+    execution_policy = args.execution_policy
     if args.rebuild_summary:
         run_dir = Path(args.rebuild_summary).expanduser().resolve()
         if not run_dir.is_dir() or run_dir.parent.name != "runs":
@@ -1342,7 +1371,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         discovery_root = (Path(args.root).expanduser() if args.root
                           else default_baseline_root(args.base_line)).resolve()
     store.summary_metadata = build_summary([], start_time, base_line=args.base_line,
-        discovery_root=discovery_root, timeout_seconds=timeout_seconds, movement_mode=movement_mode)
+        discovery_root=discovery_root, timeout_seconds=timeout_seconds, movement_mode=movement_mode, execution_policy=args.execution_policy)
     completed_results: Dict[Path, Dict[str, Any]] = {}
     try:
         store.summary_path = summary_output_path(output_dir, args.base_line)
@@ -1353,6 +1382,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             temp_metrics_dir=store.run_dir,
             timeout_seconds=timeout_seconds,
             movement_mode=movement_mode,
+            execution_policy=execution_policy,
             save_all_stdout=args.save_all_stdout,
             run_id=run_id,
             result_store=store,
@@ -1363,6 +1393,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
         store.summary_metadata = build_summary(results, start_time, base_line=args.base_line,
             discovery_root=discovery_root, timeout_seconds=timeout_seconds, movement_mode=movement_mode,
+            execution_policy=execution_policy,
             timeout_retry_tasks=timeout_retry_tasks, process_cleanup_events=process_cleanup_events)
         summary = store.write_summary("completed")
     except (KeyboardInterrupt, SystemExit):

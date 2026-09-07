@@ -1,0 +1,233 @@
+Phase 1 started with 1 robot queue(s).
+Tick 0: robot1 completed OpenObject.
+Tick 1: robot1 completed CloseObject.
+.Phase 1 started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: teleport failed
+Tick 1: robot1 failed Teleport: teleport failed
+Tick 2: robot1 completed CloseObject.
+.Phase 1 started with 2 robot queue(s).
+Tick 0: robot1 failed OpenObject: open failed
+Tick 1: robot2 completed PickupObject.
+Tick 2: robot1 completed CloseObject.
+Tick 3: robot2 completed PutObject.
+.Phase 1 started with 2 robot queue(s).
+Tick 0: robot1 failed OpenObject: open failed
+Tick 1: robot2 completed PickupObject.
+.Phase 1 started with 1 robot queue(s).
+Tick 0: robot1 failed OpenObject: open failed
+.Phase 1 started with 1 robot queue(s).
+Tick 0: robot1 failed Wait: robot1 timed out waiting for Wait.
+Tick 0: robot1 completed CloseObject.
+............F...usage: python -m unittest [-h] [--runner-mode]
+                          [--metrics-output METRICS_OUTPUT]
+                          [--timeout-seconds TIMEOUT_SECONDS]
+                          [--movement-mode {teleport,step}]
+python -m unittest: error: argument --movement-mode: invalid choice: 'warp' (choose from 'teleport', 'step')
+.........................usage: python -m unittest [-h] [--root ROOT] [--parallel-run PARALLEL_RUN]
+                          [--base-line {LaMMA-P,SMART-LLM,Scale-Plan,KGLAMP,COT}]
+                          [--py-dir PY_DIR] [--max-workers MAX_WORKERS]
+                          [--timeout-seconds TIMEOUT_SECONDS]
+                          [--startup-grace-seconds STARTUP_GRACE_SECONDS]
+                          [--finalization-grace-seconds FINALIZATION_GRACE_SECONDS]
+                          [--termination-grace-seconds TERMINATION_GRACE_SECONDS]
+                          [--movement-mode {teleport,step}]
+                          [--output-dir OUTPUT_DIR] [--save-all-stdout]
+                          [--rebuild-summary RUN_DIR]
+                          [executable_plans ...]
+python -m unittest: error: argument --startup-grace-seconds: must be a finite positive number
+usage: python -m unittest [-h] [--root ROOT] [--parallel-run PARALLEL_RUN]
+                          [--base-line {LaMMA-P,SMART-LLM,Scale-Plan,KGLAMP,COT}]
+                          [--py-dir PY_DIR] [--max-workers MAX_WORKERS]
+                          [--timeout-seconds TIMEOUT_SECONDS]
+                          [--startup-grace-seconds STARTUP_GRACE_SECONDS]
+                          [--finalization-grace-seconds FINALIZATION_GRACE_SECONDS]
+                          [--termination-grace-seconds TERMINATION_GRACE_SECONDS]
+                          [--movement-mode {teleport,step}]
+                          [--output-dir OUTPUT_DIR] [--save-all-stdout]
+                          [--rebuild-summary RUN_DIR]
+                          [executable_plans ...]
+python -m unittest: error: argument --finalization-grace-seconds: must be a finite positive number
+usage: python -m unittest [-h] [--root ROOT] [--parallel-run PARALLEL_RUN]
+                          [--base-line {LaMMA-P,SMART-LLM,Scale-Plan,KGLAMP,COT}]
+                          [--py-dir PY_DIR] [--max-workers MAX_WORKERS]
+                          [--timeout-seconds TIMEOUT_SECONDS]
+                          [--startup-grace-seconds STARTUP_GRACE_SECONDS]
+                          [--finalization-grace-seconds FINALIZATION_GRACE_SECONDS]
+                          [--termination-grace-seconds TERMINATION_GRACE_SECONDS]
+                          [--movement-mode {teleport,step}]
+                          [--output-dir OUTPUT_DIR] [--save-all-stdout]
+                          [--rebuild-summary RUN_DIR]
+                          [executable_plans ...]
+python -m unittest: error: argument --termination-grace-seconds: must be a finite positive number
+usage: python -m unittest [-h] [--runner-mode]
+                          [--metrics-output METRICS_OUTPUT]
+                          [--timeout-seconds TIMEOUT_SECONDS]
+                          [--movement-mode {teleport,step}]
+python -m unittest: error: argument --timeout-seconds: must be a finite positive number
+.......E...E....usage: python -m unittest [-h] [--root ROOT] [--parallel-run PARALLEL_RUN]
+                          [--base-line {LaMMA-P,SMART-LLM,Scale-Plan,KGLAMP,COT}]
+                          [--py-dir PY_DIR] [--max-workers MAX_WORKERS]
+                          [--timeout-seconds TIMEOUT_SECONDS]
+                          [--startup-grace-seconds STARTUP_GRACE_SECONDS]
+                          [--finalization-grace-seconds FINALIZATION_GRACE_SECONDS]
+                          [--termination-grace-seconds TERMINATION_GRACE_SECONDS]
+                          [--movement-mode {teleport,step}]
+                          [--output-dir OUTPUT_DIR] [--save-all-stdout]
+                          [--rebuild-summary RUN_DIR]
+                          [executable_plans ...]
+python -m unittest: error: unrecognized arguments: --write-individual-results
+.success: /tmp/tmpjkajhea0/baselines/SMART-LLM/logs/2/first/plan_to_code/executable_plan.py
+success: /tmp/tmpjkajhea0/baselines/SMART-LLM/logs/2/second/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpjkajhea0/runner_results/SMART-LLM_0908_01.json
+failed: /tmp/tmp2mxhd24a/failed/plan_to_code/executable_plan.py
+success: /tmp/tmp2mxhd24a/success/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmp2mxhd24a/runner_results/0908_01.json
+failed: /tmp/tmpn8vcn33t/failed/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpn8vcn33t/runner_results/0908_01.json
+success: /tmp/tmpqf3pjkcr/first.py
+success: /tmp/tmpk4avax8v/baselines/KGLAMP/logs/intermediate_runs/unit_set/task/run/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpk4avax8v/runner_results/KGLAMP_0908_01.json
+success: /tmp/tmpclry4l6r/baselines/KGLAMP/logs/intermediate_runs/unit_set/first/plan_to_code/executable_plan.py
+success: /tmp/tmpclry4l6r/baselines/KGLAMP/logs/intermediate_runs/unit_set/second/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpclry4l6r/runner_results/KGLAMP_0908_01.json
+success: /tmp/tmpy2pbo7c_/baselines/LaMMA-P/logs/intermediate_runs/test_set/task/run/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpy2pbo7c_/runner_results/LaMMA-P_0908_01.json
+timeout: /tmp/tmpc00djr8_/slow/plan_to_code/executable_plan.py
+success: /tmp/tmpc00djr8_/fast/plan_to_code/executable_plan.py
+success: /tmp/tmpc00djr8_/slow/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpc00djr8_/runner_results/0908_01.json
+success: /tmp/tmpljhkwq0n/logs/intermediate_runs/selected/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpljhkwq0n/runner_results/0908_01.json
+success: /tmp/tmp_ao8j6gh/run/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmp_ao8j6gh/runner_results/0908_01.json
+success: /tmp/tmpievr5rsf/generated/direct.py
+Summary saved to: /tmp/tmpievr5rsf/runner_results/0908_01.json
+success: /tmp/tmpkwrszqte/generated/first.py
+success: /tmp/tmpkwrszqte/generated/second.py
+Summary saved to: /tmp/tmpkwrszqte/runner_results/0908_01.json
+success: /tmp/tmpa_5_x72d/plan_to_code/executable_plan.py
+success: /tmp/tmpz2yqg4uo/run/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpz2yqg4uo/runner_results/0908_01.json
+success: /tmp/tmpzj29lqrt/run/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpzj29lqrt/runner_results/0908_01.json
+success: /tmp/tmphb9ciint/a/plan_to_code/executable_plan.py
+success: /tmp/tmphb9ciint/b/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmphb9ciint/runner_results/0908_01.json
+success: /tmp/tmp79fgh8j2/run/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmp79fgh8j2/runner_results/0908_01.json
+success: /tmp/tmp6ko5brkx/baselines/Scale-Plan/logs/intermediate_runs/unit_set/task/run/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmp6ko5brkx/runner_results/Scale-Plan_0908_01.json
+success: /tmp/tmpz2agfi6_/baselines/Scale-Plan/logs/intermediate_runs/unit_set/second/plan_to_code/executable_plan.py
+success: /tmp/tmpz2agfi6_/baselines/Scale-Plan/logs/intermediate_runs/unit_set/first/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpz2agfi6_/runner_results/Scale-Plan_0908_01.json
+success: /tmp/tmpk6ke_3yu/baselines/SMART-LLM/logs/2/task/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpk6ke_3yu/runner_results/SMART-LLM_0908_01.json
+success: /tmp/tmpc29zz8ww/run/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpc29zz8ww/runner_results/0908_01.json
+success: /tmp/tmpttilszs4/run/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpttilszs4/runner_results/1231_02.json
+success: /tmp/tmpiopbgl31/fast/plan_to_code/executable_plan.py
+timeout: /tmp/tmpiopbgl31/slow/plan_to_code/executable_plan.py
+timeout: /tmp/tmpiopbgl31/slow/plan_to_code/executable_plan.py
+timeout: /tmp/tmpiopbgl31/slow/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpiopbgl31/runner_results/0908_01.json
+timeout: /tmp/tmpiz2mpsff/slow/plan_to_code/executable_plan.py
+timeout: /tmp/tmpiz2mpsff/slow/plan_to_code/executable_plan.py
+timeout: /tmp/tmpiz2mpsff/slow/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpiz2mpsff/runner_results/0908_01.json
+success: /tmp/tmp6a2jdznu/fast/plan_to_code/executable_plan.py
+timeout: /tmp/tmp6a2jdznu/slow/plan_to_code/executable_plan.py
+success: /tmp/tmp6a2jdznu/slow/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmp6a2jdznu/runner_results/0908_01.json
+Going to Apple Apple|+01.00|+00.90|+00.00 at reachable position {'x': 0.75, 'y': 0.0, 'z': 0.0}.
+Reached: Apple
+.Going to Apple Apple|+01.10|+00.90|+00.00 at reachable position {'x': 1.25, 'y': 0.0, 'z': 0.0}.
+Reached: Apple
+.....Phase 1 started with 1 robot queue(s).
+Tick 0: robot1 failed OpenObject: action failed
+.Phase 1 started with 1 robot queue(s).
+Tick 0: robot1 completed Wait.
+.Phase 1 started with 1 robot queue(s).
+Tick 0: robot1 completed Wait.
+.Phase 1 started with 1 robot queue(s).
+Tick 0: robot1 completed Wait.
+.Phase 1 started with 1 robot queue(s).
+Tick 1: robot1 completed GoToObject.
+.named-stage started with 1 robot queue(s).
+Tick 0: robot1 completed OpenObject.
+.Phase 1 started with 1 robot queue(s).
+Tick 0: robot1 failed PickupObject: InvalidOperationException: Picking up object would cause it to collide and clip into something!
+Tick 1: robot1 completed PutObject.
+.Phase 1 started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: teleport failed
+Tick 1: robot1 failed Teleport: teleport failed
+Tick 2: robot1 completed CloseObject.
+.Phase 1 started with 2 robot queue(s).
+Tick 0: robot1 failed OpenObject: open failed
+Tick 1: robot2 completed PickupObject.
+Tick 2: robot1 completed CloseObject.
+Tick 3: robot2 completed PutObject.
+.Phase 1 started with 1 robot queue(s).
+Tick 0: robot1 failed TeleportObjectToHand: teleport failed
+Tick 1: robot1 completed PickupObject.
+.Phase 1 started with 1 robot queue(s).
+Tick 0: robot1 failed OpenObject: open failed
+...F.........E..E....
+======================================================================
+ERROR: test_strict_policy_reaches_child_and_failure_records (tests.test_parallel_runner.ParallelRunnerCliTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/coder-executor-batch-2/tests/test_parallel_runner.py", line 595, in test_strict_policy_reaches_child_and_failure_records
+    result = run_generated_executable(script, metrics_output=root/'result.json',
+TypeError: run_generated_executable() got an unexpected keyword argument 'execution_policy'
+
+======================================================================
+ERROR: test_summary_separates_scheduler_versions (tests.test_parallel_runner.ParallelRunnerCliTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/coder-executor-batch-2/tests/test_parallel_runner.py", line 606, in test_summary_separates_scheduler_versions
+    self.assertEqual({g['scheduler_version'] for g in groups}, {1, 2})
+  File "/tmp/coder-executor-batch-2/tests/test_parallel_runner.py", line 606, in <setcomp>
+    self.assertEqual({g['scheduler_version'] for g in groups}, {1, 2})
+KeyError: 'scheduler_version'
+
+======================================================================
+ERROR: test_scheduler_two_semantic_failure_keeps_trustworthy_goal_evaluation (tests.test_run_result_contract.ResultValidationContractTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/coder-executor-batch-2/tests/test_run_result_contract.py", line 86, in test_scheduler_two_semantic_failure_keeps_trustworthy_goal_evaluation
+    checked = validate_result(result, returncode=0, expected_identity={})
+  File "/tmp/coder-executor-batch-2/scripts/executor_system/run_results.py", line 199, in validate_result
+    raise ValueError(f"unsupported {field}: expected one of {allowed}")
+ValueError: unsupported execution_policy: expected one of ('legacy',)
+
+======================================================================
+ERROR: test_store_separates_scheduler_versions (tests.test_run_result_contract.ResultValidationContractTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/coder-executor-batch-2/tests/test_run_result_contract.py", line 106, in test_store_separates_scheduler_versions
+    self.assertEqual({g['scheduler_version'] for g in store.rebuild_summary()['groups']}, {1, 2})
+  File "/tmp/coder-executor-batch-2/tests/test_run_result_contract.py", line 106, in <setcomp>
+    self.assertEqual({g['scheduler_version'] for g in store.rebuild_summary()['groups']}, {1, 2})
+KeyError: 'scheduler_version'
+
+======================================================================
+FAIL: test_execution_policy_cli_defaults_and_rejection (tests.test_parallel_runner.ParallelRunnerCliTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/coder-executor-batch-2/tests/test_parallel_runner.py", line 585, in test_execution_policy_cli_defaults_and_rejection
+    self.assertEqual(getattr(parser([]), 'execution_policy', None), 'legacy')
+AssertionError: None != 'legacy'
+
+======================================================================
+FAIL: test_policy_option_and_scheduler_groups (tests.test_movement_benchmark.MovementBenchmarkThresholdTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/coder-executor-batch-2/tests/test_movement_benchmark.py", line 220, in test_policy_option_and_scheduler_groups
+    self.assertEqual(getattr(parse_arguments([]), 'execution_policy', None), 'legacy')
+AssertionError: None != 'legacy'
+
+----------------------------------------------------------------------
+Ran 100 tests in 3.516s
+
+FAILED (failures=2, errors=4)

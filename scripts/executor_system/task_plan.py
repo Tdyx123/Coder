@@ -167,10 +167,10 @@ class TaskPlanParser:
 _DEFAULT_TIMEOUT = object()
 
 
-def run_action_plan(plan: TaskPlan, *, timeout_seconds=_DEFAULT_TIMEOUT) -> None:
+def run_action_plan(plan: TaskPlan, *, timeout_seconds=_DEFAULT_TIMEOUT, execution_policy="legacy") -> None:
     runtime = get_runtime()
     if timeout_seconds is _DEFAULT_TIMEOUT:
         from .movement import MovementConfig, MovementMode
         mode = getattr(runtime, 'movement_config', None) or MovementConfig.resolve(None)
         timeout_seconds = 30.0 if mode.mode == MovementMode.TELEPORT else 120.0
-    TaskRunner(runtime).execute(plan, timeout_seconds=timeout_seconds)
+    TaskRunner(runtime, execution_policy=execution_policy).execute(plan, timeout_seconds=timeout_seconds)

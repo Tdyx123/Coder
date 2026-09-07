@@ -190,19 +190,24 @@ def validate_result(
     # completion is committed or an attempt can replace an earlier result.
     grouping_labels = {
         "movement_mode": ("step", ("step", "teleport")),
-        "execution_policy": ("legacy", ("legacy",)),
+        "execution_policy": ("legacy", ("legacy", "strict")),
         "evaluation_version": ("legacy_v1", ("legacy_v1", "fixed_goals_v2")),
     }
     for field, (default, allowed) in grouping_labels.items():
         label = result.get(field, default)
         if not isinstance(label, str) or label not in allowed:
             raise ValueError(f"unsupported {field}: expected one of {allowed}")
+    scheduler = result.get("scheduler_version", 1)
+    if type(scheduler) is not int or scheduler not in (1, 2):
+        raise ValueError("unsupported scheduler_version")
     is_v2 = version == 2
     if is_v2:
         if result.get("evaluation_version") != "fixed_goals_v2":
             raise ValueError("v2 result must use evaluation_version=fixed_goals_v2")
-        if result.get("execution_policy") != "legacy":
-            raise ValueError("v2 result must use execution_policy=legacy")
+        if result.get("execution_policy") not in {"legacy", "strict"}:
+            raise ValueError("v2 result requires an explicit execution_policy")
+        if result["execution_policy"] == "strict" and scheduler != 2:
+            raise ValueError("strict v2 result requires scheduler_version=2")
         for key, expected in expected_identity.items():
             if result.get(key) != expected:
                 raise ValueError(f"v2 result {key} does not match parent identity")
@@ -285,7 +290,12 @@ def _validate_completed_v2(result: Mapping[str, Any]) -> None:
     if evaluation_status not in {"valid", "invalid", "incomplete"}:
         raise ValueError("invalid v2 evaluation_status")
     if evaluation_status == "valid":
-        if result.get("execution_status") not in {"completed", "partial"}:
+        allowed_execution = {"completed", "partial"}
+        if result.get("scheduler_version") == 2:
+            if result.get("execution_quiescent") is not True:
+                raise ValueError("valid scheduler2 evaluation requires quiescent execution")
+            allowed_execution.add("failed")
+        if result.get("execution_status") not in allowed_execution:
             raise ValueError("valid evaluation requires completed execution")
         for name in ("gcr", "tc", "sr", "ru"):
             value = result.get(name)
@@ -443,9 +453,10 @@ class RunResultStore:
             grouped: Dict[tuple, Dict[str, Any]] = {}
             for result in results:
                 key = (result.get("metrics_schema_version", 1), result["evaluation_version"],
-                       result.get("execution_policy", "legacy"), result.get("movement_mode", "step"))
+                       result.get("execution_policy", "legacy"), result.get("movement_mode", "step"),
+                       result.get("scheduler_version", 1))
                 group = grouped.setdefault(key, dict(metrics_schema_version=key[0], evaluation_version=key[1],
-                    execution_policy=key[2], movement_mode=key[3], task_count=0, total_task_count=0,
+                    execution_policy=key[2], movement_mode=key[3], scheduler_version=key[4], task_count=0, total_task_count=0,
                     valid_evaluation_count=0, task_success_count=0))
                 group["task_count"] += 1
                 group["total_task_count"] += 1

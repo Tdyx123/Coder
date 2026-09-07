@@ -1,0 +1,16 @@
+F
+======================================================================
+FAIL: test_unquiescent_report_does_not_evaluate_or_commit_done (tests.test_execution_policy_cli.ExecutionPolicyCliTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/coder-executor-batch-2/tests/test_execution_policy_cli.py", line 67, in test_unquiescent_report_does_not_evaluate_or_commit_done
+    step.assert_not_called()
+  File "/home/dwb/.pyenv/versions/miniconda3-3.9-25.9.1-3/lib/python3.9/unittest/mock.py", line 868, in assert_not_called
+    raise AssertionError(msg)
+AssertionError: Expected 'step' to not have been called. Called 1 times.
+Calls: [call({'action': 'Done'}, check_success=False, save_frame=False)].
+
+----------------------------------------------------------------------
+Ran 1 test in 0.007s
+
+FAILED (failures=1)

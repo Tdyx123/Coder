@@ -610,3 +610,9 @@ problem_repair:
 The optional Problem repair pass is disabled by default. It uses only generated
 Problem text and the corresponding in-memory Domain text; it does not invoke a
 planner, VAL, subprocess, or another LLM call.
+
+### 执行策略与第二批回归
+
+共享生成运行时、parallel_runner 与 benchmark 接受 `--execution-policy legacy|strict`，默认 legacy，无同名环境覆盖；strict 按动作与阶段失败策略停止工作。benchmark 在输出父目录下按策略分目录。普通/容错入口使用同一调度循环。
+
+运行 `bash reports/executor_batch_2/verify.sh` 验证第一批兼容与新增集合；运行 `python reports/executor_batch_2/semantic_examples.py` 复现三个带完整报告的确定性语义例子。Python 请使用 `/home/dwb/.pyenv/bin/pyenv exec python`。结果、资源需求、快照接口和独立的真实 Unity 验收说明见 [第二批文档](../docs/executor_batch_2.md)。

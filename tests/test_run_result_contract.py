@@ -70,6 +70,41 @@ class ActionLedgerContractTest(unittest.TestCase):
 
 
 class ResultValidationContractTest(unittest.TestCase):
+    @staticmethod
+    def scheduler_result(**changes):
+        return dict(metrics_schema_version=2, evaluation_version='fixed_goals_v2',
+            execution_policy='strict', scheduler_version=2, run_id='run', task_key='a'*64,
+            attempt=1, execution_status='failed', execution_quiescent=True,
+            evaluation_status='valid', task_success=True, gcr=1.0, tc=1, sr=1, ru=1,
+            original_goal_count=1, satisfied_goal_count=1,
+            action_counts=dict(planned=0, started=0, succeeded=0, failed=0, skipped=0,
+                               cancelled=0, unexecuted=0, attempts=0),
+            raw_action_sr=None, ignored_failure_count=0, **changes)
+
+    def test_scheduler_two_semantic_failure_keeps_trustworthy_goal_evaluation(self):
+        result = self.scheduler_result()
+        checked = validate_result(result, returncode=0, expected_identity={})
+        self.assertEqual(checked['execution_status'], 'failed')
+        self.assertTrue(checked['task_success'])
+
+    def test_scheduler_version_and_quiescence_are_validated(self):
+        for change in ({'scheduler_version': True}, {'scheduler_version': 3},
+                       {'scheduler_version': '2'}, {'execution_quiescent': False},
+                       {'execution_quiescent': None}, {'execution_status': 'timeout'},
+                       {'execution_status': 'cancelled'}, {'scheduler_version': 1}):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                validate_result({**self.scheduler_result(), **change}, returncode=0, expected_identity={})
+
+    def test_store_separates_scheduler_versions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = RunResultStore(Path(directory), 'run')
+            for version in (1, 2):
+                result = self.scheduler_result()
+                result.update(execution_policy='legacy', execution_status='completed',
+                              scheduler_version=version, task_key=str(version)*64, returncode=0)
+                store.record_attempt(result['task_key'], 1, result)
+            self.assertEqual({g['scheduler_version'] for g in store.rebuild_summary()['groups']}, {1, 2})
+
     def test_v2_identity_must_match_parent_environment(self):
         result = {
             "metrics_schema_version": 2,

@@ -215,6 +215,15 @@ class MovementBenchmarkThresholdTest(unittest.TestCase):
 
         self.assertEqual(acceptance_failures(report), [])
 
+    def test_policy_option_and_scheduler_groups(self):
+        from scripts.benchmark_movement_modes import parse_arguments
+        self.assertEqual(getattr(parse_arguments([]), 'execution_policy', None), 'legacy')
+        self.assertEqual(parse_arguments(['--execution-policy', 'strict']).execution_policy, 'strict')
+        manifest, results = self.baseline_inputs()
+        results[0]['scheduler_version'] = 2
+        report = build_benchmark_report(manifest, results)
+        self.assertEqual({g['scheduler_version'] for g in report['result_groups']}, {1, 2})
+
     def test_report_keeps_v2_result_groups_separate_by_metric_contract(self):
         manifest, results = self.baseline_inputs()
         results[0].update(

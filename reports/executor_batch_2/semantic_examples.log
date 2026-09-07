@@ -1,0 +1,4 @@
+legacy_pickup_failure [['robot1', 'PickupObject'], ['robot2', 'OpenObject'], ['robot1', 'OpenObject'], ['robot2', 'CloseObject'], ['robot1', 'CloseObject']] partial
+strict_pickup_failure [['robot1', 'PickupObject'], ['robot2', 'OpenObject'], ['robot2', 'CloseObject']] failed
+step_A_waits_for_B [['robot2', 'GoToObject'], ['robot1', 'Wait']] completed
+reports/executor_batch_2/semantic_examples.json
