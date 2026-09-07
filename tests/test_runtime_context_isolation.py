@@ -286,5 +286,53 @@ class ExplicitServiceIsolationTest(unittest.TestCase):
         self.assertEqual(effects, [])
 
 
+class EggHelperExtractionRegressionTest(unittest.TestCase):
+    def test_valid_egg_helpers_execute_break_for_compatibility_and_explicit_services(self):
+        import io
+        from contextlib import redirect_stdout
+        from executor_system.object_interactor import ObjectInteractor
+        from tests.test_executor_retry_policy import object_action_runtime
+        for helper_name, args in (('BreakEgg', ('Egg',)), ('PrepareEgg', ('Egg', 'Pan'))):
+            for path in ('compatibility', 'explicit'):
+                with self.subTest(helper=helper_name, path=path):
+                    runtime, calls = object_action_runtime([{
+                        'objectId': 'Egg|1', 'objectType': 'Egg', 'name': 'Egg',
+                        'visible': True, 'breakable': True, 'isBroken': False}])
+                    simulator_step = runtime.step
+                    def break_step(payload, **kwargs):
+                        if payload.get('action') == 'BreakObject':
+                            runtime._test_state['objects'][0]['isBroken'] = True
+                        return simulator_step(payload, **kwargs)
+                    runtime.step = break_step
+                    runtime.evaluation_context = EvaluationContext.from_goals([
+                        {'name': 'Egg', 'states': ['BROKEN']}])
+                    helper_owner = actions if path == 'compatibility' else ObjectInteractor(runtime)
+                    output = io.StringIO()
+                    with redirect_stdout(output), context.bind_runtime(runtime if path == 'compatibility' else object()):
+                        getattr(helper_owner, helper_name)('robot1', *args)
+                    self.assertEqual(output.getvalue().count("Could not find a current object for alias 'Egg'"), 1)
+                    self.assertEqual(calls, [{'action': 'BreakObject', 'objectId': 'Egg|1',
+                                              'agentId': 0, 'objectResources': ['Egg|1']}])
+                    self.assertEqual(runtime.success_exec, 1)
+                    self.assertTrue(runtime.current_objects()[0]['isBroken'])
+                    self.assertTrue(runtime.evaluation_context.has_observation('Egg', 'BROKEN'))
+
+    def test_non_egg_helpers_reject_before_object_effects(self):
+        from executor_system.object_interactor import ObjectInteractor
+        from tests.test_executor_retry_policy import object_action_runtime
+        for helper_name, args in (('BreakEgg', ('Tomato',)), ('PrepareEgg', ('Tomato', 'Pan'))):
+            for path in ('compatibility', 'explicit'):
+                with self.subTest(helper=helper_name, path=path):
+                    runtime, calls = object_action_runtime([{
+                        'objectId': 'Tomato|1', 'objectType': 'Tomato', 'name': 'Tomato',
+                        'visible': True, 'breakable': True, 'isBroken': False}])
+                    helper_owner = actions if path == 'compatibility' else ObjectInteractor(runtime)
+                    with context.bind_runtime(runtime if path == 'compatibility' else object()):
+                        with self.assertRaisesRegex(RuntimeError, 'only target Egg'):
+                            getattr(helper_owner, helper_name)('robot1', *args)
+                    self.assertEqual(calls, [])
+                    self.assertEqual(runtime.total_exec, 0)
+
+
 if __name__ == '__main__':
     unittest.main()

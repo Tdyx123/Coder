@@ -4,7 +4,7 @@ import threading
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from .config import PLACEMENT_RESTRICTIONS
-from .utils import RobotRef, event_error_message, is_egg_query, matches_object, object_center, object_distance, object_key, operated_object_name, stable_object_name, step_event_failed, log
+from .utils import RobotRef, event_error_message, is_egg_query, matches_object, object_center, object_distance, object_key, operated_object_name, stable_object_name, step_event_failed, require_break_egg_target, log
 from .execution_control import raise_if_execution_aborted
 from .goals import record_verified_goal_state
 

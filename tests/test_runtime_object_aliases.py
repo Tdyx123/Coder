@@ -610,5 +610,50 @@ class RuntimeObjectAliasTest(unittest.TestCase):
         )
 
 
+class ResolverExceptionRegressionTest(unittest.TestCase):
+    def runtime_with_failed_object_read(self, error):
+        runtime = runtime_with_objects([{'objectId': 'Mug|1', 'objectType': 'Mug'}])
+        runtime.register_object_id_bindings([
+            {'object': 'Mug_1', 'object_id': 'Mug|1', 'object_type': 'Mug'}])
+        def fail_read(agent_id=None):
+            raise error
+        runtime.current_objects = fail_read
+        return runtime
+
+    def test_optional_lookup_preserves_cancellation_and_timeout(self):
+        from executor_system.execution_control import ExecutionCancelled, PlanExecutionTimeout
+        for error in (ExecutionCancelled('cancelled read'), PlanExecutionTimeout('expired read')):
+            with self.subTest(error=type(error).__name__):
+                runtime = self.runtime_with_failed_object_read(error)
+                with self.assertRaises(type(error)) as raised:
+                    runtime._current_object_by_id_optional(0, 'Mug|1')
+                self.assertIs(raised.exception, error)
+
+    def test_alias_repair_preserves_cancellation_and_timeout(self):
+        from executor_system.execution_control import ExecutionCancelled, PlanExecutionTimeout
+        for error in (ExecutionCancelled('cancelled repair'), PlanExecutionTimeout('expired repair')):
+            with self.subTest(error=type(error).__name__):
+                runtime = self.runtime_with_failed_object_read(error)
+                with self.assertRaises(type(error)) as raised:
+                    runtime.repair_object_alias('Mug_1', agent_id=0)
+                self.assertIs(raised.exception, error)
+                self.assertEqual(runtime.object_alias_bindings['Mug_1']['object_id'], 'Mug|1')
+
+    def test_optional_lookup_returns_none_for_ordinary_read_failure(self):
+        runtime = self.runtime_with_failed_object_read(RuntimeError('metadata unavailable'))
+        self.assertIsNone(runtime._current_object_by_id_optional(0, 'Mug|1'))
+
+    def test_alias_repair_warns_once_for_ordinary_read_failure(self):
+        import io
+        from contextlib import redirect_stdout
+        runtime = self.runtime_with_failed_object_read(RuntimeError('metadata unavailable'))
+        output = io.StringIO()
+        with redirect_stdout(output):
+            self.assertIsNone(runtime.repair_object_alias('Mug_1', agent_id=0))
+            self.assertIsNone(runtime.repair_object_alias('Mug_1', agent_id=0))
+        self.assertEqual(output.getvalue().count("Could not find a current object for alias 'Mug_1'"), 1)
+        self.assertEqual(runtime.object_alias_bindings['Mug_1']['object_id'], 'Mug|1')
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -2,6 +2,7 @@
 import threading
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
+from .execution_control import raise_if_execution_aborted
 from .utils import distance_pts, is_broken_egg_object, is_egg_query, is_sliced_food_object_for_base, matches_object, object_center, object_distance, object_key, object_mass, operated_object_name, operated_object_name_candidate_keys, operated_sliced_food_query_rank, position_to_tuple, sliceable_food_query_key, log
 
 
