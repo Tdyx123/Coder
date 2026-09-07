@@ -5,7 +5,8 @@ There is no worker thread or controller copy here: replacements on the runtime
 remain visible, and snapshots share the same controller lock and version.
 """
 from typing import Any, Dict
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
+import threading
 from .runtime_metrics import metrics_for
 
 from .execution_control import ensure_control, ExecutionShutdownTimeout
@@ -14,6 +15,23 @@ from .execution_control import ensure_control, ExecutionShutdownTimeout
 class ControllerClient:
     def __init__(self, runtime):
         self.runtime = runtime
+        self._notification_state = threading.local()
+
+    @contextmanager
+    def world_read_scope(self):
+        """Keep query evidence atomic and notify only after the outer unlock."""
+        state = self._notification_state
+        state.depth = getattr(state, 'depth', 0) + 1
+        try:
+            with self.runtime.controller_lock:
+                yield
+        finally:
+            state.depth -= 1
+            if state.depth == 0 and getattr(state, 'pending', False):
+                state.pending = False
+                scheduler = getattr(self.runtime, 'stage_scheduler', None)
+                if scheduler is not None:
+                    scheduler.notify_world_changed()
 
     def step(
         self,
@@ -96,7 +114,10 @@ class ControllerClient:
             # Metadata/frame failures cannot undo an already published event.
             scheduler = getattr(runtime, "stage_scheduler", None)
             if committed and scheduler is not None:
-                scheduler.notify_world_changed()
+                if getattr(self._notification_state, 'depth', 0):
+                    self._notification_state.pending = True
+                else:
+                    scheduler.notify_world_changed()
         if check_success:
             runtime.assert_success(event, payload)
         return event

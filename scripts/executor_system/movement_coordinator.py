@@ -30,7 +30,8 @@ from multi_robot_avoidance import (
 )
 
 from .runtime_metrics import measured, metrics_for
-from .reachable_map import ReachableMapCache, RuntimeWorldSnapshot
+from .reachable_map import (ReachableMapCache, RuntimeWorldSnapshot,
+                            navigation_object_state)
 from .execution_control import raise_if_execution_aborted
 from .movement import (
     MovementConfig,
@@ -486,6 +487,35 @@ class StepMovementCoordinator:
             if state.result is None:
                 state.decision_trace.append(dict(event))
 
+    def _refresh_event_requests(self, active_states):
+        """Rebuild affected target candidates using the existing runtime resolver.
+
+        Fresh map evidence alone need not change a valid trajectory. A target's
+        own motion/geometry/identity can change its interaction candidates even
+        when the reachable grid is unchanged, so validate that separately.
+        """
+        for state in active_states.values():
+            if state.result is not None:
+                continue
+            request = state.request
+            targets = [(request.dest_obj, request.destination)]
+            if request.interaction_target is not None:
+                targets.append((request.interaction_target,
+                                request.interaction_destination or request.destination))
+            changed = any(
+                navigation_object_state(self.runtime.find_object(
+                    target, agent_id=request.agent_id, require_center=True))
+                != navigation_object_state(previous)
+                for target, previous in targets)
+            if not changed:
+                continue
+            state.request = self.runtime.build_navigation_request(
+                request.robot, request.dest_obj, next_action=request.next_action,
+                phase_coordinator=request.phase_coordinator, action_wave=request.action_wave)
+            state.excluded_candidate_keys.clear()
+            state.decision_trace.append({"event": "navigation_candidates_refreshed",
+                                         "reason": "target metadata changed"})
+
     def _plan_remains_walkable(
         self,
         plan,
@@ -501,6 +531,9 @@ class StepMovementCoordinator:
             return False
         return all(
             plan.assignment[str(agent_id)].position in walkable
+            and (self.config.reachable_refresh_mode != "event"
+                 or plan.assignment[str(agent_id)].position in {
+                     self._grid_point(position) for position in state.request.candidate_positions})
             for agent_id, state in active_states.items()
             if state.result is None
         )
@@ -513,15 +546,19 @@ class StepMovementCoordinator:
         parking_agent_ids: FrozenSet[int] = frozenset(),
     ) -> _ExecutionBoundary:
         latest = snapshot
+        scene_revision = self.reachable_map_cache.scene_revision
         for index, micro_step in enumerate(plan.micro_steps):
             self._check_deadline()
             agent_id = int(micro_step.robot_id)
             if self.config.reachable_refresh_mode == "event":
                 observed = self.refresh_world()
-                if observed.version != latest.version:
+                if self.reachable_map_cache.scene_revision != scene_revision:
+                    self._refresh_event_requests(active_states)
+                    scene_revision = self.reachable_map_cache.scene_revision
+                if not self._plan_remains_walkable(plan, index, observed, active_states):
                     return _ExecutionBoundary(
                         kind="map_changed", release_tick=micro_step.tick,
-                        snapshot=observed, reason="navigation topology changed before move")
+                        snapshot=observed, reason="remaining path or target candidate changed before move")
                 if observed.positions != latest.positions:
                     return _ExecutionBoundary(
                         kind="position_deviation", release_tick=micro_step.tick,
@@ -598,7 +635,6 @@ class StepMovementCoordinator:
                 self.metrics.increment("parking_moves")
             expected_positions = dict(latest.positions)
             expected_positions[agent_id] = micro_step.target
-            previous_version = latest.version
             if self.config.reachable_refresh_mode == "event":
                 self.reachable_map_cache.record_successful_step()
             latest = self.refresh_world()
@@ -624,10 +660,9 @@ class StepMovementCoordinator:
                     ),
                 )
             if (self.config.reachable_refresh_mode == "event"
-                    and latest.version != previous_version):
-                return _ExecutionBoundary(
-                    kind="map_changed", release_tick=micro_step.tick + 1,
-                    snapshot=latest, reason="navigation topology changed after move")
+                    and self.reachable_map_cache.scene_revision != scene_revision):
+                self._refresh_event_requests(active_states)
+                scene_revision = self.reachable_map_cache.scene_revision
             if not self._plan_remains_walkable(
                 plan,
                 index + 1,
@@ -842,6 +877,8 @@ class StepMovementCoordinator:
             first_refresh = True
             while any(state.result is None for state in active_states.values()):
                 snapshot = self.refresh_world(force=first_refresh)
+                if self.config.reachable_refresh_mode == "event":
+                    self._refresh_event_requests(active_states)
                 first_refresh = False
                 planning = self._plan(
                     active_states,

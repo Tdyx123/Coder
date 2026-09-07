@@ -26,6 +26,7 @@ class GridThorRuntime:
         self.query_responses = {}
         self.held_by_agent = {}
         self.objects_after_successful_moves = {}
+        self.navigation_candidates_by_object = {}
         self.actions = []
         self.position_history = [
             {
@@ -57,6 +58,17 @@ class GridThorRuntime:
             for agent_id, position in sorted(self.positions.items())
             if agent_id != exclude_agent_id
         ]
+
+    def build_navigation_request(self, robot, dest_obj, *, next_action=None,
+                                 phase_coordinator=None, action_wave=None):
+        from executor_system.movement import NavigationRequest
+        obj = self.find_object(dest_obj)
+        return NavigationRequest(
+            robot=robot, agent_id=self.physical_agent_id(robot), dest_obj=dest_obj,
+            destination=obj, center=dict(obj['position']),
+            candidate_positions=tuple(self.navigation_candidates_by_object[dest_obj]),
+            object_resource=obj['objectId'], next_action=next_action,
+            phase_coordinator=phase_coordinator, action_wave=action_wave)
 
     def current_objects(self, agent_id=None):
         return list(self.objects.values())

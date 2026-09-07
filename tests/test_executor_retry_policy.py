@@ -1,3 +1,5 @@
+import io
+from contextlib import redirect_stdout
 import sys
 import threading
 import unittest
@@ -1279,7 +1281,10 @@ class ExecutorRetryPolicyTest(unittest.TestCase):
         runtime.step = step
         runtime.navigate_to_object = navigate
 
-        runtime.object_action("SliceObject", "robot1", "Tomato")
+        output = io.StringIO()
+        with redirect_stdout(output):
+            runtime.object_action("SliceObject", "robot1", "Tomato")
+        self.assertIn("WARNING: Could not find a current object for alias 'Tomato'.", output.getvalue())
 
         self.assertEqual(len(navigation_calls), 1)
         self.assertEqual(navigation_calls[0][0:2], ("robot1", object_id))

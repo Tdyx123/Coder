@@ -1,6 +1,7 @@
 """Deterministic event/full navigation contracts at the real coordinator boundary."""
 import math
 import sys
+import threading
 import unittest
 from dataclasses import replace
 from pathlib import Path
@@ -47,6 +48,119 @@ class ReachableMapCacheTest(unittest.TestCase):
         self.assertEqual(full.reachable_queries, 13)
         self.assertLessEqual(event.reachable_queries, full.reachable_queries // 2)
         self.assertEqual(event.runtime.query_move_counts, [0, 4, 8, 12])
+
+    def test_continuous_object_motion_refreshes_without_replanning_unchanged_route(self):
+        for carried in (False, True):
+            runs = []
+            for mode in ('full', 'event'):
+                with self.subTest(carried=carried, mode=mode):
+                    runtime, request = navigation_case(
+                        walkable=[(x, 0) for x in range(13)], candidates=[(12, 0)])
+                    moving = {'objectId': 'Mug|moving', 'objectType': 'Mug',
+                              'position': thor_position(0, .5), 'isPickedUp': carried}
+                    runtime.objects['Mug|moving'] = moving
+                    if carried:
+                        runtime.held_by_agent[0] = {'Mug|moving'}
+                    for step in range(1, 13):
+                        runtime.objects_after_successful_moves[step] = {
+                            'Apple|1': dict(runtime.objects['Apple|1']),
+                            'Mug|moving': {**moving, 'position': thor_position(step * .25, .5)}}
+                    nav = coordinator(runtime, mode)
+                    result = nav.execute_batch((request,))
+                    self.assertEqual(result[0].position, thor_position(3.0))
+                    self.assertEqual(runtime.successful_move_count, 12)
+                    self.assertEqual(nav.metrics.replans, 0)
+                    # Motion still invalidates cached evidence at EVERY step.
+                    self.assertEqual(runtime.query_move_counts, list(range(13)))
+                    self.assertNotIn('Teleport', [action[0] for action in runtime.actions])
+                    runs.append(runtime)
+            if len(runs) == 2:
+                self.assertEqual(runs[0].actions, runs[1].actions)
+
+    def test_target_relocation_rebuilds_candidates_before_following_stale_route(self):
+        runtime, request = navigation_case(
+            walkable=[(x, 0) for x in range(13)], candidates=[(12, 0)])
+        runtime.objects_after_successful_moves[1] = {
+            'Apple|1': {**runtime.objects['Apple|1'], 'position': thor_position(1.0)}}
+        runtime.navigation_candidates_by_object['Apple|1'] = [thor_position(.75)]
+        nav = coordinator(runtime)
+        result = nav.execute_batch((request,))
+        self.assertEqual(result[0].position, thor_position(.75))
+        self.assertEqual(result[0].destination['position'], thor_position(1.0))
+        self.assertEqual(runtime.successful_move_count, 3)
+        self.assertEqual(nav.metrics.replans, 1)
+        self.assertIn(1, runtime.query_move_counts)
+
+    def test_changed_target_retains_path_when_current_candidate_is_still_valid(self):
+        runtime, request = navigation_case(
+            walkable=[(x, 0) for x in range(13)], candidates=[(12, 0)])
+        runtime.navigation_candidates_by_object['Apple|1'] = [thor_position(3.0)]
+        for step in range(1, 13):
+            runtime.objects_after_successful_moves[step] = {
+                'Apple|1': {**runtime.objects['Apple|1'], 'position': thor_position(3.25 + .001 * step)}}
+        nav = coordinator(runtime)
+        result = nav.execute_batch((request,))
+        self.assertEqual(result[0].position, thor_position(3.0))
+        self.assertEqual(result[0].destination['position'], thor_position(3.262))
+        self.assertEqual(nav.metrics.replans, 0)
+        self.assertEqual(runtime.query_move_counts, list(range(13)))
+
+    def test_unrelated_confirmed_map_removal_retains_valid_remaining_path(self):
+        runtime, request = navigation_case(
+            walkable=[(x, 0) for x in range(13)] + [(0, 1)], candidates=[(12, 0)])
+        runtime.walkable_after_successful_moves[1] = {
+            0: [thor_position(x * .25) for x in range(13)]}
+        runtime.objects_after_successful_moves[1] = {
+            **runtime.objects, 'Door|1': {'objectId': 'Door|1', 'isOpen': False}}
+        nav = coordinator(runtime)
+        result = nav.execute_batch((request,))
+        self.assertEqual(result[0].position, thor_position(3.0))
+        self.assertNotIn(GridPoint(0, 1), nav.walkable_map.walkable)
+        self.assertEqual(runtime.query_move_counts.count(1), 2)
+        self.assertEqual(nav.metrics.replans, 0)
+
+    def check_query_notification_unlock(self, *, fail_second_query):
+        from tests.test_world_snapshot import snapshot_runtime
+        runtime = snapshot_runtime()
+        runtime.reachable_refresh_mode = 'event'
+        runtime.configure_movement('step', environ={})
+        runtime.controller.next_event.metadata['actionReturn'] = [thor_position(x * .25) for x in range(5)]
+        observed = []
+        def notify():
+            acquired = []
+            def read_from_another_thread():
+                locked = runtime.controller_lock.acquire(timeout=.2)
+                acquired.append(locked)
+                if locked:
+                    runtime.controller_lock.release()
+            reader = threading.Thread(target=read_from_another_thread)
+            reader.start()
+            reader.join(timeout=1)
+            self.assertFalse(reader.is_alive())
+            observed.append((acquired, runtime.state_version))
+        runtime.stage_scheduler = SimpleNamespace(notify_world_changed=notify)
+        if fail_second_query:
+            original = runtime.controller.step
+            def submit(payload):
+                if runtime.state_version == 1:
+                    runtime.controller.next_event.metadata.update(
+                        lastActionSuccess=False, errorMessage='query rejected')
+                return original(payload)
+            runtime.controller.step = submit
+            with self.assertRaisesRegex(RuntimeError, 'query rejected'):
+                runtime.movement_strategy.coordinator.refresh_world()
+            self.assertTrue(runtime.execution_control.cancelled)
+        else:
+            runtime.movement_strategy.coordinator.refresh_world()
+        self.assertTrue(observed)
+        self.assertTrue(all(acquired == [True] for acquired, _ in observed), observed)
+        self.assertEqual(observed[-1][1], 2)
+
+    def test_all_agent_query_notifications_happen_after_outer_controller_unlock(self):
+        self.check_query_notification_unlock(fail_second_query=False)
+
+    def test_failed_query_still_notifies_after_outer_controller_unlock(self):
+        self.check_query_notification_unlock(fail_second_query=True)
 
     def test_two_robots_match_full_actions_and_preserve_spacing(self):
         runs = []
@@ -114,7 +228,7 @@ class ReachableMapCacheTest(unittest.TestCase):
                 runtime.objects['Apple|1'][field] = value
                 changed = nav.refresh_world()
                 self.assertEqual(runtime.reachable_queries, 2)
-                self.assertGreater(changed.version, first.version)
+                self.assertEqual(changed.version, first.version)
                 if field == 'isOpen':
                     runtime.objects['Apple|1'][field] = False
                     nav.refresh_world()
@@ -135,6 +249,7 @@ class ReachableMapCacheTest(unittest.TestCase):
     def test_two_missing_queries_remove_point_and_replan_before_using_it(self):
         cells = [(x, z) for x in range(7) for z in (0, 1)]
         runtime, request = navigation_case(walkable=cells, candidates=[(6, 0)])
+        runtime.navigation_candidates_by_object['Apple|1'] = list(request.candidate_positions)
         runtime.walkable_after_successful_moves[1] = {
             0: [thor_position(x * .25, z * .25) for x, z in cells if (x, z) != (4, 0)]}
         runtime.objects_after_successful_moves[1] = {'Apple|1': {
@@ -159,7 +274,7 @@ class ReachableMapCacheTest(unittest.TestCase):
         second = nav.refresh_world()
         self.assertIn(GridPoint(4, 0), second.walkable_map.walkable)
         self.assertEqual(runtime.reachable_queries, 3)
-        self.assertGreater(second.version, first.version)
+        self.assertEqual(second.version, first.version)
         self.assertEqual(runtime.runtime_metrics.snapshot()['counters'].get('reachable_confirmed_removals', 0), 0)
 
     def test_occupancy_suppression_is_temporary_and_recovers_when_robot_moves(self):

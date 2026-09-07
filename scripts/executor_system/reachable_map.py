@@ -24,6 +24,15 @@ class RuntimeWorldSnapshot:
     walkable_map: GlobalWalkableMap
 
 
+def navigation_object_state(obj):
+    """The metadata that can change navigation evidence or target candidates."""
+    fields = ('objectId', 'position', 'rotation', 'axisAlignedBoundingBox',
+              'objectOrientedBoundingBox', 'isOpen', 'openness',
+              'isPickedUp', 'isSliced', 'isBroken', 'parentReceptacles',
+              'receptacleObjectIds')
+    return {key: obj.get(key) for key in fields}
+
+
 class ReachableMapCache:
     def __init__(self, config, robot_ids):
         self.config = config
@@ -36,6 +45,7 @@ class ReachableMapCache:
         self._dirty = True
         self._successful_steps = 0
         self._initialized = False
+        self.scene_revision = 0
 
     def invalidate(self):
         self._dirty = True
@@ -78,15 +88,11 @@ class ReachableMapCache:
     def _navigation_fingerprint(self, runtime):
         # Visibility, distance, temperature, rotation of the camera, rendering,
         # frame IDs and actionReturn are intentionally absent.
-        fields = ('objectId', 'position', 'rotation', 'axisAlignedBoundingBox',
-                  'objectOrientedBoundingBox', 'isOpen', 'openness',
-                  'isPickedUp', 'isSliced', 'isBroken', 'parentReceptacles',
-                  'receptacleObjectIds')
         objects = {}
         for agent_id in range(int(runtime.physical_agent_count)):
             for obj in runtime.current_objects(agent_id):
                 object_id = str(obj.get('objectId', ''))
-                objects[(agent_id, object_id)] = {key: obj.get(key) for key in fields}
+                objects[(agent_id, object_id)] = navigation_object_state(obj)
         held = getattr(runtime, 'agent_held_objects_for', None)
         inventory = [sorted(held(agent_id)) if callable(held) else []
                      for agent_id in range(int(runtime.physical_agent_count))]
@@ -120,15 +126,18 @@ class ReachableMapCache:
             raise
 
     def refresh(self, runtime, *, force: bool) -> RuntimeWorldSnapshot:
-        # Coordinate metadata/positions and all query events under the same lock
-        # used to publish controller state. Runtime navigation owns an RLock.
-        with getattr(runtime, 'controller_lock', nullcontext()):
+        # Keep query evidence atomic, deferring scheduler notifications until
+        # the outer controller lock is released by ControllerClient.
+        client = getattr(runtime, '_get_controller_client', None)
+        scope = (client().world_read_scope() if callable(client)
+                 else getattr(runtime, 'controller_lock', nullcontext()))
+        with scope:
             return self._refresh_locked(runtime, force=force)
 
     def _refresh_locked(self, runtime, *, force):
         ensure_control(runtime).check()
         fingerprint = self._navigation_fingerprint(runtime)
-        topology_changed = self._initialized and fingerprint != self._fingerprint
+        metadata_changed = self._initialized and fingerprint != self._fingerprint
         try:
             positions, actuals = self._positions(runtime)
         except StepNavigationError:
@@ -138,7 +147,7 @@ class ReachableMapCache:
             raise
         occupancy = tuple((aid, actual['x'], actual['z']) for aid, actual in sorted(actuals.items()))
         occupancy_changed = occupancy != self._occupancy
-        refresh = (force or not self._initialized or self._dirty or topology_changed
+        refresh = (force or not self._initialized or self._dirty or metadata_changed
                    or self._successful_steps >= self.config.full_refresh_interval_steps
                    or (self._temporary and occupancy_changed))
         if refresh:
@@ -174,15 +183,18 @@ class ReachableMapCache:
             effective = {p: value for p, value in known.items()
                          if p not in temporary or p in positions.values()}
             if (not self._initialized or set(effective) != self.walkable_map.walkable
-                    or topology_changed or self._dirty or confirmed):
+                    or confirmed):
                 self.walkable_map.replace_all({
                     robot_id: list(effective.values()) for robot_id in self.walkable_map.robot_ids})
             self._known = known
             self._temporary = temporary
             self._successful_steps = 0
+            latest_fingerprint = self._navigation_fingerprint(runtime)
+            if self._dirty or latest_fingerprint != self._fingerprint:
+                self.scene_revision += 1
             self._dirty = False
             self._initialized = True
-            self._fingerprint = self._navigation_fingerprint(runtime)
+            self._fingerprint = latest_fingerprint
             self._occupancy = tuple((aid, actual['x'], actual['z']) for aid, actual in sorted(actuals.items()))
             if confirmed:
                 metrics_for(runtime).increment('reachable_confirmed_removals', len(confirmed))
