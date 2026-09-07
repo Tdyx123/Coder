@@ -303,6 +303,64 @@ class RunResultStorageTest(unittest.TestCase):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 validate_result(complete_result(run_id, key, **changes), returncode=0, expected_identity={})
 
+    def test_rebuild_falls_back_when_latest_grouping_fields_are_malformed(self):
+        malformed_fields = ({'movement_mode': []}, {'movement_mode': {}},
+                            {'movement_mode': 'warp'}, {'execution_policy': []},
+                            {'execution_policy': {}}, {'execution_policy': 'unknown'},
+                            {'evaluation_version': []}, {'evaluation_version': {}},
+                            {'evaluation_version': 'unknown'})
+        for version in (1, 2):
+            for changes in malformed_fields:
+                with self.subTest(version=version, changes=changes), tempfile.TemporaryDirectory() as temp:
+                    store = RunResultStore(Path(temp), uuid.uuid4().hex)
+                    key = task_key_for_executable(Path(temp) / 'plan.py')
+                    previous = complete_result(store.run_id, key, metrics_schema_version=version,
+                        evaluation_version='legacy_v1' if version == 1 else 'fixed_goals_v2',
+                        movement_mode='teleport')
+                    store.record_attempt(key, 1, previous)
+                    directory = store.start_attempt(key, 2)
+                    candidate = {**previous, 'attempt': 2, 'storage_status': 'completed', **changes}
+                    result_path = directory / 'result.json'
+                    atomic_write_json(result_path, candidate)
+                    log = directory / 'stdout.log'
+                    log.write_bytes(b'original diagnostic\xff')
+                    original_result = result_path.read_bytes()
+                    summary = store.rebuild_summary()
+                    self.assertEqual(summary['results'][0]['attempt'], 1)
+                    self.assertEqual(summary['groups'][0]['movement_mode'], 'teleport')
+                    self.assertEqual(summary['interrupted_attempts'][0]['attempt'], 2)
+                    self.assertEqual(summary['interrupted_attempts'][0]['status'], 'interrupted')
+                    self.assertEqual(log.read_bytes(), b'original diagnostic\xff')
+                    self.assertEqual(result_path.read_bytes(), original_result)
+
+    def test_record_rejects_malformed_grouping_fields_before_completion(self):
+        with tempfile.TemporaryDirectory() as temp:
+            store = RunResultStore(Path(temp), uuid.uuid4().hex)
+            key = task_key_for_executable(Path(temp) / 'plan.py')
+            attempt = 0
+            for version in (1, 2):
+                for changes in ({'movement_mode': []}, {'execution_policy': {}}, {'evaluation_version': []}):
+                    attempt += 1
+                    with self.subTest(version=version, changes=changes):
+                        candidate = complete_result(store.run_id, key, attempt, metrics_schema_version=version,
+                            evaluation_version='legacy_v1' if version == 1 else 'fixed_goals_v2')
+                        candidate.update(changes)
+                        with self.assertRaises(ValueError):
+                            store.record_attempt(key, attempt, candidate)
+                        self.assertFalse((store.attempt_dir(key, attempt) / 'result.json').exists())
+
+    def test_legacy_grouping_labels_remain_legacy_with_supported_movement(self):
+        with tempfile.TemporaryDirectory() as temp:
+            store = RunResultStore(Path(temp), uuid.uuid4().hex)
+            key = task_key_for_executable(Path(temp) / 'plan.py')
+            store.record_attempt(key, 1, dict(run_id=store.run_id, task_key=key, attempt=1,
+                returncode=0, evaluation_version='legacy_v1', execution_policy='legacy', movement_mode='teleport'))
+            group = store.rebuild_summary()['groups'][0]
+            self.assertEqual(group['metrics_schema_version'], 1)
+            self.assertEqual(group['evaluation_version'], 'legacy_v1')
+            self.assertEqual(group['execution_policy'], 'legacy')
+            self.assertEqual(group['movement_mode'], 'teleport')
+
 
 if __name__ == '__main__':
     unittest.main()

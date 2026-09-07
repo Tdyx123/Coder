@@ -178,6 +178,17 @@ def validate_result(
     version = result.get("metrics_schema_version", 1)
     if type(version) is not int or version not in (1, 2):
         raise ValueError("unsupported metrics_schema_version")
+    # These labels become dictionary keys during grouping. Validate before
+    # completion is committed or an attempt can replace an earlier result.
+    grouping_labels = {
+        "movement_mode": ("step", ("step", "teleport")),
+        "execution_policy": ("legacy", ("legacy",)),
+        "evaluation_version": ("legacy_v1", ("legacy_v1", "fixed_goals_v2")),
+    }
+    for field, (default, allowed) in grouping_labels.items():
+        label = result.get(field, default)
+        if not isinstance(label, str) or label not in allowed:
+            raise ValueError(f"unsupported {field}: expected one of {allowed}")
     is_v2 = version == 2
     if is_v2:
         if result.get("evaluation_version") != "fixed_goals_v2":
