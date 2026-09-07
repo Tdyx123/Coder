@@ -85,3 +85,77 @@ git diff --check
 自查覆盖：全部原子申请、反序多 key 无部分占有、不同实例并发、共享复合动作不交错、失败/取消释放、旧/新物理 ID 连续冲突、持有权独立检查、四种冲突策略、等待年龄、thread-local 嵌套、Faucet/Basin/knob/手部容器绑定、副作用前/后失效、导航锁及真实恢复、next_action 选择兼容回归。既有 scheduler 两个 admission spy 测试改为包装真实准入而不是跳过资源上下文。
 
 限制：以 fake controller/真实执行链路验证，不包含 Unity 场景运行；保守恢复候选可能增加资源等待。结果总体汇总和阶段/全局条件仍由 Task 5 完成统一；本任务没有修改失败策略算法或重复执行主循环。
+
+## Round 1 评审修复（基线 a3a70a2c）
+
+落实 `task-4-review.md` 的两个 P1 与 fixture P2。以下描述替代上文初版的 live resolver 和 `_set_object_alias_current_object` 身份合并说明。
+
+### 实现变化
+
+1. **准入完全读取已捕获快照。** `WorldSnapshot.resource_metadata` 冻结 aliases、operated_names、物理 ID 身份历史。SnapshotStore 读取附加元数据锁也使用 50ms acquire + control.check，而不是引入不可取消等待。`snapshot_resource_view` 创建独立 ThorRuntime 选择视图，`current_objects` 只返回该快照对象；复用原排序/别名/放置兼容规则，但 view 的 alias 和 manager 都独立。普通 bind、stove/sink helper、held_object_type 和 compatible_receptacle_candidates 都使用该视图。主线程不访问 live find_object/current_objects，也不会将陈旧快照写回真实 aliases。worker 的已绑定查找继续更新兼容别名。
+
+2. **对象身份在低层事件提交时发布。** `_step_direct` 在持有 controller_lock 时捕获 step 前对象 ID 集合和必要的手持对象；在事件提交、解锁、通知 scheduler 之前，`_commit_transformation_identities` 连接该次 step 新产生的 Slice/Break 子对象。多个切片都继承同一 source key；其他已存在对象/其他 step 创建的同类型对象不会被误合并。
+
+3. **合法物理 ID 替换与别名修复分离。** Pickup/Put/Throw/Drop 的原实例消失、同类型新实例唯一可辨识时，在同一提交边界连接身份；Put 优先使用目标容器关系确认替换。保留既有 PutObject ID 替换行为。高层 `_set_object_alias_current_object` 只维护兼容别名，不再有权将两个已提交的独立 lineage 合并。即使 step 报失败，只要它实际发布了匹配后代，身份仍与原实例连续。手持成功证据逻辑不因该身份映射而改变。
+
+4. **真实准入 fixture 补齐。** 六个 OrdinaryExecutorFailureContinuationTest 场景增加 Cabinet/Apple/Table 对象，成功 Pickup/Put mock 同步手持状态。全文件回归发现五个 TolerantExecutorTest 场景也缺对象，作同类数据补齐。保留全部策略、执行次数和效果判断断言。原资源测试改为更新快照数据/别名元数据，不再依赖实时 finder stub 选择目标；腾手 fixture 提供真实兼容容器中心。
+
+### 本轮 RED
+
+```bash
+/home/dwb/.pyenv/bin/pyenv exec python -m unittest tests.test_action_resource_leases.AdmissionPublicationRaceTest
+```
+
+原始输出 `/tmp/task4-round1-red-races.log`：`Ran 2 tests in 0.373s; FAILED (failures=5)`。
+
+- Pickup、FillWater、Stove/自动腾手三个 subcase：在已捕获 snapshot 后，另一线程持有 controller_lock；40ms deadline 之后的 120ms 检查仍未完成，报 `snapshot admission blocked on live controller after deadline`。
+- BreakObject / SliceObject 两个 subcase：真实 object_action_by_object 与 _step_direct 发布后暂停高层 alias 修复，第二 owner 获得新物理 ID 租约，报 `new physical ID escaped source lease before high-level repair`。
+- 每个线程都用 finally 释放 Event 并 bounded join，无遗留 worker。
+
+```bash
+/home/dwb/.pyenv/bin/pyenv exec python -m unittest tests.test_parallel_runner.OrdinaryExecutorFailureContinuationTest
+```
+
+退出 1：`Ran 6 tests in 0.317s; FAILED (failures=4, errors=2)`，均由缺少 Cabinet/Apple 等场景对象提前失败；补齐后相同命令退出 0：`Ran 6 tests in 0.120s; OK`。
+
+```bash
+/home/dwb/.pyenv/bin/pyenv exec python -m unittest tests.test_action_resource_leases.ResourceTest.test_delayed_alias_repair_cannot_merge_independent_committed_lineages
+```
+
+退出 1：`('a', 'b') != ('a',)`。旧高层 alias repair 将两个活跃 owner 合并到一个 lineage；现只允许低层提交确立身份。
+
+```bash
+/home/dwb/.pyenv/bin/pyenv exec python -m unittest tests.test_action_resource_leases.AdmissionPublicationRaceTest.test_put_replacement_retains_lease_before_high_level_repair
+```
+
+退出 1：新 Mug ID 在 Put 高层修复前获第二租约，`PutObject replacement escaped source lease before alias repair`。
+
+```bash
+/home/dwb/.pyenv/bin/pyenv exec python -m unittest tests.test_action_resource_leases.AdmissionPublicationRaceTest.test_failed_step_with_visible_descendant_still_preserves_identity
+```
+
+退出 1：controller 报失败但实际生成 EggCracked 时新 ID 无 holder，`() != ('a',)`。
+
+初次完整具名回归 `/tmp/task4-round1-first-suites.log`：211 tests、6 failures、2 errors。除上述五个 Tolerant fixture 外，其余三个旧 resource fixture 依赖 live stub/未捕获 aliases/无实际容器位置；均已按快照契约补齐，没有放松 production 检查。
+
+### 本轮最终 GREEN
+
+```bash
+/home/dwb/.pyenv/bin/pyenv exec python -m unittest tests/test_action_resource_leases.py tests/test_parallel_runner.py tests/test_world_snapshot.py tests/test_runtime_object_aliases.py tests/test_navigation_execution_scope.py tests/test_executor_retry_policy.py tests/test_stage_scheduler.py
+```
+
+退出 0，完整输出 `/tmp/task4-round1-green-suites.log`：
+
+```text
+Ran 216 tests in 5.214s
+OK
+```
+
+包括 deterministic Break/Slice/Put 发布窗口、snapshot 后持锁的全部显式/隐式准入路径、失败 step 的可见后代、快照 alias 冻结且不回写 live、全部切片继承与不同实例保持独立。
+
+```bash
+/home/dwb/.pyenv/bin/pyenv exec python -m py_compile scripts/executor_system/action_resources.py scripts/executor_system/resource_manager.py scripts/executor_system/runtime.py scripts/executor_system/world_snapshot.py tests/test_action_resource_leases.py tests/test_parallel_runner.py
+git diff --check
+```
+
+均退出 0、无输出。未运行 discover、未启动子代理。此前保守导航恢复候选的已批准性能取舍不变。本轮没有修改失败策略、执行主循环或 Task 5/6 的契约。

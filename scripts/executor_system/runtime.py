@@ -685,6 +685,16 @@ class ThorRuntime:
                 admitted = active_resources(self)
                 if admitted is not None:
                     admitted.before_step(payload)
+                transformation_objects = None
+                held_before = ()
+                if payload.get('action') in ('SliceObject', 'BreakObject', 'PickupObject',
+                                             'PutObject', 'ThrowObject', 'DropHandObject'):
+                    transformation_objects = {
+                        str(obj.get('objectId')): dict(obj)
+                        for obj in self.current_objects() if obj.get('objectId')
+                    }
+                    if payload.get('action') in ('PutObject', 'ThrowObject', 'DropHandObject'):
+                        held_before = tuple(self.agent_held_objects_for(int(payload.get('agentId', 0))))
                 try:
                     event = self.controller.step(dict(payload))
                 except BaseException as exc:
@@ -699,6 +709,7 @@ class ThorRuntime:
                 self.state_version = getattr(self, "state_version", 0) + 1
                 committed = True
                 try:
+                    self._commit_transformation_identities(event, payload, transformation_objects, held_before)
                     self._commit_world_event(event, payload)
                 except BaseException as exc:
                     control.cancel(f"world event commit failed: {exc}")
@@ -720,6 +731,52 @@ class ThorRuntime:
         if check_success:
             self.assert_success(event, payload)
         return event
+
+    def _commit_transformation_identities(self, event, payload, before, held_before=()):
+        """Publish source/descendant identity under the same lock as the event.
+
+        The pre-step object set is captured under controller_lock. Therefore all
+        newly created matching descendants belong to this one serialized step,
+        even when other objects of the same type transform concurrently.
+        """
+        # Published descendants remain the same physical lineage even when
+        # the step reports failure after producing an observable side effect.
+        if before is None:
+            return
+        source_id = str(payload.get('objectId') or '')
+        source = before.get(source_id, {})
+        action = payload.get('action')
+        from .action_resources import manager_for
+        manager = manager_for(self)
+        after = {str(obj.get('objectId')): obj for obj in self._event_objects(event)
+                 if obj.get('objectId')}
+        if action in ('PickupObject', 'PutObject', 'ThrowObject', 'DropHandObject'):
+            sources = (source_id,) if action == 'PickupObject' else held_before
+            for old_id in sources:
+                if old_id in after or old_id not in before:
+                    continue
+                old_type = before[old_id].get('objectType') or old_id.split('|', 1)[0]
+                candidates = [new_id for new_id, obj in after.items()
+                              if new_id not in before
+                              and object_key(obj.get('objectType') or new_id.split('|', 1)[0]) == object_key(old_type)]
+                if action == 'PutObject':
+                    on_target = [new_id for new_id in candidates
+                                 if source_id in (after[new_id].get('parentReceptacles') or ())]
+                    if on_target:
+                        candidates = on_target
+                if len(candidates) == 1:
+                    manager.bind_identity(old_id, candidates[0])
+            return
+        if action == 'SliceObject':
+            matches = lambda obj: is_sliced_food_object_for_base(source_id, obj)
+        elif action == 'BreakObject' and is_egg_query(source.get('objectType') or source_id):
+            matches = is_broken_egg_object
+        else:
+            return
+        for obj in after.values():
+            object_id = str(obj.get('objectId') or '')
+            if object_id and object_id not in before and matches(obj):
+                manager.bind_identity(source_id, object_id)
 
     def _commit_world_event(self, event, payload: Dict[str, Any]) -> None:
         """Commit every returned event, including an unsuccessful action event.
@@ -1140,8 +1197,6 @@ class ThorRuntime:
             if binding is None:
                 return None
             old_id = str(binding.get("object_id") or "")
-            from .action_resources import manager_for
-            manager_for(self).bind_identity(old_id, object_id)
             if old_id and old_id != object_id:
                 old_tokens = self.object_alias_by_object_id.get(old_id)
                 if old_tokens is not None:
@@ -1499,6 +1554,7 @@ class ThorRuntime:
         if admitted is not None:
             bound = admitted.bound_objects(pattern, objects)
             if bound is not None:
+                self._record_object_alias_match(pattern, bound[0], len(bound))
                 return bound
         resolved_pattern = self.resolve_object_alias(pattern, agent_id=agent_id)
         matches = [obj for obj in objects if matches_object(resolved_pattern, obj)]

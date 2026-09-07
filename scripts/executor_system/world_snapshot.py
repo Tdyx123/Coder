@@ -32,10 +32,11 @@ class WorldSnapshot:
     held_objects: Mapping
     objects_by_id: Mapping
     held_object_sources: Mapping = field(default_factory=dict)
+    resource_metadata: Mapping = field(default_factory=dict)
 
     def __post_init__(self):
         for name in ("robot_positions", "robot_rotations", "held_objects",
-                     "objects_by_id", "held_object_sources"):
+                     "objects_by_id", "held_object_sources", "resource_metadata"):
             object.__setattr__(self, name, _freeze(getattr(self, name)))
 
 
@@ -48,7 +49,7 @@ class SnapshotStore:
                 control.check()
             try:
                 control.check()
-                return self._capture_locked(runtime)
+                return self._capture_locked(runtime, control)
             finally:
                 lock.release()
         except (ExecutionCancelled, PlanExecutionTimeout):
@@ -62,7 +63,7 @@ class SnapshotStore:
                 raise
             raise SnapshotReadError(f"could not capture world snapshot: {exc}") from exc
 
-    def _capture_locked(self, runtime):
+    def _capture_locked(self, runtime, control):
         event = runtime.controller.last_event
         events = getattr(event, "events", None) or [event]
         expected_count = runtime.physical_agent_count
@@ -105,6 +106,24 @@ class SnapshotStore:
                 robot_map[name] = agent_id
         if any(agent_id not in positions for agent_id in robot_map.values()):
             raise ValueError("robot mapping refers to an absent physical agent")
+        resource_metadata = {}
+        for lock_name, attribute, key in (
+            ('object_alias_lock', 'object_alias_bindings', 'aliases'),
+            ('operated_object_names_lock', 'operated_object_names', 'operated_names'),
+        ):
+            lock = getattr(runtime, lock_name, None)
+            if lock is not None:
+                while not lock.acquire(timeout=0.05):
+                    control.check()
+            try:
+                control.check()
+                # Freeze while the metadata lock is held, not after it escapes.
+                resource_metadata[key] = _freeze(getattr(runtime, attribute, {}))
+            finally:
+                if lock is not None:
+                    lock.release()
+        manager = getattr(runtime, 'action_resource_manager', None)
+        resource_metadata['identities'] = manager.identity_snapshot() if manager is not None else {}
         return WorldSnapshot(
             version,
             {name: positions[agent_id] for name, agent_id in robot_map.items()},
@@ -112,4 +131,5 @@ class SnapshotStore:
             {name: inventories[agent_id] for name, agent_id in robot_map.items()},
             objects,
             {name: sources[agent_id] for name, agent_id in robot_map.items()},
+            resource_metadata,
         )

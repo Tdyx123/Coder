@@ -2215,8 +2215,17 @@ class ParallelRunnerCliTest(unittest.TestCase):
 
 
 class TolerantExecutorTest(unittest.TestCase):
-    def test_normal_task_runner_pre_registers_stage_index_action_keys(self):
+    def make_runtime(self):
         runtime = FakeRuntime()
+        runtime.objects = [
+            {'objectId': 'Cabinet|1', 'objectType': 'Cabinet', 'openable': True, 'isOpen': False},
+            {'objectId': 'Apple|1', 'objectType': 'Apple', 'pickupable': True},
+            {'objectId': 'Table|1', 'objectType': 'Table', 'receptacle': True},
+        ]
+        return runtime
+
+    def test_normal_task_runner_pre_registers_stage_index_action_keys(self):
+        runtime = self.make_runtime()
         plan = TaskPlan(
             "task",
             [StagePlan("named-stage", {"robot1": [Action("OpenObject", {})]})],
@@ -2233,7 +2242,7 @@ class TolerantExecutorTest(unittest.TestCase):
         self.assertEqual(runtime.action_metrics["raw_action_sr"], 1.0)
 
     def test_deferred_navigation_is_not_counted_or_recorded_as_failure(self):
-        runtime = FakeRuntime()
+        runtime = self.make_runtime()
         calls = {"count": 0}
 
         def fake_execute(_adapter, _robot_id, _action, **_kwargs):
@@ -2265,13 +2274,18 @@ class TolerantExecutorTest(unittest.TestCase):
         self.assertEqual(result["robot_failures"], [])
 
     def test_robot_failure_continues_with_next_action(self):
-        runtime = FakeRuntime()
+        runtime = self.make_runtime()
         calls = []
 
         def fake_execute(_adapter, robot_id, action, **_kwargs):
             calls.append((robot_id, action.action_type))
             if robot_id == "robot1" and action.action_type == "OpenObject":
                 raise RuntimeError("open failed")
+            if action.action_type == 'PickupObject':
+                runtime.agent_event(runtime.physical_agent_id(robot_id)).metadata['inventoryObjects'] = [
+                    {'objectId': 'Apple|1'}]
+            elif action.action_type == 'PutObject':
+                runtime.agent_event(runtime.physical_agent_id(robot_id)).metadata['inventoryObjects'] = []
             return FakeEvent()
 
         plan = TaskPlan(
@@ -2312,7 +2326,7 @@ class TolerantExecutorTest(unittest.TestCase):
         self.assertIn(("robot2", "PutObject"), calls)
 
     def test_teleport_failure_is_not_counted_as_failed_action(self):
-        runtime = FakeRuntime()
+        runtime = self.make_runtime()
 
         def fake_execute(_adapter, _robot_id, action, **_kwargs):
             if action.action_type == "TeleportObjectToHand":
@@ -2350,7 +2364,7 @@ class TolerantExecutorTest(unittest.TestCase):
         self.assertTrue(result["robot_failures"][0]["ignored_for_failure_ratio"])
 
     def test_pickup_clip_failure_is_not_counted_as_failed_action(self):
-        runtime = FakeRuntime()
+        runtime = self.make_runtime()
 
         def fake_execute(_adapter, _robot_id, action, **_kwargs):
             if action.action_type == "PickupObject":
@@ -2390,7 +2404,7 @@ class TolerantExecutorTest(unittest.TestCase):
         self.assertTrue(result["robot_failures"][0]["ignored_for_failure_ratio"])
 
     def test_retryable_action_retries_then_continues_in_runner_mode(self):
-        runtime = FakeRuntime()
+        runtime = self.make_runtime()
         calls = []
 
         def fake_execute(_adapter, robot_id, action, **_kwargs):
@@ -2441,7 +2455,7 @@ class TolerantExecutorTest(unittest.TestCase):
         self.assertEqual(result["ignored_failure_count"], 1)
 
     def test_tolerant_runner_obeys_strict_fail_stage(self):
-        runtime = FakeRuntime()
+        runtime = self.make_runtime()
         calls = []
         logger = ExecutionLogger()
 
@@ -2482,8 +2496,17 @@ class TolerantExecutorTest(unittest.TestCase):
 
 
 class OrdinaryExecutorFailureContinuationTest(unittest.TestCase):
-    def test_task_runner_continues_after_robot_action_failure(self):
+    def make_runtime(self):
         runtime = FakeRuntime()
+        runtime.objects = [
+            {'objectId': 'Cabinet|1', 'objectType': 'Cabinet', 'openable': True, 'isOpen': False},
+            {'objectId': 'Apple|1', 'objectType': 'Apple', 'pickupable': True},
+            {'objectId': 'Table|1', 'objectType': 'Table', 'receptacle': True},
+        ]
+        return runtime
+
+    def test_task_runner_continues_after_robot_action_failure(self):
+        runtime = self.make_runtime()
         calls = []
         logger = ExecutionLogger()
 
@@ -2491,6 +2514,11 @@ class OrdinaryExecutorFailureContinuationTest(unittest.TestCase):
             calls.append((robot_id, action.action_type))
             if robot_id == "robot1" and action.action_type == "OpenObject":
                 raise RuntimeError("open failed")
+            if action.action_type == 'PickupObject':
+                runtime.agent_event(runtime.physical_agent_id(robot_id)).metadata['inventoryObjects'] = [
+                    {'objectId': 'Apple|1'}]
+            elif action.action_type == 'PutObject':
+                runtime.agent_event(runtime.physical_agent_id(robot_id)).metadata['inventoryObjects'] = []
             return FakeEvent()
 
         plan = TaskPlan(
@@ -2532,7 +2560,7 @@ class OrdinaryExecutorFailureContinuationTest(unittest.TestCase):
         self.assertEqual(failed_results[0].failure_decision, "skip")
 
     def test_task_runner_strict_fail_stage_stops_later_actions(self):
-        runtime = FakeRuntime()
+        runtime = self.make_runtime()
         calls = []
         logger = ExecutionLogger()
 
@@ -2540,6 +2568,11 @@ class OrdinaryExecutorFailureContinuationTest(unittest.TestCase):
             calls.append((robot_id, action.action_type))
             if action.action_type == "OpenObject":
                 raise RuntimeError("open failed")
+            if action.action_type == 'PickupObject':
+                runtime.agent_event(runtime.physical_agent_id(robot_id)).metadata['inventoryObjects'] = [
+                    {'objectId': 'Apple|1'}]
+            elif action.action_type == 'PutObject':
+                runtime.agent_event(runtime.physical_agent_id(robot_id)).metadata['inventoryObjects'] = []
             return FakeEvent()
 
         plan = TaskPlan(
@@ -2571,13 +2604,18 @@ class OrdinaryExecutorFailureContinuationTest(unittest.TestCase):
         self.assertEqual(failed_results[0].failure_decision, "fail_stage")
 
     def test_task_runner_strict_fail_robot_stops_only_that_robot(self):
-        runtime = FakeRuntime()
+        runtime = self.make_runtime()
         calls = []
 
         def fake_execute(_adapter, robot_id, action, **_kwargs):
             calls.append((robot_id, action.action_type))
             if robot_id == "robot1" and action.action_type == "OpenObject":
                 raise RuntimeError("open failed")
+            if action.action_type == 'PickupObject':
+                runtime.agent_event(runtime.physical_agent_id(robot_id)).metadata['inventoryObjects'] = [
+                    {'objectId': 'Apple|1'}]
+            elif action.action_type == 'PutObject':
+                runtime.agent_event(runtime.physical_agent_id(robot_id)).metadata['inventoryObjects'] = []
             return FakeEvent()
 
         plan = TaskPlan(
@@ -2621,7 +2659,7 @@ class OrdinaryExecutorFailureContinuationTest(unittest.TestCase):
         )
 
     def test_effect_proven_after_failure_is_recorded_as_success_before_resolution(self):
-        runtime = FakeRuntime()
+        runtime = self.make_runtime()
         calls = []
         logger = ExecutionLogger()
 
@@ -2629,6 +2667,11 @@ class OrdinaryExecutorFailureContinuationTest(unittest.TestCase):
             calls.append((robot_id, action.action_type))
             if action.action_type == "OpenObject":
                 raise RuntimeError("controller response lost")
+            if action.action_type == 'PickupObject':
+                runtime.agent_event(runtime.physical_agent_id(robot_id)).metadata['inventoryObjects'] = [
+                    {'objectId': 'Apple|1'}]
+            elif action.action_type == 'PutObject':
+                runtime.agent_event(runtime.physical_agent_id(robot_id)).metadata['inventoryObjects'] = []
             return FakeEvent()
 
         plan = TaskPlan(
@@ -2660,12 +2703,17 @@ class OrdinaryExecutorFailureContinuationTest(unittest.TestCase):
         self.assertEqual(logger.records[0].failure_decision, "")
 
     def test_wait_condition_timeout_is_skipped_and_next_action_runs(self):
-        runtime = FakeRuntime()
+        runtime = self.make_runtime()
         calls = []
         logger = ExecutionLogger()
 
         def fake_execute(_adapter, robot_id, action, **_kwargs):
             calls.append((robot_id, action.action_type))
+            if action.action_type == 'PickupObject':
+                runtime.agent_event(runtime.physical_agent_id(robot_id)).metadata['inventoryObjects'] = [
+                    {'objectId': 'Apple|1'}]
+            elif action.action_type == 'PutObject':
+                runtime.agent_event(runtime.physical_agent_id(robot_id)).metadata['inventoryObjects'] = []
             return FakeEvent()
 
         plan = TaskPlan(
@@ -2704,7 +2752,7 @@ class OrdinaryExecutorFailureContinuationTest(unittest.TestCase):
         self.assertEqual(failed_results[0].action.action_type, "Wait")
 
     def test_retryable_action_retries_then_skips_and_continues(self):
-        runtime = FakeRuntime()
+        runtime = self.make_runtime()
         calls = []
         logger = ExecutionLogger()
 
@@ -2712,6 +2760,11 @@ class OrdinaryExecutorFailureContinuationTest(unittest.TestCase):
             calls.append((robot_id, action.action_type))
             if action.action_type == "Teleport":
                 raise RuntimeError("teleport failed")
+            if action.action_type == 'PickupObject':
+                runtime.agent_event(runtime.physical_agent_id(robot_id)).metadata['inventoryObjects'] = [
+                    {'objectId': 'Apple|1'}]
+            elif action.action_type == 'PutObject':
+                runtime.agent_event(runtime.physical_agent_id(robot_id)).metadata['inventoryObjects'] = []
             return FakeEvent()
 
         plan = TaskPlan(

@@ -6,7 +6,6 @@ from types import MappingProxyType
 from typing import Mapping, Tuple
 
 from .resource_manager import ActionResourceManager
-from .utils import matches_object
 
 
 @dataclass(frozen=True)
@@ -66,23 +65,51 @@ def active_resources(runtime):
     return scope if scope is not None and scope.runtime is runtime else None
 
 
+def snapshot_resource_view(runtime, snapshot):
+    """Run the existing selection rules against detached, immutable evidence.
+
+    No method on this view can read the live controller or update live aliases.
+    This includes stove/sink helpers and hand-placement candidate selection.
+    """
+    from .runtime import ThorRuntime
+    view = ThorRuntime.__new__(ThorRuntime)
+    view.robot_agent_map = dict(runtime.robot_agent_map)
+    view.physical_agent_count = runtime.physical_agent_count
+    view.current_objects = lambda agent_id=None: list(snapshot.objects_by_id.values())
+    view.operated_object_names = set(snapshot.resource_metadata.get('operated_names', ()))
+    identities = snapshot.resource_metadata.get('identities', {})
+    view.action_resource_manager = ActionResourceManager()
+    for object_id, root in identities.items():
+        view.action_resource_manager.bind_identity(root, object_id)
+
+    def current_id(object_id):
+        if object_id in snapshot.objects_by_id:
+            return object_id
+        root = identities.get(object_id, object_id)
+        return next((candidate for candidate in snapshot.objects_by_id
+                     if identities.get(candidate, candidate) == root), object_id)
+
+    for binding in snapshot.resource_metadata.get('aliases', {}).values():
+        copied = dict(binding)
+        copied['object_id'] = current_id(str(copied.get('object_id', '')))
+        view.register_object_id_bindings([copied])
+    resolve_alias = view.resolve_object_alias
+    view.resolve_object_alias = lambda pattern, agent_id=None: current_id(
+        resolve_alias(pattern, agent_id=agent_id))
+    return view
+
+
 def resolve_action_resources(runtime, snapshot, robot_id, action):
     from . import actions, context
     manager = manager_for(runtime)
+    view = snapshot_resource_view(runtime, snapshot)
     args = action.args()
     bindings, ids = {}, set()
     agent_id = runtime.physical_agent_id(robot_id)
 
     def bind(pattern, selected=None, role=None):
         if selected is None:
-            finder = getattr(runtime, 'find_object', None)
-            if callable(finder):
-                selected = finder(pattern, agent_id=agent_id)
-            else:
-                selected = next((obj for obj in snapshot.objects_by_id.values()
-                                 if matches_object(pattern, obj)), None)
-                if selected is None:
-                    raise RuntimeError(f'Could not find resource {pattern!r}')
+            selected = view.find_object(pattern, agent_id=agent_id)
         object_id = str(selected['objectId'])
         bindings[str(pattern)] = object_id
         bindings[object_id] = object_id
@@ -91,7 +118,7 @@ def resolve_action_resources(runtime, snapshot, robot_id, action):
         ids.add(object_id)
         return selected
 
-    with context.runtime_scope(runtime):
+    with context.runtime_scope(view):
         if action.action_type in NAVIGATION_RECOVERY_ACTIONS:
             for candidate in snapshot.objects_by_id.values():
                 if candidate.get('openable') and candidate.get('isOpen'):
@@ -132,8 +159,8 @@ def resolve_action_resources(runtime, snapshot, robot_id, action):
             if other_held:
                 held_id = other_held[0]
                 bind(held_id)
-                candidates = runtime.compatible_receptacle_candidates(
-                    agent_id, held_id, runtime.held_object_type(agent_id, held_id))
+                candidates = view.compatible_receptacle_candidates(
+                    agent_id, held_id, view.held_object_type(agent_id, held_id))
                 if not candidates:
                     raise RuntimeError(f'No compatible receptacle for {held_id}')
                 bind(candidates[0]['objectId'], candidates[0], '@hand_receptacle')

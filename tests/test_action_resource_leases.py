@@ -3,6 +3,7 @@ import sys
 import threading
 import unittest
 from pathlib import Path
+from dataclasses import replace
 from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 from executor_system.resource_manager import ActionResourceManager
@@ -71,14 +72,36 @@ class ResourceTest(ResourceRuntimeMixin, unittest.TestCase):
         objects = [obj('Egg|1')]
         runtime = self.runtime(objects)
         runtime.register_object_id_bindings([{'object': 'Egg1', 'object_id': 'Egg|1'}])
+        runtime.snapshot = replace(runtime.snapshot, resource_metadata={'aliases': runtime.object_alias_bindings})
         original = resolve_action_resources(runtime, runtime.snapshot, 'robot1', Action('BreakEgg', {'args': ('Egg1',)}))
         lease = runtime.action_resource_manager.try_acquire('a', original.keys)
         objects[:] = [obj('EggCracked|2')]
+        runtime._commit_transformation_identities(
+            SimpleNamespace(metadata={'lastActionSuccess': True, 'objects': objects}),
+            {'action': 'BreakObject', 'objectId': 'Egg|1'}, {'Egg|1': obj('Egg|1')})
         runtime._set_object_alias_current_object('Egg1', objects[0])
         snapshot = WorldSnapshot(1, {}, {}, {}, {'EggCracked|2': objects[0]})
         changed = resolve_action_resources(runtime, snapshot, 'robot2', Action('PickupObject', {'args': ('EggCracked|2',)}))
         self.assertIsNone(runtime.action_resource_manager.try_acquire('b', changed.keys))
         lease.release()
+
+    def test_delayed_alias_repair_cannot_merge_independent_committed_lineages(self):
+        objects = [obj('Apple|1'), obj('Apple|2')]
+        runtime = self.runtime(objects)
+        runtime.register_object_id_bindings([{'object': 'Apple1', 'object_id': 'Apple|1'}])
+        from executor_system.action_resources import manager_for
+        manager = manager_for(runtime)
+        first = manager.try_acquire('a', ('Apple|1',))
+        second = manager.try_acquire('b', ('Apple|2',))
+        manager.bind_identity('Apple|1', 'AppleSliced|1')
+        manager.bind_identity('Apple|2', 'AppleSliced|2')
+        # A delayed best-effort alias repair may select a different descendant;
+        # it must never rewrite the already committed lease identity relation.
+        runtime._set_object_alias_current_object('Apple1', obj('AppleSliced|2'))
+        self.assertEqual(manager.blockers(('AppleSliced|1',)), ('a',))
+        self.assertEqual(manager.blockers(('AppleSliced|2',)), ('b',))
+        first.release()
+        second.release()
 
     def test_held_by_other_is_not_an_available_resource(self):
         runtime = self.runtime([obj('Mug|1')])
@@ -222,7 +245,9 @@ class HelperBindingTest(ResourceRuntimeMixin, unittest.TestCase):
             runtime.agent_held_objects_for = lambda agent_id: set()
 
     def test_auto_hand_container_is_leased_and_cannot_reselect(self):
-        runtime = self.runtime([obj('Mug|1'), obj('Mug|2'), obj('CounterTop|1'), obj('CounterTop|2')])
+        runtime = self.runtime([obj('Mug|1'), obj('Mug|2'),
+                                obj('CounterTop|1', position={'x': 0, 'y': 1, 'z': 0}),
+                                obj('CounterTop|2', position={'x': 1, 'y': 1, 'z': 0})])
         runtime.agent_held_objects_for = lambda agent_id: {'Mug|2'} if agent_id == 0 else set()
         runtime.snapshot = WorldSnapshot(0, {}, {}, {'robot1': ('Mug|2',), 'robot2': ()}, {o['objectId']: o for o in runtime.current_objects()})
         candidates = [obj('CounterTop|1'), obj('CounterTop|2')]
@@ -285,8 +310,6 @@ class ConflictPolicyTest(unittest.TestCase):
         for policy in ('WAIT', 'RETRY_NEXT_TICK'):
             runtime = FakeRuntime()
             runtime.objects = [obj('Mug|1'), obj('Mug|2')]
-            choice = [runtime.objects[0]]
-            runtime.find_object = lambda *a, **kw: choice[0]
             scheduler = StageScheduler(runtime, StagePlan('s', {
                 'robot1': [Action('PickupObject', {'args': ('Mug',)}, on_conflict=policy)]}),
                 control=install_control(runtime, 1).child(), policy='legacy')
@@ -294,7 +317,8 @@ class ConflictPolicyTest(unittest.TestCase):
             pending = scheduler.admissions['robot1'].pending
             blocker = scheduler.resource_manager.try_acquire('other', ('Mug|1',))
             self.assertFalse(scheduler._admit_resources(pending))
-            choice[0] = runtime.objects[1]
+            runtime.objects = [obj('Mug|1', visible=False), obj('Mug|2', visible=True)]
+            scheduler.world.snapshot = SnapshotStore().capture(runtime, scheduler.control)
             granted = scheduler._admit_resources(pending)
             self.assertEqual(granted, policy == 'RETRY_NEXT_TICK')
             if granted:
@@ -409,3 +433,214 @@ class AdmittedNavigationRecoveryTest(unittest.TestCase):
         self.assertEqual(calls, ['MoveAhead', 'CloseObject', 'MoveAhead', 'OpenObject'])
         self.assertTrue(drawer['isOpen'])
         self.assertEqual(runtime.action_resource_manager.holders(), {})
+
+class AdmissionPublicationRaceTest(unittest.TestCase):
+    def runtime(self, objects):
+        from tests.test_world_snapshot import snapshot_runtime
+        runtime = snapshot_runtime()
+        for event in runtime.controller.last_event.events:
+            event.metadata['objects'] = [dict(value) for value in objects]
+            event.metadata['inventoryObjects'] = []
+        runtime.stats_lock = threading.Lock()
+        runtime.total_exec = runtime.success_exec = 0
+        runtime.save_frames = lambda *a: None
+        return runtime
+
+    def test_snapshot_admission_never_waits_for_live_controller_reads(self):
+        from executor_system.world_snapshot import SnapshotStore
+        from executor_system.execution_control import install_control
+        objects = [obj('Mug|1'), obj('Mug|2'), obj('StoveBurner|1'),
+                   obj('StoveKnob|1', controlledObjects=['StoveBurner|1']),
+                   obj('Faucet|1'), obj('SinkBasin|1'),
+                   obj('CounterTop|1', position={'x': 0, 'y': 1, 'z': 0})]
+        for action in (Action('PickupObject', {'args': ('Mug|1',)}),
+                       Action('FillWater', {'args': ('Sink', 'Mug|1')}),
+                       Action('HeatByStoveBurner', {'args': ('StoveBurner', 'Mug|1')})):
+            with self.subTest(action=action.action_type):
+                runtime = self.runtime(objects)
+                runtime.controller.last_event.events[0].metadata['inventoryObjects'] = [{'objectId': 'Mug|2'}]
+                control = install_control(runtime, .04)
+                snapshot = SnapshotStore().capture(runtime, control)
+                locked, release, finished = threading.Event(), threading.Event(), threading.Event()
+                results, errors = [], []
+                def hold():
+                    with runtime.controller_lock:
+                        locked.set()
+                        release.wait(1)
+                def resolve():
+                    try: results.append(resolve_action_resources(runtime, snapshot, 'robot1', action))
+                    except BaseException as exc: errors.append(exc)
+                    finally: finished.set()
+                holder = threading.Thread(target=hold)
+                reader = threading.Thread(target=resolve)
+                holder.start()
+                self.assertTrue(locked.wait(.2))
+                reader.start()
+                try:
+                    self.assertTrue(finished.wait(.12), 'snapshot admission blocked on live controller after deadline')
+                    self.assertEqual(errors, [])
+                    self.assertIn('CounterTop|1', results[0].keys)
+                finally:
+                    release.set()
+                    holder.join(1)
+                    reader.join(1)
+                self.assertFalse(reader.is_alive())
+
+    def test_transform_identity_is_published_before_delayed_high_level_alias_repair(self):
+        from executor_system.world_snapshot import SnapshotStore
+        from executor_system.action_resources import manager_for
+        for action, source, target in (('BreakObject', 'Egg|1', 'EggCracked|2'),
+                                       ('SliceObject', 'Apple|1', 'AppleSliced|2')):
+            with self.subTest(action=action):
+                runtime = self.runtime([obj(source)])
+                token = source.split('|')[0] + '1'
+                runtime.register_object_id_bindings([{'object': token, 'object_id': source}])
+                manager = manager_for(runtime)
+                first = manager.try_acquire('0:robot1:0', (source,))
+                runtime.controller.next_event = runtime.controller.last_event
+                def controller_step(payload):
+                    event = runtime.controller.last_event
+                    for agent_event in event.events:
+                        agent_event.metadata['objects'] = [obj(target)]
+                        agent_event.metadata['lastActionSuccess'] = True
+                        agent_event.metadata['errorMessage'] = ''
+                    return event
+                runtime.controller.step = controller_step
+                published, finish = threading.Event(), threading.Event()
+                original = runtime.update_object_alias_after_action
+                def delayed_alias(*a, **kw):
+                    published.set()
+                    if not finish.wait(1): raise RuntimeError('test barrier timed out')
+                    return original(*a, **kw)
+                runtime.update_object_alias_after_action = delayed_alias
+                runtime.record_created_slice_object_names = lambda *a: None
+                runtime.record_created_broken_egg_object_names = lambda *a: None
+                runtime.record_operated_object_name = lambda *a: None
+                errors = []
+                def transform():
+                    try:
+                        runtime.object_action_by_object(action, 0, obj(source), goal_object_name=token)
+                    except BaseException as exc: errors.append(exc)
+                thread = threading.Thread(target=transform)
+                thread.start()
+                second = None
+                try:
+                    self.assertTrue(published.wait(.3))
+                    snapshot = SnapshotStore().capture(runtime, runtime.execution_control)
+                    resolved = resolve_action_resources(runtime, snapshot, 'robot2', Action('PickupObject', {'args': (target,)}))
+                    second = manager.try_acquire('0:robot2:0', resolved.keys)
+                    self.assertIsNone(second, 'new physical ID escaped source lease before high-level repair')
+                    self.assertEqual(manager.holders(), {source: ('0:robot1:0',)})
+                finally:
+                    finish.set()
+                    thread.join(1)
+                    if second is not None: second.release()
+                    first.release()
+                self.assertFalse(thread.is_alive())
+                self.assertEqual(errors, [])
+
+    def test_put_replacement_retains_lease_before_high_level_repair(self):
+        from executor_system.world_snapshot import SnapshotStore
+        from executor_system.action_resources import manager_for
+        source, target, table = 'Mug|1', 'Mug|2', 'Table|1'
+        runtime = self.runtime([obj(source), obj(table)])
+        runtime.controller.last_event.events[0].metadata['inventoryObjects'] = [{'objectId': source}]
+        runtime.register_object_id_bindings([{'object': 'Mug1', 'object_id': source}])
+        snapshot = SnapshotStore().capture(runtime, runtime.execution_control)
+        resolved = resolve_action_resources(runtime, snapshot, 'robot1', Action('PutObject', {'args': ('Mug1', table)}))
+        manager = manager_for(runtime)
+        first = manager.try_acquire('0:robot1:0', resolved.keys)
+        published, finish = threading.Event(), threading.Event()
+        def controller_step(payload):
+            event = runtime.controller.last_event
+            for agent_event in event.events:
+                agent_event.metadata['objects'] = [obj(target, parentReceptacles=[table]), obj(table)]
+                agent_event.metadata['inventoryObjects'] = []
+                agent_event.metadata['lastActionSuccess'] = True
+                agent_event.metadata['errorMessage'] = ''
+            return event
+        runtime.controller.step = controller_step
+        original = runtime.update_object_alias_after_action
+        def delayed_alias(*a, **kw):
+            published.set()
+            if not finish.wait(1): raise RuntimeError('test barrier timed out')
+            return original(*a, **kw)
+        runtime.update_object_alias_after_action = delayed_alias
+        runtime.record_operated_object_name = lambda *a: None
+        errors = []
+        def put():
+            try:
+                with action_resource_scope(runtime, '0:robot1:0', resolved):
+                    runtime.object_action_by_object('PutObject', 0, obj(table),
+                                                  extra_object_resources=(source,), goal_object_name=table)
+            except BaseException as exc: errors.append(exc)
+        thread = threading.Thread(target=put)
+        thread.start()
+        second = None
+        try:
+            self.assertTrue(published.wait(.3))
+            snapshot = SnapshotStore().capture(runtime, runtime.execution_control)
+            next_resources = resolve_action_resources(runtime, snapshot, 'robot2', Action('PickupObject', {'args': (target,)}))
+            second = manager.try_acquire('0:robot2:0', next_resources.keys)
+            self.assertIsNone(second, 'PutObject replacement escaped source lease before alias repair')
+        finally:
+            finish.set()
+            thread.join(1)
+            if second is not None: second.release()
+            first.release()
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(errors, [])
+        self.assertEqual(runtime.find_object('Mug1')['objectId'], target)
+
+    def test_snapshot_aliases_are_frozen_and_selection_does_not_mutate_live_aliases(self):
+        from executor_system.world_snapshot import SnapshotStore
+        runtime = self.runtime([obj('Mug|1'), obj('Mug|2')])
+        runtime.register_object_id_bindings([{'object': 'Mug1', 'object_id': 'Mug|1'}])
+        snapshot = SnapshotStore().capture(runtime, runtime.execution_control)
+        with self.assertRaises(TypeError):
+            snapshot.resource_metadata['aliases']['Mug1']['object_id'] = 'Mug|2'
+        runtime.register_object_id_bindings([{'object': 'Mug1', 'object_id': 'Mug|2'}])
+        resolved = resolve_action_resources(runtime, snapshot, 'robot1', Action('PickupObject', {'args': ('Mug1',)}))
+        self.assertEqual(resolved.bindings['Mug1'], 'Mug|1')
+        self.assertEqual(runtime.object_alias_current_id('Mug1'), 'Mug|2')
+
+    def test_serialized_slice_commits_keep_all_descendants_and_instances_separate(self):
+        from executor_system.action_resources import manager_for
+        runtime = self.runtime([obj('Apple|1'), obj('Apple|2')])
+        manager = manager_for(runtime)
+        first = manager.try_acquire('a', ('Apple|1',))
+        second = manager.try_acquire('b', ('Apple|2',))
+        after = [[obj('AppleSliced|1a'), obj('AppleSliced|1b'), obj('Apple|2')],
+                 [obj('AppleSliced|1a'), obj('AppleSliced|1b'), obj('AppleSliced|2')]]
+        def step(payload):
+            event = runtime.controller.last_event
+            objects = after.pop(0)
+            for agent_event in event.events:
+                agent_event.metadata['objects'] = objects
+            return event
+        runtime.controller.step = step
+        runtime._step_direct({'action': 'SliceObject', 'objectId': 'Apple|1'}, save_frame=False)
+        runtime._step_direct({'action': 'SliceObject', 'objectId': 'Apple|2'}, save_frame=False)
+        self.assertEqual(manager.blockers(('AppleSliced|1a',)), ('a',))
+        self.assertEqual(manager.blockers(('AppleSliced|1b',)), ('a',))
+        self.assertEqual(manager.blockers(('AppleSliced|2',)), ('b',))
+        first.release()
+        second.release()
+
+    def test_failed_step_with_visible_descendant_still_preserves_identity(self):
+        from executor_system.action_resources import manager_for
+        runtime = self.runtime([obj('Egg|1')])
+        manager = manager_for(runtime)
+        lease = manager.try_acquire('a', ('Egg|1',))
+        def step(payload):
+            event = runtime.controller.last_event
+            for agent_event in event.events:
+                agent_event.metadata['objects'] = [obj('EggCracked|1')]
+                agent_event.metadata['lastActionSuccess'] = False
+                agent_event.metadata['errorMessage'] = 'response failed after visible transformation'
+            return event
+        runtime.controller.step = step
+        runtime._step_direct({'action': 'BreakObject', 'objectId': 'Egg|1'},
+                             check_success=False, save_frame=False)
+        self.assertEqual(manager.blockers(('EggCracked|1',)), ('a',))
+        lease.release()

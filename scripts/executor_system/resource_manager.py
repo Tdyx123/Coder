@@ -682,6 +682,10 @@ class ActionResourceManager:
             self._leases.append(lease)
             return lease
 
+    def identity_snapshot(self):
+        with self._lock:
+            return {key: self._canonical(key) for key in self._identities}
+
     def holders(self):
         with self._lock:
             result = {}
