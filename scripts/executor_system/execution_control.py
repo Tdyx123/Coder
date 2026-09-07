@@ -25,8 +25,20 @@ class PlanExecutionTimeout(TimeoutError):
 
 
 class ExecutionControl:
-    def __init__(self, deadline: Optional[float] = None):
+    def __init__(
+        self,
+        deadline: Optional[float] = None,
+        *,
+        parent: Optional["ExecutionControl"] = None,
+    ):
+        if parent is not None and parent.deadline is not None:
+            deadline = (
+                parent.deadline
+                if deadline is None
+                else min(deadline, parent.deadline)
+            )
         self.deadline = deadline
+        self._parent = parent
         self._event = threading.Event()
         self._lock = threading.Lock()
         self._reason = None
@@ -44,6 +56,11 @@ class ExecutionControl:
                 if self.deadline is None or deadline < self.deadline:
                     self.deadline = deadline
 
+    def child(self, *, deadline: Optional[float] = None) -> "ExecutionControl":
+        """Create a stage-scoped control that inherits only parent aborts."""
+
+        return ExecutionControl(deadline, parent=self)
+
     def _expire(self):
         with self._lock:
             if (not self._event.is_set() and self.deadline is not None
@@ -54,26 +71,39 @@ class ExecutionControl:
 
     @property
     def cancelled(self):
+        if self._parent is not None and self._parent.cancelled:
+            return True
         self._expire()
         return self._event.is_set()
 
     @property
     def reason(self):
+        if self._parent is not None and self._parent.cancelled:
+            return self._parent.reason
         self._expire()
         return self._reason
 
     def check(self) -> None:
+        if self._parent is not None:
+            self._parent.check()
         self._expire()
         if self._event.is_set():
             error = PlanExecutionTimeout if self._timed_out else ExecutionCancelled
             raise error(self._reason)
 
     def wait(self, timeout: float) -> bool:
-        self._expire()
-        if self.deadline is not None:
-            timeout = min(timeout, max(0, self.deadline - time.monotonic()))
-        self._event.wait(max(0, timeout))
-        return self.cancelled
+        end = time.monotonic() + max(0, timeout)
+        while True:
+            if self.cancelled:
+                return True
+            remaining = max(0, end - time.monotonic())
+            if self.deadline is not None:
+                remaining = min(remaining, max(0, self.deadline - time.monotonic()))
+            if remaining <= 0:
+                return self.cancelled
+            # A parent event cannot directly wake the child's event, so use a
+            # small bounded slice while retaining prompt inherited cancellation.
+            self._event.wait(min(remaining, 0.05))
 
 
 def ensure_control(runtime, deadline=None):
@@ -114,6 +144,8 @@ def raise_if_execution_aborted(runtime, exc):
 
 
 def run_workers(runtime, executors, coordinator, stage_id):
+    from .execution_policy import StageFailureDecisionError
+
     control = coordinator.control
     errors = []
     error_lock = threading.Lock()
@@ -125,6 +157,15 @@ def run_workers(runtime, executors, coordinator, stage_id):
         with coordinator.condition:
             coordinator.condition.notify_all()
 
+    def cancel_for_error(exc):
+        control.cancel(str(exc))
+        root_control = getattr(runtime, 'execution_control', None)
+        if root_control is None or root_control is control or root_control.cancelled:
+            return
+        if isinstance(exc, (StageFailureDecisionError, ExecutionCancelled)):
+            return
+        root_control.cancel(str(exc))
+
     def run(executor, exited):
         try:
             control.check()
@@ -133,7 +174,7 @@ def run_workers(runtime, executors, coordinator, stage_id):
             with error_lock:
                 if accepting_errors:
                     errors.append((executor.robot_id, exc, exc.__traceback__))
-            control.cancel(str(exc))
+            cancel_for_error(exc)
             wake()
         finally:
             # A real SIGINT inside Thread.join can mark CPython's Thread as
@@ -164,7 +205,7 @@ def run_workers(runtime, executors, coordinator, stage_id):
         control.check()
     except BaseException as exc:
         main_error = (exc, exc.__traceback__)
-        control.cancel(str(exc))
+        cancel_for_error(exc)
         wake()
     finally:
         shutdown_deadline = time.monotonic() + SHUTDOWN_TIMEOUT_SECONDS
@@ -175,7 +216,7 @@ def run_workers(runtime, executors, coordinator, stage_id):
                 except BaseException as exc:
                     if main_error is None or isinstance(main_error[0], Exception):
                         main_error = (exc, exc.__traceback__)
-                    control.cancel(str(exc))
+                    cancel_for_error(exc)
                     wake()
         with error_lock:
             accepting_errors = False

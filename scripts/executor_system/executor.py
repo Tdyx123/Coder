@@ -14,9 +14,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 from .action_plan import (
     ACTION_FAILED,
     ACTION_SUCCESS,
-    FAILURE_RETRY,
-    FAILURE_SKIP,
-    FAILURE_WAIT_AND_RETRY,
+    FAILURE_SKIP_IF_EFFECT_ALREADY_TRUE,
     Action,
     ActionResult,
     AI2ThorAdapter,
@@ -28,7 +26,11 @@ from .action_plan import (
     ROBOT_EXECUTING,
     ROBOT_FINISHED_STAGE,
     ROBOT_WAITING_CONDITION,
-    action_allows_failure_retry,
+)
+from .execution_policy import (
+    ExecutionPolicy,
+    StageFailureDecisionError,
+    resolve_failure,
 )
 from .goals import record_satisfied_temperature_goal_states
 from .movement import (
@@ -76,6 +78,7 @@ class PhaseCoordinator:
         *,
         deadline: Optional[float] = None,
         timeout_error_factory: Optional[Callable[[str], BaseException]] = None,
+        control: Optional[Any] = None,
     ) -> None:
         self.runtime = runtime
         self.condition = threading.Condition()
@@ -88,7 +91,7 @@ class PhaseCoordinator:
         self.completed_agent_ids: Set[int] = set(self.all_agent_ids - self.active_agent_ids)
         self.failed_agent_errors: Dict[int, BaseException] = {}
         self.relocating_agent_ids: Set[int] = set()
-        self.control = ensure_control(runtime, deadline)
+        self.control = control or ensure_control(runtime, deadline)
         self.deadline = self.control.deadline
         self.timeout_error_factory = timeout_error_factory
         movement_config = getattr(runtime, "movement_config", None)
@@ -432,6 +435,7 @@ class Executor:
         stage_index: int = 0,
         logger: Optional[ExecutionLogger] = None,
         phase_coordinator: Optional[PhaseCoordinator] = None,
+        execution_policy: Any = ExecutionPolicy.LEGACY,
     ) -> None:
         self.runtime = runtime
         self.robot_id = str(robot_id) if robot_id is not None else ""
@@ -451,6 +455,7 @@ class Executor:
         self.agent_phase_done = set()
         self.phase_coordinator = phase_coordinator
         self.stage_index = int(stage_index)
+        self.execution_policy = ExecutionPolicy(execution_policy)
         self.control = phase_coordinator.control if phase_coordinator else ensure_control(runtime)
 
     def start(self) -> None:
@@ -622,27 +627,62 @@ class Executor:
         raise_if_execution_aborted(self.runtime, exc)
         self.control.check()
         action_key = action.stable_id(self.robot_id, self.state.action_cursor)
+        ledger_key = f"{self.stage_index}:{self.robot_id}:{self.state.action_cursor}"
         retries = self.state.retries_by_action.get(action_key, 0)
-
+        attempts = retries + 1
+        effects_satisfied = self.effects_satisfied_after_failure(action)
         if (
-            action.on_failure != FAILURE_SKIP
-            and action_allows_failure_retry(action)
-            and action.on_failure in {FAILURE_RETRY, FAILURE_WAIT_AND_RETRY}
-            and retries < action.max_retries
+            action.on_failure == FAILURE_SKIP_IF_EFFECT_ALREADY_TRUE
+            and action.expected_effects
+            and effects_satisfied is True
         ):
-            self.state.retries_by_action[action_key] = retries + 1
-            self.state.wait_ticks += 1
-            self.state.status = ROBOT_ACTION_FAILED
             result = ActionResult(
                 self.robot_id,
                 action,
-                ACTION_FAILED,
+                ACTION_SUCCESS,
                 error_message=str(exc),
-                attempts=retries + 1,
+                attempts=attempts,
+                requested_failure_policy=action.on_failure,
             )
             self.state.last_action_result = result
+            self.state.action_cursor += 1
+            self.state.wait_ticks = 0
+            self.state.status = (
+                ROBOT_FINISHED_STAGE if self.state.finished() else ROBOT_ACTION_SUCCESS
+            )
             self.logger.result(tick, result)
-            if action.on_failure == FAILURE_WAIT_AND_RETRY:
+            action_ledger = getattr(self.runtime, "action_ledger", None)
+            if action_ledger is not None:
+                action_ledger.record_terminal(
+                    ledger_key,
+                    "succeeded",
+                )
+            return True
+
+        decision = resolve_failure(
+            self.execution_policy,
+            action,
+            attempts=attempts,
+            effects_satisfied=effects_satisfied,
+        )
+        result = ActionResult(
+            self.robot_id,
+            action,
+            ACTION_FAILED,
+            error_message=str(exc),
+            attempts=attempts,
+            requested_failure_policy=action.on_failure,
+            failure_decision=decision.kind,
+            failure_error_code=decision.error_code,
+        )
+
+        if decision.kind in {"retry", "wait_retry"}:
+            self.state.retries_by_action[action_key] = decision.retry_number
+            self.state.wait_ticks += 1
+            self.state.status = ROBOT_ACTION_FAILED
+            self.state.last_action_result = result
+            self.logger.result(tick, result)
+            if decision.kind == "wait_retry":
                 agent_id = self.runtime.physical_agent_id(self.robot_id)
                 self.runtime.step(
                     {"action": "Pass", "agentId": agent_id},
@@ -650,14 +690,11 @@ class Executor:
                 )
             return False
 
-        result = ActionResult(
-            self.robot_id,
-            action,
-            ACTION_FAILED,
-            error_message=str(exc),
-        )
         self.state.last_action_result = result
-        self.state.action_cursor += 1
+        if decision.kind == "fail_robot":
+            self.state.action_cursor = len(self.state.action_queue)
+        else:
+            self.state.action_cursor += 1
         self.state.wait_ticks = 0
         self.state.status = (
             ROBOT_FINISHED_STAGE
@@ -668,9 +705,42 @@ class Executor:
         action_ledger = getattr(self.runtime, "action_ledger", None)
         if action_ledger is not None:
             action_ledger.record_terminal(
-                f"{self.stage_index}:{self.robot_id}:{self.state.action_cursor - 1}",
+                ledger_key,
                 "failed",
             )
+        if decision.kind == "fail_stage":
+            raise StageFailureDecisionError(
+                f"Stage {self.state.current_stage_id} failed on {self.robot_id} "
+                f"{action.action_type}: {exc}"
+            ) from exc
+        return True
+
+    def effects_satisfied_after_failure(self, action: Action) -> Optional[bool]:
+        if action.on_failure != FAILURE_SKIP_IF_EFFECT_ALREADY_TRUE:
+            return None
+        effects = tuple(action.expected_effects or ())
+        if not effects:
+            return None
+        self.world_state.refresh([self.state])
+        callable_values = []
+        goal_effects = []
+        for effect in effects:
+            if callable(effect):
+                callable_values.append(bool(effect(self.world_state)))
+            elif isinstance(effect, dict):
+                goal_effects.append(effect)
+            else:
+                return None
+        if any(value is False for value in callable_values):
+            return False
+        if goal_effects:
+            from .evaluation import EvaluationContext
+            evaluated = EvaluationContext.from_goals(goal_effects).evaluate(self.runtime)
+            statuses = [item.get("status") for item in evaluated.get("goal_results", ())]
+            if any(status == "unsatisfied" for status in statuses):
+                return False
+            if any(status != "satisfied" for status in statuses):
+                return None
         return True
 
     def submit(

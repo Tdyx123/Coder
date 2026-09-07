@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple, Union
 
 from .config import NAVIGATION_GRID_SIZE
+from .execution_policy import ExecutionPolicy, resolve_failure
 from .utils import (
     is_break_egg_target,
     log,
@@ -300,6 +301,9 @@ class ActionResult:
     error_message: str = ""
     attempts: int = 0
     conflict_reason: str = ""
+    requested_failure_policy: str = ""
+    failure_decision: str = ""
+    failure_error_code: str = ""
 
 
 @dataclass(frozen=True)
@@ -816,6 +820,9 @@ class ResourceConflictManager:
 
 
 class FailureHandler:
+    def __init__(self, policy: Union[ExecutionPolicy, str] = ExecutionPolicy.LEGACY) -> None:
+        self.policy = ExecutionPolicy(policy)
+
     def handle_conflict(
         self,
         queue_manager: ActionQueueManager,
@@ -847,33 +854,43 @@ class FailureHandler:
         state: RobotExecutionState,
         action: Action,
         exc: BaseException,
+        *,
+        effects_satisfied: Optional[bool] = None,
     ) -> None:
         action_key = action.stable_id(state.robot_id, state.action_cursor)
         retries = state.retries_by_action.get(action_key, 0)
-        if action.on_failure == FAILURE_SKIP:
+        decision = resolve_failure(
+            self.policy,
+            action,
+            attempts=retries + 1,
+            effects_satisfied=effects_satisfied,
+        )
+        result = ActionResult(
+            state.robot_id,
+            action,
+            ACTION_FAILED,
+            error_message=str(exc),
+            attempts=retries + 1,
+            requested_failure_policy=action.on_failure,
+            failure_decision=decision.kind,
+            failure_error_code=decision.error_code,
+        )
+        if decision.kind == "skip":
             queue_manager.mark_success(
                 state,
-                ActionResult(state.robot_id, action, ACTION_FAILED, error_message=str(exc)),
+                result,
             )
             return
-        if (
-            action_allows_failure_retry(action)
-            and action.on_failure in {FAILURE_RETRY, FAILURE_WAIT_AND_RETRY}
-            and retries < action.max_retries
-        ):
-            state.retries_by_action[action_key] = retries + 1
+        if decision.kind in {"retry", "wait_retry"}:
+            state.retries_by_action[action_key] = decision.retry_number
             state.wait_ticks += 1
             state.status = ROBOT_ACTION_FAILED
-            state.last_action_result = ActionResult(
-                state.robot_id,
-                action,
-                ACTION_FAILED,
-                error_message=str(exc),
-                attempts=retries + 1,
-            )
+            state.last_action_result = result
             return
-        if action.on_failure == FAILURE_FAIL_ROBOT:
+        if decision.kind == "fail_robot":
             state.status = ROBOT_BLOCKED
+            state.action_cursor = len(state.action_queue)
+            return
         raise RuntimeError(
             f"Stage {state.current_stage_id} failed on {state.robot_id} "
             f"{action.action_type}: {exc}"
@@ -1063,6 +1080,8 @@ class StageRunner:
         max_ticks_per_stage: int = 10000,
         logger: Optional[ExecutionLogger] = None,
         stage_index: int = 0,
+        execution_policy: Union[ExecutionPolicy, str] = ExecutionPolicy.LEGACY,
+        control: Optional[Any] = None,
     ) -> None:
         self.runtime = runtime_obj
         self.max_ticks_per_stage = max_ticks_per_stage
@@ -1070,7 +1089,9 @@ class StageRunner:
         self.queue_manager: Optional[ActionQueueManager] = None
         self.inferencer = ResourceInferencer()
         self.conflict_manager = ResourceConflictManager()
-        self.failure_handler = FailureHandler()
+        self.execution_policy = ExecutionPolicy(execution_policy)
+        self.failure_handler = FailureHandler(self.execution_policy)
+        self.control = control
         self.adapter = AI2ThorAdapter(runtime_obj)
         self.logger = logger or ExecutionLogger()
         self.stage_index = int(stage_index)
@@ -1089,7 +1110,13 @@ class StageRunner:
             self.runtime.physical_agent_id(robot_id)
             for robot_id in stage.robot_action_queues
         }
-        phase_coordinator = PhaseCoordinator(self.runtime, active_agent_ids)
+        from .execution_control import ensure_control
+        root_control = self.control or ensure_control(self.runtime)
+        phase_coordinator = PhaseCoordinator(
+            self.runtime,
+            active_agent_ids,
+            control=root_control.child(),
+        )
         executors = [
             Executor(
                 self.runtime,
@@ -1099,6 +1126,7 @@ class StageRunner:
                 stage_index=self.stage_index,
                 logger=self.logger,
                 phase_coordinator=phase_coordinator,
+                execution_policy=self.execution_policy,
             )
             for robot_id, actions in stage.robot_action_queues.items()
         ]
@@ -1151,11 +1179,13 @@ class TaskRunner:
         runtime_obj: "ThorRuntime",
         *,
         logger: Optional[ExecutionLogger] = None,
+        execution_policy: Union[ExecutionPolicy, str] = ExecutionPolicy.LEGACY,
     ) -> None:
         self.runtime = runtime_obj
         self.loader = PlanLoader()
         self.validator = PlanValidator(runtime_obj)
         self.logger = logger or ExecutionLogger()
+        self.execution_policy = ExecutionPolicy(execution_policy)
 
     def execute(
         self,
@@ -1184,6 +1214,8 @@ class TaskRunner:
                     self.runtime,
                     logger=self.logger,
                     stage_index=stage_index,
+                    execution_policy=self.execution_policy,
+                    control=control,
                 )
                 world_state = executor.execute_stage(stage)
             if plan.global_success_condition is not None:

@@ -21,6 +21,7 @@ if str(SCRIPTS_DIR) not in sys.path:
 
 from executor_system.action_plan import (
     ACTION_FAILED,
+    ACTION_SUCCESS,
     FAILURE_RETRY,
     Action,
     ExecutionLogger,
@@ -54,6 +55,7 @@ from executor_system.demo_state import (
     verified_ground_truth_goal_signatures,
 )
 from executor_system.executor import PhaseCoordinator
+from executor_system.execution_policy import ExecutionPolicy
 from executor_system.evaluation import EvaluationContext
 from executor_system.movement import NavigationDeferred
 from executor_system.runtime import PICKUP_OBJECT_CLIP_ERROR, ThorRuntime
@@ -401,7 +403,12 @@ class TemperatureGroundTruthProgressTest(unittest.TestCase):
         )
 
         with patch("executor_system.action_plan.AI2ThorAdapter.execute", fake_execute):
-            result = run_action_plan_tolerant(runtime, plan, timeout_seconds=5)
+            result = run_action_plan_tolerant(
+                runtime,
+                plan,
+                timeout_seconds=5,
+                execution_policy=ExecutionPolicy.LEGACY,
+            )
 
         self.assertFalse(result["timed_out"])
         self.assertTrue(runtime.evaluation_context.has_observation("Apple", "COLD"))
@@ -2318,7 +2325,12 @@ class TolerantExecutorTest(unittest.TestCase):
         )
 
         with patch("executor_system.action_plan.AI2ThorAdapter.execute", fake_execute):
-            result = run_action_plan_tolerant(runtime, plan, timeout_seconds=5)
+            result = run_action_plan_tolerant(
+                runtime,
+                plan,
+                timeout_seconds=5,
+                execution_policy=ExecutionPolicy.LEGACY,
+            )
 
         self.assertFalse(result["timed_out"])
         self.assertEqual(result["executed_actions"], 4)
@@ -2354,7 +2366,12 @@ class TolerantExecutorTest(unittest.TestCase):
         )
 
         with patch("executor_system.action_plan.AI2ThorAdapter.execute", fake_execute):
-            result = run_action_plan_tolerant(runtime, plan, timeout_seconds=5)
+            result = run_action_plan_tolerant(
+                runtime,
+                plan,
+                timeout_seconds=5,
+                execution_policy=ExecutionPolicy.LEGACY,
+            )
 
         self.assertEqual(result["executed_actions"], 2)
         self.assertEqual(result["failed_actions"], 0)
@@ -2389,7 +2406,12 @@ class TolerantExecutorTest(unittest.TestCase):
         )
 
         with patch("executor_system.action_plan.AI2ThorAdapter.execute", fake_execute):
-            result = run_action_plan_tolerant(runtime, plan, timeout_seconds=5)
+            result = run_action_plan_tolerant(
+                runtime,
+                plan,
+                timeout_seconds=5,
+                execution_policy=ExecutionPolicy.LEGACY,
+            )
 
         self.assertEqual(result["executed_actions"], 2)
         self.assertEqual(result["failed_actions"], 0)
@@ -2429,7 +2451,12 @@ class TolerantExecutorTest(unittest.TestCase):
         )
 
         with patch("executor_system.action_plan.AI2ThorAdapter.execute", fake_execute):
-            result = run_action_plan_tolerant(runtime, plan, timeout_seconds=5)
+            result = run_action_plan_tolerant(
+                runtime,
+                plan,
+                timeout_seconds=5,
+                execution_policy=ExecutionPolicy.LEGACY,
+            )
 
         self.assertEqual(calls.count(("robot1", "Teleport")), 2)
         self.assertIn(("robot1", "CloseObject"), calls)
@@ -2443,6 +2470,46 @@ class TolerantExecutorTest(unittest.TestCase):
         self.assertEqual(result["action_counts"]["attempts"], 3)
         self.assertEqual(result["raw_action_sr"], 0.5)
         self.assertEqual(result["ignored_failure_count"], 1)
+
+    def test_tolerant_runner_obeys_strict_fail_stage(self):
+        runtime = FakeRuntime()
+        calls = []
+        logger = ExecutionLogger()
+
+        def fake_execute(_adapter, robot_id, action, **_kwargs):
+            calls.append((robot_id, action.action_type))
+            if action.action_type == "OpenObject":
+                raise RuntimeError("open failed")
+            return FakeEvent()
+
+        plan = TaskPlan(
+            "task",
+            [
+                StagePlan(
+                    "Phase 1",
+                    {
+                        "robot1": [
+                            Action("OpenObject", {"args": ("Cabinet",)}),
+                            Action("CloseObject", {"args": ("Cabinet",)}),
+                        ],
+                    },
+                )
+            ],
+        )
+
+        with patch("executor_system.action_plan.AI2ThorAdapter.execute", fake_execute):
+            with self.assertRaisesRegex(RuntimeError, "open failed"):
+                run_action_plan_tolerant(
+                    runtime,
+                    plan,
+                    timeout_seconds=5,
+                    logger=logger,
+                    execution_policy=ExecutionPolicy.STRICT,
+                )
+
+        self.assertEqual(calls, [("robot1", "OpenObject")])
+        self.assertEqual(runtime.execution_report["execution_policy"], "strict")
+        self.assertEqual(runtime.execution_report["robot_failures"][0]["failure_decision"], "fail_stage")
 
 
 class OrdinaryExecutorFailureContinuationTest(unittest.TestCase):
@@ -2477,7 +2544,11 @@ class OrdinaryExecutorFailureContinuationTest(unittest.TestCase):
         )
 
         with patch("executor_system.action_plan.AI2ThorAdapter.execute", fake_execute):
-            TaskRunner(runtime, logger=logger).execute(plan)
+            TaskRunner(
+                runtime,
+                logger=logger,
+                execution_policy=ExecutionPolicy.LEGACY,
+            ).execute(plan)
 
         self.assertIn(("robot1", "OpenObject"), calls)
         self.assertIn(("robot1", "CloseObject"), calls)
@@ -2488,6 +2559,136 @@ class OrdinaryExecutorFailureContinuationTest(unittest.TestCase):
         ]
         self.assertEqual(len(failed_results), 1)
         self.assertEqual(failed_results[0].action.action_type, "OpenObject")
+        self.assertEqual(failed_results[0].requested_failure_policy, "FAIL_STAGE")
+        self.assertEqual(failed_results[0].failure_decision, "skip")
+
+    def test_task_runner_strict_fail_stage_stops_later_actions(self):
+        runtime = FakeRuntime()
+        calls = []
+        logger = ExecutionLogger()
+
+        def fake_execute(_adapter, robot_id, action, **_kwargs):
+            calls.append((robot_id, action.action_type))
+            if action.action_type == "OpenObject":
+                raise RuntimeError("open failed")
+            return FakeEvent()
+
+        plan = TaskPlan(
+            "task",
+            [
+                StagePlan(
+                    "Phase 1",
+                    {
+                        "robot1": [
+                            Action("OpenObject", {"args": ("Cabinet",)}),
+                            Action("CloseObject", {"args": ("Cabinet",)}),
+                        ],
+                    },
+                )
+            ],
+        )
+
+        with patch("executor_system.action_plan.AI2ThorAdapter.execute", fake_execute):
+            with self.assertRaisesRegex(RuntimeError, "open failed"):
+                TaskRunner(
+                    runtime,
+                    logger=logger,
+                    execution_policy=ExecutionPolicy.STRICT,
+                ).execute(plan)
+
+        self.assertEqual(calls, [("robot1", "OpenObject")])
+        failed_results = [record for record in logger.records if record.status == ACTION_FAILED]
+        self.assertEqual(len(failed_results), 1)
+        self.assertEqual(failed_results[0].failure_decision, "fail_stage")
+
+    def test_task_runner_strict_fail_robot_stops_only_that_robot(self):
+        runtime = FakeRuntime()
+        calls = []
+
+        def fake_execute(_adapter, robot_id, action, **_kwargs):
+            calls.append((robot_id, action.action_type))
+            if robot_id == "robot1" and action.action_type == "OpenObject":
+                raise RuntimeError("open failed")
+            return FakeEvent()
+
+        plan = TaskPlan(
+            "task",
+            [
+                StagePlan(
+                    "Phase 1",
+                    {
+                        "robot1": [
+                            Action(
+                                "OpenObject",
+                                {"args": ("Cabinet",)},
+                                on_failure="FAIL_ROBOT",
+                            ),
+                            Action("CloseObject", {"args": ("Cabinet",)}),
+                        ],
+                        "robot2": [Action("PickupObject", {"args": ("Apple",)})],
+                    },
+                )
+            ],
+        )
+
+        with patch("executor_system.action_plan.AI2ThorAdapter.execute", fake_execute):
+            TaskRunner(runtime, execution_policy=ExecutionPolicy.STRICT).execute(plan)
+
+        self.assertIn(("robot1", "OpenObject"), calls)
+        self.assertNotIn(("robot1", "CloseObject"), calls)
+        self.assertIn(("robot2", "PickupObject"), calls)
+        self.assertEqual(
+            runtime.action_metrics["action_counts"],
+            {
+                "planned": 3,
+                "started": 2,
+                "succeeded": 1,
+                "failed": 1,
+                "skipped": 0,
+                "cancelled": 0,
+                "unexecuted": 1,
+                "attempts": 2,
+            },
+        )
+
+    def test_effect_proven_after_failure_is_recorded_as_success_before_resolution(self):
+        runtime = FakeRuntime()
+        calls = []
+        logger = ExecutionLogger()
+
+        def fake_execute(_adapter, robot_id, action, **_kwargs):
+            calls.append((robot_id, action.action_type))
+            if action.action_type == "OpenObject":
+                raise RuntimeError("controller response lost")
+            return FakeEvent()
+
+        plan = TaskPlan(
+            "task",
+            [
+                StagePlan(
+                    "Phase 1",
+                    {
+                        "robot1": [
+                            Action(
+                                "OpenObject",
+                                {"args": ("Cabinet",)},
+                                expected_effects=(lambda _world: True,),
+                                on_failure="SKIP_IF_EFFECT_ALREADY_TRUE",
+                            ),
+                            Action("CloseObject", {"args": ("Cabinet",)}),
+                        ],
+                    },
+                )
+            ],
+        )
+
+        with patch("executor_system.action_plan.AI2ThorAdapter.execute", fake_execute):
+            TaskRunner(runtime, logger=logger, execution_policy="strict").execute(plan)
+
+        self.assertEqual(calls, [("robot1", "OpenObject"), ("robot1", "CloseObject")])
+        self.assertEqual([record.status for record in logger.records], [ACTION_SUCCESS, ACTION_SUCCESS])
+        self.assertEqual(logger.records[0].requested_failure_policy, "SKIP_IF_EFFECT_ALREADY_TRUE")
+        self.assertEqual(logger.records[0].failure_decision, "")
 
     def test_wait_condition_timeout_is_skipped_and_next_action_runs(self):
         runtime = FakeRuntime()
@@ -2519,7 +2720,11 @@ class OrdinaryExecutorFailureContinuationTest(unittest.TestCase):
         )
 
         with patch("executor_system.action_plan.AI2ThorAdapter.execute", fake_execute):
-            TaskRunner(runtime, logger=logger).execute(plan)
+            TaskRunner(
+                runtime,
+                logger=logger,
+                execution_policy=ExecutionPolicy.LEGACY,
+            ).execute(plan)
 
         self.assertNotIn(("robot1", "Wait"), calls)
         self.assertIn(("robot1", "CloseObject"), calls)
@@ -2561,7 +2766,11 @@ class OrdinaryExecutorFailureContinuationTest(unittest.TestCase):
         )
 
         with patch("executor_system.action_plan.AI2ThorAdapter.execute", fake_execute):
-            TaskRunner(runtime, logger=logger).execute(plan)
+            TaskRunner(
+                runtime,
+                logger=logger,
+                execution_policy=ExecutionPolicy.LEGACY,
+            ).execute(plan)
 
         self.assertEqual(calls.count(("robot1", "Teleport")), 2)
         self.assertIn(("robot1", "CloseObject"), calls)
