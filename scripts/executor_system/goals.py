@@ -72,11 +72,14 @@ def goal_state_verified(obj_name: Any, state: str) -> bool:
 
 
 def record_satisfied_temperature_goal_states(
-    objects: Sequence[Dict[str, Any]],
+    runtime_or_objects: Any,
     evaluation_context: Optional[EvaluationContext] = None,
 ) -> int:
     """Record satisfied HOT/COLD ground-truth states without mutating goals."""
 
+    current_objects = getattr(runtime_or_objects, "current_objects", None)
+    runtime = runtime_or_objects if callable(current_objects) else None
+    objects = list(current_objects()) if runtime is not None else list(runtime_or_objects)
     goals = (
         list(evaluation_context.goals)
         if evaluation_context is not None
@@ -94,7 +97,20 @@ def record_satisfied_temperature_goal_states(
         ]
         if not obj_name or not states:
             continue
-        matching_objects = [obj for obj in objects if matches_object(obj_name, obj)]
+        resolved_name = (
+            runtime.resolve_object_alias(obj_name)
+            if runtime is not None and callable(getattr(runtime, "resolve_object_alias", None))
+            else obj_name
+        )
+        if str(resolved_name).casefold() != str(obj_name).casefold():
+            matching_objects = [
+                obj
+                for obj in objects
+                if str(obj.get("objectId") or "").casefold()
+                == str(resolved_name).casefold()
+            ]
+        else:
+            matching_objects = [obj for obj in objects if matches_object(obj_name, obj)]
         for state in states:
             if (
                 evaluation_context is None

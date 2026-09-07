@@ -25,6 +25,7 @@ from executor_system import demo_state as _demo_state
 from executor_system import dependencies as _dependencies
 from executor_system import runtime as _runtime_module
 from executor_system.config import CLOUD_RENDERING, RENDER_IMAGE
+from executor_system.evaluation import EvaluationContext
 from executor_system.pddlrun_adapter import build_task_plan_from_pddlrun_paths
 from executor_system.runtime import ThorRuntime
 from executor_system.task_plan import run_action_plan
@@ -159,6 +160,7 @@ def main() -> int:
         CLOUD_RENDERING,
         RENDER_IMAGE,
     )
+    runtime.evaluation_context = EvaluationContext.from_goals(ground_truth)
     runtime.register_object_id_bindings(bundle.object_id_bindings)
     _context.runtime = runtime
     try:
@@ -169,11 +171,17 @@ def main() -> int:
         no_trans_gt = int(task_record.get("trans", 0) or 0)
         max_trans = int(task_record.get("min_trans", task_record.get("max_trans", 0)) or 0)
         ru = transition_metric(bundle.no_trans, no_trans_gt, max_trans)
-        sr = 1 if metrics["tc"] == 1.0 and ru == 1.0 else 0
+        evaluation_valid = metrics["evaluation_status"] == "valid"
+        if not evaluation_valid:
+            ru = None
+        sr = (
+            1 if metrics["tc"] == 1.0 and ru == 1.0 else 0
+        ) if evaluation_valid else None
+        tc_display = int(metrics["tc"]) if metrics["tc"] is not None else None
         print(
             "SR:{sr}, TC:{tc}, GCR:{gcr}, Exec:{exec_rate}, RU:{ru}".format(
                 sr=sr,
-                tc=int(metrics["tc"]),
+                tc=tc_display,
                 gcr=metrics["gcr"],
                 exec_rate=metrics["exec_rate"],
                 ru=ru,

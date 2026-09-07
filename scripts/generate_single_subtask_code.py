@@ -1065,6 +1065,7 @@ from executor_system import context as _context
 from executor_system import demo_state as _demo_state
 from executor_system.action_plan import TaskPlan
 from executor_system.config import CLOUD_RENDERING, RENDER_IMAGE
+from executor_system.evaluation import EvaluationContext
 from executor_system.parallel_runner import run_action_plan_tolerant, write_result_json
 from executor_system.runtime import ThorRuntime
 from executor_system.task_plan import run_action_plan
@@ -1239,28 +1240,34 @@ def run_standalone() -> int:
             print(f"WARNING: {{warning}}")
 
     runtime = ThorRuntime(robots, floor_no, CLOUD_RENDERING, RENDER_IMAGE)
+    runtime.evaluation_context = EvaluationContext.from_goals(ground_truth)
     runtime.register_object_id_bindings(bundle.object_id_bindings)
     _context.runtime = runtime
     try:
         run_action_plan(bundle.task_plan)
         runtime.step({{"action": "Done"}}, check_success=False)
 
-        resolved_ground_truth = resolve_ground_truth_object_aliases(ground_truth)
-        metrics = runtime.evaluate(resolved_ground_truth)
+        metrics = runtime.evaluate(ground_truth)
         no_trans_gt = int(task_record.get("trans", 0) or 0)
         max_trans = int(task_record.get("min_trans", task_record.get("max_trans", 0)) or 0)
         ru = transition_metric(bundle.no_trans, no_trans_gt, max_trans)
-        sr = 1 if metrics["tc"] == 1.0 and ru == 1.0 else 0
+        evaluation_valid = metrics["evaluation_status"] == "valid"
+        if not evaluation_valid:
+            ru = None
+        sr = (
+            1 if metrics["tc"] == 1.0 and ru == 1.0 else 0
+        ) if evaluation_valid else None
+        tc_display = int(metrics["tc"]) if metrics["tc"] is not None else None
         print(
             "SR:{{sr}}, TC:{{tc}}, GCR:{{gcr}}, Exec:{{exec_rate}}, RU:{{ru}}".format(
                 sr=sr,
-                tc=int(metrics["tc"]),
+                tc=tc_display,
                 gcr=metrics["gcr"],
                 exec_rate=metrics["exec_rate"],
                 ru=ru,
             )
         )
-        runtime.log_unmet_goals(resolved_ground_truth)
+        runtime.log_unmet_goals(ground_truth)
         runtime.generate_video()
         runtime.write_final_metadata()
         return 0
@@ -1290,6 +1297,7 @@ def run_runner_mode(args: argparse.Namespace) -> int:
             result["object_mapping_warnings"] = list(bundle.object_mapping_warnings)
 
         runtime = ThorRuntime(robots, floor_no, CLOUD_RENDERING, False)
+        runtime.evaluation_context = EvaluationContext.from_goals(ground_truth)
         runtime.register_object_id_bindings(bundle.object_id_bindings)
         _context.runtime = runtime
 
@@ -1304,19 +1312,35 @@ def run_runner_mode(args: argparse.Namespace) -> int:
         except RuntimeError as exc:
             result["done_error"] = str(exc)
 
-        resolved_ground_truth = resolve_ground_truth_object_aliases(ground_truth)
-        metrics = runtime.evaluate(resolved_ground_truth)
+        metrics = runtime.evaluate(ground_truth)
         no_trans_gt = int(task_record.get("trans", 0) or 0)
         max_trans = int(task_record.get("min_trans", task_record.get("max_trans", 0)) or 0)
-        ru = transition_metric(bundle.no_trans, no_trans_gt, max_trans)
+        evaluation_valid = metrics["evaluation_status"] == "valid"
+        ru = (
+            transition_metric(bundle.no_trans, no_trans_gt, max_trans)
+            if evaluation_valid
+            else None
+        )
         result.update(
             {{
                 "status": "timeout" if execution_report.get("timed_out") else "success",
                 "gcr": metrics["gcr"],
                 "tc": metrics["tc"],
-                "sr": 1 if metrics["tc"] == 1.0 and ru == 1.0 else 0,
+                "sr": (
+                    1 if metrics["tc"] == 1.0 and ru == 1.0 else 0
+                ) if evaluation_valid else None,
                 "ru": ru,
                 "exec_rate": metrics["exec_rate"],
+                "evaluation_version": metrics["evaluation_version"],
+                "evaluation_status": metrics["evaluation_status"],
+                "original_goal_count": metrics["original_goal_count"],
+                "satisfied_goal_count": metrics["satisfied_goal_count"],
+                "goal_results": metrics["goal_results"],
+                "task_success": (
+                    bool(metrics["tc"] == 1.0 and ru == 1.0)
+                    if evaluation_valid
+                    else None
+                ),
             }}
         )
         return_code = 124 if result.get("timed_out") else 0

@@ -1,10 +1,13 @@
 import json
 import io
+import importlib.util
 import sys
 import tempfile
+import threading
 import unittest
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from types import SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -1368,6 +1371,102 @@ class GenerateSingleSubtaskCodeTests(unittest.TestCase):
         args = generator.parse_arguments(["--manifest-only", "--output-layout", "full"])
         self.assertTrue(args.manifest_only)
         self.assertEqual(args.output_layout, "full")
+
+    def test_generated_entry_modes_install_context_before_transient_observation(self):
+        goals = [{"name": "Mug", "states": ["HOT"], "contains": []}]
+        task_record = {
+            "task": "heat the mug",
+            "object_states": goals,
+            "trans": 0,
+        }
+        bundle_data = {
+            "task": "heat the mug",
+            "task_plan": {"task_id": "task", "stages": []},
+            "no_trans": 0,
+            "phases": [],
+            "plan_files": [],
+            "object_mappings": [],
+            "object_mapping_warnings": [],
+            "object_id_bindings": [],
+        }
+        source = generator.render_executable(
+            None,
+            0,
+            bundle_data,
+            task_record=task_record,
+            floor_plan=1,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "generated_entry.py"
+            path.write_text(source, encoding="utf-8")
+            spec = importlib.util.spec_from_file_location("generated_entry_test", path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+
+            class Runtime:
+                def __init__(self, *_args, **_kwargs):
+                    self.evaluation_context = None
+                    self.stats_lock = threading.Lock()
+                    self.total_exec = 0
+                    self.success_exec = 0
+
+                def register_object_id_bindings(self, _bindings):
+                    pass
+
+                def current_objects(self, _agent_id=None):
+                    return [
+                        {"objectId": "Mug|1", "objectType": "Mug", "temperature": "Cold"}
+                    ]
+
+                def resolve_object_alias(self, value, agent_id=None):
+                    del agent_id
+                    return value
+
+                def step(self, _payload, **_kwargs):
+                    pass
+
+                def evaluate(self, requested_goals):
+                    self.test_case.assertTrue(self.evaluation_context.matches_goals(requested_goals))
+                    return self.evaluation_context.evaluate(self)
+
+                def log_unmet_goals(self, _goals):
+                    return []
+
+                def generate_video(self):
+                    pass
+
+                def write_final_metadata(self):
+                    pass
+
+                def stop(self):
+                    pass
+
+            def runtime_factory(*args, **kwargs):
+                runtime = Runtime(*args, **kwargs)
+                runtime.test_case = self
+                return runtime
+
+            def record(runtime):
+                self.assertIsNotNone(runtime.evaluation_context)
+                runtime.evaluation_context.record_observation("Mug", "HOT", "Mug|1")
+
+            module.ThorRuntime = runtime_factory
+            module.run_action_plan = lambda _plan: record(module.runtime)
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(module.run_standalone(), 0)
+
+            def tolerant(runtime, _plan, **_kwargs):
+                record(runtime)
+                return {"timed_out": False}
+
+            module.run_action_plan_tolerant = tolerant
+            metrics_path = Path(tmp_dir) / "metrics.json"
+            args = SimpleNamespace(metrics_output=str(metrics_path), timeout_seconds=1.0)
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(module.run_runner_mode(args), 0)
+            result = json.loads(metrics_path.read_text(encoding="utf-8"))
+            self.assertEqual(result["gcr"], 1.0)
 
 
 if __name__ == "__main__":

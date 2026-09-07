@@ -598,7 +598,7 @@ class Executor:
             return
         try:
             record_satisfied_temperature_goal_states(
-                current_objects(),
+                self.runtime,
                 getattr(self.runtime, "evaluation_context", None),
             )
         except Exception as exc:
