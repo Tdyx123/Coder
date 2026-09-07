@@ -352,12 +352,12 @@ class PhaseCoordinator:
             if (
                 state.wave_id != wave.wave_id
                 or current_agent_id in state.departed_agent_ids
-                or state.navigation_complete
             ):
                 return
-            state.root_exception = exc
-            state.root_agent_id = current_agent_id
-            state.navigation_complete = True
+            if not state.navigation_complete:
+                state.root_exception = exc
+                state.root_agent_id = current_agent_id
+                state.navigation_complete = True
             self._depart_action_wave_locked(state, current_agent_id)
 
     def _active_action_wave_agent_ids_locked(self) -> Set[int]:

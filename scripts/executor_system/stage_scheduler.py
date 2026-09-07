@@ -2,6 +2,7 @@
 import queue
 import threading
 import time
+from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import Optional
 
@@ -19,6 +20,9 @@ from .execution_policy import (
 from .executor import Executor, PhaseCoordinator
 from .movement import NavigationDeferred
 from .world_snapshot import SnapshotStore
+
+
+_IDLE_TICK = object()
 
 
 @dataclass(frozen=True)
@@ -60,6 +64,7 @@ class StageScheduler:
         self._errors = []
         self._tick = 0
         self._last_pass = time.monotonic()
+        self._tick_inflight = False
         for robot, actions in stage.robot_action_queues.items():
             kwargs = dict(stage_id=stage.stage_id, stage_index=stage_index,
                           logger=self.logger, phase_coordinator=self.coordinator,
@@ -105,6 +110,19 @@ class StageScheduler:
                 continue
             if job is None:
                 return executor.world_state
+            if job is _IDLE_TICK:
+                self.control.check()
+                scope = getattr(self.runtime, 'action_deadline_scope', None)
+                with (scope(control=self.control) if callable(scope) else nullcontext()):
+                    event = self.runtime.step(
+                        {'action': 'Pass', 'agentId': self.runtime.physical_agent_id(executor.robot_id)},
+                        check_success=False, save_frame=False,
+                    )
+                self.control.check()
+                self.results.put((None, event, None))
+                with self.condition:
+                    self.condition.notify_all()
+                continue
             pending, wave, snapshot = job
             self.control.check()
             executor.world_state.snapshot = snapshot
@@ -166,6 +184,14 @@ class StageScheduler:
             except queue.Empty:
                 return changed
             changed = True
+            if pending is None:
+                self._tick_inflight = False
+                self._last_pass = time.monotonic()
+                for robot, admission in self.admissions.items():
+                    if admission.status in ('WAITING_CONDITION', 'WAITING_RESOURCE'):
+                        self.executors[robot].state.wait_ticks += 1
+                self.notify_world_changed()
+                continue
             robot = pending.robot_id
             executor = self.executors[robot]
             self.inflight.remove(robot)
@@ -191,6 +217,11 @@ class StageScheduler:
         return f'{self.stage_index}:{pending.robot_id}:{pending.cursor}'
 
     def _select_ready(self):
+        # Admission rounds continue while peers make progress. Waiting age is
+        # independent of timeout_ticks, which count completed idle Passes only.
+        for robot, admission in self.admissions.items():
+            if admission.status in ('WAITING_CONDITION', 'WAITING_RESOURCE'):
+                self.wait_rounds[robot] += 1
         ready = []
         for robot, admission in tuple(self.admissions.items()):
             if admission.status in ('EXECUTING', 'FINISHED', 'FAILED'):
@@ -269,23 +300,19 @@ class StageScheduler:
             evaluate = (self.stage.synchronization_policy != 'EVENT_CONDITION' or dirty or completed)
             has_pending = any(a.status not in ('EXECUTING', 'FINISHED', 'FAILED')
                               for a in self.admissions.values())
-            if not each_step_blocked and evaluate and has_pending:
+            if not self._tick_inflight and not each_step_blocked and evaluate and has_pending:
                 self.world.snapshot = self.snapshot_store.capture(self.runtime, self.control)
                 ready = self._select_ready()
                 if self._dispatch(ready):
                     continue
-            if not self.inflight:
+            if not self.inflight and not self._tick_inflight:
                 remaining = .05 - (time.monotonic() - self._last_pass)
                 if remaining <= 0:
                     self.control.check()
-                    self.runtime.step({'action': 'Pass', 'agentId': min(self.coordinator.all_agent_ids)},
-                                      check_success=False, save_frame=False)
-                    self._last_pass = time.monotonic()
-                    for robot, admission in self.admissions.items():
-                        if admission.status in ('WAITING_CONDITION', 'WAITING_RESOURCE'):
-                            self.wait_rounds[robot] += 1
-                            self.executors[robot].state.wait_ticks += 1
-                    self.notify_world_changed()
+                    # Reuse a supervised robot target: a hung controller call
+                    # must remain covered by run_workers' actual-exit proof.
+                    self._tick_inflight = True
+                    self.mailboxes[min(self.mailboxes)].put(_IDLE_TICK)
                     continue
             else:
                 remaining = .05

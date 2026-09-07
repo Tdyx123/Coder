@@ -351,3 +351,87 @@ class StageSchedulerTest(unittest.TestCase):
         self.assertIs(caught.exception.__cause__, original)
         self.assertTrue(root.cancelled)
         self.assertTrue(runtime.execution_quiescent)
+
+    def test_idle_pass_is_supervised_with_bounded_shutdown(self):
+        from executor_system.execution_control import ExecutionShutdownTimeout
+        runtime = FakeRuntime()
+        entered, release = threading.Event(), threading.Event()
+        errors, pass_workers = [], []
+        def blocked_pass(payload, **kwargs):
+            pass_workers.append(threading.current_thread())
+            entered.set()
+            release.wait(2)
+            return runtime.controller.last_event
+        runtime.step = blocked_pass
+        stage = StagePlan('idle', {'robot1': [Action('Wait', wait_until=lambda world: False)]})
+        def run():
+            try:
+                run_action_plan_tolerant(runtime, TaskPlan('blocked', [stage]), timeout_seconds=.08)
+            except BaseException as exc:
+                errors.append(exc)
+        task = threading.Thread(target=run, daemon=True)
+        try:
+            with patch('executor_system.execution_control.SHUTDOWN_TIMEOUT_SECONDS', .03):
+                task.start()
+                self.assertTrue(entered.wait(.2))
+                task.join(.25)
+                self.assertFalse(task.is_alive(), 'blocked idle tick prevented bounded task exit')
+                self.assertEqual(len(errors), 1)
+                self.assertIsInstance(errors[0], ExecutionShutdownTimeout)
+                self.assertFalse(runtime.execution_quiescent)
+                self.assertFalse(runtime.reusable)
+                self.assertNotEqual(pass_workers[0], task)
+                self.assertEqual(runtime.execution_report['action_counts']['succeeded'], 0)
+        finally:
+            release.set()
+            task.join(2)
+            for worker in pass_workers:
+                worker.join(2)
+                self.assertFalse(worker.is_alive())
+        self.assertFalse(task.is_alive())
+
+    def test_waiting_age_advances_during_peer_actions_without_timeout_ticks(self):
+        from executor_system.execution_control import install_control
+        from executor_system.execution_policy import ExecutionPolicy
+        from executor_system.stage_scheduler import StageScheduler
+        runtime = FakeRuntime()
+        ready = threading.Event()
+        stage = StagePlan('age', {
+            'robot1': [Action('Wait', wait_until=lambda world: ready.is_set(), timeout_ticks=1)],
+            'robot2': [Action('Wait', action_id=str(i)) for i in range(4)],
+        })
+        scheduler = StageScheduler(runtime, stage, control=install_control(runtime, 1).child(),
+                                   policy=ExecutionPolicy.LEGACY)
+        ages, timeout_ticks = [], []
+        def admit(pending):
+            if pending.robot_id == 'robot1':
+                ages.append(scheduler.wait_rounds['robot1'])
+                timeout_ticks.append(scheduler.executors['robot1'].state.wait_ticks)
+            return True
+        scheduler._admit_resources = admit
+        def execute(adapter, robot, action, **kwargs):
+            if robot == 'robot2' and action.action_id == '3':
+                ready.set()
+        with patch.object(AI2ThorAdapter, 'execute', execute):
+            outcome = scheduler.run()
+        self.assertEqual(outcome.status, 'completed')
+        self.assertGreaterEqual(ages[0], 3)
+        self.assertEqual(timeout_ticks, [0])
+        self.assertEqual(scheduler.wait_rounds['robot1'], 0)
+
+    def test_already_aborted_wave_retires_all_members_preserving_first_error(self):
+        from executor_system.execution_control import ExecutionControl
+        from executor_system.executor import PhaseCoordinator
+        runtime = FakeRuntime()
+        runtime.movement_config = MovementConfig.resolve('step')
+        coordinator = PhaseCoordinator(runtime, (0, 1), control=ExecutionControl())
+        wave = coordinator.admit_wave({0: ('GoToObject', 0), 1: ('GoToObject', 0)})
+        state = coordinator._admitted_waves[wave.wave_id]
+        original = RuntimeError('first request failed')
+        coordinator.abort_action_wave(wave, 0, original)
+        coordinator.abort_action_wave(wave, 1, RuntimeError('second request failed'))
+        self.assertNotIn(wave.wave_id, coordinator._admitted_waves)
+        self.assertEqual(state.departed_agent_ids, {0, 1})
+        self.assertIs(state.root_exception, original)
+        coordinator.abort_action_wave(wave, 1, RuntimeError('duplicate'))
+        self.assertEqual(coordinator._admitted_waves, {})
