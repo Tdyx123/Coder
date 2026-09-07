@@ -33,16 +33,11 @@ from .config import (
     TOP_VIEW_HEIGHT_OFFSET,
     SceneObjectFootprint,
 )
-from .demo_state import ground_truth_lock, verified_ground_truth_goal_signatures
+from .evaluation import EvaluationContext, GoalSpec
 from .dependencies import CloudRendering, Controller, cv2, require_dependencies
 from .goals import (
-    contains_satisfied,
     format_goal,
-    goal_signature,
-    goal_state_verified,
-    goal_states,
     record_verified_goal_state,
-    state_satisfied,
 )
 from .movement import (
     ActionWave,
@@ -229,6 +224,7 @@ class ThorRuntime:
         self.frame_counter = 0
         self.total_exec = 0
         self.success_exec = 0
+        self.evaluation_context: Optional[EvaluationContext] = None
         self.missing_frame_warning_emitted = False
         self.controller = None
         self.controller_lock = threading.RLock()
@@ -3688,6 +3684,8 @@ class ThorRuntime:
             record_verified_goal_state(
                 sliced_goal_name,
                 "SLICED",
+                str(obj.get("objectId") or "") or None,
+                getattr(self, "evaluation_context", None),
             )
         if breaks_egg:
             self.record_created_broken_egg_object_names(obj, event, known_object_ids)
@@ -3696,7 +3694,12 @@ class ThorRuntime:
                 if goal_object_name is not None
                 else stable_object_name(obj)
             )
-            record_verified_goal_state(broken_goal_name, "BROKEN")
+            record_verified_goal_state(
+                broken_goal_name,
+                "BROKEN",
+                str(obj.get("objectId") or "") or None,
+                getattr(self, "evaluation_context", None),
+            )
         self.record_operated_object_name(obj)
         return event
 
@@ -3749,63 +3752,20 @@ class ThorRuntime:
         )
 
     def goal_satisfied(self, goal: Dict[str, Any]) -> bool:
-        with ground_truth_lock:
-            if goal_signature(goal) in verified_ground_truth_goal_signatures:
-                return True
+        goal_spec = GoalSpec.from_value(goal)
+        context = getattr(self, "evaluation_context", None)
+        if context is None or goal_spec not in context.goals:
+            context = EvaluationContext.from_goals([goal_spec])
+        return context.evaluate_goal(self, goal_spec)["status"] == "satisfied"
 
-        obj_name = goal.get("name")
-        resolved_obj_name = self.resolve_object_alias(obj_name)
-        states = [str(state).upper() for state in goal_states(goal)]
-        verified_states = {
-            state
-            for state in states
-            if goal_state_verified(obj_name, state)
-            or (
-                resolved_obj_name != obj_name
-                and goal_state_verified(resolved_obj_name, state)
-            )
-        }
-        contains = goal.get("contains") or []
-        resolved_contains = [
-            self.resolve_object_alias(item)
-            for item in contains
-        ]
-        if states and all(state in verified_states for state in states) and not contains:
-            return True
-
-        candidates = self.find_objects(obj_name)
-        if not candidates:
-            return False
-
-        obj = candidates[0]
-        if states and not all(
-            state in verified_states or state_satisfied(obj, state)
-            for state in states
-        ):
-            return False
-        if contains and not (
-            contains_satisfied(obj, resolved_contains)
-            or (
-                resolved_contains != contains
-                and contains_satisfied(obj, contains)
-            )
-        ):
-            return False
-        return True
-
-    def evaluate(self, goals: Sequence[Dict[str, Any]]) -> Dict[str, float]:
-        goals = list(goals)
-        goal_count = len(goals)
-        complete_count = sum(1 for goal in goals if self.goal_satisfied(goal))
-        gcr = 1.0 if goal_count == 0 else complete_count / goal_count
-        tc = 1.0 if complete_count == goal_count else 0.0
-        with self.stats_lock:
-            total_exec = self.total_exec
-            success_exec = self.success_exec
-        exec_rate = 1.0 if total_exec == 0 else success_exec / total_exec
-        ru = 1.0
-        sr = 1.0 if tc == 1.0 and ru == 1.0 else 0.0
-        return {"sr": sr, "tc": tc, "gcr": gcr, "exec_rate": exec_rate, "ru": ru}
+    def evaluate(self, goals: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+        context = getattr(self, "evaluation_context", None)
+        if context is None:
+            context = EvaluationContext.from_goals(goals)
+            self.evaluation_context = context
+        elif not context.matches_goals(goals):
+            raise ValueError("Evaluation goals do not match this runtime's fixed goals.")
+        return context.evaluate(self)
 
     def unmet_goals(self, goals: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
         return [dict(goal) for goal in goals if not self.goal_satisfied(goal)]

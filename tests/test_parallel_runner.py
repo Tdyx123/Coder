@@ -51,8 +51,8 @@ from executor_system.demo_state import (
     verified_ground_truth_goal_signatures,
 )
 from executor_system.executor import PhaseCoordinator
+from executor_system.evaluation import EvaluationContext
 from executor_system.movement import NavigationDeferred
-from executor_system.goals import goal_state_verified
 from executor_system.runtime import PICKUP_OBJECT_CLIP_ERROR, ThorRuntime
 
 
@@ -342,7 +342,8 @@ class TemperatureGroundTruthProgressTest(unittest.TestCase):
                 "temperature": "RoomTemp",
             }
         ]
-        set_ground_truth([{"name": "Apple", "contains": [], "states": ["HOT"]}])
+        goals = [{"name": "Apple", "contains": [], "states": ["HOT"]}]
+        runtime.evaluation_context = EvaluationContext.from_goals(goals)
 
         def fake_execute(_adapter, _robot_id, _action, **_kwargs):
             runtime.objects[0]["temperature"] = "Hot"
@@ -356,7 +357,7 @@ class TemperatureGroundTruthProgressTest(unittest.TestCase):
         with patch("executor_system.action_plan.AI2ThorAdapter.execute", fake_execute):
             TaskRunner(runtime).execute(plan)
 
-        self.assertTrue(goal_state_verified("Apple", "HOT"))
+        self.assertTrue(runtime.evaluation_context.has_observation("Apple", "HOT"))
 
     def test_tolerant_runner_records_cold_goal_after_successful_action(self):
         runtime = FakeRuntime()
@@ -368,7 +369,8 @@ class TemperatureGroundTruthProgressTest(unittest.TestCase):
                 "temperature": "RoomTemp",
             }
         ]
-        set_ground_truth([{"name": "Apple", "contains": [], "states": ["COLD"]}])
+        goals = [{"name": "Apple", "contains": [], "states": ["COLD"]}]
+        runtime.evaluation_context = EvaluationContext.from_goals(goals)
 
         def fake_execute(_adapter, _robot_id, _action, **_kwargs):
             runtime.objects[0]["temperature"] = "Cold"
@@ -383,7 +385,7 @@ class TemperatureGroundTruthProgressTest(unittest.TestCase):
             result = run_action_plan_tolerant(runtime, plan, timeout_seconds=5)
 
         self.assertFalse(result["timed_out"])
-        self.assertTrue(goal_state_verified("Apple", "COLD"))
+        self.assertTrue(runtime.evaluation_context.has_observation("Apple", "COLD"))
 
     def test_temperature_check_records_only_satisfied_state_without_mutating_goals(self):
         runtime = FakeRuntime()
@@ -397,7 +399,7 @@ class TemperatureGroundTruthProgressTest(unittest.TestCase):
             }
         ]
         ground_truth = [{"name": "Bread", "contains": [], "states": ["HOT", "COOKED"]}]
-        set_ground_truth(ground_truth)
+        runtime.evaluation_context = EvaluationContext.from_goals(ground_truth)
 
         def fake_execute(_adapter, _robot_id, _action, **_kwargs):
             runtime.objects[0]["temperature"] = "Hot"
@@ -416,10 +418,11 @@ class TemperatureGroundTruthProgressTest(unittest.TestCase):
         eval_runtime.total_exec = 0
         eval_runtime.success_exec = 0
         eval_runtime.current_objects = runtime.current_objects
+        eval_runtime.evaluation_context = runtime.evaluation_context
 
         self.assertEqual(len(ground_truth), 1)
-        self.assertTrue(goal_state_verified("Bread", "HOT"))
-        self.assertFalse(goal_state_verified("Bread", "COOKED"))
+        self.assertTrue(runtime.evaluation_context.has_observation("Bread", "HOT"))
+        self.assertFalse(runtime.evaluation_context.has_observation("Bread", "COOKED"))
         self.assertEqual(ThorRuntime.evaluate(eval_runtime, ground_truth)["gcr"], 0.0)
 
     def test_failed_action_does_not_record_temperature_goal(self):
@@ -432,7 +435,8 @@ class TemperatureGroundTruthProgressTest(unittest.TestCase):
                 "temperature": "Cold",
             }
         ]
-        set_ground_truth([{"name": "Apple", "contains": [], "states": ["COLD"]}])
+        goals = [{"name": "Apple", "contains": [], "states": ["COLD"]}]
+        runtime.evaluation_context = EvaluationContext.from_goals(goals)
 
         def fake_execute(_adapter, _robot_id, _action, **_kwargs):
             raise RuntimeError("action failed")
@@ -445,7 +449,7 @@ class TemperatureGroundTruthProgressTest(unittest.TestCase):
         with patch("executor_system.action_plan.AI2ThorAdapter.execute", fake_execute):
             TaskRunner(runtime).execute(plan)
 
-        self.assertFalse(goal_state_verified("Apple", "COLD"))
+        self.assertFalse(runtime.evaluation_context.has_observation("Apple", "COLD"))
 
 
 def write_fake_generated_script(

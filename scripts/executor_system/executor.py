@@ -597,7 +597,10 @@ class Executor:
         if not callable(current_objects):
             return
         try:
-            record_satisfied_temperature_goal_states(current_objects())
+            record_satisfied_temperature_goal_states(
+                current_objects(),
+                getattr(self.runtime, "evaluation_context", None),
+            )
         except Exception as exc:
             log(f"Skipping HOT/COLD ground-truth check: {exc}")
 

@@ -436,7 +436,7 @@ class RuntimeObjectAliasTest(unittest.TestCase):
             )
         )
 
-    def test_goal_satisfied_only_checks_first_state_candidate(self):
+    def test_goal_satisfied_accepts_any_state_candidate_fixed_goals_v2(self):
         first_id = "Drawer|+01.00|+00.20|-00.30"
         second_id = "Drawer|+01.00|+00.60|-00.30"
         runtime = runtime_with_objects(
@@ -456,7 +456,7 @@ class RuntimeObjectAliasTest(unittest.TestCase):
             ]
         )
 
-        self.assertFalse(
+        self.assertTrue(
             runtime.goal_satisfied(
                 {"name": "Drawer", "contains": [], "states": ["OPENED"]}
             )
@@ -485,7 +485,7 @@ class RuntimeObjectAliasTest(unittest.TestCase):
             )
         )
 
-    def test_goal_satisfied_only_checks_first_contains_candidate(self):
+    def test_goal_satisfied_accepts_any_contains_candidate_fixed_goals_v2(self):
         first_drawer_id = "Drawer|+01.00|+00.20|-00.30"
         second_drawer_id = "Drawer|+01.00|+00.60|-00.30"
         credit_card_id = "CreditCard|+01.00|+00.90|+00.00"
@@ -511,7 +511,7 @@ class RuntimeObjectAliasTest(unittest.TestCase):
             ]
         )
 
-        self.assertFalse(
+        self.assertTrue(
             runtime.goal_satisfied(
                 {"name": "Drawer", "contains": ["CreditCard"], "states": []}
             )

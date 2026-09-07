@@ -15,6 +15,7 @@ from executor_system import context as _context
 from executor_system import demo_state as _demo_state
 from executor_system.action_plan import TaskPlan
 from executor_system.config import CLOUD_RENDERING, RENDER_IMAGE
+from executor_system.evaluation import EvaluationContext
 from executor_system.movement import MovementConfig
 from executor_system.parallel_runner import (
     TolerantRunStats,
@@ -198,6 +199,10 @@ def run_standalone(
         RENDER_IMAGE,
         movement_mode=movement_mode,
     )
+    runtime.evaluation_context = EvaluationContext.from_goals(
+        bundle.gcr,
+        allow_empty=bool(bundle.noop_subtasks) and not bundle.task_plan.stages,
+    )
     runtime.register_object_id_bindings(bundle.object_id_bindings)
     _context.runtime = runtime
     try:
@@ -211,11 +216,17 @@ def run_standalone(
         no_trans_gt = int(task_record.get("trans", 0) or 0)
         max_trans = int(task_record.get("min_trans", task_record.get("max_trans", 0)) or 0)
         ru = transition_metric(bundle.no_trans, no_trans_gt, max_trans)
-        sr = 1 if metrics["tc"] == 1.0 and ru == 1.0 else 0
+        evaluation_valid = metrics["evaluation_status"] == "valid"
+        if not evaluation_valid:
+            ru = None
+        sr = (
+            1 if metrics["tc"] == 1.0 and ru == 1.0 else 0
+        ) if evaluation_valid else None
+        tc_display = int(metrics["tc"]) if metrics["tc"] is not None else None
         print(
             "SR:{sr}, TC:{tc}, GCR:{gcr}, Exec:{exec_rate}, RU:{ru}".format(
                 sr=sr,
-                tc=int(metrics["tc"]),
+                tc=tc_display,
                 gcr=metrics["gcr"],
                 exec_rate=metrics["exec_rate"],
                 ru=ru,
@@ -262,6 +273,10 @@ def run_runner_mode(
             False,
             movement_mode=args.movement_mode,
         )
+        runtime.evaluation_context = EvaluationContext.from_goals(
+            bundle.gcr,
+            allow_empty=bool(bundle.noop_subtasks) and not bundle.task_plan.stages,
+        )
         result["movement_mode"] = runtime.movement_config.mode.value
         result["navigation_metrics"] = runtime.navigation_metrics.to_dict()
         runtime.register_object_id_bindings(bundle.object_id_bindings)
@@ -287,15 +302,32 @@ def run_runner_mode(
         metrics = runtime.evaluate(ground_truth)
         no_trans_gt = int(task_record.get("trans", 0) or 0)
         max_trans = int(task_record.get("min_trans", task_record.get("max_trans", 0)) or 0)
-        ru = transition_metric(bundle.no_trans, no_trans_gt, max_trans)
+        evaluation_valid = metrics["evaluation_status"] == "valid"
+        ru = (
+            transition_metric(bundle.no_trans, no_trans_gt, max_trans)
+            if evaluation_valid
+            else None
+        )
         result.update(
             {
                 "status": "timeout" if execution_report.get("timed_out") else "success",
                 "gcr": metrics["gcr"],
                 "tc": metrics["tc"],
-                "sr": 1 if metrics["tc"] == 1.0 and ru == 1.0 else 0,
+                "sr": (
+                    1 if metrics["tc"] == 1.0 and ru == 1.0 else 0
+                ) if evaluation_valid else None,
                 "ru": ru,
                 "exec_rate": metrics["exec_rate"],
+                "evaluation_version": metrics["evaluation_version"],
+                "evaluation_status": metrics["evaluation_status"],
+                "original_goal_count": metrics["original_goal_count"],
+                "satisfied_goal_count": metrics["satisfied_goal_count"],
+                "goal_results": metrics["goal_results"],
+                "task_success": (
+                    bool(metrics["tc"] == 1.0 and ru == 1.0)
+                    if evaluation_valid
+                    else None
+                ),
             }
         )
         return_code = 124 if result.get("timed_out") else 0

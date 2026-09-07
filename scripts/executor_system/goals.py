@@ -1,12 +1,13 @@
 """Goal state evaluation and ground-truth bookkeeping."""
 
-from typing import Any, Dict, List, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from .demo_state import (
     get_ground_truth,
     ground_truth_lock,
     verified_ground_truth_goal_signatures,
 )
+from .evaluation import EvaluationContext, GoalSpec
 from .utils import matches_object, object_key
 
 
@@ -48,7 +49,15 @@ def state_goal_signature(obj_name: Any, state: str) -> Tuple[str, Tuple[str, ...
     )
 
 
-def record_verified_goal_state(obj_name: Any, state: str) -> None:
+def record_verified_goal_state(
+    obj_name: Any,
+    state: str,
+    object_id: Optional[str] = None,
+    evaluation_context: Optional[EvaluationContext] = None,
+) -> None:
+    if evaluation_context is not None:
+        evaluation_context.record_observation(str(obj_name), state, object_id)
+        return
     signature = state_goal_signature(obj_name, state)
     if not signature[0] or not signature[1]:
         return
@@ -64,29 +73,45 @@ def goal_state_verified(obj_name: Any, state: str) -> bool:
 
 def record_satisfied_temperature_goal_states(
     objects: Sequence[Dict[str, Any]],
+    evaluation_context: Optional[EvaluationContext] = None,
 ) -> int:
     """Record satisfied HOT/COLD ground-truth states without mutating goals."""
 
-    with ground_truth_lock:
-        goals = [dict(goal) for goal in get_ground_truth()]
+    goals = (
+        list(evaluation_context.goals)
+        if evaluation_context is not None
+        else [GoalSpec.from_value(goal) for goal in get_ground_truth()]
+    )
 
     recorded = 0
     temperature_states = {"HOT", "COLD"}
     for goal in goals:
-        obj_name = goal.get("name")
+        obj_name = goal.name
         states = [
             str(state).upper()
-            for state in goal_states(goal)
+            for state in goal.states
             if str(state).upper() in temperature_states
         ]
         if not obj_name or not states:
             continue
         matching_objects = [obj for obj in objects if matches_object(obj_name, obj)]
         for state in states:
-            if goal_state_verified(obj_name, state):
+            if (
+                evaluation_context is None
+                and goal_state_verified(obj_name, state)
+            ):
                 continue
-            if any(state_satisfied(obj, state) for obj in matching_objects):
-                record_verified_goal_state(obj_name, state)
+            satisfying_obj = next(
+                (obj for obj in matching_objects if state_satisfied(obj, state)),
+                None,
+            )
+            if satisfying_obj is not None:
+                record_verified_goal_state(
+                    obj_name,
+                    state,
+                    str(satisfying_obj.get("objectId") or "") or None,
+                    evaluation_context,
+                )
                 recorded += 1
     return recorded
 
@@ -160,23 +185,28 @@ def ground_truth_name_for_object(obj_name: Any, obj: Dict[str, Any]) -> str:
     return str(obj_name)
 
 
-def record_groundtruth_state(obj_name: Any, obj: Dict[str, Any], state: str) -> None:
-    goal = {
-        "name": ground_truth_name_for_object(obj_name, obj),
-        "contains": [],
-        "states": [str(state).upper()],
-    }
-    signature = goal_signature(goal)
-    with ground_truth_lock:
-        ground_truth = get_ground_truth()
-        if not any(goal_signature(existing) == signature for existing in ground_truth):
-            ground_truth.append(goal)
-        verified_ground_truth_goal_signatures.add(signature)
+def record_groundtruth_state(
+    obj_name: Any,
+    obj: Dict[str, Any],
+    state: str,
+    evaluation_context: Optional[EvaluationContext] = None,
+) -> None:
+    name = ground_truth_name_for_object(obj_name, obj)
+    record_verified_goal_state(
+        name,
+        state,
+        str(obj.get("objectId") or "") or None,
+        evaluation_context,
+    )
 
 
 def contains_satisfied(obj: Dict[str, Any], contains: Sequence[str]) -> bool:
     receptacle_ids = obj.get("receptacleObjectIds") or []
     return all(
-        any(object_key(contained) in object_key(receptacle_id) for receptacle_id in receptacle_ids)
+        any(
+            str(contained).casefold() == str(receptacle_id).casefold()
+            or object_key(contained) == object_key(str(receptacle_id).split("|", 1)[0])
+            for receptacle_id in receptacle_ids
+        )
         for contained in contains
     )

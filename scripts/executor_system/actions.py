@@ -375,7 +375,12 @@ def _wait_for_object_hot(robot: RobotRef, obj_name: Any, action_name: str) -> No
     for pass_step in range(INTERACTION_MAX_PASS_STEPS + 1):
         current = _current_object_by_id(agent_id, target_id)
         if state_satisfied(current, "HOT"):
-            record_groundtruth_state(obj_name, current, "HOT")
+            record_groundtruth_state(
+                obj_name,
+                current,
+                "HOT",
+                getattr(runtime_obj, "evaluation_context", None),
+            )
             return
         if pass_step == INTERACTION_MAX_PASS_STEPS:
             break
@@ -394,8 +399,15 @@ def _wait_for_object_cold(robot: RobotRef, obj_name: Any, action_name: str) -> N
     for pass_step in range(INTERACTION_MAX_PASS_STEPS + 1):
         current = _current_object_by_id(agent_id, target_id)
         current_temperature = current.get("temperature", "<unknown>")
-        if state_satisfied(current, "COLD") or pass_step > 5:  # 这里有个 Bug， 有的  floorplan 无法用冰箱冷却物体
-            record_groundtruth_state(obj_name, current, "COLD")
+        if state_satisfied(current, "COLD"):
+            record_groundtruth_state(
+                obj_name,
+                current,
+                "COLD",
+                getattr(runtime_obj, "evaluation_context", None),
+            )
+            return
+        if pass_step > 5:  # Some floor plans cannot cool objects in the fridge.
             return
         if pass_step == INTERACTION_MAX_PASS_STEPS:
             break
@@ -438,7 +450,12 @@ def _wait_for_microwave_result(robot: RobotRef, item: Any) -> None:
         is_hot = state_satisfied(current, "HOT")
         is_cooked = state_satisfied(current, "COOKED")
         if is_hot and (not is_cookable or is_cooked):
-            record_groundtruth_state(item, current, "HOT")
+            record_groundtruth_state(
+                item,
+                current,
+                "HOT",
+                getattr(runtime_obj, "evaluation_context", None),
+            )
             return
         if pass_step == INTERACTION_MAX_PASS_STEPS:
             break
