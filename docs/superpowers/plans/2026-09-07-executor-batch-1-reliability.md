@@ -75,6 +75,7 @@ RunResultStore.rebuild_summary() -> Dict[str, Any]
 | `evaluation_status` | `valid / incomplete / invalid` |
 | `task_success` | 有效评估时等于 `bool(sr)`；其他情况为 `null` |
 | `original_goal_count`、`satisfied_goal_count` | 固定目标数、满足目标数；无有效终态时后者为 `null` |
+| `ru_inputs` | 计算 RU 时保存实际输入 `{no_trans, no_trans_gt, max_trans}`：分别来自 bundle 的 `no_trans`、任务 `trans`（默认 0）和优先 `min_trans`、否则 `max_trans`（默认 0）；保存传入公式之前的值，不包括公式内部的 `+1`。尚未进入计算阶段可缺省；持久化尝试与重建结果原样保留 |
 | `raw_action_sr` | `succeeded / (succeeded + failed)`；分母为零时为 `null` |
 | `action_counts` | `planned / started / succeeded / failed / skipped / cancelled / unexecuted / attempts` |
 | `ignored_failure_count` | 被历史指标排除的失败数，仍计入新指标的失败数 |

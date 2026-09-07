@@ -479,6 +479,11 @@ def run_runner_mode(
         metrics = runtime.evaluate(ground_truth)
         no_trans_gt = int(task_record.get("trans", 0) or 0)
         max_trans = int(task_record.get("min_trans", task_record.get("max_trans", 0)) or 0)
+        result["ru_inputs"] = {
+            "no_trans": bundle.no_trans,
+            "no_trans_gt": no_trans_gt,
+            "max_trans": max_trans,
+        }
         evaluation_valid = (
             metrics["evaluation_status"] == "valid"
             and not bool(execution_report.get("timed_out"))
@@ -509,7 +514,7 @@ def run_runner_mode(
                 "ru": ru,
                 "exec_rate": metrics["exec_rate"],
                 "evaluation_version": metrics["evaluation_version"],
-                "evaluation_status": "valid" if evaluation_valid else "incomplete",
+                "evaluation_status": metrics["evaluation_status"],
                 "original_goal_count": metrics["original_goal_count"],
                 "satisfied_goal_count": (
                     metrics["satisfied_goal_count"] if evaluation_valid else None

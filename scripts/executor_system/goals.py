@@ -117,11 +117,9 @@ def record_satisfied_temperature_goal_states(
                 and goal_state_verified(obj_name, state)
             ):
                 continue
-            satisfying_obj = next(
-                (obj for obj in matching_objects if state_satisfied(obj, state)),
-                None,
-            )
-            if satisfying_obj is not None:
+            for satisfying_obj in matching_objects:
+                if not state_satisfied(satisfying_obj, state):
+                    continue
                 record_verified_goal_state(
                     obj_name,
                     state,

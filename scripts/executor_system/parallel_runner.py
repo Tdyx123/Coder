@@ -1025,45 +1025,12 @@ def run_generated_executable(
     stdout = _read_process_log(stdout_path)
     stderr = _read_process_log(stderr_path)
     cleanup_events = [process_cleanup_event(outcome)]
-    if outcome.timed_out:
-        result = {
-            "status": "timeout",
-            "timed_out": True,
-            "timeout_message": (
-                f"subprocess exceeded total budget {total_timeout_seconds:g} seconds "
-                f"(startup {startup_grace_seconds:g}, execution {timeout_seconds:g}, "
-                f"finalization {finalization_grace_seconds:g})"
-            ),
-            "run_time_seconds": outcome.wall_time_seconds,
-            "gcr": None,
-            "tc": None,
-            "sr": None,
-            "ru": None,
-            "satisfied_goal_count": None,
-            "executed_actions": 0,
-            "failed_actions": 0,
-            "action_sr": None,
-            "failure_action_ratio": 0.0,
-            "robot_failures": [],
-            "returncode": 124,
-            "executable_path": str(executable_path),
-            "movement_mode": str(movement_mode),
-            "navigation_metrics": {},
-            "stdout": stdout,
-            "stderr": stderr,
-            "stdout_path": str(stdout_path),
-            "stderr_path": str(stderr_path),
-            "process_cleanup_events": cleanup_events,
-            "process_status": "timeout",
-            "execution_status": "timeout",
-            "evaluation_status": "incomplete",
-            "task_success": None,
-            "evaluation_version": "legacy_v1",
-            "execution_policy": "legacy",
-            **identity,
-        }
-        prune_stdout_for_result(result, save_all_stdout=save_all_stdout)
-        return result
+    # Child evidence may already be durable when the process exceeds its budget.
+    # Validate its identity/schema before applying the authoritative parent outcome.
+    parent_returncode = (
+        124 if outcome.timed_out
+        else int(outcome.returncode if outcome.returncode is not None else 1)
+    )
 
     metrics_error = ""
     if metrics_output.is_file():
@@ -1081,7 +1048,7 @@ def run_generated_executable(
             executable_path,
             movement_mode=movement_mode,
             run_time_seconds=outcome.wall_time_seconds,
-            returncode=int(outcome.returncode if outcome.returncode is not None else 1),
+            returncode=parent_returncode,
             identity=identity,
             error=metrics_error or "runner metrics must be a non-empty JSON object",
         )
@@ -1089,7 +1056,7 @@ def run_generated_executable(
         try:
             result = validate_result(
                 result,
-                returncode=int(outcome.returncode if outcome.returncode is not None else 1),
+                returncode=parent_returncode,
                 expected_identity=identity,
             )
         except ValueError as exc:
@@ -1097,7 +1064,7 @@ def run_generated_executable(
                 executable_path,
                 movement_mode=movement_mode,
                 run_time_seconds=outcome.wall_time_seconds,
-                returncode=int(outcome.returncode if outcome.returncode is not None else 1),
+                returncode=parent_returncode,
                 identity=identity,
                 error=f"invalid runner metrics: {exc}",
             )
@@ -1115,7 +1082,19 @@ def run_generated_executable(
     result.setdefault("movement_mode", str(movement_mode))
     result.setdefault("navigation_metrics", {})
     normalize_result_metrics(result)
-    result["returncode"] = outcome.returncode
+    if outcome.timed_out:
+        result.update(
+            status="timeout", timed_out=True, process_status="timeout",
+            execution_status="timeout", evaluation_status="incomplete",
+            task_success=None, gcr=None, tc=None, sr=None, ru=None,
+            satisfied_goal_count=None, run_time_seconds=outcome.wall_time_seconds,
+            timeout_message=(
+                f"subprocess exceeded total budget {total_timeout_seconds:g} seconds "
+                f"(startup {startup_grace_seconds:g}, execution {timeout_seconds:g}, "
+                f"finalization {finalization_grace_seconds:g})"
+            ),
+        )
+    result["returncode"] = parent_returncode
     result["executable_path"] = str(executable_path)
     result["stdout"] = stdout
     result["stderr"] = stderr

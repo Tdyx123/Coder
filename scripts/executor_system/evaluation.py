@@ -201,9 +201,34 @@ class EvaluationContext:
             return any(
                 observed_name in names
                 and observed_state == state
-                and (observed_id is None or normalized_id is None or observed_id == normalized_id)
+                and normalized_id is not None
+                and observed_id == normalized_id
                 for observed_name, observed_state, observed_id in self._observations
             )
+
+    def _history_satisfies_goal(self, goal: GoalSpec, resolved_name: Any) -> bool:
+        """A disappeared goal still needs one identified, alias-compatible object."""
+        if not goal.states or goal.contains:
+            return False
+        names = {object_key(goal.name), object_key(resolved_name)}
+        bound_id = (
+            str(resolved_name).casefold()
+            if str(resolved_name).casefold() != goal.name.casefold()
+            else None
+        )
+        with self._lock:
+            object_ids = {
+                observed_id
+                for observed_name, _, observed_id in self._observations
+                if observed_name in names and observed_id is not None
+                and (bound_id is None or observed_id == bound_id)
+            }
+        # Unknown IDs cannot prove that separate observations share an instance.
+        return any(
+            all(self._observation_satisfies(goal.name, resolved_name, state, object_id)
+                for state in goal.states)
+            for object_id in object_ids
+        )
 
     @staticmethod
     def _resolve(runtime: Any, name: str) -> Any:
@@ -313,10 +338,7 @@ class EvaluationContext:
             status = "satisfied"
         elif candidates and any_unknown:
             status = "unknown"
-        elif not candidates and goal.states and not goal.contains and all(
-            self._observation_satisfies(goal.name, resolved_name, state, None)
-            for state in goal.states
-        ):
+        elif not candidates and self._history_satisfies_goal(goal, resolved_name):
             status = "satisfied"
         else:
             status = "unsatisfied"
