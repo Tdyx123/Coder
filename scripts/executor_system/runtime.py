@@ -2391,6 +2391,7 @@ class ThorRuntime:
                 request = replace(
                     request,
                     candidate_positions=candidate_positions,
+                    excluded_pose_keys=request.excluded_pose_keys | {current_key},
                 )
             result = self.movement_strategy.navigate(request)
             log(f"Reached: {dest_obj}")

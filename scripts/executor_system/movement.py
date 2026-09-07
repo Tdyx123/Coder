@@ -114,6 +114,8 @@ class NavigationRequest:
     interaction_center: Optional[Dict[str, float]] = None
     interaction_object_resource: Optional[str] = None
     interaction_target_replaced: bool = False
+    # Caller-imposed constraints survive regenerated target candidate lists.
+    excluded_pose_keys: FrozenSet[Tuple[int, int]] = frozenset()
 
 
 @dataclass(frozen=True)

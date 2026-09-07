@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import time
 from contextlib import nullcontext
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import (
     Any,
     Dict,
@@ -385,6 +385,7 @@ class StepMovementCoordinator:
                     if (
                         point in seen
                         or point in state.excluded_candidate_keys
+                        or (point.x, point.z) in request.excluded_pose_keys
                         or point not in snapshot.walkable_map.walkable
                     ):
                         continue
@@ -509,9 +510,17 @@ class StepMovementCoordinator:
                 for target, previous in targets)
             if not changed:
                 continue
-            state.request = self.runtime.build_navigation_request(
+            refreshed = self.runtime.build_navigation_request(
                 request.robot, request.dest_obj, next_action=request.next_action,
                 phase_coordinator=request.phase_coordinator, action_wave=request.action_wave)
+            candidates = []
+            for position in refreshed.candidate_positions:
+                point = self._grid_point(position)
+                if (point.x, point.z) not in request.excluded_pose_keys:
+                    candidates.append(position)
+            state.request = replace(
+                refreshed, candidate_positions=tuple(candidates),
+                excluded_pose_keys=request.excluded_pose_keys)
             state.excluded_candidate_keys.clear()
             state.decision_trace.append({"event": "navigation_candidates_refreshed",
                                          "reason": "target metadata changed"})

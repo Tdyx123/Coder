@@ -77,6 +77,39 @@ class ReachableMapCacheTest(unittest.TestCase):
             if len(runs) == 2:
                 self.assertEqual(runs[0].actions, runs[1].actions)
 
+    def reposition_with_changed_target(self, regenerated_candidates):
+        from executor_system.runtime import ThorRuntime
+        runtime, _ = navigation_case(walkable=[(x, 0) for x in range(5)], candidates=[(1, 0)])
+        runtime.navigation_candidates_by_object['Apple|1'] = [thor_position(0), thor_position(.25)]
+        nav = coordinator(runtime)
+        runtime.navigation_metrics = nav.metrics
+        runtime.record_operated_object_name = lambda obj: None
+        def navigate(request):
+            # The real runtime has already applied exclude_current_position;
+            # the target changes before the real coordinator first plans.
+            runtime.objects['Apple|1']['position'] = thor_position(.9)
+            runtime.navigation_candidates_by_object['Apple|1'] = regenerated_candidates
+            return nav.execute_batch((request,))[0]
+        runtime.movement_strategy = SimpleNamespace(navigate=navigate)
+        ThorRuntime.navigate_to_object(
+            runtime, 'robot1', 'Apple|1', allow_hand_preparation=False,
+            exclude_current_position=True)
+        return runtime
+
+    def test_reposition_exclusion_survives_target_change_before_first_plan(self):
+        for destination in (.25, .5):
+            with self.subTest(destination=destination):
+                runtime = self.reposition_with_changed_target(
+                    [thor_position(0), thor_position(destination)])
+                self.assertEqual(runtime.positions[0], thor_position(destination))
+                self.assertEqual(runtime.successful_move_count, int(destination / .25))
+                self.assertNotIn('Teleport', [action[0] for action in runtime.actions])
+
+    def test_reposition_cannot_accept_only_regenerated_forbidden_pose(self):
+        from executor_system.movement import NoInteractionPoseError
+        with self.assertRaises(NoInteractionPoseError):
+            self.reposition_with_changed_target([thor_position(0)])
+
     def test_target_relocation_rebuilds_candidates_before_following_stale_route(self):
         runtime, request = navigation_case(
             walkable=[(x, 0) for x in range(13)], candidates=[(12, 0)])
