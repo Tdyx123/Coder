@@ -116,7 +116,7 @@ def test_missing_pickup_target_fails_before_execution(self):
 
 **接口：** `ControllerClient.step(payload, *, check_success, save_frame)` 委托既有单步边界；`RuntimeArtifacts.prepare()/save_frames(event)/write_final_metadata()/generate_video()` 保留原行为。`ThorRuntime` 的公开方法仍可调用。
 
-- [ ] 先加兼容导入和委托行为测试，使用现有 FakeEvent/FakeRuntime，不启动仿真：
+- [x] 先加兼容导入和委托行为测试，使用现有 FakeEvent/FakeRuntime，不启动仿真：
 
 ```python
 def test_legacy_action_import_is_same_type(self):
@@ -125,12 +125,12 @@ def test_legacy_action_import_is_same_type(self):
     self.assertIs(legacy_action, canonical_action)
 ```
 
-- [ ] 添加一次 step 对应一次取消检查/状态提交、controller 锁互斥、重复 stop 幂等、输出目录隔离、异常时结果仍落盘的行为测试；避免只断言调用了某个新类。
-- [ ] 运行 `/home/dwb/.pyenv/bin/pyenv exec python -m unittest tests/test_runtime_facade.py`，确认新模块导入为 RED。
-- [ ] 先迁移无副作用类型和常量，再迁移 controller，最后迁移产物。每次迁移保持原方法签名与默认参数；不同时改变动作算法。生产内部模块改从 plan_types 导入类型，不能通过 action_plan 兼容门面形成环；基础类型不得导入 runtime、registry 或 CLI。
-- [ ] controller 的锁、取消、状态版本提交与计数只保留一个实现。`runtime._step_direct` 作为门面调用它，旧测试中对 runtime 的替换仍通过明确注入的 controller/事件支持。
-- [ ] 保存 `central_executor.py/synchronous_executor.py` 的兼容别名，并在文档标记已无中央工作线程；不重新实例化旧 worker。
-- [ ] 每完成一个职责提取就运行本批门面测试和第一批相关回归；整任务结束运行第二批的调度、资源、快照测试。
+- [x] 添加一次 step 对应一次取消检查/状态提交、controller 锁互斥、重复 stop 幂等、输出目录隔离、异常时结果仍落盘的行为测试；避免只断言调用了某个新类。
+- [x] 运行 `/home/dwb/.pyenv/bin/pyenv exec python -m unittest tests/test_runtime_facade.py`，确认新模块导入为 RED。
+- [x] 先迁移无副作用类型和常量，再迁移 controller，最后迁移产物。每次迁移保持原方法签名与默认参数；不同时改变动作算法。生产内部模块改从 plan_types 导入类型，不能通过 action_plan 兼容门面形成环；基础类型不得导入 runtime、registry 或 CLI。
+- [x] controller 的锁、取消、状态版本提交与计数只保留一个实现。`runtime._step_direct` 作为门面调用它，旧测试中对 runtime 的替换仍通过明确注入的 controller/事件支持。
+- [x] 保存 `central_executor.py/synchronous_executor.py` 的兼容别名，并在文档标记已无中央工作线程；不重新实例化旧 worker。
+- [x] 每完成一个职责提取就运行本批门面测试和第一批相关回归；整任务结束运行第二批的调度、资源、快照测试。
 
 **交付：** 类型与基础运行边界可独立理解，旧生成脚本和旧导入路径仍可用。
 
