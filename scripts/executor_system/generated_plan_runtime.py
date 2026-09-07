@@ -8,11 +8,12 @@ import json
 import math
 import os
 import re
+import tempfile
 import time
 import types
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from executor_system import context as _context
 from executor_system import demo_state as _demo_state
@@ -233,7 +234,7 @@ def finalize_runner_result(runtime, result, start_time, metrics_path):
         print(json.dumps(result, ensure_ascii=False, sort_keys=True, allow_nan=False))
 
 
-def close_standalone_runtime(runtime, start_time, script_file, task_index):
+def close_standalone_runtime(runtime, start_time, script_file, task_index, *, identity=None):
     cleanup_start = time.monotonic()
     errors = []
     try:
@@ -243,7 +244,7 @@ def close_standalone_runtime(runtime, start_time, script_file, task_index):
     if errors:
         # Ordinary entrypoints must also leave an artifact when closing fails.
         result = build_runner_result('failed', start_time)
-        result.update(runner_identity(script_file, task_index))
+        result.update(identity or runner_identity(script_file, task_index))
         failure = RuntimeError(errors[0]['message'])
         record_execution_error(result, failure, runtime)
         result.update(getattr(runtime, 'action_metrics', {}))
@@ -275,6 +276,38 @@ def runner_identity(script_file: str, task_index: int) -> Dict[str, Any]:
     }
 
 
+def runtime_output_root(
+    metrics_path: Optional[Path],
+    identity: Mapping[str, Any],
+) -> Path:
+    """Choose one owned output directory for this runtime attempt.
+
+    Parent-supervised executions already reserve an ``attempt_N`` directory;
+    media belongs beside that attempt's metrics and logs.  Standalone runs use
+    an identity-addressed directory below the system temporary area.
+    """
+
+    if metrics_path is not None:
+        return Path(metrics_path).expanduser().resolve().parent
+
+    run_id = str(identity["run_id"])
+    task_key = str(identity["task_key"])
+    attempt = identity["attempt"]
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", run_id):
+        raise RuntimeError("run_id must be a safe output path component")
+    if not re.fullmatch(r"[0-9a-f]{64}", task_key):
+        raise RuntimeError("task_key must be a SHA-256 executable path digest")
+    if type(attempt) is not int or attempt < 1:
+        raise RuntimeError("attempt must be a positive integer")
+    return (
+        Path(tempfile.gettempdir())
+        / "lammap-runtime"
+        / run_id
+        / task_key
+        / f"attempt_{attempt}"
+    ).resolve()
+
+
 def _runtime_inputs(
     bundle_data: Dict[str, Any],
     task_file: str,
@@ -300,6 +333,7 @@ def run_standalone(
     start_time = time.monotonic()
     failure_result = None
     script_file = script_file or __file__
+    identity = runner_identity(script_file, task_index)
     task_record, floor_no, robots, ground_truth, bundle = _runtime_inputs(
         bundle_data,
         task_file,
@@ -316,6 +350,7 @@ def run_standalone(
         CLOUD_RENDERING,
         RENDER_IMAGE,
         movement_mode=movement_mode,
+        output_root=runtime_output_root(None, identity),
     )
     runtime.evaluation_context = EvaluationContext.from_goals(
         bundle.gcr,
@@ -358,7 +393,7 @@ def run_standalone(
         return 0
     except BaseException as exc:
         failure_result = build_runner_result('failed', start_time)
-        failure_result.update(runner_identity(script_file, task_index))
+        failure_result.update(identity)
         record_execution_error(failure_result, exc, runtime)
         raise
     finally:
@@ -366,7 +401,9 @@ def run_standalone(
             finalize_runner_result(runtime, failure_result, start_time,
                                    runner_metrics_path('', script_file))
         else:
-            close_standalone_runtime(runtime, start_time, script_file, task_index)
+            close_standalone_runtime(
+                runtime, start_time, script_file, task_index, identity=identity
+            )
 
 
 def run_runner_mode(
@@ -404,6 +441,7 @@ def run_runner_mode(
             CLOUD_RENDERING,
             False,
             movement_mode=args.movement_mode,
+            output_root=runtime_output_root(metrics_path, result),
         )
         runtime.evaluation_context = EvaluationContext.from_goals(
             bundle.gcr,

@@ -48,6 +48,7 @@ class RuntimeMetadataTest(unittest.TestCase):
 
             expected_path = output_root / "metadata.txt"
             self.assertEqual(metadata_path, expected_path)
+            self.assertTrue(metadata_path.is_absolute())
             self.assertEqual(json.loads(expected_path.read_text(encoding="utf-8")), {"a": 1, "b": 2})
             self.assertEqual(expected_path.read_text(encoding="utf-8"), '{\n  "a": 1,\n  "b": 2\n}\n')
 

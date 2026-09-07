@@ -283,6 +283,52 @@ Behavior worth knowing:
 - the summary records the effective movement mode, timeout, and each generated
   runtime's `navigation_metrics`
 
+#### Versioned attempts, time budgets, and media ownership
+
+The executor writes each attempt before updating its replaceable summary:
+
+```text
+<output-dir>/runs/<run-id>/<task-key>/attempt_<N>/
+  child_metrics.json  stdout.log  stderr.log  result.json
+  agent_*/  top_view/  video_*.mp4  metadata.txt   # when rendering/metadata is enabled
+```
+
+`run_id`, `task_key`, and `attempt` are passed to the child through
+`LAMMAP_RUN_ID`, `LAMMAP_TASK_KEY`, and `LAMMAP_ATTEMPT`.  A runner-mode child
+uses its parent-reserved `attempt_<N>` directory as its output root, so retries
+cannot share media.  Standalone generated and demo scripts use an
+identity-addressed temporary output directory. `ThorRuntime` resolves every
+output path to an absolute owned root and rejects the runtime source directory
+or an ancestor such as the project root; it clears only its own `agent_*`, view,
+and `video_*.mp4` paths. Closing is idempotent even if the first controller stop
+fails, and that cleanup error is retained in the result.
+
+`--timeout-seconds` is the plan-execution budget: 120 seconds by default for
+`step` and 30 seconds for `teleport`. The parent hard limit is execution plus a
+60-second startup allowance and a 10-second finalization allowance. After that,
+the parent spends at most 5 seconds terminating only its own child process
+group. No executor path performs a machine-wide GPU or process cleanup.
+
+Schema-v2 result records have `metrics_schema_version: 2` and
+`evaluation_version: "fixed_goals_v2"`. They include fixed goal counts,
+`task_success`, parent `process_status`, runtime `execution_status`,
+`evaluation_status`, `raw_action_sr`, detailed action counts, phase durations,
+worker/cleanup errors, and the run identity. Compatibility fields such as
+`status`, `action_sr`, `executed_actions`, and `failed_actions` are retained for
+older consumers, but they are not task-success metrics. Unversioned historical
+records remain `legacy_v1`; recovery never relabels them as v2.
+
+Rebuild a summary from durable completed attempts without running AI2-THOR:
+
+```bash
+python scripts/executor_system/parallel_runner.py \
+  --rebuild-summary ./parallel_runner_results/runs/<run-id>
+```
+
+The command validates stored records, selects the highest valid completed
+attempt per task, preserves malformed/incomplete attempts as interruption
+evidence, and creates a new dated summary beside the existing summaries.
+
 ### Pluggable `GoToObject` movement
 
 Generated plans keep the same `GoToObject(robot, object)` action format. The

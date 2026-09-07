@@ -255,6 +255,49 @@ python scripts/execute_plan.py --command <log_folder_name>
 logs/<log_folder_name>/
 ```
 
+### 5. Versioned Executor Results and Isolated Runtime Media
+
+`scripts/executor_system/parallel_runner.py` gives every generated executable
+attempt a run identity and preserves its result independently.  The default
+execution budget is 120 seconds for `step` movement and 30 seconds for
+`teleport`; `--timeout-seconds` changes only that execution budget.  The parent
+also allows 60 seconds for startup and 10 seconds for finalization, then spends
+at most 5 seconds terminating only the child process group that it created.
+
+Schema-v2 results use `metrics_schema_version: 2` and
+`evaluation_version: "fixed_goals_v2"`.  They report parent-confirmed
+`process_status`, runtime `execution_status` and `evaluation_status`, fixed
+goal counts, `task_success`, raw action success rate and action counts, phase
+durations, worker/cleanup errors, and `run_id`/`task_key`/`attempt`.  The older
+compatibility fields (`status`, `action_sr`, `executed_actions`, and
+`failed_actions`) remain available, but are not task-success metrics.  Existing
+unversioned records remain `legacy_v1`; they are never rewritten to claim v2.
+
+Attempts are stored under:
+
+```text
+<output-dir>/runs/<run-id>/<task-key>/attempt_<N>/
+  child_metrics.json  stdout.log  stderr.log  result.json
+  agent_*/  top_view/  video_*.mp4  metadata.txt   # when media is enabled
+```
+
+Each runtime owns only its attempt directory.  A standalone generated script
+uses a distinct temporary directory keyed by the same run identity and attempt;
+the runtime rejects its source directory and source-tree ancestors as output
+roots.  Cleanup removes only that runtime's media-shaped children and never
+cleans other runs or performs machine-wide GPU/process cleanup.
+
+To rebuild a daily summary from completed attempt records without executing
+plans again:
+
+```bash
+python scripts/executor_system/parallel_runner.py \
+  --rebuild-summary ./parallel_runner_results/runs/<run-id>
+```
+
+Rebuilding reads durable `result.json` files, selects the latest valid
+parent-completed attempt for each task, and writes a new top-level summary.
+
 ## Citation
 
 If you find this work useful for your research, please consider citing:

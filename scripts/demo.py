@@ -29,7 +29,7 @@ from executor_system.config import CLOUD_RENDERING, RENDER_IMAGE
 from executor_system.evaluation import EvaluationContext
 from executor_system.generated_plan_runtime import (
     build_runner_result, record_execution_error, finalize_runner_result, runner_identity,
-    close_standalone_runtime,
+    close_standalone_runtime, runtime_output_root,
 )
 from executor_system.pddlrun_adapter import build_task_plan_from_pddlrun_paths
 from executor_system.runtime import ThorRuntime
@@ -140,6 +140,7 @@ def main() -> int:
     global floor_no, ground_truth, robots, runtime
 
     task_record = load_task_record(TASK_FILE, TASK_INDEX)
+    identity = runner_identity(__file__, TASK_INDEX)
     floor_no = floor_plan_from_task_file(TASK_FILE)
     robots = build_robot_team(task_record.get("robot list") or [])
     ground_truth = list(task_record.get("object_states") or [])
@@ -164,6 +165,7 @@ def main() -> int:
         floor_no,
         CLOUD_RENDERING,
         RENDER_IMAGE,
+        output_root=runtime_output_root(None, identity),
     )
     runtime.evaluation_context = EvaluationContext.from_goals(ground_truth)
     runtime.register_object_id_bindings(bundle.object_id_bindings)
@@ -200,7 +202,7 @@ def main() -> int:
         return 0
     except BaseException as exc:
         failure_result = build_runner_result('failed', start_time)
-        failure_result.update(runner_identity(__file__, TASK_INDEX))
+        failure_result.update(identity)
         record_execution_error(failure_result, exc, runtime)
         raise
     finally:
@@ -209,7 +211,9 @@ def main() -> int:
                 finalize_runner_result(runtime, failure_result, start_time,
                                        Path(__file__).with_name('parallel_run_result.json'))
             else:
-                close_standalone_runtime(runtime, start_time, __file__, TASK_INDEX)
+                close_standalone_runtime(
+                    runtime, start_time, __file__, TASK_INDEX, identity=identity
+                )
         finally:
             runtime = None
             _context.runtime = None

@@ -58,6 +58,8 @@ class RuntimeThirdPartyViewsTest(unittest.TestCase):
                 view_path = output_root / view_name
                 view_path.mkdir()
                 (view_path / "img_00000.png").write_bytes(b"old")
+            untouched_path = output_root / "child_metrics.json"
+            untouched_path.write_text("child metrics", encoding="utf-8")
 
             runtime.prepare_output_dirs()
 
@@ -65,6 +67,7 @@ class RuntimeThirdPartyViewsTest(unittest.TestCase):
             for view_name in DIRECTIONAL_VIEW_NAMES:
                 self.assertFalse((output_root / view_name).exists())
             self.assertTrue((output_root / "agent_1").is_dir())
+            self.assertEqual(untouched_path.read_text(encoding="utf-8"), "child metrics")
 
     def test_prepare_output_dirs_skips_media_dirs_when_render_disabled(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

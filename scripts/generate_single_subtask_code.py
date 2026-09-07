@@ -1071,6 +1071,7 @@ from executor_system.execution_control import PlanExecutionTimeout
 from executor_system.generated_plan_runtime import (
     build_runner_result as shared_build_runner_result, record_execution_error,
     finalize_runner_result, runner_identity, close_standalone_runtime,
+    runtime_output_root,
 )
 from executor_system.runtime import ThorRuntime
 from executor_system.task_plan import run_action_plan
@@ -1221,6 +1222,7 @@ def build_runner_result(status: str, start_time: float) -> Dict[str, Any]:
 def run_standalone(timeout_seconds=None) -> int:
     global floor_no, ground_truth, robots, runtime
 
+    identity = runner_identity(__file__, TASK_INDEX)
     task_record = load_task_record(TASK_FILE, TASK_INDEX)
     floor_no = resolve_floor_plan(TASK_FILE)
     robots = build_forced_robot_team()
@@ -1233,7 +1235,10 @@ def run_standalone(timeout_seconds=None) -> int:
         for warning in bundle.object_mapping_warnings:
             print(f"WARNING: {{warning}}")
 
-    runtime = ThorRuntime(robots, floor_no, CLOUD_RENDERING, RENDER_IMAGE)
+    runtime = ThorRuntime(
+        robots, floor_no, CLOUD_RENDERING, RENDER_IMAGE,
+        output_root=runtime_output_root(None, identity),
+    )
     runtime.evaluation_context = EvaluationContext.from_goals(ground_truth)
     runtime.register_object_id_bindings(bundle.object_id_bindings)
     _context.runtime = runtime
@@ -1272,6 +1277,7 @@ def run_standalone(timeout_seconds=None) -> int:
         return 0
     except BaseException as exc:
         failure_result = build_runner_result('failed', start_time)
+        failure_result.update(identity)
         record_execution_error(failure_result, exc, runtime)
         raise
     finally:
@@ -1279,7 +1285,9 @@ def run_standalone(timeout_seconds=None) -> int:
             if failure_result is not None:
                 finalize_runner_result(runtime, failure_result, start_time, runner_metrics_path(''))
             else:
-                close_standalone_runtime(runtime, start_time, __file__, TASK_INDEX)
+                close_standalone_runtime(
+                    runtime, start_time, __file__, TASK_INDEX, identity=identity
+                )
         finally:
             runtime = None
             _context.runtime = None
@@ -1306,7 +1314,10 @@ def run_runner_mode(args: argparse.Namespace) -> int:
         if bundle.object_mapping_warnings:
             result["object_mapping_warnings"] = list(bundle.object_mapping_warnings)
 
-        runtime = ThorRuntime(robots, floor_no, CLOUD_RENDERING, False)
+        runtime = ThorRuntime(
+            robots, floor_no, CLOUD_RENDERING, False,
+            output_root=runtime_output_root(metrics_path, result),
+        )
         runtime.evaluation_context = EvaluationContext.from_goals(ground_truth)
         runtime.register_object_id_bindings(bundle.object_id_bindings)
         _context.runtime = runtime

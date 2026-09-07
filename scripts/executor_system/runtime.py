@@ -7,6 +7,7 @@ import random
 import re
 import shutil
 import subprocess
+import tempfile
 import threading
 import time
 from collections import deque
@@ -205,7 +206,12 @@ class ThorRuntime:
         cloud_rendering: bool,
         render_image: bool,
         movement_mode: Optional[str] = None,
+        *,
+        output_root: Optional[Path] = None,
     ) -> None:
+        # Validate the cleanup target before dependency/controller setup so an
+        # invalid caller path can never reach any initialization cleanup.
+        self.output_root = self.resolve_output_root(output_root)
         require_dependencies()
         self.robots = list(robot_defs)
         self.no_robot = len(self.robots)
@@ -221,13 +227,13 @@ class ThorRuntime:
         self.top_view_enabled = self.render_image
         self.third_party_view_names: List[str] = []
         self.robot_agent_map = self.build_robot_agent_map()
-        self.output_root = Path(__file__).resolve().parent
         self.frame_counter = 0
         self.total_exec = 0
         self.success_exec = 0
         self.evaluation_context: Optional[EvaluationContext] = None
         self.missing_frame_warning_emitted = False
         self.controller = None
+        self._stopped = False
         self.controller_lock = threading.RLock()
         self.stats_lock = threading.Lock()
         self.operated_object_names: Set[str] = set()
@@ -266,6 +272,28 @@ class ThorRuntime:
                 list(getattr(exc, 'execution_cleanup_errors', [])) + self.cleanup_errors
             )
             raise
+
+    @staticmethod
+    def resolve_output_root(output_root: Optional[Path]) -> Path:
+        """Return an owned, absolute media directory for one runtime instance."""
+
+        module_source_root = Path(__file__).resolve().parent
+        if output_root is None:
+            return Path(tempfile.mkdtemp(prefix="lammap-thor-")).resolve()
+
+        resolved = Path(output_root).expanduser().resolve()
+        # ``prepare_output_dirs`` removes media-shaped children.  Refuse the
+        # module directory and every ancestor of it so a caller cannot turn
+        # that targeted cleanup into source-tree cleanup.
+        if module_source_root == resolved or module_source_root.is_relative_to(resolved):
+            raise ValueError(
+                "output_root must be an owned run directory, not the runtime "
+                "source directory or one of its ancestors."
+            )
+        if resolved.exists() and not resolved.is_dir():
+            raise ValueError("output_root must be a directory")
+        resolved.mkdir(parents=True, exist_ok=True)
+        return resolved
 
     def resolve_physical_agent_count(self) -> int:
         expected_count = self.no_robot
@@ -3853,9 +3881,16 @@ class ThorRuntime:
     def stop(self) -> None:
         if not getattr(self, "execution_quiescent", True):
             raise ExecutionShutdownTimeout("cannot stop a controller with active workers")
+        with self.controller_lock:
+            if getattr(self, "_stopped", False):
+                return
+            self._stopped = True
+            controller = self.controller
+            # Claim the controller before stopping it.  A cleanup failure is
+            # recorded by the caller, while concurrent/repeated close calls
+            # remain bounded and never retry a partially stopped controller.
+            self.controller = None
+        if controller is not None:
+            controller.stop()
         if self.show_windows and cv2 is not None:
             cv2.destroyAllWindows()
-        with self.controller_lock:
-            if self.controller is not None:
-                self.controller.stop()
-                self.controller = None
