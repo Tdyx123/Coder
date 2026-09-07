@@ -1,0 +1,445 @@
+...PreTask started with 1 robot queue(s).
+Tick 0: robot1 completed Wait.
+Phase 1 started with 1 robot queue(s).
+Tick 0: robot2 completed Wait.
+...BreakObject Egg -> Egg Egg|+00.00|+00.90|+01.00
+Operated object name: EggCracked
+Operated object name: Egg
+.BreakObject Vase -> Vase Vase|+00.00|+00.90|+01.00
+.BreakObject Window -> Window Window|+00.00|+01.50|+01.00
+BreakObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+BreakObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+BreakObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+BreakObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+BreakObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+BreakObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+.BreakObject Window -> Window Window|+00.00|+01.50|+01.00
+Operated object name: Window
+.CloseObject Cabinet -> Cabinet Cabinet|+00.00|+01.00|+00.00
+Operated object name: Cabinet
+.CloseObject Cabinet -> Cabinet Cabinet|+00.00|+01.00|+00.00
+Operated object name: Cabinet
+.DirtyObject Plate -> Plate Plate|+00.00|+01.00|+00.00
+Operated object name: Plate
+.DirtyObject Plate -> Plate Plate|+00.00|+01.00|+00.00
+Operated object name: Plate
+.EmptyLiquidFromObject Mug -> Mug Mug|+00.00|+01.00|+00.00
+Operated object name: Mug
+.EmptyLiquidFromObject Mug -> Mug Mug|+00.00|+01.00|+00.00
+Operated object name: Mug
+...........RotateLeft was blocked by a held item for agent 0; trying equivalent RotateRight rotation.
+.Tick 1: robot1 completed GoToObject.
+..CloseObject Blinds -> Blinds Blinds|-00.40|+02.16|-01.92
+Operated object name: Blinds
+.Tick 0: robot1 failed MoveAhead: MoveAhead failed
+..OpenObject Cabinet -> Cabinet Cabinet|-00.40|+02.16|-01.92
+OpenObject openness: Cabinet|-00.40|+02.16|-01.92 openness=1.0
+Operated object name: Cabinet
+.OpenObject Blinds -> Blinds Blinds|-00.40|+02.16|-01.92
+OpenObject openness: Blinds|-00.40|+02.16|-01.92 openness=1.0
+Operated object name: Blinds
+..PickupObject name: Apple
+PickupObject Apple -> Apple Apple|+00.00|+00.90|+01.00
+Operated object name: Apple
+.PickupObject name: Apple
+PickupObject Apple -> Apple Apple|+00.00|+00.90|+01.00
+PickupObject still clipped after moving agent 0 back by 0.25; trying another distance.
+PickupObject clip backoff teleport failed for agent 0 by 0.5: teleport blocked
+Operated object name: Apple
+.PickupObject name: Apple
+PickupObject Apple -> Apple Apple|+00.00|+00.90|+01.00
+.PickupObject name: Apple
+PickupObject Apple -> Apple Apple|+00.00|+00.90|+01.00
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+.PickupObject name: Apple
+PickupObject Apple -> Apple Apple|+00.00|+00.90|+01.00
+Operated object name: Apple
+.PutObject names: Apple, Table
+Operated object name: Table
+.PutObject names: Apple, Table
+PutObject Table -> Table Table|+01.00|+00.80|+00.00
+Operated object name: Table
+.PutObject names: Apple, Table
+PutObject Table -> Table Table|+01.00|+00.80|+00.00
+Operated object name: Table
+.SliceObject Tomato -> Tomato Tomato|+00.00|+00.90|+01.00
+SliceObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+SliceObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+SliceObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+SliceObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+SliceObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+SliceObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+WARNING: Could not find a current object for alias 'Tomato'.
+Operated object name: Tomato
+....ToggleObjectOff DeskLamp -> DeskLamp DeskLamp|+00.00|+01.00|+00.00
+Operated object name: DeskLamp
+.ToggleObjectOff DeskLamp -> DeskLamp DeskLamp|+00.00|+01.00|+00.00
+Operated object name: DeskLamp
+.ToggleObjectOn DeskLamp -> DeskLamp DeskLamp|+00.00|+01.00|+00.00
+Operated object name: DeskLamp
+.ToggleObjectOn DeskLamp -> DeskLamp DeskLamp|+00.00|+01.00|+00.00
+Operated object name: DeskLamp
+......Phase 1 started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: teleport failed
+Tick 0: robot1 failed Teleport: teleport failed
+Tick 1: robot1 completed CloseObject.
+.Phase 1 started with 2 robot queue(s).
+Tick 0: robot1 failed OpenObject: open failed
+Tick 1: robot1 completed CloseObject.
+Tick 0: robot2 completed PickupObject.
+Tick 1: robot2 completed PutObject.
+.Phase 1 started with 1 robot queue(s).
+Tick 0: robot1 failed Wait: robot1 timed out waiting for Wait.
+Tick 1: robot1 completed CloseObject.
+...............usage: python -m unittest [-h] [--runner-mode]
+                          [--metrics-output METRICS_OUTPUT]
+                          [--timeout-seconds TIMEOUT_SECONDS]
+                          [--movement-mode {teleport,step}]
+python -m unittest: error: argument --movement-mode: invalid choice: 'warp' (choose from 'teleport', 'step')
+.........................usage: python -m unittest [-h] [--root ROOT] [--parallel-run PARALLEL_RUN]
+                          [--base-line {LaMMA-P,SMART-LLM,Scale-Plan,KGLAMP,COT}]
+                          [--py-dir PY_DIR] [--max-workers MAX_WORKERS]
+                          [--timeout-seconds TIMEOUT_SECONDS]
+                          [--startup-grace-seconds STARTUP_GRACE_SECONDS]
+                          [--finalization-grace-seconds FINALIZATION_GRACE_SECONDS]
+                          [--termination-grace-seconds TERMINATION_GRACE_SECONDS]
+                          [--movement-mode {teleport,step}]
+                          [--output-dir OUTPUT_DIR] [--save-all-stdout]
+                          [--rebuild-summary RUN_DIR]
+                          [executable_plans ...]
+python -m unittest: error: argument --startup-grace-seconds: must be a finite positive number
+usage: python -m unittest [-h] [--root ROOT] [--parallel-run PARALLEL_RUN]
+                          [--base-line {LaMMA-P,SMART-LLM,Scale-Plan,KGLAMP,COT}]
+                          [--py-dir PY_DIR] [--max-workers MAX_WORKERS]
+                          [--timeout-seconds TIMEOUT_SECONDS]
+                          [--startup-grace-seconds STARTUP_GRACE_SECONDS]
+                          [--finalization-grace-seconds FINALIZATION_GRACE_SECONDS]
+                          [--termination-grace-seconds TERMINATION_GRACE_SECONDS]
+                          [--movement-mode {teleport,step}]
+                          [--output-dir OUTPUT_DIR] [--save-all-stdout]
+                          [--rebuild-summary RUN_DIR]
+                          [executable_plans ...]
+python -m unittest: error: argument --finalization-grace-seconds: must be a finite positive number
+usage: python -m unittest [-h] [--root ROOT] [--parallel-run PARALLEL_RUN]
+                          [--base-line {LaMMA-P,SMART-LLM,Scale-Plan,KGLAMP,COT}]
+                          [--py-dir PY_DIR] [--max-workers MAX_WORKERS]
+                          [--timeout-seconds TIMEOUT_SECONDS]
+                          [--startup-grace-seconds STARTUP_GRACE_SECONDS]
+                          [--finalization-grace-seconds FINALIZATION_GRACE_SECONDS]
+                          [--termination-grace-seconds TERMINATION_GRACE_SECONDS]
+                          [--movement-mode {teleport,step}]
+                          [--output-dir OUTPUT_DIR] [--save-all-stdout]
+                          [--rebuild-summary RUN_DIR]
+                          [executable_plans ...]
+python -m unittest: error: argument --termination-grace-seconds: must be a finite positive number
+usage: python -m unittest [-h] [--runner-mode]
+                          [--metrics-output METRICS_OUTPUT]
+                          [--timeout-seconds TIMEOUT_SECONDS]
+                          [--movement-mode {teleport,step}]
+python -m unittest: error: argument --timeout-seconds: must be a finite positive number
+..............usage: python -m unittest [-h] [--root ROOT] [--parallel-run PARALLEL_RUN]
+                          [--base-line {LaMMA-P,SMART-LLM,Scale-Plan,KGLAMP,COT}]
+                          [--py-dir PY_DIR] [--max-workers MAX_WORKERS]
+                          [--timeout-seconds TIMEOUT_SECONDS]
+                          [--startup-grace-seconds STARTUP_GRACE_SECONDS]
+                          [--finalization-grace-seconds FINALIZATION_GRACE_SECONDS]
+                          [--termination-grace-seconds TERMINATION_GRACE_SECONDS]
+                          [--movement-mode {teleport,step}]
+                          [--output-dir OUTPUT_DIR] [--save-all-stdout]
+                          [--rebuild-summary RUN_DIR]
+                          [executable_plans ...]
+python -m unittest: error: unrecognized arguments: --write-individual-results
+.success: /tmp/tmphswn2mga/baselines/SMART-LLM/logs/2/first/plan_to_code/executable_plan.py
+success: /tmp/tmphswn2mga/baselines/SMART-LLM/logs/2/second/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmphswn2mga/runner_results/SMART-LLM_0908_01.json
+failed: /tmp/tmp8kmubsnv/failed/plan_to_code/executable_plan.py
+success: /tmp/tmp8kmubsnv/success/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmp8kmubsnv/runner_results/0908_01.json
+failed: /tmp/tmpv6v5lbn5/failed/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpv6v5lbn5/runner_results/0908_01.json
+success: /tmp/tmph4bnfvg_/first.py
+success: /tmp/tmp15bxqq1c/baselines/KGLAMP/logs/intermediate_runs/unit_set/task/run/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmp15bxqq1c/runner_results/KGLAMP_0908_01.json
+success: /tmp/tmpm0b6tx87/baselines/KGLAMP/logs/intermediate_runs/unit_set/first/plan_to_code/executable_plan.py
+success: /tmp/tmpm0b6tx87/baselines/KGLAMP/logs/intermediate_runs/unit_set/second/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpm0b6tx87/runner_results/KGLAMP_0908_01.json
+success: /tmp/tmpaeln6jme/baselines/LaMMA-P/logs/intermediate_runs/test_set/task/run/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpaeln6jme/runner_results/LaMMA-P_0908_01.json
+timeout: /tmp/tmppmqct4js/slow/plan_to_code/executable_plan.py
+success: /tmp/tmppmqct4js/fast/plan_to_code/executable_plan.py
+success: /tmp/tmppmqct4js/slow/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmppmqct4js/runner_results/0908_01.json
+success: /tmp/tmpudq8tfzp/logs/intermediate_runs/selected/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpudq8tfzp/runner_results/0908_01.json
+success: /tmp/tmpamnyl24k/run/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpamnyl24k/runner_results/0908_01.json
+success: /tmp/tmp8gxwibbj/generated/direct.py
+Summary saved to: /tmp/tmp8gxwibbj/runner_results/0908_01.json
+success: /tmp/tmphc9n282c/generated/first.py
+success: /tmp/tmphc9n282c/generated/second.py
+Summary saved to: /tmp/tmphc9n282c/runner_results/0908_01.json
+success: /tmp/tmp5b4oh6xn/plan_to_code/executable_plan.py
+success: /tmp/tmp3c4gu9td/run/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmp3c4gu9td/runner_results/0908_01.json
+success: /tmp/tmppxj98jdx/run/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmppxj98jdx/runner_results/0908_01.json
+success: /tmp/tmpja2aoexk/a/plan_to_code/executable_plan.py
+success: /tmp/tmpja2aoexk/b/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpja2aoexk/runner_results/0908_01.json
+success: /tmp/tmpdhqqhmk2/run/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpdhqqhmk2/runner_results/0908_01.json
+success: /tmp/tmp69k34hre/baselines/Scale-Plan/logs/intermediate_runs/unit_set/task/run/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmp69k34hre/runner_results/Scale-Plan_0908_01.json
+success: /tmp/tmp08ni7j_y/baselines/Scale-Plan/logs/intermediate_runs/unit_set/first/plan_to_code/executable_plan.py
+success: /tmp/tmp08ni7j_y/baselines/Scale-Plan/logs/intermediate_runs/unit_set/second/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmp08ni7j_y/runner_results/Scale-Plan_0908_01.json
+success: /tmp/tmpjyv36_ck/baselines/SMART-LLM/logs/2/task/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpjyv36_ck/runner_results/SMART-LLM_0908_01.json
+success: /tmp/tmpei9ed9uc/run/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpei9ed9uc/runner_results/0908_01.json
+success: /tmp/tmpb90f05zl/run/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpb90f05zl/runner_results/1231_02.json
+success: /tmp/tmpie27pjn9/fast/plan_to_code/executable_plan.py
+timeout: /tmp/tmpie27pjn9/slow/plan_to_code/executable_plan.py
+timeout: /tmp/tmpie27pjn9/slow/plan_to_code/executable_plan.py
+timeout: /tmp/tmpie27pjn9/slow/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpie27pjn9/runner_results/0908_01.json
+timeout: /tmp/tmpr9qkl8er/slow/plan_to_code/executable_plan.py
+timeout: /tmp/tmpr9qkl8er/slow/plan_to_code/executable_plan.py
+timeout: /tmp/tmpr9qkl8er/slow/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpr9qkl8er/runner_results/0908_01.json
+success: /tmp/tmpeovgddgv/fast/plan_to_code/executable_plan.py
+timeout: /tmp/tmpeovgddgv/slow/plan_to_code/executable_plan.py
+success: /tmp/tmpeovgddgv/slow/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpeovgddgv/runner_results/0908_01.json
+Going to Apple Apple|+01.00|+00.90|+00.00 at reachable position {'x': 0.75, 'y': 0.0, 'z': 0.0}.
+Reached: Apple
+.Going to Apple Apple|+01.10|+00.90|+00.00 at reachable position {'x': 1.25, 'y': 0.0, 'z': 0.0}.
+Reached: Apple
+.....Phase 1 started with 1 robot queue(s).
+Tick 0: robot1 failed OpenObject: action failed
+.Phase 1 started with 1 robot queue(s).
+Tick 0: robot1 completed Wait.
+.Phase 1 started with 1 robot queue(s).
+Tick 0: robot1 completed Wait.
+.Phase 1 started with 1 robot queue(s).
+Tick 0: robot1 completed Wait.
+.Phase 1 started with 1 robot queue(s).
+Tick 1: robot1 completed GoToObject.
+.named-stage started with 1 robot queue(s).
+Tick 0: robot1 completed OpenObject.
+.Phase 1 started with 1 robot queue(s).
+Tick 0: robot1 failed PickupObject: InvalidOperationException: Picking up object would cause it to collide and clip into something!
+Tick 1: robot1 completed PutObject.
+.Phase 1 started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: teleport failed
+Tick 0: robot1 failed Teleport: teleport failed
+Tick 1: robot1 completed CloseObject.
+.Phase 1 started with 2 robot queue(s).
+Tick 0: robot1 failed OpenObject: open failed
+Tick 1: robot1 completed CloseObject.
+Tick 0: robot2 completed PickupObject.
+Tick 1: robot2 completed PutObject.
+.Phase 1 started with 1 robot queue(s).
+Tick 0: robot1 failed TeleportObjectToHand: teleport failed
+Tick 1: robot1 completed PickupObject.
+.........Going to CounterTop CounterTop|1 at reachable position {'x': 0.75, 'y': 0.0, 'z': 0.0}.
+.Going to CounterTop CounterTop|1 at reachable position {'x': 0.75, 'y': 0.0, 'z': 0.0}.
+.Going to Apple Apple|second at reachable position {'x': 1.25, 'y': 0.0, 'z': 0.0}.
+......................................Tick 0: robot1 failed GoToObject: failed transition budget 0 exhausted
+Reached: Target|1
+Tick 1: robot2 completed GoToObject.
+....Reached: Tomato|0
+Reached: Tomato|1
+.Reached: Tomato|1
+.Reached: Tomato|0
+.Reached: Tomato|0
+Reached: Tomato|1
+.SliceObject interaction reposition failed for agent 0: injected failure
+Reached: Tomato|1
+Reached: Tomato|0
+Reached: Tomato|1
+.Reached: Tomato|0
+Reached: Tomato|1
+..........Operated object name: Drawer_second
+.Operated object name: Drawer_second
+..................................................................................................................Preparing output directories.
+Creating AI2-THOR controller.
+Initializing AI2-THOR scene.
+{"action_sr": null, "attempt": 1, "cleanup_errors": [{"exception_type": "RuntimeError", "message": "startup cleanup broke", "phase": "cleanup", "robot_id": null, "traceback": "Traceback (most recent call last):\n  File \"/tmp/coder-executor-batch-1/scripts/executor_system/execution_control.py\", line 211, in close\n    runtime.stop()\n  File \"/tmp/coder-executor-batch-1/scripts/executor_system/runtime.py\", line 3897, in stop\n    controller.stop()\n  File \"/tmp/coder-executor-batch-1/tests/test_execution_shutdown.py\", line 265, in stop\n    raise RuntimeError('startup cleanup broke')\nRuntimeError: startup cleanup broke\n"}], "error": "startup broke", "evaluation_status": "incomplete", "evaluation_version": "fixed_goals_v2", "executed_actions": 0, "execution_policy": "legacy", "execution_status": "failed", "failed_actions": 0, "failure_action_ratio": 0.0, "gcr": null, "metrics_schema_version": 2, "movement_mode": "step", "navigation_metrics": {}, "original_goal_count": null, "phase_durations_seconds": {"cleanup": 9.620562195777893e-07, "evaluation": 0.0, "execution": 0.0, "startup": 0.004488533828407526}, "process_status": "failed", "robot_failures": [], "ru": null, "run_id": "04e70752dcf44c1c9813477569d45fa9", "run_time_seconds": 0.004492621868848801, "satisfied_goal_count": null, "sr": null, "status": "failed", "task_key": "c36dbb3ae768f846337069938af6e6855721efbd3a45a8541ae29ad99f3354a6", "task_success": null, "tc": null, "timed_out": false, "timeout_message": "", "worker_errors": []}
+Preparing output directories.
+Creating AI2-THOR controller.
+Initializing AI2-THOR scene.
+...{"action_sr": null, "attempt": 1, "cleanup_errors": [{"exception_type": "ExecutionShutdownTimeout", "message": "controller cleanup exceeded timeout", "phase": "cleanup", "robot_id": null, "traceback": "executor_system.execution_control.ExecutionShutdownTimeout: controller cleanup exceeded timeout\n"}], "error": "startup broke", "evaluation_status": "incomplete", "evaluation_version": "fixed_goals_v2", "executed_actions": 0, "execution_policy": "legacy", "execution_status": "failed", "failed_actions": 0, "failure_action_ratio": 0.0, "gcr": null, "metrics_schema_version": 2, "movement_mode": "step", "navigation_metrics": {}, "original_goal_count": null, "phase_durations_seconds": {"cleanup": 1.0817311704158783e-06, "evaluation": 0.0, "execution": 0.0, "startup": 0.022103551775217056}, "process_status": "failed", "robot_failures": [], "ru": null, "run_id": "f623d070a73f402fa559a8309caee6bb", "run_time_seconds": 0.02210666798055172, "satisfied_goal_count": null, "sr": null, "status": "failed", "task_key": "c36dbb3ae768f846337069938af6e6855721efbd3a45a8541ae29ad99f3354a6", "task_success": null, "tc": null, "timed_out": false, "timeout_message": "", "worker_errors": []}
+stage started with 1 robot queue(s).
+.{"action_counts": {"attempts": 0, "cancelled": 0, "failed": 0, "planned": 2, "skipped": 0, "started": 0, "succeeded": 0, "unexecuted": 2}, "action_sr": null, "attempt": 1, "cleanup_errors": [{"exception_type": "RuntimeError", "message": "stop broke", "phase": "cleanup", "robot_id": null, "traceback": "Traceback (most recent call last):\n  File \"/tmp/coder-executor-batch-1/scripts/executor_system/execution_control.py\", line 211, in close\n    runtime.stop()\n  File \"/tmp/coder-executor-batch-1/tests/test_execution_shutdown.py\", line 409, in <lambda>\n    runtime.stop = lambda: (_ for _ in ()).throw(RuntimeError('stop broke'))\n  File \"/tmp/coder-executor-batch-1/tests/test_execution_shutdown.py\", line 409, in <genexpr>\n    runtime.stop = lambda: (_ for _ in ()).throw(RuntimeError('stop broke'))\nRuntimeError: stop broke\n"}], "error": "worker broke", "evaluation_status": "incomplete", "evaluation_version": "fixed_goals_v2", "executed_actions": 0, "execution_policy": "legacy", "execution_status": "failed", "failed_actions": 0, "failure_action_ratio": 0.0, "gcr": null, "ignored_failure_count": 0, "metrics_schema_version": 2, "movement_mode": "step", "navigation_metrics": {}, "original_goal_count": 0, "phase_durations_seconds": {"cleanup": 0.00043396372348070145, "evaluation": 0.0, "execution": 0.002560641150921583, "startup": 0.00033557508140802383}, "process_status": "failed", "raw_action_sr": null, "robot_failures": [], "ru": null, "run_id": "18fb7215cb714151a394947616ce3980", "run_time_seconds": 0.0033334558829665184, "satisfied_goal_count": null, "sr": null, "status": "failed", "task_key": "c36dbb3ae768f846337069938af6e6855721efbd3a45a8541ae29ad99f3354a6", "task_success": null, "tc": null, "timed_out": false, "timeout_message": "", "worker_errors": [{"exception_type": "RuntimeError", "message": "worker broke", "phase": "stage", "robot_id": "robot1", "traceback": "Traceback (most recent call last):\n  File \"/tmp/coder-executor-batch-1/scripts/executor_system/execution_control.py\", line 131, in run\n    executor.execute()\n  File \"/home/dwb/.pyenv/versions/miniconda3-3.9-25.9.1-3/lib/python3.9/unittest/mock.py\", line 1092, in __call__\n    return self._mock_call(*args, **kwargs)\n  File \"/home/dwb/.pyenv/versions/miniconda3-3.9-25.9.1-3/lib/python3.9/unittest/mock.py\", line 1096, in _mock_call\n    return self._execute_mock_call(*args, **kwargs)\n  File \"/home/dwb/.pyenv/versions/miniconda3-3.9-25.9.1-3/lib/python3.9/unittest/mock.py\", line 1151, in _execute_mock_call\n    raise effect\nRuntimeError: worker broke\n"}]}
+stage started with 1 robot queue(s).
+.{"action_counts": {"attempts": 1, "cancelled": 0, "failed": 0, "planned": 2, "skipped": 0, "started": 1, "succeeded": 0, "unexecuted": 2}, "action_sr": null, "attempt": 1, "cleanup_errors": [], "error": "workers did not stop: stage-robot1", "evaluation_status": "incomplete", "evaluation_version": "fixed_goals_v2", "executed_actions": 1, "execution_policy": "legacy", "execution_status": "timeout", "failed_actions": 0, "failure_action_ratio": 0.0, "gcr": null, "ignored_failure_count": 0, "metrics_schema_version": 2, "movement_mode": "step", "navigation_metrics": {}, "original_goal_count": 0, "phase_durations_seconds": {"cleanup": 9.849201887845993e-06, "evaluation": 0.0, "execution": 0.06100764591246843, "startup": 0.0004588221199810505}, "process_status": "timeout", "raw_action_sr": null, "robot_failures": [], "ru": null, "run_id": "88fba5ee0ba94ab3b0978d6028031525", "run_time_seconds": 0.06147913169115782, "satisfied_goal_count": null, "sr": null, "status": "timeout", "task_key": "c36dbb3ae768f846337069938af6e6855721efbd3a45a8541ae29ad99f3354a6", "task_success": null, "tc": null, "timed_out": true, "timeout_message": "", "worker_errors": []}
+stage started with 1 robot queue(s).
+stage started with 1 robot queue(s).
+.stage started with 1 robot queue(s).
+.stage started with 1 robot queue(s).
+Tick 0: robot1 completed Done.
+Tick 1: robot1 completed Done.
+stage started with 1 robot queue(s).
+Tick 0: robot1 completed Done.
+Tick 1: robot1 completed Done.
+stage started with 1 robot queue(s).
+Tick 0: robot1 completed Done.
+Tick 1: robot1 completed Done.
+stage started with 1 robot queue(s).
+Tick 0: robot1 completed Done.
+Tick 1: robot1 completed Done.
+....stage started with 1 robot queue(s).
+stage started with 1 robot queue(s).
+stage started with 1 robot queue(s).
+stage started with 1 robot queue(s).
+stage started with 1 robot queue(s).
+stage started with 1 robot queue(s).
+..stage started with 1 robot queue(s).
+...........................success: /tmp/tmpzfv76k4h/plan.py
+Summary saved to: /tmp/tmpzfv76k4h/output/0908_01.json
+ERROR: result storage failed: could not persist attempt for /tmp/tmpiktrz77d/plan.py: disk full
+timeout: /tmp/tmpq15mcjop/plan.py
+timeout: /tmp/tmpq15mcjop/plan.py
+timeout: /tmp/tmpq15mcjop/plan.py
+Summary saved to: /tmp/tmpq15mcjop/output/0908_01.json
+failed: /tmp/tmpq15mcjop/plan.py
+Summary saved to: /tmp/tmpq15mcjop/output/0908_02.json
+Summary rebuilt from /tmp/tmpkld1ezhv/runs/7984fbe9151c485eab12aef917798081: /tmp/tmpkld1ezhv/0908_01.json
+success: /tmp/tmpzatzg1yo/plan.py
+Summary saved to: /tmp/tmpzatzg1yo/output/0908_01.json
+ERROR: result storage failed: could not persist attempt for /tmp/tmplwzobqss/plan.py: interrupted disk full
+Preparing output directories.
+Creating AI2-THOR controller.
+Initializing AI2-THOR scene.
+Preparing output directories.
+Creating AI2-THOR controller.
+Initializing AI2-THOR scene.
+....Preparing output directories.
+Creating AI2-THOR controller.
+Initializing AI2-THOR scene.
+Preparing output directories.
+Creating AI2-THOR controller.
+Initializing AI2-THOR scene.
+.......................................................................................
+----------------------------------------------------------------------
+Ran 442 tests in 9.912s
+
+OK
+Generated 1/1 single-subtask code entries under /tmp/tmpw00j2sbp/generated
+Generated 3/3 single-subtask code entries under /tmp/tmprmf5k69t/generated
+Generated 3/3 single-subtask code entries under /tmp/tmp_nbe944_/generated
+Generated 1/1 single-subtask code entries under /tmp/tmp9fcxjdim/generated
+No native LaMMA-P plan-to-code artifacts found under /tmp/tmpllw4baap/custom_source/logs; falling back to pddlrun task-run scan.
+Found 1 complete pddlrun task run(s)
+[1/1] Generating demo bundle script: /tmp/tmpllw4baap/custom_source/logs/intermediate_runs/sample___6/task/20260526_000
+  ✓ /tmp/tmpllw4baap/custom_source/logs/intermediate_runs/sample___6/task/20260526_000/plan_to_code/executable_plan.py
+
+=== PLAN-TO-CODE BUNDLE GENERATION SUMMARY ===
+Total runs processed: 1
+Successful generations: 1 (100.0%)
+Summary files saved to: /tmp/tmpllw4baap/custom_summary
+[OK] timed_direct_actions: /tmp/tmplfkszi0u/baselines/LaMMA-P/logs/intermediate_runs/unit_set/open_the_drawer/20260621_001
+Processed 1 run(s); generated 1 code bundle(s).
+No native LaMMA-P plan-to-code artifacts found under /tmp/tmpm6tkmr5t/baselines/LaMMA-P/logs/intermediate_runs; falling back to pddlrun task-run scan.
+Found 1 complete pddlrun task run(s)
+[1/1] Generating demo bundle script: /tmp/tmpm6tkmr5t/baselines/LaMMA-P/logs/intermediate_runs/sample___6/task/20260526_000
+  ✓ /tmp/tmpm6tkmr5t/baselines/LaMMA-P/logs/intermediate_runs/sample___6/task/20260526_000/plan_to_code/executable_plan.py
+
+=== PLAN-TO-CODE BUNDLE GENERATION SUMMARY ===
+Total runs processed: 1
+Successful generations: 1 (100.0%)
+Summary files saved to: /tmp/tmpm6tkmr5t/baselines/LaMMA-P/plan_to_code_results
+Found 2 complete pddlrun task run(s)
+[1/2] Generating demo bundle script: /tmp/tmp1ssrlfxh/logs/intermediate_runs/sample___6/task/20260526_000
+  ✓ /tmp/tmp1ssrlfxh/logs/intermediate_runs/sample___6/task/20260526_000/plan_to_code/executable_plan.py
+[2/2] Generating demo bundle script: /tmp/tmp1ssrlfxh/logs/intermediate_runs/sample___7/task/20260526_000
+  ✓ /tmp/tmp1ssrlfxh/logs/intermediate_runs/sample___7/task/20260526_000/plan_to_code/executable_plan.py
+
+=== PLAN-TO-CODE BUNDLE GENERATION SUMMARY ===
+Total runs processed: 2
+Successful generations: 2 (100.0%)
+Summary files saved to: /tmp/tmp1ssrlfxh/summary
+Found 1 complete pddlrun task run(s)
+[1/1] Generating demo bundle script: /tmp/tmpbx9w30p7/logs/intermediate_runs/sample___6/task/20260526_000
+  ✓ /tmp/tmpbx9w30p7/logs/intermediate_runs/sample___6/task/20260526_000/plan_to_code/executable_plan.py
+
+=== PLAN-TO-CODE BUNDLE GENERATION SUMMARY ===
+Total runs processed: 1
+Successful generations: 1 (100.0%)
+Summary files saved to: /tmp/tmpbx9w30p7/summary
+Found 1 complete pddlrun task run(s)
+[1/1] Generating demo bundle script: /tmp/tmpvs8z17sz/logs/intermediate_runs/sample___6/task/20260526_001
+  ✓ /tmp/tmpvs8z17sz/logs/intermediate_runs/sample___6/task/20260526_001/plan_to_code/executable_plan.py
+
+=== PLAN-TO-CODE BUNDLE GENERATION SUMMARY ===
+Total runs processed: 1
+Successful generations: 1 (100.0%)
+Summary files saved to: /tmp/tmpvs8z17sz/summary
+Found 1 complete pddlrun task run(s)
+[1/1] Generating demo bundle script: /tmp/tmp1e0yb09r/logs/intermediate_runs/sample___6/task/20260526_000
+  ✓ /tmp/tmp1e0yb09r/logs/intermediate_runs/sample___6/task/20260526_000/plan_to_code/executable_plan.py
+
+=== PLAN-TO-CODE BUNDLE GENERATION SUMMARY ===
+Total runs processed: 1
+Successful generations: 1 (100.0%)
+Summary files saved to: /tmp/tmp1e0yb09r/summary
+Found 1 complete pddlrun task run(s)
+[1/1] Generating demo bundle script: /tmp/tmp6xrg_zcd/logs/intermediate_runs/sample___6/task/20260526_000
+  ✓ /tmp/tmp6xrg_zcd/logs/intermediate_runs/sample___6/task/20260526_000/plan_to_code/executable_plan.py
+
+=== PLAN-TO-CODE BUNDLE GENERATION SUMMARY ===
+Total runs processed: 1
+Successful generations: 1 (100.0%)
+Summary files saved to: /tmp/tmp6xrg_zcd/summary
+Found 1 complete pddlrun task run(s)
+[1/1] Generating demo bundle script: /tmp/tmpctgarg75/logs/intermediate_runs/sample___6/task/20260526_000
+  ✓ /tmp/tmpctgarg75/logs/intermediate_runs/sample___6/task/20260526_000/plan_to_code/executable_plan.py
+
+=== PLAN-TO-CODE BUNDLE GENERATION SUMMARY ===
+Total runs processed: 1
+Successful generations: 1 (100.0%)
+Summary files saved to: /tmp/tmpctgarg75/summary
+Found 1 complete pddlrun task run(s)
+[1/1] Generating demo bundle script: /tmp/tmp1zrr8d6c/logs/intermediate_runs/sample___6/task/20260526_002
+  ✓ /tmp/tmp1zrr8d6c/logs/intermediate_runs/sample___6/task/20260526_002/plan_to_code/executable_plan.py
+
+=== PLAN-TO-CODE BUNDLE GENERATION SUMMARY ===
+Total runs processed: 1
+Successful generations: 1 (100.0%)
+Summary files saved to: /tmp/tmp1zrr8d6c/summary
+Found 1 complete pddlrun task run(s)
+[1/1] Generating demo bundle script: /tmp/tmpi28ir1qn/logs/intermediate_runs/sample___6/task/20260526_000
+  ✓ /tmp/tmpi28ir1qn/logs/intermediate_runs/sample___6/task/20260526_000/plan_to_code/executable_plan.py
+
+=== PLAN-TO-CODE BUNDLE GENERATION SUMMARY ===
+Total runs processed: 1
+Successful generations: 1 (100.0%)
+Summary files saved to: /tmp/tmpi28ir1qn/summary
+[OK] [1/1] /tmp/tmpz4ri44jt/baselines/Scale-Plan/logs/intermediate_runs/unit_set/open_drawer_and_cabinet/20260701_001
+Processed 1 Scale-Plan run(s); generated 1 code bundle(s).
+
+=== SMART-LLM PLAN-TO-CODE BUNDLE GENERATION SUMMARY ===
+Total runs processed: 1
+Successful generations: 1 (100.0%)
+Summary files saved to: /tmp/tmpqb28pv2p/baselines/SMART-LLM
+
+=== SMART-LLM PLAN-TO-CODE BUNDLE GENERATION SUMMARY ===
+Total runs processed: 1
+Successful generations: 1 (100.0%)
+Summary files saved to: /tmp/tmptco1kit1/baselines/SMART-LLM
+No native SMART-LLM plan-to-code artifacts found under /tmp/tmpm09gvsd8/baselines/SMART-LLM/logs; falling back to pddlrun task-run scan.
+Found 1 complete pddlrun task run(s)
+[1/1] Generating demo bundle script: /tmp/tmpm09gvsd8/baselines/SMART-LLM/logs/2/sample___6/task/20260526_000
+  ✓ /tmp/tmpm09gvsd8/baselines/SMART-LLM/logs/2/sample___6/task/20260526_000/plan_to_code/executable_plan.py
+
+=== PLAN-TO-CODE BUNDLE GENERATION SUMMARY ===
+Total runs processed: 1
+Successful generations: 1 (100.0%)
+Summary files saved to: /tmp/tmpm09gvsd8/baselines/SMART-LLM

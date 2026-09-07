@@ -1,0 +1,3977 @@
+{
+  "code_root": "/tmp/coder-executor-batch-1",
+  "results": [
+    {
+      "case": {
+        "category": "kitchen",
+        "path": "logs/intermediate_runs/final_test_new_0609_1___1/break_the_window,_then_cool_the_pot_and_the_bottle_in_the_fridge/20260716_004/plan_to_code/executable_plan.py",
+        "robot_count": 2,
+        "stratum": "single_navigation",
+        "task_id": "FloorPlan1_task_2"
+      },
+      "movement_mode": "teleport",
+      "returncode": 0,
+      "timed_out": false,
+      "elapsed": 3.471610302105546,
+      "directory": "/tmp/executor-batch-real-reports/8766acae_fixed_goals_v2/00_teleport",
+      "metrics": {
+        "action_counts": {
+          "attempts": 2,
+          "cancelled": 0,
+          "failed": 0,
+          "planned": 2,
+          "skipped": 0,
+          "started": 2,
+          "succeeded": 2,
+          "unexecuted": 0
+        },
+        "action_sr": 1.0,
+        "attempt": 1,
+        "cleanup_errors": [],
+        "evaluation_status": "valid",
+        "evaluation_version": "fixed_goals_v2",
+        "exec_rate": 1.0,
+        "executed_actions": 2,
+        "execution_policy": "legacy",
+        "execution_status": "completed",
+        "failed_actions": 0,
+        "failure_action_ratio": 0.0,
+        "gcr": 0.3333333333333333,
+        "goal_results": [
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Pot|-01.22|+00.90|-02.36",
+                "states": [
+                  {
+                    "satisfied": false,
+                    "source": "metadata",
+                    "state": "COLD"
+                  }
+                ],
+                "status": "unsatisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Pot",
+            "states": [
+              "COLD"
+            ],
+            "status": "unsatisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Bottle|+01.54|+00.89|-02.54",
+                "states": [
+                  {
+                    "satisfied": false,
+                    "source": "metadata",
+                    "state": "COLD"
+                  }
+                ],
+                "status": "unsatisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Bottle",
+            "states": [
+              "COLD"
+            ],
+            "status": "unsatisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Window|-02.23|+01.43|-01.20",
+                "states": [
+                  {
+                    "satisfied": true,
+                    "source": "metadata",
+                    "state": "BROKEN"
+                  }
+                ],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Window",
+            "states": [
+              "BROKEN"
+            ],
+            "status": "satisfied"
+          }
+        ],
+        "ignored_failure_count": 0,
+        "metrics_schema_version": 2,
+        "movement_mode": "teleport",
+        "navigation_metrics": {
+          "action_counts": {
+            "RotateRight": 1,
+            "Teleport": 1
+          },
+          "budget_exhaustions": 0,
+          "candidate_trials": 0,
+          "deferred_requests": 0,
+          "failed_transitions": 0,
+          "failures": 0,
+          "interaction_repositions": 0,
+          "interaction_target_substitutions": 0,
+          "invisible_candidates": 0,
+          "invisible_interaction_candidates": 0,
+          "micro_steps": 0,
+          "mode": "teleport",
+          "parking_moves": 0,
+          "planning_batches": 0,
+          "planning_durations_seconds": [],
+          "planning_time_seconds": 0.0,
+          "position_deviations": 0,
+          "priority_trials": 0,
+          "replans": 0,
+          "requests": 1,
+          "serial_fallback_batches": 0,
+          "successes": 1,
+          "suppressed_reachable_removals": 0,
+          "waits": 0
+        },
+        "original_goal_count": 3,
+        "phase_durations_seconds": {
+          "cleanup": 0.2651417492888868,
+          "evaluation": 0.019485911820083857,
+          "execution": 0.08751024072989821,
+          "startup": 2.576855924911797
+        },
+        "process_status": "completed",
+        "raw_action_sr": 1.0,
+        "robot_failures": [],
+        "ru": 0.0,
+        "run_id": "054e2d9455d34400bba25ecc5ba66265",
+        "run_time_seconds": 2.9490057579241693,
+        "satisfied_goal_count": 1,
+        "sr": 0,
+        "status": "success",
+        "task_key": "a0037b43f01b1d0c60aea167ba5788da7fc7db0b1aa0a343a481fe3977047b45",
+        "task_success": false,
+        "tc": 0.0,
+        "timed_out": false,
+        "timeout_message": "",
+        "worker_errors": []
+      }
+    },
+    {
+      "case": {
+        "category": "kitchen",
+        "path": "logs/intermediate_runs/final_test_new_0609_1___1/break_the_window,_then_cool_the_pot_and_the_bottle_in_the_fridge/20260716_004/plan_to_code/executable_plan.py",
+        "robot_count": 2,
+        "stratum": "single_navigation",
+        "task_id": "FloorPlan1_task_2"
+      },
+      "movement_mode": "step",
+      "returncode": 0,
+      "timed_out": false,
+      "elapsed": 4.574481586925685,
+      "directory": "/tmp/executor-batch-real-reports/8766acae_fixed_goals_v2/00_step",
+      "metrics": {
+        "action_counts": {
+          "attempts": 2,
+          "cancelled": 0,
+          "failed": 0,
+          "planned": 2,
+          "skipped": 0,
+          "started": 2,
+          "succeeded": 2,
+          "unexecuted": 0
+        },
+        "action_sr": 1.0,
+        "attempt": 1,
+        "cleanup_errors": [],
+        "evaluation_status": "valid",
+        "evaluation_version": "fixed_goals_v2",
+        "exec_rate": 1.0,
+        "executed_actions": 2,
+        "execution_policy": "legacy",
+        "execution_status": "completed",
+        "failed_actions": 0,
+        "failure_action_ratio": 0.0,
+        "gcr": 0.3333333333333333,
+        "goal_results": [
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Pot|-01.22|+00.90|-02.36",
+                "states": [
+                  {
+                    "satisfied": false,
+                    "source": "metadata",
+                    "state": "COLD"
+                  }
+                ],
+                "status": "unsatisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Pot",
+            "states": [
+              "COLD"
+            ],
+            "status": "unsatisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Bottle|+01.54|+00.89|-02.54",
+                "states": [
+                  {
+                    "satisfied": false,
+                    "source": "metadata",
+                    "state": "COLD"
+                  }
+                ],
+                "status": "unsatisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Bottle",
+            "states": [
+              "COLD"
+            ],
+            "status": "unsatisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Window|-02.23|+01.43|-01.20",
+                "states": [
+                  {
+                    "satisfied": true,
+                    "source": "metadata",
+                    "state": "BROKEN"
+                  }
+                ],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Window",
+            "states": [
+              "BROKEN"
+            ],
+            "status": "satisfied"
+          }
+        ],
+        "ignored_failure_count": 0,
+        "metrics_schema_version": 2,
+        "movement_mode": "step",
+        "navigation_metrics": {
+          "action_counts": {
+            "GetReachablePositions": 54,
+            "MoveAhead": 26,
+            "RotateLeft": 2,
+            "RotateRight": 4
+          },
+          "budget_exhaustions": 0,
+          "candidate_trials": 1,
+          "deferred_requests": 0,
+          "failed_transitions": 0,
+          "failures": 0,
+          "interaction_repositions": 0,
+          "interaction_target_substitutions": 0,
+          "invisible_candidates": 0,
+          "invisible_interaction_candidates": 0,
+          "micro_steps": 26,
+          "mode": "step",
+          "parking_moves": 0,
+          "planning_batches": 1,
+          "planning_durations_seconds": [
+            0.007245493121445179
+          ],
+          "planning_time_seconds": 0.007245493121445179,
+          "position_deviations": 0,
+          "priority_trials": 1,
+          "replans": 0,
+          "requests": 1,
+          "serial_fallback_batches": 0,
+          "successes": 1,
+          "suppressed_reachable_removals": 0,
+          "waits": 0
+        },
+        "original_goal_count": 3,
+        "phase_durations_seconds": {
+          "cleanup": 0.31482196133583784,
+          "evaluation": 0.018390248995274305,
+          "execution": 1.0539177162572742,
+          "startup": 2.6739062080159783
+        },
+        "process_status": "completed",
+        "raw_action_sr": 1.0,
+        "robot_failures": [],
+        "ru": 0.0,
+        "run_id": "c5d0604dc63c4efc873b111c0499271a",
+        "run_time_seconds": 4.061048807110637,
+        "satisfied_goal_count": 1,
+        "sr": 0,
+        "status": "success",
+        "task_key": "a0037b43f01b1d0c60aea167ba5788da7fc7db0b1aa0a343a481fe3977047b45",
+        "task_success": false,
+        "tc": 0.0,
+        "timed_out": false,
+        "timeout_message": "",
+        "worker_errors": []
+      }
+    },
+    {
+      "case": {
+        "category": "kitchen",
+        "path": "logs/intermediate_runs/final_test_new_0609_1___1/break_the_vase,_then_open_the_drawer,_then_cool_the_tomato_in_the_fridge/20260628_001/plan_to_code/executable_plan.py",
+        "robot_count": 2,
+        "stratum": "concurrent_goto",
+        "task_id": "FloorPlan1_task_13"
+      },
+      "movement_mode": "teleport",
+      "returncode": 0,
+      "timed_out": false,
+      "elapsed": 4.023358227685094,
+      "directory": "/tmp/executor-batch-real-reports/8766acae_fixed_goals_v2/01_teleport",
+      "metrics": {
+        "action_counts": {
+          "attempts": 11,
+          "cancelled": 0,
+          "failed": 0,
+          "planned": 11,
+          "skipped": 0,
+          "started": 11,
+          "succeeded": 11,
+          "unexecuted": 0
+        },
+        "action_sr": 1.0,
+        "attempt": 1,
+        "cleanup_errors": [],
+        "evaluation_status": "valid",
+        "evaluation_version": "fixed_goals_v2",
+        "exec_rate": 1.0,
+        "executed_actions": 11,
+        "execution_policy": "legacy",
+        "execution_status": "completed",
+        "failed_actions": 0,
+        "failure_action_ratio": 0.0,
+        "gcr": 1.0,
+        "goal_results": [
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Vase|+01.56|+00.56|-02.50",
+                "states": [
+                  {
+                    "satisfied": true,
+                    "source": "metadata",
+                    "state": "BROKEN"
+                  }
+                ],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Vase_1",
+            "states": [
+              "BROKEN"
+            ],
+            "status": "satisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Drawer|-01.56|+00.66|-00.20",
+                "states": [
+                  {
+                    "satisfied": true,
+                    "source": "metadata",
+                    "state": "OPENED"
+                  }
+                ],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Drawer_1",
+            "states": [
+              "OPENED"
+            ],
+            "status": "satisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Tomato|-00.39|+01.14|-00.81",
+                "states": [
+                  {
+                    "satisfied": true,
+                    "source": "history",
+                    "state": "COLD"
+                  }
+                ],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Tomato",
+            "states": [
+              "COLD"
+            ],
+            "status": "satisfied"
+          }
+        ],
+        "ignored_failure_count": 0,
+        "metrics_schema_version": 2,
+        "movement_mode": "teleport",
+        "navigation_metrics": {
+          "action_counts": {
+            "RotateLeft": 2,
+            "RotateRight": 2,
+            "Teleport": 4
+          },
+          "budget_exhaustions": 0,
+          "candidate_trials": 0,
+          "deferred_requests": 0,
+          "failed_transitions": 0,
+          "failures": 0,
+          "interaction_repositions": 0,
+          "interaction_target_substitutions": 1,
+          "invisible_candidates": 0,
+          "invisible_interaction_candidates": 0,
+          "micro_steps": 0,
+          "mode": "teleport",
+          "parking_moves": 0,
+          "planning_batches": 0,
+          "planning_durations_seconds": [],
+          "planning_time_seconds": 0.0,
+          "position_deviations": 0,
+          "priority_trials": 0,
+          "replans": 0,
+          "requests": 4,
+          "serial_fallback_batches": 0,
+          "successes": 4,
+          "suppressed_reachable_removals": 0,
+          "waits": 0
+        },
+        "original_goal_count": 3,
+        "phase_durations_seconds": {
+          "cleanup": 0.3159392583183944,
+          "evaluation": 0.016535896807909012,
+          "execution": 0.5237668389454484,
+          "startup": 2.625273350160569
+        },
+        "process_status": "completed",
+        "raw_action_sr": 1.0,
+        "robot_failures": [],
+        "ru": 0.0,
+        "run_id": "0f545f32e8154f88980c935f000103e8",
+        "run_time_seconds": 3.4815284702926874,
+        "satisfied_goal_count": 3,
+        "sr": 0,
+        "status": "success",
+        "task_key": "261ff2138e8c7f49400c562903b781dcd9b4e2bc0e8645d4202bf57b120685ce",
+        "task_success": false,
+        "tc": 1.0,
+        "timed_out": false,
+        "timeout_message": "",
+        "worker_errors": []
+      }
+    },
+    {
+      "case": {
+        "category": "kitchen",
+        "path": "logs/intermediate_runs/final_test_new_0609_1___1/break_the_vase,_then_open_the_drawer,_then_cool_the_tomato_in_the_fridge/20260628_001/plan_to_code/executable_plan.py",
+        "robot_count": 2,
+        "stratum": "concurrent_goto",
+        "task_id": "FloorPlan1_task_13"
+      },
+      "movement_mode": "step",
+      "returncode": 0,
+      "timed_out": false,
+      "elapsed": 6.777785710990429,
+      "directory": "/tmp/executor-batch-real-reports/8766acae_fixed_goals_v2/01_step",
+      "metrics": {
+        "action_counts": {
+          "attempts": 11,
+          "cancelled": 0,
+          "failed": 0,
+          "planned": 11,
+          "skipped": 0,
+          "started": 11,
+          "succeeded": 11,
+          "unexecuted": 0
+        },
+        "action_sr": 1.0,
+        "attempt": 1,
+        "cleanup_errors": [],
+        "evaluation_status": "valid",
+        "evaluation_version": "fixed_goals_v2",
+        "exec_rate": 1.0,
+        "executed_actions": 11,
+        "execution_policy": "legacy",
+        "execution_status": "completed",
+        "failed_actions": 0,
+        "failure_action_ratio": 0.0,
+        "gcr": 1.0,
+        "goal_results": [
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Vase|+01.56|+00.56|-02.50",
+                "states": [
+                  {
+                    "satisfied": true,
+                    "source": "metadata",
+                    "state": "BROKEN"
+                  }
+                ],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Vase_1",
+            "states": [
+              "BROKEN"
+            ],
+            "status": "satisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Drawer|-01.56|+00.66|-00.20",
+                "states": [
+                  {
+                    "satisfied": true,
+                    "source": "metadata",
+                    "state": "OPENED"
+                  }
+                ],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Drawer_1",
+            "states": [
+              "OPENED"
+            ],
+            "status": "satisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Tomato|-00.39|+01.14|-00.81",
+                "states": [
+                  {
+                    "satisfied": true,
+                    "source": "history",
+                    "state": "COLD"
+                  }
+                ],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Tomato",
+            "states": [
+              "COLD"
+            ],
+            "status": "satisfied"
+          }
+        ],
+        "ignored_failure_count": 0,
+        "metrics_schema_version": 2,
+        "movement_mode": "step",
+        "navigation_metrics": {
+          "action_counts": {
+            "CloseObject": 6,
+            "GetReachablePositions": 96,
+            "MoveAhead": 51,
+            "OpenObject": 6,
+            "RotateLeft": 9,
+            "RotateRight": 4
+          },
+          "budget_exhaustions": 0,
+          "candidate_trials": 3,
+          "deferred_requests": 0,
+          "failed_transitions": 0,
+          "failures": 0,
+          "interaction_repositions": 0,
+          "interaction_target_substitutions": 1,
+          "invisible_candidates": 0,
+          "invisible_interaction_candidates": 0,
+          "micro_steps": 45,
+          "mode": "step",
+          "parking_moves": 0,
+          "planning_batches": 3,
+          "planning_durations_seconds": [
+            0.009519735351204872,
+            0.0026823310181498528,
+            0.006284684874117374
+          ],
+          "planning_time_seconds": 0.0184867512434721,
+          "position_deviations": 0,
+          "priority_trials": 4,
+          "replans": 0,
+          "requests": 4,
+          "serial_fallback_batches": 0,
+          "successes": 4,
+          "suppressed_reachable_removals": 73,
+          "waits": 0
+        },
+        "original_goal_count": 3,
+        "phase_durations_seconds": {
+          "cleanup": 0.31614421121776104,
+          "evaluation": 0.018701656255871058,
+          "execution": 3.0557597558945417,
+          "startup": 2.844572528731078
+        },
+        "process_status": "completed",
+        "raw_action_sr": 1.0,
+        "robot_failures": [],
+        "ru": 0.0,
+        "run_id": "86e61c8f13e248dcb4f6fc545479ea06",
+        "run_time_seconds": 6.235190753825009,
+        "satisfied_goal_count": 3,
+        "sr": 0,
+        "status": "success",
+        "task_key": "261ff2138e8c7f49400c562903b781dcd9b4e2bc0e8645d4202bf57b120685ce",
+        "task_success": false,
+        "tc": 1.0,
+        "timed_out": false,
+        "timeout_message": "",
+        "worker_errors": []
+      }
+    },
+    {
+      "case": {
+        "category": "kitchen",
+        "path": "logs/intermediate_runs/final_test_new_0609_1___1/open_the_drawer,_fill_the_mug_with_water,_prepare_the_egg_in_the_pot,_then_put_t/20260628_001/plan_to_code/executable_plan.py",
+        "robot_count": 3,
+        "stratum": "multiple_waves",
+        "task_id": "FloorPlan1_task_0"
+      },
+      "movement_mode": "teleport",
+      "returncode": 0,
+      "timed_out": false,
+      "elapsed": 8.229699418880045,
+      "directory": "/tmp/executor-batch-real-reports/8766acae_fixed_goals_v2/02_teleport",
+      "metrics": {
+        "action_counts": {
+          "attempts": 16,
+          "cancelled": 0,
+          "failed": 6,
+          "planned": 16,
+          "skipped": 0,
+          "started": 16,
+          "succeeded": 10,
+          "unexecuted": 0
+        },
+        "action_sr": 0.625,
+        "attempt": 1,
+        "cleanup_errors": [],
+        "evaluation_status": "valid",
+        "evaluation_version": "fixed_goals_v2",
+        "exec_rate": 0.8,
+        "executed_actions": 16,
+        "execution_policy": "legacy",
+        "execution_status": "partial",
+        "failed_actions": 6,
+        "failure_action_ratio": 0.375,
+        "gcr": 0.5,
+        "goal_results": [
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Cabinet|+00.68|+00.50|-02.20",
+                "states": [],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [
+              "Pan"
+            ],
+            "name": "Cabinet_1",
+            "states": [],
+            "status": "satisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Mug|-01.76|+00.90|-00.62",
+                "states": [
+                  {
+                    "satisfied": false,
+                    "source": "metadata",
+                    "state": "FILLEDWITHWATER"
+                  }
+                ],
+                "status": "unsatisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Mug",
+            "states": [
+              "FILLEDWITHWATER"
+            ],
+            "status": "unsatisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Egg|-02.04|+00.81|+01.24",
+                "states": [
+                  {
+                    "satisfied": false,
+                    "source": "metadata",
+                    "state": "BROKEN"
+                  }
+                ],
+                "status": "unsatisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Egg",
+            "states": [
+              "BROKEN"
+            ],
+            "status": "unsatisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Drawer|-01.56|+00.66|-00.20",
+                "states": [
+                  {
+                    "satisfied": true,
+                    "source": "metadata",
+                    "state": "OPENED"
+                  }
+                ],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Drawer_1",
+            "states": [
+              "OPENED"
+            ],
+            "status": "satisfied"
+          }
+        ],
+        "ignored_failure_count": 0,
+        "metrics_schema_version": 2,
+        "movement_mode": "teleport",
+        "navigation_metrics": {
+          "action_counts": {
+            "RotateLeft": 18,
+            "RotateRight": 15,
+            "Teleport": 49
+          },
+          "budget_exhaustions": 0,
+          "candidate_trials": 0,
+          "deferred_requests": 0,
+          "failed_transitions": 0,
+          "failures": 2,
+          "interaction_repositions": 0,
+          "interaction_target_substitutions": 1,
+          "invisible_candidates": 22,
+          "invisible_interaction_candidates": 22,
+          "micro_steps": 0,
+          "mode": "teleport",
+          "parking_moves": 0,
+          "planning_batches": 0,
+          "planning_durations_seconds": [],
+          "planning_time_seconds": 0.0,
+          "position_deviations": 0,
+          "priority_trials": 0,
+          "replans": 0,
+          "requests": 7,
+          "serial_fallback_batches": 0,
+          "successes": 5,
+          "suppressed_reachable_removals": 0,
+          "waits": 0
+        },
+        "original_goal_count": 4,
+        "phase_durations_seconds": {
+          "cleanup": 0.31625197222456336,
+          "evaluation": 0.05031095910817385,
+          "execution": 4.343376635108143,
+          "startup": 2.892452106345445
+        },
+        "process_status": "completed",
+        "raw_action_sr": 0.625,
+        "robot_failures": [
+          {
+            "action_index": 2,
+            "action_type": "GoToObject",
+            "error": "NO_INTERACTION_POSE: interaction target is invisible from every candidate for agent 0 target 'Egg'",
+            "ignored_for_failure_ratio": false,
+            "robot_id": "robot1",
+            "stage_id": "Phase 1"
+          },
+          {
+            "action_index": 3,
+            "action_type": "PickupObject",
+            "error": "PickupObject failed for agent 0 on Egg|-02.04|+00.81|+01.24: NullReferenceException: Target object not found within the specified visibility.. trace:   at UnityStandardAssets.Characters.FirstPerson.BaseFPSAgentController.getInteractableSimObjectFromId (System.String objectId, System.Boolean forceAction) [0x0007a] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at UnityStandardAssets.Characters.FirstPerson.PhysicsRemoteFPSAgentController.PickupObject (System.String objectId, System.Boolean forceAction, System.Boolean manualInteract) [0x00000] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at (wrapper managed-to-native) System.Reflection.MonoMethod.InternalInvoke(System.Reflection.MonoMethod,object,object[],System.Exception&)\n  at System.Reflection.MonoMethod.Invoke (System.Object obj, System.Reflection.BindingFlags invokeAttr, System.Reflection.Binder binder, System.Object[] parameters, System.Globalization.CultureInfo culture) [0x00032] in <695d1cc93cca45069c528c15c9fdd749>:0 ",
+            "ignored_for_failure_ratio": false,
+            "robot_id": "robot1",
+            "stage_id": "Phase 1"
+          },
+          {
+            "action_index": 6,
+            "action_type": "PutObject",
+            "error": "Cannot PutObject 'Egg' for agent 0: robot is not holding it. Currently holding: Pot|-01.22|+00.90|-02.36.",
+            "ignored_for_failure_ratio": false,
+            "robot_id": "robot1",
+            "stage_id": "Phase 1"
+          },
+          {
+            "action_index": 7,
+            "action_type": "GoToObject",
+            "error": "Could not teleport and face agent 0 toward {'x': -2.03973388671875, 'y': 0.8123221397399902, 'z': 1.2443753480911255}: no candidate succeeded. Last unit failure: Teleport failed at {'x': -1.5, 'y': 0.900999128818512, 'z': 1.75}: InvalidOperationException: Cannot teleport due to hand object collision.. trace:   at UnityStandardAssets.Characters.FirstPerson.PhysicsRemoteFPSAgentController.TeleportFull (UnityEngine.Vector3 position, UnityEngine.Vector3 rotation, System.Single horizon, System.Boolean standing, System.Boolean forceAction) [0x0017e] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at UnityStandardAssets.Characters.FirstPerson.PhysicsRemoteFPSAgentController.Teleport (System.Nullable`1[T] position, System.Nullable`1[T] rotation, System.Nullable`1[T] horizon, System.Nullable`1[T] standing, System.Boolean forceAction) [0x0007b] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at (wrapper managed-to-native) System.Reflection.MonoMethod.InternalInvoke(System.Reflection.MonoMethod,object,object[],System.Exception&)\n  at System.Reflection.MonoMethod.Invoke (System.Object obj, System.Reflection.BindingFlags invokeAttr, System.Reflection.Binder binder, System.Object[] parameters, System.Globalization.CultureInfo culture) [0x00032] in <695d1cc93cca45069c528c15c9fdd749>:0 ",
+            "ignored_for_failure_ratio": false,
+            "robot_id": "robot1",
+            "stage_id": "Phase 1"
+          },
+          {
+            "action_index": 8,
+            "action_type": "PrepareEgg",
+            "error": "BreakObject failed for agent 0 on Egg|-02.04|+00.81|+01.24: NullReferenceException: Target object not found within the specified visibility.. trace:   at UnityStandardAssets.Characters.FirstPerson.BaseFPSAgentController.getInteractableSimObjectFromId (System.String objectId, System.Boolean forceAction) [0x0007a] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at UnityStandardAssets.Characters.FirstPerson.PhysicsRemoteFPSAgentController.BreakObject (ServerAction action) [0x00034] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at (wrapper managed-to-native) System.Reflection.MonoMethod.InternalInvoke(System.Reflection.MonoMethod,object,object[],System.Exception&)\n  at System.Reflection.MonoMethod.Invoke (System.Object obj, System.Reflection.BindingFlags invokeAttr, System.Reflection.Binder binder, System.Object[] parameters, System.Globalization.CultureInfo culture) [0x00032] in <695d1cc93cca45069c528c15c9fdd749>:0 ",
+            "ignored_for_failure_ratio": false,
+            "robot_id": "robot1",
+            "stage_id": "Phase 1"
+          },
+          {
+            "action_index": 10,
+            "action_type": "CookByStoveBurner",
+            "error": "CookByStoveBurner timed out waiting for Egg|-02.04|+00.81|+01.24 to become Cooked.",
+            "ignored_for_failure_ratio": false,
+            "robot_id": "robot1",
+            "stage_id": "Phase 1"
+          }
+        ],
+        "ru": 0.0,
+        "run_id": "58ee126da9c242b88c5b2ae80693bbfc",
+        "run_time_seconds": 7.60243346914649,
+        "satisfied_goal_count": 2,
+        "sr": 0,
+        "status": "success",
+        "task_key": "994987cda98e753113a09ca9b9868ce90e00e335227a2248112f1f0d0a523668",
+        "task_success": false,
+        "tc": 0.0,
+        "timed_out": false,
+        "timeout_message": "",
+        "worker_errors": []
+      }
+    },
+    {
+      "case": {
+        "category": "kitchen",
+        "path": "logs/intermediate_runs/final_test_new_0609_1___1/open_the_drawer,_fill_the_mug_with_water,_prepare_the_egg_in_the_pot,_then_put_t/20260628_001/plan_to_code/executable_plan.py",
+        "robot_count": 3,
+        "stratum": "multiple_waves",
+        "task_id": "FloorPlan1_task_0"
+      },
+      "movement_mode": "step",
+      "returncode": 0,
+      "timed_out": false,
+      "elapsed": 12.937472629826516,
+      "directory": "/tmp/executor-batch-real-reports/8766acae_fixed_goals_v2/02_step",
+      "metrics": {
+        "action_counts": {
+          "attempts": 16,
+          "cancelled": 0,
+          "failed": 6,
+          "planned": 16,
+          "skipped": 0,
+          "started": 16,
+          "succeeded": 10,
+          "unexecuted": 0
+        },
+        "action_sr": 0.625,
+        "attempt": 1,
+        "cleanup_errors": [],
+        "evaluation_status": "valid",
+        "evaluation_version": "fixed_goals_v2",
+        "exec_rate": 0.8,
+        "executed_actions": 16,
+        "execution_policy": "legacy",
+        "execution_status": "partial",
+        "failed_actions": 6,
+        "failure_action_ratio": 0.375,
+        "gcr": 0.5,
+        "goal_results": [
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Cabinet|+00.68|+00.50|-02.20",
+                "states": [],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [
+              "Pan"
+            ],
+            "name": "Cabinet_1",
+            "states": [],
+            "status": "satisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Mug|-01.76|+00.90|-00.62",
+                "states": [
+                  {
+                    "satisfied": false,
+                    "source": "metadata",
+                    "state": "FILLEDWITHWATER"
+                  }
+                ],
+                "status": "unsatisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Mug",
+            "states": [
+              "FILLEDWITHWATER"
+            ],
+            "status": "unsatisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Egg|-02.04|+00.81|+01.24",
+                "states": [
+                  {
+                    "satisfied": false,
+                    "source": "metadata",
+                    "state": "BROKEN"
+                  }
+                ],
+                "status": "unsatisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Egg",
+            "states": [
+              "BROKEN"
+            ],
+            "status": "unsatisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Drawer|-01.56|+00.66|-00.20",
+                "states": [
+                  {
+                    "satisfied": true,
+                    "source": "metadata",
+                    "state": "OPENED"
+                  }
+                ],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Drawer_1",
+            "states": [
+              "OPENED"
+            ],
+            "status": "satisfied"
+          }
+        ],
+        "ignored_failure_count": 0,
+        "metrics_schema_version": 2,
+        "movement_mode": "step",
+        "navigation_metrics": {
+          "action_counts": {
+            "CloseObject": 10,
+            "GetReachablePositions": 312,
+            "MoveAhead": 89,
+            "OpenObject": 10,
+            "RotateLeft": 23,
+            "RotateRight": 26
+          },
+          "budget_exhaustions": 0,
+          "candidate_trials": 51,
+          "deferred_requests": 0,
+          "failed_transitions": 2,
+          "failures": 2,
+          "interaction_repositions": 0,
+          "interaction_target_substitutions": 1,
+          "invisible_candidates": 16,
+          "invisible_interaction_candidates": 16,
+          "micro_steps": 77,
+          "mode": "step",
+          "parking_moves": 0,
+          "planning_batches": 27,
+          "planning_durations_seconds": [
+            0.005309147760272026,
+            0.016882681753486395,
+            0.014680324122309685,
+            0.005387455224990845,
+            0.0063604372553527355,
+            0.01353953592479229,
+            0.015158063266426325,
+            0.019919809885323048,
+            0.022671411745250225,
+            0.01116304099559784,
+            0.008951195981353521,
+            0.008713637944310904,
+            0.014156869146972895,
+            0.007974456064403057,
+            0.0065070330165326595,
+            0.010404502972960472,
+            0.020160884130746126,
+            0.01295820064842701,
+            0.020146618131548166,
+            0.020051858853548765,
+            0.009318748023360968,
+            0.01209188997745514,
+            0.005578134674578905,
+            0.003485423047095537,
+            0.007700431160628796,
+            0.009409327991306782,
+            0.0034697242081165314
+          ],
+          "planning_time_seconds": 0.31215084390714765,
+          "position_deviations": 0,
+          "priority_trials": 51,
+          "replans": 2,
+          "requests": 7,
+          "serial_fallback_batches": 0,
+          "successes": 5,
+          "suppressed_reachable_removals": 278,
+          "waits": 0
+        },
+        "original_goal_count": 4,
+        "phase_durations_seconds": {
+          "cleanup": 0.3159945188090205,
+          "evaluation": 0.02188712591305375,
+          "execution": 9.34955081390217,
+          "startup": 2.69228029018268
+        },
+        "process_status": "completed",
+        "raw_action_sr": 0.625,
+        "robot_failures": [
+          {
+            "action_index": 2,
+            "action_type": "GoToObject",
+            "error": "step navigation planning failed after full refresh with status NO_PLAN_FOUND; parking recovery found no safe joint plan",
+            "ignored_for_failure_ratio": false,
+            "robot_id": "robot1",
+            "stage_id": "Phase 1"
+          },
+          {
+            "action_index": 3,
+            "action_type": "PickupObject",
+            "error": "PickupObject failed for agent 0 on Egg|-02.04|+00.81|+01.24: NullReferenceException: Target object not found within the specified visibility.. trace:   at UnityStandardAssets.Characters.FirstPerson.BaseFPSAgentController.getInteractableSimObjectFromId (System.String objectId, System.Boolean forceAction) [0x0007a] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at UnityStandardAssets.Characters.FirstPerson.PhysicsRemoteFPSAgentController.PickupObject (System.String objectId, System.Boolean forceAction, System.Boolean manualInteract) [0x00000] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at (wrapper managed-to-native) System.Reflection.MonoMethod.InternalInvoke(System.Reflection.MonoMethod,object,object[],System.Exception&)\n  at System.Reflection.MonoMethod.Invoke (System.Object obj, System.Reflection.BindingFlags invokeAttr, System.Reflection.Binder binder, System.Object[] parameters, System.Globalization.CultureInfo culture) [0x00032] in <695d1cc93cca45069c528c15c9fdd749>:0 ",
+            "ignored_for_failure_ratio": false,
+            "robot_id": "robot1",
+            "stage_id": "Phase 1"
+          },
+          {
+            "action_index": 6,
+            "action_type": "PutObject",
+            "error": "Cannot PutObject 'Egg' for agent 0: robot is not holding it. Currently holding: Pot|-01.22|+00.90|-02.36.",
+            "ignored_for_failure_ratio": false,
+            "robot_id": "robot1",
+            "stage_id": "Phase 1"
+          },
+          {
+            "action_index": 7,
+            "action_type": "GoToObject",
+            "error": "step navigation planning failed after full refresh with status NO_PLAN_FOUND; parking recovery found no safe joint plan",
+            "ignored_for_failure_ratio": false,
+            "robot_id": "robot1",
+            "stage_id": "Phase 1"
+          },
+          {
+            "action_index": 8,
+            "action_type": "PrepareEgg",
+            "error": "BreakObject failed for agent 0 on Egg|-02.04|+00.81|+01.24: NullReferenceException: Target object not found within the specified visibility.. trace:   at UnityStandardAssets.Characters.FirstPerson.BaseFPSAgentController.getInteractableSimObjectFromId (System.String objectId, System.Boolean forceAction) [0x0007a] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at UnityStandardAssets.Characters.FirstPerson.PhysicsRemoteFPSAgentController.BreakObject (ServerAction action) [0x00034] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at (wrapper managed-to-native) System.Reflection.MonoMethod.InternalInvoke(System.Reflection.MonoMethod,object,object[],System.Exception&)\n  at System.Reflection.MonoMethod.Invoke (System.Object obj, System.Reflection.BindingFlags invokeAttr, System.Reflection.Binder binder, System.Object[] parameters, System.Globalization.CultureInfo culture) [0x00032] in <695d1cc93cca45069c528c15c9fdd749>:0 ",
+            "ignored_for_failure_ratio": false,
+            "robot_id": "robot1",
+            "stage_id": "Phase 1"
+          },
+          {
+            "action_index": 10,
+            "action_type": "CookByStoveBurner",
+            "error": "CookByStoveBurner timed out waiting for Egg|-02.04|+00.81|+01.24 to become Cooked.",
+            "ignored_for_failure_ratio": false,
+            "robot_id": "robot1",
+            "stage_id": "Phase 1"
+          }
+        ],
+        "ru": 0.0,
+        "run_id": "490eed6f798e45c6b417e64bb3bf6bce",
+        "run_time_seconds": 12.379725422244519,
+        "satisfied_goal_count": 2,
+        "sr": 0,
+        "status": "success",
+        "task_key": "994987cda98e753113a09ca9b9868ce90e00e335227a2248112f1f0d0a523668",
+        "task_success": false,
+        "tc": 0.0,
+        "timed_out": false,
+        "timeout_message": "",
+        "worker_errors": []
+      }
+    },
+    {
+      "case": {
+        "category": "living_room",
+        "path": "logs/intermediate_runs/final_test_new_0609_1___201/switch_on_the_floorlamp,_then_break_the_bowl,_then_switch_on_the_television/20260716_002/plan_to_code/executable_plan.py",
+        "robot_count": 4,
+        "stratum": "single_navigation",
+        "task_id": "FloorPlan201_task_16"
+      },
+      "movement_mode": "teleport",
+      "returncode": 0,
+      "timed_out": false,
+      "elapsed": 4.07297991681844,
+      "directory": "/tmp/executor-batch-real-reports/8766acae_fixed_goals_v2/03_teleport",
+      "metrics": {
+        "action_counts": {
+          "attempts": 2,
+          "cancelled": 0,
+          "failed": 0,
+          "planned": 2,
+          "skipped": 0,
+          "started": 2,
+          "succeeded": 2,
+          "unexecuted": 0
+        },
+        "action_sr": 1.0,
+        "attempt": 1,
+        "cleanup_errors": [],
+        "evaluation_status": "valid",
+        "evaluation_version": "fixed_goals_v2",
+        "exec_rate": 1.0,
+        "executed_actions": 2,
+        "execution_policy": "legacy",
+        "execution_status": "completed",
+        "failed_actions": 0,
+        "failure_action_ratio": 0.0,
+        "gcr": 0.6666666666666666,
+        "goal_results": [
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "FloorLamp|-00.57|+00.00|+00.02",
+                "states": [
+                  {
+                    "satisfied": true,
+                    "source": "metadata",
+                    "state": "ON"
+                  }
+                ],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [],
+            "name": "FloorLamp",
+            "states": [
+              "ON"
+            ],
+            "status": "satisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Bowl|-02.45|+00.60|+04.79",
+                "states": [
+                  {
+                    "satisfied": false,
+                    "source": "metadata",
+                    "state": "BROKEN"
+                  }
+                ],
+                "status": "unsatisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Bowl",
+            "states": [
+              "BROKEN"
+            ],
+            "status": "unsatisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Television|-02.36|+01.21|+06.24",
+                "states": [
+                  {
+                    "satisfied": true,
+                    "source": "metadata",
+                    "state": "ON"
+                  }
+                ],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Television",
+            "states": [
+              "ON"
+            ],
+            "status": "satisfied"
+          }
+        ],
+        "ignored_failure_count": 0,
+        "metrics_schema_version": 2,
+        "movement_mode": "teleport",
+        "navigation_metrics": {
+          "action_counts": {
+            "RotateLeft": 1,
+            "Teleport": 1
+          },
+          "budget_exhaustions": 0,
+          "candidate_trials": 0,
+          "deferred_requests": 0,
+          "failed_transitions": 0,
+          "failures": 0,
+          "interaction_repositions": 0,
+          "interaction_target_substitutions": 0,
+          "invisible_candidates": 0,
+          "invisible_interaction_candidates": 0,
+          "micro_steps": 0,
+          "mode": "teleport",
+          "parking_moves": 0,
+          "planning_batches": 0,
+          "planning_durations_seconds": [],
+          "planning_time_seconds": 0.0,
+          "position_deviations": 0,
+          "priority_trials": 0,
+          "replans": 0,
+          "requests": 1,
+          "serial_fallback_batches": 0,
+          "successes": 1,
+          "suppressed_reachable_removals": 0,
+          "waits": 0
+        },
+        "original_goal_count": 3,
+        "phase_durations_seconds": {
+          "cleanup": 0.31598329171538353,
+          "evaluation": 0.038279694970697165,
+          "execution": 0.12306040478870273,
+          "startup": 3.0546975936740637
+        },
+        "process_status": "completed",
+        "raw_action_sr": 1.0,
+        "robot_failures": [],
+        "ru": 0.0,
+        "run_id": "550ae8acc5c54bb189152fe433792b65",
+        "run_time_seconds": 3.5320295318961143,
+        "satisfied_goal_count": 2,
+        "sr": 0,
+        "status": "success",
+        "task_key": "db60c70c394a9934773db88740984021a3ffdf561b364a3e286ea69d19ee2ea4",
+        "task_success": false,
+        "tc": 0.0,
+        "timed_out": false,
+        "timeout_message": "",
+        "worker_errors": []
+      }
+    },
+    {
+      "case": {
+        "category": "living_room",
+        "path": "logs/intermediate_runs/final_test_new_0609_1___201/switch_on_the_floorlamp,_then_break_the_bowl,_then_switch_on_the_television/20260716_002/plan_to_code/executable_plan.py",
+        "robot_count": 4,
+        "stratum": "single_navigation",
+        "task_id": "FloorPlan201_task_16"
+      },
+      "movement_mode": "step",
+      "returncode": 0,
+      "timed_out": false,
+      "elapsed": 5.976081402972341,
+      "directory": "/tmp/executor-batch-real-reports/8766acae_fixed_goals_v2/03_step",
+      "metrics": {
+        "action_counts": {
+          "attempts": 2,
+          "cancelled": 0,
+          "failed": 0,
+          "planned": 2,
+          "skipped": 0,
+          "started": 2,
+          "succeeded": 2,
+          "unexecuted": 0
+        },
+        "action_sr": 1.0,
+        "attempt": 1,
+        "cleanup_errors": [],
+        "evaluation_status": "valid",
+        "evaluation_version": "fixed_goals_v2",
+        "exec_rate": 1.0,
+        "executed_actions": 2,
+        "execution_policy": "legacy",
+        "execution_status": "completed",
+        "failed_actions": 0,
+        "failure_action_ratio": 0.0,
+        "gcr": 0.6666666666666666,
+        "goal_results": [
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "FloorLamp|-00.57|+00.00|+00.02",
+                "states": [
+                  {
+                    "satisfied": true,
+                    "source": "metadata",
+                    "state": "ON"
+                  }
+                ],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [],
+            "name": "FloorLamp",
+            "states": [
+              "ON"
+            ],
+            "status": "satisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Bowl|-02.45|+00.60|+04.79",
+                "states": [
+                  {
+                    "satisfied": false,
+                    "source": "metadata",
+                    "state": "BROKEN"
+                  }
+                ],
+                "status": "unsatisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Bowl",
+            "states": [
+              "BROKEN"
+            ],
+            "status": "unsatisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Television|-02.36|+01.21|+06.24",
+                "states": [
+                  {
+                    "satisfied": true,
+                    "source": "metadata",
+                    "state": "ON"
+                  }
+                ],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Television",
+            "states": [
+              "ON"
+            ],
+            "status": "satisfied"
+          }
+        ],
+        "ignored_failure_count": 0,
+        "metrics_schema_version": 2,
+        "movement_mode": "step",
+        "navigation_metrics": {
+          "action_counts": {
+            "GetReachablePositions": 112,
+            "MoveAhead": 27,
+            "RotateLeft": 4,
+            "RotateRight": 4
+          },
+          "budget_exhaustions": 0,
+          "candidate_trials": 2,
+          "deferred_requests": 0,
+          "failed_transitions": 1,
+          "failures": 0,
+          "interaction_repositions": 0,
+          "interaction_target_substitutions": 0,
+          "invisible_candidates": 0,
+          "invisible_interaction_candidates": 0,
+          "micro_steps": 26,
+          "mode": "step",
+          "parking_moves": 0,
+          "planning_batches": 2,
+          "planning_durations_seconds": [
+            0.010888555087149143,
+            0.021756489761173725
+          ],
+          "planning_time_seconds": 0.03264504484832287,
+          "position_deviations": 0,
+          "priority_trials": 2,
+          "replans": 1,
+          "requests": 1,
+          "serial_fallback_batches": 0,
+          "successes": 1,
+          "suppressed_reachable_removals": 0,
+          "waits": 0
+        },
+        "original_goal_count": 3,
+        "phase_durations_seconds": {
+          "cleanup": 0.3167376881465316,
+          "evaluation": 0.07457741908729076,
+          "execution": 2.053866274189204,
+          "startup": 3.0125253652222455
+        },
+        "process_status": "completed",
+        "raw_action_sr": 1.0,
+        "robot_failures": [],
+        "ru": 0.0,
+        "run_id": "1afae235540549c8a3e64dbfcdf2c83b",
+        "run_time_seconds": 5.457717114128172,
+        "satisfied_goal_count": 2,
+        "sr": 0,
+        "status": "success",
+        "task_key": "db60c70c394a9934773db88740984021a3ffdf561b364a3e286ea69d19ee2ea4",
+        "task_success": false,
+        "tc": 0.0,
+        "timed_out": false,
+        "timeout_message": "",
+        "worker_errors": []
+      }
+    },
+    {
+      "case": {
+        "category": "living_room",
+        "path": "logs/intermediate_runs/final_test_new_0609_1___201/break_the_window,_then_put_the_pen_in_the_box,_then_break_the_television/20260716_001/plan_to_code/executable_plan.py",
+        "robot_count": 2,
+        "stratum": "concurrent_goto",
+        "task_id": "FloorPlan201_task_13"
+      },
+      "movement_mode": "teleport",
+      "returncode": 0,
+      "timed_out": false,
+      "elapsed": 3.7733518229797482,
+      "directory": "/tmp/executor-batch-real-reports/8766acae_fixed_goals_v2/04_teleport",
+      "metrics": {
+        "action_counts": {
+          "attempts": 8,
+          "cancelled": 0,
+          "failed": 0,
+          "planned": 8,
+          "skipped": 0,
+          "started": 8,
+          "succeeded": 8,
+          "unexecuted": 0
+        },
+        "action_sr": 1.0,
+        "attempt": 1,
+        "cleanup_errors": [],
+        "evaluation_status": "valid",
+        "evaluation_version": "fixed_goals_v2",
+        "exec_rate": 1.0,
+        "executed_actions": 8,
+        "execution_policy": "legacy",
+        "execution_status": "completed",
+        "failed_actions": 0,
+        "failure_action_ratio": 0.0,
+        "gcr": 1.0,
+        "goal_results": [
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Window|-00.06|+00.93|+01.76",
+                "states": [
+                  {
+                    "satisfied": true,
+                    "source": "metadata",
+                    "state": "BROKEN"
+                  }
+                ],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Window_1",
+            "states": [
+              "BROKEN"
+            ],
+            "status": "satisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Box|-03.36|+00.19|+06.43",
+                "states": [],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [
+              "Pen"
+            ],
+            "name": "Box",
+            "states": [],
+            "status": "satisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Television|-02.36|+01.21|+06.24",
+                "states": [
+                  {
+                    "satisfied": true,
+                    "source": "metadata",
+                    "state": "BROKEN"
+                  }
+                ],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Television",
+            "states": [
+              "BROKEN"
+            ],
+            "status": "satisfied"
+          }
+        ],
+        "ignored_failure_count": 0,
+        "metrics_schema_version": 2,
+        "movement_mode": "teleport",
+        "navigation_metrics": {
+          "action_counts": {
+            "RotateLeft": 2,
+            "RotateRight": 2,
+            "Teleport": 4
+          },
+          "budget_exhaustions": 0,
+          "candidate_trials": 0,
+          "deferred_requests": 0,
+          "failed_transitions": 0,
+          "failures": 0,
+          "interaction_repositions": 0,
+          "interaction_target_substitutions": 1,
+          "invisible_candidates": 0,
+          "invisible_interaction_candidates": 0,
+          "micro_steps": 0,
+          "mode": "teleport",
+          "parking_moves": 0,
+          "planning_batches": 0,
+          "planning_durations_seconds": [],
+          "planning_time_seconds": 0.0,
+          "position_deviations": 0,
+          "priority_trials": 0,
+          "replans": 0,
+          "requests": 4,
+          "serial_fallback_batches": 0,
+          "successes": 4,
+          "suppressed_reachable_removals": 0,
+          "waits": 0
+        },
+        "original_goal_count": 3,
+        "phase_durations_seconds": {
+          "cleanup": 0.31611327501013875,
+          "evaluation": 0.020859822165220976,
+          "execution": 0.3582303458824754,
+          "startup": 2.5375370089896023
+        },
+        "process_status": "completed",
+        "raw_action_sr": 1.0,
+        "robot_failures": [],
+        "ru": 0.0,
+        "run_id": "9e35b208e98e4119b24102b029b66cc7",
+        "run_time_seconds": 3.2327519739046693,
+        "satisfied_goal_count": 3,
+        "sr": 0,
+        "status": "success",
+        "task_key": "c9742176b0c97102fc6ed5d001cfba585ba4601a2aeedb341585ab00dce28f36",
+        "task_success": false,
+        "tc": 1.0,
+        "timed_out": false,
+        "timeout_message": "",
+        "worker_errors": []
+      }
+    },
+    {
+      "case": {
+        "category": "living_room",
+        "path": "logs/intermediate_runs/final_test_new_0609_1___201/break_the_window,_then_put_the_pen_in_the_box,_then_break_the_television/20260716_001/plan_to_code/executable_plan.py",
+        "robot_count": 2,
+        "stratum": "concurrent_goto",
+        "task_id": "FloorPlan201_task_13"
+      },
+      "movement_mode": "step",
+      "returncode": 0,
+      "timed_out": false,
+      "elapsed": 7.077806900721043,
+      "directory": "/tmp/executor-batch-real-reports/8766acae_fixed_goals_v2/04_step",
+      "metrics": {
+        "action_counts": {
+          "attempts": 8,
+          "cancelled": 0,
+          "failed": 0,
+          "planned": 8,
+          "skipped": 0,
+          "started": 8,
+          "succeeded": 8,
+          "unexecuted": 0
+        },
+        "action_sr": 1.0,
+        "attempt": 1,
+        "cleanup_errors": [],
+        "evaluation_status": "valid",
+        "evaluation_version": "fixed_goals_v2",
+        "exec_rate": 1.0,
+        "executed_actions": 8,
+        "execution_policy": "legacy",
+        "execution_status": "completed",
+        "failed_actions": 0,
+        "failure_action_ratio": 0.0,
+        "gcr": 1.0,
+        "goal_results": [
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Window|-00.06|+00.93|+01.76",
+                "states": [
+                  {
+                    "satisfied": true,
+                    "source": "metadata",
+                    "state": "BROKEN"
+                  }
+                ],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Window_1",
+            "states": [
+              "BROKEN"
+            ],
+            "status": "satisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Box|-03.36|+00.19|+06.43",
+                "states": [],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [
+              "Pen"
+            ],
+            "name": "Box",
+            "states": [],
+            "status": "satisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Television|-02.36|+01.21|+06.24",
+                "states": [
+                  {
+                    "satisfied": true,
+                    "source": "metadata",
+                    "state": "BROKEN"
+                  }
+                ],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Television",
+            "states": [
+              "BROKEN"
+            ],
+            "status": "satisfied"
+          }
+        ],
+        "ignored_failure_count": 0,
+        "metrics_schema_version": 2,
+        "movement_mode": "step",
+        "navigation_metrics": {
+          "action_counts": {
+            "GetReachablePositions": 156,
+            "MoveAhead": 75,
+            "RotateLeft": 17,
+            "RotateRight": 18
+          },
+          "budget_exhaustions": 0,
+          "candidate_trials": 6,
+          "deferred_requests": 0,
+          "failed_transitions": 3,
+          "failures": 0,
+          "interaction_repositions": 0,
+          "interaction_target_substitutions": 1,
+          "invisible_candidates": 0,
+          "invisible_interaction_candidates": 0,
+          "micro_steps": 72,
+          "mode": "step",
+          "parking_moves": 0,
+          "planning_batches": 6,
+          "planning_durations_seconds": [
+            0.011888988316059113,
+            0.01693637389689684,
+            0.021969281136989594,
+            0.007188807707279921,
+            0.004787875805050135,
+            0.003455488011240959
+          ],
+          "planning_time_seconds": 0.06622681487351656,
+          "position_deviations": 0,
+          "priority_trials": 10,
+          "replans": 3,
+          "requests": 4,
+          "serial_fallback_batches": 0,
+          "successes": 4,
+          "suppressed_reachable_removals": 0,
+          "waits": 0
+        },
+        "original_goal_count": 3,
+        "phase_durations_seconds": {
+          "cleanup": 0.3150746659375727,
+          "evaluation": 0.016935341991484165,
+          "execution": 3.517876767087728,
+          "startup": 2.6809208379127085
+        },
+        "process_status": "completed",
+        "raw_action_sr": 1.0,
+        "robot_failures": [],
+        "ru": 0.0,
+        "run_id": "1c2e542454ce4e48b8666597efcb0171",
+        "run_time_seconds": 6.530820526648313,
+        "satisfied_goal_count": 3,
+        "sr": 0,
+        "status": "success",
+        "task_key": "c9742176b0c97102fc6ed5d001cfba585ba4601a2aeedb341585ab00dce28f36",
+        "task_success": false,
+        "tc": 1.0,
+        "timed_out": false,
+        "timeout_message": "",
+        "worker_errors": []
+      }
+    },
+    {
+      "case": {
+        "category": "living_room",
+        "path": "logs/intermediate_runs/final_test_new_0609_1___201/break_the_vase,_then_put_the_pen_on_the_chair_and_put_the_newspaper_in_the_drawe/20260628_001/plan_to_code/executable_plan.py",
+        "robot_count": 4,
+        "stratum": "multiple_waves",
+        "task_id": "FloorPlan201_task_1"
+      },
+      "movement_mode": "teleport",
+      "returncode": 0,
+      "timed_out": false,
+      "elapsed": 4.573777766898274,
+      "directory": "/tmp/executor-batch-real-reports/8766acae_fixed_goals_v2/05_teleport",
+      "metrics": {
+        "action_counts": {
+          "attempts": 7,
+          "cancelled": 0,
+          "failed": 0,
+          "planned": 7,
+          "skipped": 0,
+          "started": 7,
+          "succeeded": 7,
+          "unexecuted": 0
+        },
+        "action_sr": 1.0,
+        "attempt": 1,
+        "cleanup_errors": [],
+        "evaluation_status": "valid",
+        "evaluation_version": "fixed_goals_v2",
+        "exec_rate": 1.0,
+        "executed_actions": 7,
+        "execution_policy": "legacy",
+        "execution_status": "completed",
+        "failed_actions": 0,
+        "failure_action_ratio": 0.0,
+        "gcr": 0.6666666666666666,
+        "goal_results": [
+          {
+            "candidates": [
+              {
+                "contains_satisfied": false,
+                "object_id": "Chair|-02.51|+00.02|+00.99",
+                "states": [],
+                "status": "unsatisfied"
+              }
+            ],
+            "contains": [
+              "Pen"
+            ],
+            "name": "Chair_5",
+            "states": [],
+            "status": "unsatisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Drawer|-00.31|+00.63|+03.37",
+                "states": [],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [
+              "Newspaper"
+            ],
+            "name": "Drawer_1",
+            "states": [],
+            "status": "satisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Vase|-00.26|+00.70|+03.41",
+                "states": [
+                  {
+                    "satisfied": true,
+                    "source": "metadata",
+                    "state": "BROKEN"
+                  }
+                ],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Vase",
+            "states": [
+              "BROKEN"
+            ],
+            "status": "satisfied"
+          }
+        ],
+        "ignored_failure_count": 0,
+        "metrics_schema_version": 2,
+        "movement_mode": "teleport",
+        "navigation_metrics": {
+          "action_counts": {
+            "RotateLeft": 1,
+            "RotateRight": 2,
+            "Teleport": 3
+          },
+          "budget_exhaustions": 0,
+          "candidate_trials": 0,
+          "deferred_requests": 0,
+          "failed_transitions": 0,
+          "failures": 0,
+          "interaction_repositions": 0,
+          "interaction_target_substitutions": 1,
+          "invisible_candidates": 0,
+          "invisible_interaction_candidates": 0,
+          "micro_steps": 0,
+          "mode": "teleport",
+          "parking_moves": 0,
+          "planning_batches": 0,
+          "planning_durations_seconds": [],
+          "planning_time_seconds": 0.0,
+          "position_deviations": 0,
+          "priority_trials": 0,
+          "replans": 0,
+          "requests": 3,
+          "serial_fallback_batches": 0,
+          "successes": 3,
+          "suppressed_reachable_removals": 0,
+          "waits": 0
+        },
+        "original_goal_count": 3,
+        "phase_durations_seconds": {
+          "cleanup": 0.3149157389998436,
+          "evaluation": 0.027828486170619726,
+          "execution": 0.6391379251144826,
+          "startup": 3.03422375023365
+        },
+        "process_status": "completed",
+        "raw_action_sr": 1.0,
+        "robot_failures": [],
+        "ru": 0.0,
+        "run_id": "37dff527d156453aa194b0eafa0d62a1",
+        "run_time_seconds": 4.016116751357913,
+        "satisfied_goal_count": 2,
+        "sr": 0,
+        "status": "success",
+        "task_key": "ab6feae85c4142b343e88792856226c6ced6ada04886b43e8750c233c1068d09",
+        "task_success": false,
+        "tc": 0.0,
+        "timed_out": false,
+        "timeout_message": "",
+        "worker_errors": []
+      }
+    },
+    {
+      "case": {
+        "category": "living_room",
+        "path": "logs/intermediate_runs/final_test_new_0609_1___201/break_the_vase,_then_put_the_pen_on_the_chair_and_put_the_newspaper_in_the_drawe/20260628_001/plan_to_code/executable_plan.py",
+        "robot_count": 4,
+        "stratum": "multiple_waves",
+        "task_id": "FloorPlan201_task_1"
+      },
+      "movement_mode": "step",
+      "returncode": 0,
+      "timed_out": false,
+      "elapsed": 13.491847819183022,
+      "directory": "/tmp/executor-batch-real-reports/8766acae_fixed_goals_v2/05_step",
+      "metrics": {
+        "action_counts": {
+          "attempts": 7,
+          "cancelled": 0,
+          "failed": 0,
+          "planned": 7,
+          "skipped": 0,
+          "started": 7,
+          "succeeded": 7,
+          "unexecuted": 0
+        },
+        "action_sr": 1.0,
+        "attempt": 1,
+        "cleanup_errors": [],
+        "evaluation_status": "valid",
+        "evaluation_version": "fixed_goals_v2",
+        "exec_rate": 1.0,
+        "executed_actions": 7,
+        "execution_policy": "legacy",
+        "execution_status": "completed",
+        "failed_actions": 0,
+        "failure_action_ratio": 0.0,
+        "gcr": 0.6666666666666666,
+        "goal_results": [
+          {
+            "candidates": [
+              {
+                "contains_satisfied": false,
+                "object_id": "Chair|-02.51|+00.02|+00.99",
+                "states": [],
+                "status": "unsatisfied"
+              }
+            ],
+            "contains": [
+              "Pen"
+            ],
+            "name": "Chair_5",
+            "states": [],
+            "status": "unsatisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Drawer|-00.31|+00.63|+03.37",
+                "states": [],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [
+              "Newspaper"
+            ],
+            "name": "Drawer_1",
+            "states": [],
+            "status": "satisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Vase|-00.26|+00.70|+03.41",
+                "states": [
+                  {
+                    "satisfied": true,
+                    "source": "metadata",
+                    "state": "BROKEN"
+                  }
+                ],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Vase",
+            "states": [
+              "BROKEN"
+            ],
+            "status": "satisfied"
+          }
+        ],
+        "ignored_failure_count": 0,
+        "metrics_schema_version": 2,
+        "movement_mode": "step",
+        "navigation_metrics": {
+          "action_counts": {
+            "GetReachablePositions": 464,
+            "MoveAhead": 113,
+            "RotateLeft": 15,
+            "RotateRight": 16
+          },
+          "budget_exhaustions": 0,
+          "candidate_trials": 11,
+          "deferred_requests": 0,
+          "failed_transitions": 7,
+          "failures": 0,
+          "interaction_repositions": 0,
+          "interaction_target_substitutions": 1,
+          "invisible_candidates": 0,
+          "invisible_interaction_candidates": 0,
+          "micro_steps": 106,
+          "mode": "step",
+          "parking_moves": 0,
+          "planning_batches": 10,
+          "planning_durations_seconds": [
+            0.0182586838491261,
+            0.014515695627778769,
+            0.04316544812172651,
+            0.025558541994541883,
+            0.015434516128152609,
+            0.014989198185503483,
+            0.04318396281450987,
+            0.0409846818074584,
+            0.04090501321479678,
+            0.023170906119048595
+          ],
+          "planning_time_seconds": 0.280166647862643,
+          "position_deviations": 0,
+          "priority_trials": 11,
+          "replans": 7,
+          "requests": 3,
+          "serial_fallback_batches": 0,
+          "successes": 3,
+          "suppressed_reachable_removals": 85,
+          "waits": 0
+        },
+        "original_goal_count": 3,
+        "phase_durations_seconds": {
+          "cleanup": 0.31571140978485346,
+          "evaluation": 0.03336146706715226,
+          "execution": 9.618010617792606,
+          "startup": 2.9877988127991557
+        },
+        "process_status": "completed",
+        "raw_action_sr": 1.0,
+        "robot_failures": [],
+        "ru": 0.0,
+        "run_id": "2ed39b61f3514d77bc6200f5c48a4923",
+        "run_time_seconds": 12.95489303721115,
+        "satisfied_goal_count": 2,
+        "sr": 0,
+        "status": "success",
+        "task_key": "ab6feae85c4142b343e88792856226c6ced6ada04886b43e8750c233c1068d09",
+        "task_success": false,
+        "tc": 0.0,
+        "timed_out": false,
+        "timeout_message": "",
+        "worker_errors": []
+      }
+    },
+    {
+      "case": {
+        "category": "bedroom",
+        "path": "logs/intermediate_runs/final_test_new_0609_1___301/open_the_laptop,_put_the_box_on_the_floor,_open_the_book,_then_put_the_mug_in_th/20260716_001/plan_to_code/executable_plan.py",
+        "robot_count": 3,
+        "stratum": "single_navigation",
+        "task_id": "FloorPlan301_task_12"
+      },
+      "movement_mode": "teleport",
+      "returncode": 0,
+      "timed_out": false,
+      "elapsed": 3.62255348963663,
+      "directory": "/tmp/executor-batch-real-reports/8766acae_fixed_goals_v2/06_teleport",
+      "metrics": {
+        "action_counts": {
+          "attempts": 2,
+          "cancelled": 0,
+          "failed": 0,
+          "planned": 2,
+          "skipped": 0,
+          "started": 2,
+          "succeeded": 2,
+          "unexecuted": 0
+        },
+        "action_sr": 1.0,
+        "attempt": 1,
+        "cleanup_errors": [],
+        "evaluation_status": "valid",
+        "evaluation_version": "fixed_goals_v2",
+        "exec_rate": 1.0,
+        "executed_actions": 2,
+        "execution_policy": "legacy",
+        "execution_status": "completed",
+        "failed_actions": 0,
+        "failure_action_ratio": 0.0,
+        "gcr": 0.75,
+        "goal_results": [
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Laptop|-00.50|+00.56|+00.29",
+                "states": [
+                  {
+                    "satisfied": true,
+                    "source": "metadata",
+                    "state": "OPENED"
+                  }
+                ],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Laptop",
+            "states": [
+              "OPENED"
+            ],
+            "status": "satisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Floor|+00.00|+00.00|+00.00",
+                "states": [],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [
+              "Box"
+            ],
+            "name": "Floor",
+            "states": [],
+            "status": "satisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Book|-00.90|+00.56|+01.18",
+                "states": [
+                  {
+                    "satisfied": true,
+                    "source": "metadata",
+                    "state": "OPENED"
+                  }
+                ],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Book",
+            "states": [
+              "OPENED"
+            ],
+            "status": "satisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": false,
+                "object_id": "Box|+02.73|+00.20|+00.89",
+                "states": [],
+                "status": "unsatisfied"
+              }
+            ],
+            "contains": [
+              "Mug"
+            ],
+            "name": "Box",
+            "states": [],
+            "status": "unsatisfied"
+          }
+        ],
+        "ignored_failure_count": 0,
+        "metrics_schema_version": 2,
+        "movement_mode": "teleport",
+        "navigation_metrics": {
+          "action_counts": {
+            "RotateLeft": 1,
+            "Teleport": 1
+          },
+          "budget_exhaustions": 0,
+          "candidate_trials": 0,
+          "deferred_requests": 0,
+          "failed_transitions": 0,
+          "failures": 0,
+          "interaction_repositions": 0,
+          "interaction_target_substitutions": 0,
+          "invisible_candidates": 0,
+          "invisible_interaction_candidates": 0,
+          "micro_steps": 0,
+          "mode": "teleport",
+          "parking_moves": 0,
+          "planning_batches": 0,
+          "planning_durations_seconds": [],
+          "planning_time_seconds": 0.0,
+          "position_deviations": 0,
+          "priority_trials": 0,
+          "replans": 0,
+          "requests": 1,
+          "serial_fallback_batches": 0,
+          "successes": 1,
+          "suppressed_reachable_removals": 0,
+          "waits": 0
+        },
+        "original_goal_count": 4,
+        "phase_durations_seconds": {
+          "cleanup": 0.3150049429386854,
+          "evaluation": 0.020450932905077934,
+          "execution": 0.06603151094168425,
+          "startup": 2.6936935889534652
+        },
+        "process_status": "completed",
+        "raw_action_sr": 1.0,
+        "robot_failures": [],
+        "ru": 0.0,
+        "run_id": "20f8c5f7e7de4b82b1595bc08bbcb506",
+        "run_time_seconds": 3.0951917869970202,
+        "satisfied_goal_count": 3,
+        "sr": 0,
+        "status": "success",
+        "task_key": "237a6826d6b0eb520605eaf49f2833b736bea90727d340a05bafb0744b1f5307",
+        "task_success": false,
+        "tc": 0.0,
+        "timed_out": false,
+        "timeout_message": "",
+        "worker_errors": []
+      }
+    },
+    {
+      "case": {
+        "category": "bedroom",
+        "path": "logs/intermediate_runs/final_test_new_0609_1___301/open_the_laptop,_put_the_box_on_the_floor,_open_the_book,_then_put_the_mug_in_th/20260716_001/plan_to_code/executable_plan.py",
+        "robot_count": 3,
+        "stratum": "single_navigation",
+        "task_id": "FloorPlan301_task_12"
+      },
+      "movement_mode": "step",
+      "returncode": 0,
+      "timed_out": false,
+      "elapsed": 3.973853211849928,
+      "directory": "/tmp/executor-batch-real-reports/8766acae_fixed_goals_v2/06_step",
+      "metrics": {
+        "action_counts": {
+          "attempts": 2,
+          "cancelled": 0,
+          "failed": 0,
+          "planned": 2,
+          "skipped": 0,
+          "started": 2,
+          "succeeded": 2,
+          "unexecuted": 0
+        },
+        "action_sr": 1.0,
+        "attempt": 1,
+        "cleanup_errors": [],
+        "evaluation_status": "valid",
+        "evaluation_version": "fixed_goals_v2",
+        "exec_rate": 1.0,
+        "executed_actions": 2,
+        "execution_policy": "legacy",
+        "execution_status": "completed",
+        "failed_actions": 0,
+        "failure_action_ratio": 0.0,
+        "gcr": 0.75,
+        "goal_results": [
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Laptop|-00.50|+00.56|+00.29",
+                "states": [
+                  {
+                    "satisfied": true,
+                    "source": "metadata",
+                    "state": "OPENED"
+                  }
+                ],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Laptop",
+            "states": [
+              "OPENED"
+            ],
+            "status": "satisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Floor|+00.00|+00.00|+00.00",
+                "states": [],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [
+              "Box"
+            ],
+            "name": "Floor",
+            "states": [],
+            "status": "satisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Book|-00.90|+00.56|+01.18",
+                "states": [
+                  {
+                    "satisfied": true,
+                    "source": "metadata",
+                    "state": "OPENED"
+                  }
+                ],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Book",
+            "states": [
+              "OPENED"
+            ],
+            "status": "satisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": false,
+                "object_id": "Box|+02.73|+00.20|+00.89",
+                "states": [],
+                "status": "unsatisfied"
+              }
+            ],
+            "contains": [
+              "Mug"
+            ],
+            "name": "Box",
+            "states": [],
+            "status": "unsatisfied"
+          }
+        ],
+        "ignored_failure_count": 0,
+        "metrics_schema_version": 2,
+        "movement_mode": "step",
+        "navigation_metrics": {
+          "action_counts": {
+            "GetReachablePositions": 36,
+            "MoveAhead": 11,
+            "RotateLeft": 2,
+            "RotateRight": 2
+          },
+          "budget_exhaustions": 0,
+          "candidate_trials": 2,
+          "deferred_requests": 0,
+          "failed_transitions": 1,
+          "failures": 0,
+          "interaction_repositions": 0,
+          "interaction_target_substitutions": 0,
+          "invisible_candidates": 0,
+          "invisible_interaction_candidates": 0,
+          "micro_steps": 10,
+          "mode": "step",
+          "parking_moves": 0,
+          "planning_batches": 2,
+          "planning_durations_seconds": [
+            0.003402777947485447,
+            0.0050452821888029575
+          ],
+          "planning_time_seconds": 0.008448060136288404,
+          "position_deviations": 0,
+          "priority_trials": 2,
+          "replans": 1,
+          "requests": 1,
+          "serial_fallback_batches": 0,
+          "successes": 1,
+          "suppressed_reachable_removals": 0,
+          "waits": 0
+        },
+        "original_goal_count": 4,
+        "phase_durations_seconds": {
+          "cleanup": 0.3147983360104263,
+          "evaluation": 0.022844331804662943,
+          "execution": 0.4629927100613713,
+          "startup": 2.6530931550078094
+        },
+        "process_status": "completed",
+        "raw_action_sr": 1.0,
+        "robot_failures": [],
+        "ru": 0.0,
+        "run_id": "4d54f20020d04df8802665862ce6728b",
+        "run_time_seconds": 3.4537410871125758,
+        "satisfied_goal_count": 3,
+        "sr": 0,
+        "status": "success",
+        "task_key": "237a6826d6b0eb520605eaf49f2833b736bea90727d340a05bafb0744b1f5307",
+        "task_success": false,
+        "tc": 0.0,
+        "timed_out": false,
+        "timeout_message": "",
+        "worker_errors": []
+      }
+    },
+    {
+      "case": {
+        "category": "bedroom",
+        "path": "logs/intermediate_runs/final_test_new_0609_1___301/break_the_bowl,_then_open_the_book,_then_put_the_credit_card_on_the_drawer/20260628_001/plan_to_code/executable_plan.py",
+        "robot_count": 4,
+        "stratum": "concurrent_goto",
+        "task_id": "FloorPlan301_task_10"
+      },
+      "movement_mode": "teleport",
+      "returncode": 0,
+      "timed_out": false,
+      "elapsed": 4.125723612960428,
+      "directory": "/tmp/executor-batch-real-reports/8766acae_fixed_goals_v2/07_teleport",
+      "metrics": {
+        "action_counts": {
+          "attempts": 8,
+          "cancelled": 0,
+          "failed": 1,
+          "planned": 8,
+          "skipped": 0,
+          "started": 8,
+          "succeeded": 7,
+          "unexecuted": 0
+        },
+        "action_sr": 0.875,
+        "attempt": 1,
+        "cleanup_errors": [],
+        "evaluation_status": "valid",
+        "evaluation_version": "fixed_goals_v2",
+        "exec_rate": 0.75,
+        "executed_actions": 8,
+        "execution_policy": "legacy",
+        "execution_status": "partial",
+        "failed_actions": 1,
+        "failure_action_ratio": 0.125,
+        "gcr": 0.6666666666666666,
+        "goal_results": [
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Bowl|+02.45|+00.80|-01.21",
+                "states": [
+                  {
+                    "satisfied": true,
+                    "source": "metadata",
+                    "state": "BROKEN"
+                  }
+                ],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Bowl",
+            "states": [
+              "BROKEN"
+            ],
+            "status": "satisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Book|-00.90|+00.56|+01.18",
+                "states": [
+                  {
+                    "satisfied": true,
+                    "source": "metadata",
+                    "state": "OPENED"
+                  }
+                ],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Book",
+            "states": [
+              "OPENED"
+            ],
+            "status": "satisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": false,
+                "object_id": "Drawer|-01.31|+00.45|-00.58",
+                "states": [],
+                "status": "unsatisfied"
+              }
+            ],
+            "contains": [
+              "CreditCard"
+            ],
+            "name": "Drawer_1",
+            "states": [],
+            "status": "unsatisfied"
+          }
+        ],
+        "ignored_failure_count": 0,
+        "metrics_schema_version": 2,
+        "movement_mode": "teleport",
+        "navigation_metrics": {
+          "action_counts": {
+            "GetReachablePositions": 1,
+            "RotateLeft": 3,
+            "RotateRight": 1,
+            "Teleport": 5
+          },
+          "budget_exhaustions": 0,
+          "candidate_trials": 0,
+          "deferred_requests": 0,
+          "failed_transitions": 0,
+          "failures": 0,
+          "interaction_repositions": 0,
+          "interaction_target_substitutions": 0,
+          "invisible_candidates": 0,
+          "invisible_interaction_candidates": 0,
+          "micro_steps": 0,
+          "mode": "teleport",
+          "parking_moves": 0,
+          "planning_batches": 0,
+          "planning_durations_seconds": [],
+          "planning_time_seconds": 0.0,
+          "position_deviations": 0,
+          "priority_trials": 0,
+          "replans": 0,
+          "requests": 4,
+          "serial_fallback_batches": 0,
+          "successes": 4,
+          "suppressed_reachable_removals": 0,
+          "waits": 0
+        },
+        "original_goal_count": 3,
+        "phase_durations_seconds": {
+          "cleanup": 0.26536386320367455,
+          "evaluation": 0.024089966900646687,
+          "execution": 0.4133475823327899,
+          "startup": 2.8805594262667
+        },
+        "process_status": "completed",
+        "raw_action_sr": 0.875,
+        "robot_failures": [
+          {
+            "action_index": 3,
+            "action_type": "PutObject",
+            "error": "PutObject failed for agent 3 on Drawer|-01.31|+00.45|-00.58: Target openable Receptacle is CLOSED, can't place if target is not open!",
+            "ignored_for_failure_ratio": false,
+            "robot_id": "robot4",
+            "stage_id": "Phase 2"
+          }
+        ],
+        "ru": 0.0,
+        "run_id": "63ef9d286e584814bf12bbfc216655d5",
+        "run_time_seconds": 3.5833695949986577,
+        "satisfied_goal_count": 2,
+        "sr": 0,
+        "status": "success",
+        "task_key": "a8bd3eac0d7a14588ea5ea74f78d6d0d1d58d4a09a4b06b8d27a5afe4eae615e",
+        "task_success": false,
+        "tc": 0.0,
+        "timed_out": false,
+        "timeout_message": "",
+        "worker_errors": []
+      }
+    },
+    {
+      "case": {
+        "category": "bedroom",
+        "path": "logs/intermediate_runs/final_test_new_0609_1___301/break_the_bowl,_then_open_the_book,_then_put_the_credit_card_on_the_drawer/20260628_001/plan_to_code/executable_plan.py",
+        "robot_count": 4,
+        "stratum": "concurrent_goto",
+        "task_id": "FloorPlan301_task_10"
+      },
+      "movement_mode": "step",
+      "returncode": 0,
+      "timed_out": false,
+      "elapsed": 6.578795424196869,
+      "directory": "/tmp/executor-batch-real-reports/8766acae_fixed_goals_v2/07_step",
+      "metrics": {
+        "action_counts": {
+          "attempts": 8,
+          "cancelled": 0,
+          "failed": 1,
+          "planned": 8,
+          "skipped": 0,
+          "started": 8,
+          "succeeded": 7,
+          "unexecuted": 0
+        },
+        "action_sr": 0.875,
+        "attempt": 1,
+        "cleanup_errors": [],
+        "evaluation_status": "valid",
+        "evaluation_version": "fixed_goals_v2",
+        "exec_rate": 0.75,
+        "executed_actions": 8,
+        "execution_policy": "legacy",
+        "execution_status": "partial",
+        "failed_actions": 1,
+        "failure_action_ratio": 0.125,
+        "gcr": 0.6666666666666666,
+        "goal_results": [
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Bowl|+02.45|+00.80|-01.21",
+                "states": [
+                  {
+                    "satisfied": true,
+                    "source": "metadata",
+                    "state": "BROKEN"
+                  }
+                ],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Bowl",
+            "states": [
+              "BROKEN"
+            ],
+            "status": "satisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Book|-00.90|+00.56|+01.18",
+                "states": [
+                  {
+                    "satisfied": true,
+                    "source": "metadata",
+                    "state": "OPENED"
+                  }
+                ],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Book",
+            "states": [
+              "OPENED"
+            ],
+            "status": "satisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": false,
+                "object_id": "Drawer|-01.31|+00.45|-00.58",
+                "states": [],
+                "status": "unsatisfied"
+              }
+            ],
+            "contains": [
+              "CreditCard"
+            ],
+            "name": "Drawer_1",
+            "states": [],
+            "status": "unsatisfied"
+          }
+        ],
+        "ignored_failure_count": 0,
+        "metrics_schema_version": 2,
+        "movement_mode": "step",
+        "navigation_metrics": {
+          "action_counts": {
+            "GetReachablePositions": 196,
+            "MoveAhead": 46,
+            "RotateLeft": 17,
+            "RotateRight": 11
+          },
+          "budget_exhaustions": 0,
+          "candidate_trials": 10,
+          "deferred_requests": 0,
+          "failed_transitions": 5,
+          "failures": 0,
+          "interaction_repositions": 0,
+          "interaction_target_substitutions": 0,
+          "invisible_candidates": 0,
+          "invisible_interaction_candidates": 0,
+          "micro_steps": 41,
+          "mode": "step",
+          "parking_moves": 0,
+          "planning_batches": 8,
+          "planning_durations_seconds": [
+            0.0261524417437613,
+            0.0245438520796597,
+            0.024649291299283504,
+            0.024930540937930346,
+            0.0049530272372066975,
+            0.006737619172781706,
+            0.006563371047377586,
+            0.00997884338721633
+          ],
+          "planning_time_seconds": 0.12850898690521717,
+          "position_deviations": 0,
+          "priority_trials": 15,
+          "replans": 5,
+          "requests": 4,
+          "serial_fallback_batches": 0,
+          "successes": 4,
+          "suppressed_reachable_removals": 0,
+          "waits": 0
+        },
+        "original_goal_count": 3,
+        "phase_durations_seconds": {
+          "cleanup": 0.31516180001199245,
+          "evaluation": 0.02678134571760893,
+          "execution": 2.9313214272260666,
+          "startup": 2.786954174749553
+        },
+        "process_status": "completed",
+        "raw_action_sr": 0.875,
+        "robot_failures": [
+          {
+            "action_index": 3,
+            "action_type": "PutObject",
+            "error": "PutObject failed for agent 3 on Drawer|-01.31|+00.45|-00.58: Target openable Receptacle is CLOSED, can't place if target is not open!",
+            "ignored_for_failure_ratio": false,
+            "robot_id": "robot4",
+            "stage_id": "Phase 2"
+          }
+        ],
+        "ru": 0.0,
+        "run_id": "8848b4433ea44dfba12ba50c1644d0f0",
+        "run_time_seconds": 6.060231001116335,
+        "satisfied_goal_count": 2,
+        "sr": 0,
+        "status": "success",
+        "task_key": "a8bd3eac0d7a14588ea5ea74f78d6d0d1d58d4a09a4b06b8d27a5afe4eae615e",
+        "task_success": false,
+        "tc": 0.0,
+        "timed_out": false,
+        "timeout_message": "",
+        "worker_errors": []
+      }
+    },
+    {
+      "case": {
+        "category": "bedroom",
+        "path": "logs/intermediate_runs/final_test_new_0609_1___301/break_the_mirror,_then_put_the_creditcard_in_the_drawer,_then_put_the_cellphone_/20260716_002/plan_to_code/executable_plan.py",
+        "robot_count": 4,
+        "stratum": "multiple_waves",
+        "task_id": "FloorPlan301_task_0"
+      },
+      "movement_mode": "teleport",
+      "returncode": 0,
+      "timed_out": false,
+      "elapsed": 4.174830759875476,
+      "directory": "/tmp/executor-batch-real-reports/8766acae_fixed_goals_v2/08_teleport",
+      "metrics": {
+        "action_counts": {
+          "attempts": 10,
+          "cancelled": 0,
+          "failed": 0,
+          "planned": 10,
+          "skipped": 0,
+          "started": 10,
+          "succeeded": 10,
+          "unexecuted": 0
+        },
+        "action_sr": 1.0,
+        "attempt": 1,
+        "cleanup_errors": [],
+        "evaluation_status": "valid",
+        "evaluation_version": "fixed_goals_v2",
+        "exec_rate": 1.0,
+        "executed_actions": 10,
+        "execution_policy": "legacy",
+        "execution_status": "completed",
+        "failed_actions": 0,
+        "failure_action_ratio": 0.0,
+        "gcr": 0.5,
+        "goal_results": [
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Drawer|-01.31|+00.45|-00.58",
+                "states": [],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [
+              "CreditCard",
+              "CellPhone"
+            ],
+            "name": "Drawer_1",
+            "states": [],
+            "status": "satisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Mirror|+01.99|+01.38|+01.88",
+                "states": [
+                  {
+                    "satisfied": false,
+                    "source": "metadata",
+                    "state": "BROKEN"
+                  }
+                ],
+                "status": "unsatisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Mirror",
+            "states": [
+              "BROKEN"
+            ],
+            "status": "unsatisfied"
+          }
+        ],
+        "ignored_failure_count": 0,
+        "metrics_schema_version": 2,
+        "movement_mode": "teleport",
+        "navigation_metrics": {
+          "action_counts": {
+            "GetReachablePositions": 1,
+            "RotateLeft": 2,
+            "RotateRight": 2,
+            "Teleport": 5
+          },
+          "budget_exhaustions": 0,
+          "candidate_trials": 0,
+          "deferred_requests": 0,
+          "failed_transitions": 0,
+          "failures": 0,
+          "interaction_repositions": 0,
+          "interaction_target_substitutions": 1,
+          "invisible_candidates": 0,
+          "invisible_interaction_candidates": 0,
+          "micro_steps": 0,
+          "mode": "teleport",
+          "parking_moves": 0,
+          "planning_batches": 0,
+          "planning_durations_seconds": [],
+          "planning_time_seconds": 0.0,
+          "position_deviations": 0,
+          "priority_trials": 0,
+          "replans": 0,
+          "requests": 4,
+          "serial_fallback_batches": 0,
+          "successes": 4,
+          "suppressed_reachable_removals": 0,
+          "waits": 0
+        },
+        "original_goal_count": 2,
+        "phase_durations_seconds": {
+          "cleanup": 0.26554385013878345,
+          "evaluation": 0.021690377965569496,
+          "execution": 0.5323444260284305,
+          "startup": 2.779525022022426
+        },
+        "process_status": "completed",
+        "raw_action_sr": 1.0,
+        "robot_failures": [],
+        "ru": 0.0,
+        "run_id": "48dacdd9f941414fa9bbecab3cf602a5",
+        "run_time_seconds": 3.599115379154682,
+        "satisfied_goal_count": 1,
+        "sr": 0,
+        "status": "success",
+        "task_key": "fc66201ba15849650210dc380d9f960ac0512634c9e18ca3428d1aebfe9f1e6b",
+        "task_success": false,
+        "tc": 0.0,
+        "timed_out": false,
+        "timeout_message": "",
+        "worker_errors": []
+      }
+    },
+    {
+      "case": {
+        "category": "bedroom",
+        "path": "logs/intermediate_runs/final_test_new_0609_1___301/break_the_mirror,_then_put_the_creditcard_in_the_drawer,_then_put_the_cellphone_/20260716_002/plan_to_code/executable_plan.py",
+        "robot_count": 4,
+        "stratum": "multiple_waves",
+        "task_id": "FloorPlan301_task_0"
+      },
+      "movement_mode": "step",
+      "returncode": 0,
+      "timed_out": false,
+      "elapsed": 6.276566185057163,
+      "directory": "/tmp/executor-batch-real-reports/8766acae_fixed_goals_v2/08_step",
+      "metrics": {
+        "action_counts": {
+          "attempts": 10,
+          "cancelled": 0,
+          "failed": 0,
+          "planned": 10,
+          "skipped": 0,
+          "started": 10,
+          "succeeded": 10,
+          "unexecuted": 0
+        },
+        "action_sr": 1.0,
+        "attempt": 1,
+        "cleanup_errors": [],
+        "evaluation_status": "valid",
+        "evaluation_version": "fixed_goals_v2",
+        "exec_rate": 1.0,
+        "executed_actions": 10,
+        "execution_policy": "legacy",
+        "execution_status": "completed",
+        "failed_actions": 0,
+        "failure_action_ratio": 0.0,
+        "gcr": 0.5,
+        "goal_results": [
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Drawer|-01.31|+00.45|-00.58",
+                "states": [],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [
+              "CreditCard",
+              "CellPhone"
+            ],
+            "name": "Drawer_1",
+            "states": [],
+            "status": "satisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Mirror|+01.99|+01.38|+01.88",
+                "states": [
+                  {
+                    "satisfied": false,
+                    "source": "metadata",
+                    "state": "BROKEN"
+                  }
+                ],
+                "status": "unsatisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Mirror",
+            "states": [
+              "BROKEN"
+            ],
+            "status": "unsatisfied"
+          }
+        ],
+        "ignored_failure_count": 0,
+        "metrics_schema_version": 2,
+        "movement_mode": "step",
+        "navigation_metrics": {
+          "action_counts": {
+            "GetReachablePositions": 164,
+            "MoveAhead": 37,
+            "RotateLeft": 12,
+            "RotateRight": 8
+          },
+          "budget_exhaustions": 0,
+          "candidate_trials": 5,
+          "deferred_requests": 0,
+          "failed_transitions": 1,
+          "failures": 0,
+          "interaction_repositions": 0,
+          "interaction_target_substitutions": 1,
+          "invisible_candidates": 0,
+          "invisible_interaction_candidates": 0,
+          "micro_steps": 36,
+          "mode": "step",
+          "parking_moves": 0,
+          "planning_batches": 5,
+          "planning_durations_seconds": [
+            0.004246997646987438,
+            0.0046933479607105255,
+            0.005631384905427694,
+            0.008702749852091074,
+            0.005260416306555271
+          ],
+          "planning_time_seconds": 0.028534896671772003,
+          "position_deviations": 0,
+          "priority_trials": 5,
+          "replans": 1,
+          "requests": 4,
+          "serial_fallback_batches": 0,
+          "successes": 4,
+          "suppressed_reachable_removals": 0,
+          "waits": 0
+        },
+        "original_goal_count": 2,
+        "phase_durations_seconds": {
+          "cleanup": 0.3153305472806096,
+          "evaluation": 0.024297408759593964,
+          "execution": 2.4485781770199537,
+          "startup": 2.9339588237926364
+        },
+        "process_status": "completed",
+        "raw_action_sr": 1.0,
+        "robot_failures": [],
+        "ru": 0.0,
+        "run_id": "cb569358cafd475997bf6e4e3d947372",
+        "run_time_seconds": 5.7221774100326,
+        "satisfied_goal_count": 1,
+        "sr": 0,
+        "status": "success",
+        "task_key": "fc66201ba15849650210dc380d9f960ac0512634c9e18ca3428d1aebfe9f1e6b",
+        "task_success": false,
+        "tc": 0.0,
+        "timed_out": false,
+        "timeout_message": "",
+        "worker_errors": []
+      }
+    },
+    {
+      "case": {
+        "category": "bathroom",
+        "path": "logs/intermediate_runs/final_test_new_0609_1___401/put_the_toilet_paper_in_the_garbage_can,_then_put_the_dish_sponge_on_the_garbage/20260716_003/plan_to_code/executable_plan.py",
+        "robot_count": 3,
+        "stratum": "single_navigation",
+        "task_id": "FloorPlan401_task_22"
+      },
+      "movement_mode": "teleport",
+      "returncode": 0,
+      "timed_out": false,
+      "elapsed": 3.370815647300333,
+      "directory": "/tmp/executor-batch-real-reports/8766acae_fixed_goals_v2/09_teleport",
+      "metrics": {
+        "action_counts": {
+          "attempts": 2,
+          "cancelled": 0,
+          "failed": 0,
+          "planned": 2,
+          "skipped": 0,
+          "started": 2,
+          "succeeded": 2,
+          "unexecuted": 0
+        },
+        "action_sr": 1.0,
+        "attempt": 1,
+        "cleanup_errors": [],
+        "evaluation_status": "valid",
+        "evaluation_version": "fixed_goals_v2",
+        "exec_rate": 1.0,
+        "executed_actions": 2,
+        "execution_policy": "legacy",
+        "execution_status": "completed",
+        "failed_actions": 0,
+        "failure_action_ratio": 0.0,
+        "gcr": 0.5,
+        "goal_results": [
+          {
+            "candidates": [
+              {
+                "contains_satisfied": false,
+                "object_id": "GarbageCan|+00.05|00.00|+03.88",
+                "states": [],
+                "status": "unsatisfied"
+              }
+            ],
+            "contains": [
+              "ToiletPaper_1",
+              "DishSponge"
+            ],
+            "name": "GarbageCan",
+            "states": [],
+            "status": "unsatisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "ShowerCurtain|-00.79|+02.22|-00.24",
+                "states": [
+                  {
+                    "satisfied": true,
+                    "source": "metadata",
+                    "state": "OPENED"
+                  }
+                ],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [],
+            "name": "ShowerCurtain",
+            "states": [
+              "OPENED"
+            ],
+            "status": "satisfied"
+          }
+        ],
+        "ignored_failure_count": 0,
+        "metrics_schema_version": 2,
+        "movement_mode": "teleport",
+        "navigation_metrics": {
+          "action_counts": {
+            "RotateRight": 1,
+            "Teleport": 1
+          },
+          "budget_exhaustions": 0,
+          "candidate_trials": 0,
+          "deferred_requests": 0,
+          "failed_transitions": 0,
+          "failures": 0,
+          "interaction_repositions": 0,
+          "interaction_target_substitutions": 0,
+          "invisible_candidates": 0,
+          "invisible_interaction_candidates": 0,
+          "micro_steps": 0,
+          "mode": "teleport",
+          "parking_moves": 0,
+          "planning_batches": 0,
+          "planning_durations_seconds": [],
+          "planning_time_seconds": 0.0,
+          "position_deviations": 0,
+          "priority_trials": 0,
+          "replans": 0,
+          "requests": 1,
+          "serial_fallback_batches": 0,
+          "successes": 1,
+          "suppressed_reachable_removals": 0,
+          "waits": 0
+        },
+        "original_goal_count": 2,
+        "phase_durations_seconds": {
+          "cleanup": 0.26498985290527344,
+          "evaluation": 0.011557887308299541,
+          "execution": 0.04990871297195554,
+          "startup": 2.510594952851534
+        },
+        "process_status": "completed",
+        "raw_action_sr": 1.0,
+        "robot_failures": [],
+        "ru": 0.0,
+        "run_id": "1faa8154359f49508c783f0d777c5386",
+        "run_time_seconds": 2.8370617358013988,
+        "satisfied_goal_count": 1,
+        "sr": 0,
+        "status": "success",
+        "task_key": "d68b4ac0f5e0195878b73de2f70142cc43ec8420227ec81c74ddf658d93df546",
+        "task_success": false,
+        "tc": 0.0,
+        "timed_out": false,
+        "timeout_message": "",
+        "worker_errors": []
+      }
+    },
+    {
+      "case": {
+        "category": "bathroom",
+        "path": "logs/intermediate_runs/final_test_new_0609_1___401/put_the_toilet_paper_in_the_garbage_can,_then_put_the_dish_sponge_on_the_garbage/20260716_003/plan_to_code/executable_plan.py",
+        "robot_count": 3,
+        "stratum": "single_navigation",
+        "task_id": "FloorPlan401_task_22"
+      },
+      "movement_mode": "step",
+      "returncode": 0,
+      "timed_out": false,
+      "elapsed": 3.722219724673778,
+      "directory": "/tmp/executor-batch-real-reports/8766acae_fixed_goals_v2/09_step",
+      "metrics": {
+        "action_counts": {
+          "attempts": 2,
+          "cancelled": 0,
+          "failed": 0,
+          "planned": 2,
+          "skipped": 0,
+          "started": 2,
+          "succeeded": 2,
+          "unexecuted": 0
+        },
+        "action_sr": 1.0,
+        "attempt": 1,
+        "cleanup_errors": [],
+        "evaluation_status": "valid",
+        "evaluation_version": "fixed_goals_v2",
+        "exec_rate": 1.0,
+        "executed_actions": 2,
+        "execution_policy": "legacy",
+        "execution_status": "completed",
+        "failed_actions": 0,
+        "failure_action_ratio": 0.0,
+        "gcr": 0.5,
+        "goal_results": [
+          {
+            "candidates": [
+              {
+                "contains_satisfied": false,
+                "object_id": "GarbageCan|+00.05|00.00|+03.88",
+                "states": [],
+                "status": "unsatisfied"
+              }
+            ],
+            "contains": [
+              "ToiletPaper_1",
+              "DishSponge"
+            ],
+            "name": "GarbageCan",
+            "states": [],
+            "status": "unsatisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "ShowerCurtain|-00.79|+02.22|-00.24",
+                "states": [
+                  {
+                    "satisfied": true,
+                    "source": "metadata",
+                    "state": "OPENED"
+                  }
+                ],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [],
+            "name": "ShowerCurtain",
+            "states": [
+              "OPENED"
+            ],
+            "status": "satisfied"
+          }
+        ],
+        "ignored_failure_count": 0,
+        "metrics_schema_version": 2,
+        "movement_mode": "step",
+        "navigation_metrics": {
+          "action_counts": {
+            "GetReachablePositions": 30,
+            "MoveAhead": 9,
+            "RotateLeft": 2,
+            "RotateRight": 1
+          },
+          "budget_exhaustions": 0,
+          "candidate_trials": 1,
+          "deferred_requests": 0,
+          "failed_transitions": 0,
+          "failures": 0,
+          "interaction_repositions": 0,
+          "interaction_target_substitutions": 0,
+          "invisible_candidates": 0,
+          "invisible_interaction_candidates": 0,
+          "micro_steps": 9,
+          "mode": "step",
+          "parking_moves": 0,
+          "planning_batches": 1,
+          "planning_durations_seconds": [
+            0.003980106208473444
+          ],
+          "planning_time_seconds": 0.003980106208473444,
+          "position_deviations": 0,
+          "priority_trials": 1,
+          "replans": 0,
+          "requests": 1,
+          "serial_fallback_batches": 0,
+          "successes": 1,
+          "suppressed_reachable_removals": 0,
+          "waits": 0
+        },
+        "original_goal_count": 2,
+        "phase_durations_seconds": {
+          "cleanup": 0.314986374694854,
+          "evaluation": 0.011870967224240303,
+          "execution": 0.33770168386399746,
+          "startup": 2.528459479101002
+        },
+        "process_status": "completed",
+        "raw_action_sr": 1.0,
+        "robot_failures": [],
+        "ru": 0.0,
+        "run_id": "302483a9f90749b6805f150c80b4f631",
+        "run_time_seconds": 3.193029122892767,
+        "satisfied_goal_count": 1,
+        "sr": 0,
+        "status": "success",
+        "task_key": "d68b4ac0f5e0195878b73de2f70142cc43ec8420227ec81c74ddf658d93df546",
+        "task_success": false,
+        "tc": 0.0,
+        "timed_out": false,
+        "timeout_message": "",
+        "worker_errors": []
+      }
+    },
+    {
+      "case": {
+        "category": "bathroom",
+        "path": "logs/intermediate_runs/final_test_new_0609_1___401/put_the_cloth_on_the_bathtub_basin,_put_the_dish_sponge_in_the_bathtub_basin,_pu/20260628_001/plan_to_code/executable_plan.py",
+        "robot_count": 2,
+        "stratum": "concurrent_goto",
+        "task_id": "FloorPlan401_task_1"
+      },
+      "movement_mode": "teleport",
+      "returncode": 0,
+      "timed_out": false,
+      "elapsed": 3.7733439840376377,
+      "directory": "/tmp/executor-batch-real-reports/8766acae_fixed_goals_v2/10_teleport",
+      "metrics": {
+        "action_counts": {
+          "attempts": 10,
+          "cancelled": 0,
+          "failed": 0,
+          "planned": 10,
+          "skipped": 0,
+          "started": 10,
+          "succeeded": 10,
+          "unexecuted": 0
+        },
+        "action_sr": 1.0,
+        "attempt": 1,
+        "cleanup_errors": [],
+        "evaluation_status": "valid",
+        "evaluation_version": "fixed_goals_v2",
+        "exec_rate": 1.0,
+        "executed_actions": 10,
+        "execution_policy": "legacy",
+        "execution_status": "completed",
+        "failed_actions": 0,
+        "failure_action_ratio": 0.0,
+        "gcr": 1.0,
+        "goal_results": [
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Bathtub|-00.21|+00.36|+00.92|BathtubBasin",
+                "states": [],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [
+              "Cloth",
+              "DishSponge"
+            ],
+            "name": "BathtubBasin",
+            "states": [],
+            "status": "satisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Bathtub|-00.21|+00.36|+00.92",
+                "states": [],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [
+              "ToiletPaper_1"
+            ],
+            "name": "Bathtub",
+            "states": [],
+            "status": "satisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "LightSwitch|-03.46|+01.44|+02.50",
+                "states": [
+                  {
+                    "satisfied": true,
+                    "source": "metadata",
+                    "state": "ON"
+                  }
+                ],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [],
+            "name": "LightSwitch",
+            "states": [
+              "ON"
+            ],
+            "status": "satisfied"
+          }
+        ],
+        "ignored_failure_count": 0,
+        "metrics_schema_version": 2,
+        "movement_mode": "teleport",
+        "navigation_metrics": {
+          "action_counts": {
+            "RotateLeft": 2,
+            "RotateRight": 3,
+            "Teleport": 9
+          },
+          "budget_exhaustions": 0,
+          "candidate_trials": 0,
+          "deferred_requests": 0,
+          "failed_transitions": 0,
+          "failures": 0,
+          "interaction_repositions": 0,
+          "interaction_target_substitutions": 1,
+          "invisible_candidates": 0,
+          "invisible_interaction_candidates": 0,
+          "micro_steps": 0,
+          "mode": "teleport",
+          "parking_moves": 0,
+          "planning_batches": 0,
+          "planning_durations_seconds": [],
+          "planning_time_seconds": 0.0,
+          "position_deviations": 0,
+          "priority_trials": 0,
+          "replans": 0,
+          "requests": 5,
+          "serial_fallback_batches": 0,
+          "successes": 5,
+          "suppressed_reachable_removals": 0,
+          "waits": 0
+        },
+        "original_goal_count": 3,
+        "phase_durations_seconds": {
+          "cleanup": 0.3153807590715587,
+          "evaluation": 0.013497879728674889,
+          "execution": 0.45120966667309403,
+          "startup": 2.4521966157481074
+        },
+        "process_status": "completed",
+        "raw_action_sr": 1.0,
+        "robot_failures": [],
+        "ru": 0.0,
+        "run_id": "d50fad66606c418788718d6c28a49a48",
+        "run_time_seconds": 3.232294622808695,
+        "satisfied_goal_count": 3,
+        "sr": 0,
+        "status": "success",
+        "task_key": "251b03431393f3010655d2470bc5d61c81bfee4bb6a99d8d2621f30c2526ce34",
+        "task_success": false,
+        "tc": 1.0,
+        "timed_out": false,
+        "timeout_message": "",
+        "worker_errors": []
+      }
+    },
+    {
+      "case": {
+        "category": "bathroom",
+        "path": "logs/intermediate_runs/final_test_new_0609_1___401/put_the_cloth_on_the_bathtub_basin,_put_the_dish_sponge_in_the_bathtub_basin,_pu/20260628_001/plan_to_code/executable_plan.py",
+        "robot_count": 2,
+        "stratum": "concurrent_goto",
+        "task_id": "FloorPlan401_task_1"
+      },
+      "movement_mode": "step",
+      "returncode": 0,
+      "timed_out": false,
+      "elapsed": 5.074115892872214,
+      "directory": "/tmp/executor-batch-real-reports/8766acae_fixed_goals_v2/10_step",
+      "metrics": {
+        "action_counts": {
+          "attempts": 10,
+          "cancelled": 0,
+          "failed": 0,
+          "planned": 10,
+          "skipped": 0,
+          "started": 10,
+          "succeeded": 10,
+          "unexecuted": 0
+        },
+        "action_sr": 1.0,
+        "attempt": 1,
+        "cleanup_errors": [],
+        "evaluation_status": "valid",
+        "evaluation_version": "fixed_goals_v2",
+        "exec_rate": 1.0,
+        "executed_actions": 10,
+        "execution_policy": "legacy",
+        "execution_status": "completed",
+        "failed_actions": 0,
+        "failure_action_ratio": 0.0,
+        "gcr": 1.0,
+        "goal_results": [
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Bathtub|-00.21|+00.36|+00.92|BathtubBasin",
+                "states": [],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [
+              "Cloth",
+              "DishSponge"
+            ],
+            "name": "BathtubBasin",
+            "states": [],
+            "status": "satisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Bathtub|-00.21|+00.36|+00.92",
+                "states": [],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [
+              "ToiletPaper_1"
+            ],
+            "name": "Bathtub",
+            "states": [],
+            "status": "satisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "LightSwitch|-03.46|+01.44|+02.50",
+                "states": [
+                  {
+                    "satisfied": true,
+                    "source": "metadata",
+                    "state": "ON"
+                  }
+                ],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [],
+            "name": "LightSwitch",
+            "states": [
+              "ON"
+            ],
+            "status": "satisfied"
+          }
+        ],
+        "ignored_failure_count": 0,
+        "metrics_schema_version": 2,
+        "movement_mode": "step",
+        "navigation_metrics": {
+          "action_counts": {
+            "GetReachablePositions": 118,
+            "MoveAhead": 56,
+            "RotateLeft": 8,
+            "RotateRight": 9
+          },
+          "budget_exhaustions": 0,
+          "candidate_trials": 3,
+          "deferred_requests": 0,
+          "failed_transitions": 0,
+          "failures": 0,
+          "interaction_repositions": 0,
+          "interaction_target_substitutions": 1,
+          "invisible_candidates": 0,
+          "invisible_interaction_candidates": 0,
+          "micro_steps": 56,
+          "mode": "step",
+          "parking_moves": 0,
+          "planning_batches": 3,
+          "planning_durations_seconds": [
+            0.007859702222049236,
+            0.009955037850886583,
+            0.004474026151001453
+          ],
+          "planning_time_seconds": 0.022288766223937273,
+          "position_deviations": 0,
+          "priority_trials": 5,
+          "replans": 0,
+          "requests": 5,
+          "serial_fallback_batches": 0,
+          "successes": 5,
+          "suppressed_reachable_removals": 0,
+          "waits": 0
+        },
+        "original_goal_count": 3,
+        "phase_durations_seconds": {
+          "cleanup": 0.31494367122650146,
+          "evaluation": 0.008147264365106821,
+          "execution": 1.7488126251846552,
+          "startup": 2.4774530450813472
+        },
+        "process_status": "completed",
+        "raw_action_sr": 1.0,
+        "robot_failures": [],
+        "ru": 0.0,
+        "run_id": "93234c1aa5d24957922a2aebe9fb1447",
+        "run_time_seconds": 4.549366264138371,
+        "satisfied_goal_count": 3,
+        "sr": 0,
+        "status": "success",
+        "task_key": "251b03431393f3010655d2470bc5d61c81bfee4bb6a99d8d2621f30c2526ce34",
+        "task_success": false,
+        "tc": 1.0,
+        "timed_out": false,
+        "timeout_message": "",
+        "worker_errors": []
+      }
+    },
+    {
+      "case": {
+        "category": "bathroom",
+        "path": "logs/intermediate_runs/final_test_new_0609_1___401/wash_the_cloth,_then_put_it_in_the_sink,_and_put_the_paper_towel_roll_in_the_gar/20260628_001/plan_to_code/executable_plan.py",
+        "robot_count": 3,
+        "stratum": "multiple_waves",
+        "task_id": "FloorPlan401_task_10"
+      },
+      "movement_mode": "teleport",
+      "returncode": 0,
+      "timed_out": false,
+      "elapsed": 4.073249890003353,
+      "directory": "/tmp/executor-batch-real-reports/8766acae_fixed_goals_v2/11_teleport",
+      "metrics": {
+        "action_counts": {
+          "attempts": 10,
+          "cancelled": 0,
+          "failed": 2,
+          "planned": 10,
+          "skipped": 0,
+          "started": 10,
+          "succeeded": 8,
+          "unexecuted": 0
+        },
+        "action_sr": 0.8,
+        "attempt": 1,
+        "cleanup_errors": [],
+        "evaluation_status": "valid",
+        "evaluation_version": "fixed_goals_v2",
+        "exec_rate": 0.8,
+        "executed_actions": 10,
+        "execution_policy": "legacy",
+        "execution_status": "partial",
+        "failed_actions": 2,
+        "failure_action_ratio": 0.2,
+        "gcr": 0.6666666666666666,
+        "goal_results": [
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "GarbageCan|+00.05|00.00|+03.88",
+                "states": [],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [
+              "PaperTowelRoll"
+            ],
+            "name": "GarbageCan",
+            "states": [],
+            "status": "satisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Cloth|-00.27|+00.04|+01.02",
+                "states": [
+                  {
+                    "satisfied": true,
+                    "source": "metadata",
+                    "state": "CLEANED"
+                  }
+                ],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Cloth",
+            "states": [
+              "CLEANED"
+            ],
+            "status": "satisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": false,
+                "object_id": "Sink|-03.12|-00.01|+01.53",
+                "states": [],
+                "status": "unsatisfied"
+              }
+            ],
+            "contains": [
+              "Cloth"
+            ],
+            "name": "Sink",
+            "states": [],
+            "status": "unsatisfied"
+          }
+        ],
+        "ignored_failure_count": 0,
+        "metrics_schema_version": 2,
+        "movement_mode": "teleport",
+        "navigation_metrics": {
+          "action_counts": {
+            "RotateLeft": 3,
+            "RotateRight": 3,
+            "Teleport": 6
+          },
+          "budget_exhaustions": 0,
+          "candidate_trials": 0,
+          "deferred_requests": 0,
+          "failed_transitions": 0,
+          "failures": 0,
+          "interaction_repositions": 0,
+          "interaction_target_substitutions": 2,
+          "invisible_candidates": 0,
+          "invisible_interaction_candidates": 0,
+          "micro_steps": 0,
+          "mode": "teleport",
+          "parking_moves": 0,
+          "planning_batches": 0,
+          "planning_durations_seconds": [],
+          "planning_time_seconds": 0.0,
+          "position_deviations": 0,
+          "priority_trials": 0,
+          "replans": 0,
+          "requests": 6,
+          "serial_fallback_batches": 0,
+          "successes": 6,
+          "suppressed_reachable_removals": 0,
+          "waits": 0
+        },
+        "original_goal_count": 3,
+        "phase_durations_seconds": {
+          "cleanup": 0.31507896911352873,
+          "evaluation": 0.014405910857021809,
+          "execution": 0.5839912900701165,
+          "startup": 2.6373891490511596
+        },
+        "process_status": "completed",
+        "raw_action_sr": 0.8,
+        "robot_failures": [
+          {
+            "action_index": 3,
+            "action_type": "CleanObject",
+            "error": "CleanObject failed for agent 0 on Cloth|-00.27|+00.04|+01.02: Cloth_17a05ade is already Clean!",
+            "ignored_for_failure_ratio": false,
+            "robot_id": "robot1",
+            "stage_id": "Phase 1"
+          },
+          {
+            "action_index": 1,
+            "action_type": "PutObject",
+            "error": "Cannot PutObject 'Cloth' for agent 0: robot is not holding it. Currently holding: nothing.",
+            "ignored_for_failure_ratio": false,
+            "robot_id": "robot1",
+            "stage_id": "Phase 2"
+          }
+        ],
+        "ru": 0.0,
+        "run_id": "ab9f699e45f14e59aa18bb7d419ae57c",
+        "run_time_seconds": 3.5508737950585783,
+        "satisfied_goal_count": 2,
+        "sr": 0,
+        "status": "success",
+        "task_key": "3fabeaa83cf2751b47b657aacb1678707007aba1bae221af6716028e5111c4c4",
+        "task_success": false,
+        "tc": 0.0,
+        "timed_out": false,
+        "timeout_message": "",
+        "worker_errors": []
+      }
+    },
+    {
+      "case": {
+        "category": "bathroom",
+        "path": "logs/intermediate_runs/final_test_new_0609_1___401/wash_the_cloth,_then_put_it_in_the_sink,_and_put_the_paper_towel_roll_in_the_gar/20260628_001/plan_to_code/executable_plan.py",
+        "robot_count": 3,
+        "stratum": "multiple_waves",
+        "task_id": "FloorPlan401_task_10"
+      },
+      "movement_mode": "step",
+      "returncode": 0,
+      "timed_out": false,
+      "elapsed": 5.775674705859274,
+      "directory": "/tmp/executor-batch-real-reports/8766acae_fixed_goals_v2/11_step",
+      "metrics": {
+        "action_counts": {
+          "attempts": 10,
+          "cancelled": 0,
+          "failed": 2,
+          "planned": 10,
+          "skipped": 0,
+          "started": 10,
+          "succeeded": 8,
+          "unexecuted": 0
+        },
+        "action_sr": 0.8,
+        "attempt": 1,
+        "cleanup_errors": [],
+        "evaluation_status": "valid",
+        "evaluation_version": "fixed_goals_v2",
+        "exec_rate": 0.8,
+        "executed_actions": 10,
+        "execution_policy": "legacy",
+        "execution_status": "partial",
+        "failed_actions": 2,
+        "failure_action_ratio": 0.2,
+        "gcr": 0.6666666666666666,
+        "goal_results": [
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "GarbageCan|+00.05|00.00|+03.88",
+                "states": [],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [
+              "PaperTowelRoll"
+            ],
+            "name": "GarbageCan",
+            "states": [],
+            "status": "satisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": true,
+                "object_id": "Cloth|-00.27|+00.04|+01.02",
+                "states": [
+                  {
+                    "satisfied": true,
+                    "source": "metadata",
+                    "state": "CLEANED"
+                  }
+                ],
+                "status": "satisfied"
+              }
+            ],
+            "contains": [],
+            "name": "Cloth",
+            "states": [
+              "CLEANED"
+            ],
+            "status": "satisfied"
+          },
+          {
+            "candidates": [
+              {
+                "contains_satisfied": false,
+                "object_id": "Sink|-03.12|-00.01|+01.53",
+                "states": [],
+                "status": "unsatisfied"
+              }
+            ],
+            "contains": [
+              "Cloth"
+            ],
+            "name": "Sink",
+            "states": [],
+            "status": "unsatisfied"
+          }
+        ],
+        "ignored_failure_count": 0,
+        "metrics_schema_version": 2,
+        "movement_mode": "step",
+        "navigation_metrics": {
+          "action_counts": {
+            "GetReachablePositions": 177,
+            "MoveAhead": 53,
+            "RotateLeft": 13,
+            "RotateRight": 8
+          },
+          "budget_exhaustions": 0,
+          "candidate_trials": 6,
+          "deferred_requests": 0,
+          "failed_transitions": 0,
+          "failures": 0,
+          "interaction_repositions": 0,
+          "interaction_target_substitutions": 2,
+          "invisible_candidates": 0,
+          "invisible_interaction_candidates": 0,
+          "micro_steps": 53,
+          "mode": "step",
+          "parking_moves": 0,
+          "planning_batches": 6,
+          "planning_durations_seconds": [
+            0.0033930200152099133,
+            0.004084803629666567,
+            0.003878433723002672,
+            0.006489442195743322,
+            0.010389477014541626,
+            0.0046906741335988045
+          ],
+          "planning_time_seconds": 0.032925850711762905,
+          "position_deviations": 0,
+          "priority_trials": 6,
+          "replans": 0,
+          "requests": 6,
+          "serial_fallback_batches": 0,
+          "successes": 6,
+          "suppressed_reachable_removals": 0,
+          "waits": 0
+        },
+        "original_goal_count": 3,
+        "phase_durations_seconds": {
+          "cleanup": 0.31610783096402884,
+          "evaluation": 0.018160922918468714,
+          "execution": 2.378993523772806,
+          "startup": 2.5442565651610494
+        },
+        "process_status": "completed",
+        "raw_action_sr": 0.8,
+        "robot_failures": [
+          {
+            "action_index": 3,
+            "action_type": "CleanObject",
+            "error": "CleanObject failed for agent 0 on Cloth|-00.27|+00.04|+01.02: Cloth_17a05ade is already Clean!",
+            "ignored_for_failure_ratio": false,
+            "robot_id": "robot1",
+            "stage_id": "Phase 1"
+          },
+          {
+            "action_index": 1,
+            "action_type": "PutObject",
+            "error": "Cannot PutObject 'Cloth' for agent 0: robot is not holding it. Currently holding: nothing.",
+            "ignored_for_failure_ratio": false,
+            "robot_id": "robot1",
+            "stage_id": "Phase 2"
+          }
+        ],
+        "ru": 0.0,
+        "run_id": "6d3a3a5677a54d4ea54345e309f479e7",
+        "run_time_seconds": 5.257529953960329,
+        "satisfied_goal_count": 2,
+        "sr": 0,
+        "status": "success",
+        "task_key": "3fabeaa83cf2751b47b657aacb1678707007aba1bae221af6716028e5111c4c4",
+        "task_success": false,
+        "tc": 0.0,
+        "timed_out": false,
+        "timeout_message": "",
+        "worker_errors": []
+      }
+    }
+  ],
+  "code_commit": "8766acae",
+  "evaluation_version": "fixed_goals_v2",
+  "validation_kind": "real_AI2THOR",
+  "fixed_cases": 12,
+  "movement_modes": [
+    "teleport",
+    "step"
+  ]
+}
