@@ -183,6 +183,7 @@ class ChildExecutionControlTest(unittest.TestCase):
         from tests.snapshot_fakes import FakeRuntime as SnapshotFakeRuntime
         snapshot_runtime = SnapshotFakeRuntime()
         runtime.robot_agent_map = snapshot_runtime.robot_agent_map
+        runtime.robots = snapshot_runtime.robots
         runtime.state_version = 0
         runtime.controller = snapshot_runtime.controller
         runtime.controller.step = lambda payload: (

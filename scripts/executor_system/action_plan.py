@@ -8,12 +8,10 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple, Un
 from .config import NAVIGATION_GRID_SIZE
 from .execution_policy import ExecutionPolicy, resolve_failure
 from .utils import (
-    is_break_egg_target,
     log,
     object_center,
     object_key,
     position_to_grid_key,
-    require_break_egg_target,
 )
 
 @dataclass(frozen=True)
@@ -377,153 +375,7 @@ class PlanLoader:
         return MultiStageActionPlan.from_dict(raw_plan)
 
 
-class PlanValidator:
-    HIGH_LEVEL_ACTIONS = {
-        "GoToObject",
-        "PickupObject",
-        "TeleportObjectToHand",
-        "PutObject",
-        "SwitchOn",
-        "SwitchOff",
-        "OpenObject",
-        "CloseObject",
-        "BreakObject",
-        "BreakEgg",
-        "PrepareEgg",
-        "SliceObject",
-        "CleanObject",
-        "DirtyObject",
-        "EmptyLiquid",
-        "RunMicrowave",
-        "RunCoffeeMachine",
-        "RunToaster",
-        "CookByStoveBurner",
-        "HeatByStoveBurner",
-        "FireByStoveBurner",
-        "FillWater",
-        "ColdObject",
-        "ThrowObject",
-    }
-    AI2THOR_ACTIONS = {
-        "MoveAhead",
-        "RotateLeft",
-        "RotateRight",
-        "LookUp",
-        "LookDown",
-        "Pass",
-        "Wait",
-        "WaitOneTick",
-        "WaitUntil",
-        "Done",
-        "Teleport",
-        "PickupObject",
-        "PutObject",
-        "OpenObject",
-        "CloseObject",
-        "ToggleObjectOn",
-        "ToggleObjectOff",
-        "BreakObject",
-        "SliceObject",
-        "CleanObject",
-        "DirtyObject",
-        "ThrowObject",
-    }
-
-    def __init__(self, runtime_obj: Optional["ThorRuntime"] = None) -> None:
-        self.runtime = runtime_obj
-
-    def validate(self, plan: MultiStageActionPlan) -> None:
-        if not plan.stages:
-            raise RuntimeError("Action-level plan must contain at least one stage.")
-        if plan.global_success_condition is not None and not callable(plan.global_success_condition):
-            raise ValueError("global_success_condition must be callable")
-        for stage in plan.stages:
-            if stage.stage_failure_policy not in {'FAIL_STAGE', 'SKIP'}:
-                raise ValueError("invalid stage_failure_policy")
-            if stage.synchronization_policy not in {'BARRIER_AT_STAGE_END', 'BARRIER_EACH_STEP', 'EVENT_CONDITION'}:
-                raise ValueError("invalid synchronization_policy")
-            if stage.stage_success_condition is not None and not callable(stage.stage_success_condition):
-                raise ValueError("stage_success_condition must be callable")
-            if not stage.robot_action_queues:
-                raise RuntimeError(f"Stage {stage.stage_id!r} has no robot queues.")
-            for robot_id, actions in stage.robot_action_queues.items():
-                if self.runtime is not None:
-                    self.runtime.physical_agent_id(robot_id)
-                if not actions:
-                    raise RuntimeError(
-                        f"Stage {stage.stage_id!r} queue for {robot_id!r} is empty."
-                    )
-                for action in actions:
-                    self.validate_action(stage.stage_id, robot_id, action)
-
-    def validate_action(self, stage_id: str, robot_id: str, action: Action) -> None:
-        if action.on_failure not in {'FAIL_STAGE', 'FAIL_ROBOT', 'SKIP', 'RETRY', 'WAIT_AND_RETRY', 'SKIP_IF_EFFECT_ALREADY_TRUE'}:
-            raise ValueError("invalid on_failure")
-        if action.on_conflict not in {'WAIT', 'RETRY_NEXT_TICK', 'SKIP', 'FAIL_STAGE'}:
-            raise ValueError("invalid on_conflict")
-        for name, value in (("max_retries", action.max_retries), ("timeout_ticks", action.timeout_ticks)):
-            if value is not None and (type(value) is not int or value < 0):
-                raise ValueError(f"{name} must be a nonnegative integer")
-        if action.wait_until is not None and not callable(action.wait_until):
-            raise ValueError("wait_until must be callable")
-        for condition in (*action.expected_preconditions, *action.expected_effects):
-            if callable(condition):
-                continue
-            if not isinstance(condition, dict) or not condition.get('name') or set(condition) - {'name', 'states', 'state', 'contains'}:
-                raise ValueError("conditions must be callable or a named goal dictionary")
-        args = action.args()
-        object_id = action.parameters.get('objectId')
-        if args and object_id is not None and str(args[0]) != str(object_id):
-            raise ValueError("args and objectId specify conflicting objects")
-        target_actions = self.HIGH_LEVEL_ACTIONS - {'ThrowObject'}
-        if action.action_type in target_actions and not args and not object_id:
-            raise ValueError(f"{action.action_type} requires an object argument")
-        if action.action_type == "BreakEgg":
-            self.validate_break_egg_action(stage_id, robot_id, action)
-            return
-        if action.action_type == "PrepareEgg":
-            self.validate_prepare_egg_action(stage_id, robot_id, action)
-            return
-        if action.action_type in self.HIGH_LEVEL_ACTIONS:
-            return
-        if action.action_type in self.AI2THOR_ACTIONS:
-            return
-        raise RuntimeError(
-            f"Unsupported action {action.action_type!r} for {robot_id!r} "
-            f"in stage {stage_id!r}."
-        )
-
-    def validate_break_egg_action(
-        self,
-        stage_id: str,
-        robot_id: str,
-        action: Action,
-    ) -> None:
-        args = action.args()
-        if len(args) == 1 and is_break_egg_target(args[0]):
-            return
-        got = args[0] if args else None
-        raise RuntimeError(
-            f"BreakEgg for {robot_id!r} in stage {stage_id!r} requires "
-            f"Egg as its only object argument; got {got!r}."
-        )
-
-    def validate_prepare_egg_action(
-        self,
-        stage_id: str,
-        robot_id: str,
-        action: Action,
-    ) -> None:
-        args = action.args()
-        if len(args) == 2 and is_break_egg_target(args[0]):
-            return
-        got = args[0] if args else None
-        raise RuntimeError(
-            f"PrepareEgg for {robot_id!r} in stage {stage_id!r} requires "
-            f"Egg as its first object argument and exactly two object arguments; "
-            f"got {got!r}."
-        )
-
+from .plan_validator import PlanValidator
 
 class ActionQueueManager:
     def __init__(self, stage: StagePlan) -> None:
@@ -603,32 +455,8 @@ class ActionQueueManager:
 
 
 class ResourceInferencer:
-    OBJECT_ACTIONS = {
-        "PickupObject",
-        "TeleportObjectToHand",
-        "PutObject",
-        "OpenObject",
-        "CloseObject",
-        "ToggleObjectOn",
-        "ToggleObjectOff",
-        "SwitchOn",
-        "SwitchOff",
-        "BreakObject",
-        "BreakEgg",
-        "PrepareEgg",
-        "SliceObject",
-        "CleanObject",
-        "DirtyObject",
-        "EmptyLiquid",
-        "RunMicrowave",
-        "RunCoffeeMachine",
-        "RunToaster",
-        "CookByStoveBurner",
-        "HeatByStoveBurner",
-        "FireByStoveBurner",
-        "FillWater",
-        "ColdObject",
-    }
+    from .action_registry import ActionRegistry as _Registry
+    OBJECT_ACTIONS = _Registry().object_action_names()
 
     def infer(
         self,
@@ -728,47 +556,7 @@ class ResourceInferencer:
         return tuple(resources)
 
     def object_names(self, action: Action) -> Tuple[Any, ...]:
-        if "object_resources" in action.resource_policy:
-            return tuple(action.resource_policy["object_resources"])
-        if "objectId" in action.parameters:
-            return (action.parameters["objectId"],)
-
-        args = action.args()
-        if action.action_type == "GoToObject":
-            return (args[0],) if args else ()
-        if action.action_type == "PrepareEgg":
-            return tuple(args[:2])
-        if action.action_type in {
-            "PickupObject",
-            "TeleportObjectToHand",
-            "OpenObject",
-            "CloseObject",
-            "SwitchOn",
-            "SwitchOff",
-            "ToggleObjectOn",
-            "ToggleObjectOff",
-            "BreakObject",
-            "BreakEgg",
-            "SliceObject",
-            "CleanObject",
-            "DirtyObject",
-            "EmptyLiquid",
-            "ColdObject",
-            "ThrowObject",
-        }:
-            return (args[0],) if args else ()
-        if action.action_type == "PutObject":
-            return tuple(args[:2])
-        if action.action_type in {"RunMicrowave", "RunCoffeeMachine", "RunToaster"}:
-            return tuple(args[:2])
-        if action.action_type in {
-            "CookByStoveBurner",
-            "HeatByStoveBurner",
-            "FireByStoveBurner",
-            "FillWater",
-        }:
-            return tuple(args)
-        return ()
+        return self._Registry().object_names(action)
 
     def primary_object_name(self, action: Action) -> Optional[Any]:
         names = self.object_names(action)
@@ -970,21 +758,6 @@ class ExecutionLogger:
 
 
 class AI2ThorAdapter:
-    DIRECT_STEP_ACTIONS = {
-        "MoveAhead",
-        "RotateLeft",
-        "RotateRight",
-        "LookUp",
-        "LookDown",
-        "Pass",
-        "Wait",
-        "WaitOneTick",
-        "Done",
-        "Teleport",
-        "ToggleObjectOn",
-        "ToggleObjectOff",
-    }
-
     def __init__(self, runtime_obj: "ThorRuntime") -> None:
         self.runtime = runtime_obj
 
@@ -998,112 +771,30 @@ class AI2ThorAdapter:
         phase_coordinator: Optional[Any] = None,
         action_wave: Optional[Any] = None,
     ) -> Any:
-        if (action.wait_until is not None and world_state is not None
-                and not getattr(phase_coordinator, "scheduler_admissions", False)):
-            if not action.wait_until(world_state):
-                raise RuntimeError(f"wait condition for {action.action_type} is not satisfied")
-        if action.action_type == "WaitUntil":
-            return self.runtime.agent_event(self.runtime.physical_agent_id(robot_id))
-        if action.action_type in self.DIRECT_STEP_ACTIONS:
-            return self.execute_direct_step(robot_id, action)
+        from .action_registry import ActionRegistry, PreparedAction
+        from .action_resources import active_resources
+        registry = ActionRegistry()
+        normalized = registry.normalize(action)
+        scope = active_resources(self.runtime)
+        if scope is not None:
+            prepared = PreparedAction(normalized, scope.resolved)
+        else:
+            from .world_snapshot import SnapshotStore
+            from .execution_control import ensure_control
+            snapshot = SnapshotStore().capture(self.runtime, ensure_control(self.runtime))
+            prepared = registry.prepare(self.runtime, snapshot, robot_id, action)
+        return registry.execute(self.runtime, robot_id, prepared, {
+            'next_action': next_action, 'world_state': world_state,
+            'phase_coordinator': phase_coordinator, 'action_wave': action_wave})
 
-        args = action.args()
-        if action.action_type == "GoToObject":
-            if not args:
-                raise RuntimeError("GoToObject requires a target object.")
-            return self.runtime.navigate_to_object(
-                robot_id,
-                args[0],
-                next_action=self.to_planned_action(next_action),
-                phase_coordinator=phase_coordinator,
-                action_wave=action_wave,
-            )
-        if action.action_type == "PickupObject":
-            return self.runtime.object_action("PickupObject", robot_id, args[0])
-        if action.action_type == "TeleportObjectToHand":
-            return self.runtime.teleport_object_to_hand(robot_id, args[0])
-        if action.action_type == "PutObject":
-            return self.put_object(robot_id, args)
-        if action.action_type == "SwitchOn":
-            return self.runtime.toggle_objects("ToggleObjectOn", robot_id, args[0])
-        if action.action_type == "SwitchOff":
-            return self.runtime.toggle_objects("ToggleObjectOff", robot_id, args[0])
-        if action.action_type == "BreakEgg":
-            if len(args) != 1:
-                raise RuntimeError("BreakEgg requires exactly one Egg target.")
-            require_break_egg_target(args[0])
-            return self.runtime.object_action("BreakObject", robot_id, args[0])
-        if action.action_type == "PrepareEgg":
-            if len(args) != 2:
-                raise RuntimeError("PrepareEgg requires Egg and container targets.")
-            require_break_egg_target(args[0])
-            return self.runtime.object_action("BreakObject", robot_id, args[0])
-        if action.action_type in {
-            "OpenObject",
-            "CloseObject",
-            "BreakObject",
-            "SliceObject",
-            "CleanObject",
-            "DirtyObject",
-        }:
-            return self.runtime.object_action(action.action_type, robot_id, args[0])
-        if action.action_type == "EmptyLiquid":
-            return self.runtime.object_action("EmptyLiquidFromObject", robot_id, args[0])
-        if action.action_type == "ThrowObject":
-            return self.runtime.throw_object(robot_id)
-        return self.call_generated_helper(robot_id, action)
-
-    def execute_direct_step(self, robot_id: str, action: Action) -> Any:
-        agent_id = self.runtime.physical_agent_id(robot_id)
-        payload = {
-            key: value
-            for key, value in action.parameters.items()
-            if key not in {"args", "object_resources", "objectResources"}
-        }
-        payload["action"] = (
-            "Pass"
-            if action.action_type in {"Wait", "WaitOneTick"}
-            else action.action_type
-        )
-        payload.setdefault("agentId", agent_id)
-        return self.runtime.step(
-            payload,
-            check_success=action.action_type not in {"Done", "WaitOneTick"},
-        )
+    def execute_direct_step(self, robot_id, action):
+        return self.execute(robot_id, action)
 
     def put_object(self, robot_id: str, args: Tuple[Any, ...]) -> Any:
-        if len(args) < 2:
-            raise RuntimeError("PutObject requires held object and receptacle arguments.")
-        put_obj, receptacle = args[:2]
-        agent_id = self.runtime.physical_agent_id(robot_id)
-        held_object = self.runtime.agent_held_object_matching(agent_id, put_obj)
-        if held_object is None:
-            held_objects = sorted(self.runtime.agent_held_objects_for(agent_id))
-            held_description = ", ".join(held_objects) if held_objects else "nothing"
-            raise RuntimeError(
-                f"Cannot PutObject {put_obj!r} for agent {agent_id}: "
-                "robot is not holding it. "
-                f"Currently holding: {held_description}."
-            )
-        return self.runtime.object_action(
-            "PutObject",
-            robot_id,
-            receptacle,
-            extra_object_resources=(held_object,),
-        )
+        return self.execute(robot_id, Action('PutObject', {'args': args}))
 
     def call_generated_helper(self, robot_id: str, action: Action) -> Any:
-        from . import actions as generated_actions
-        from . import context as runtime_context
-
-        helper = getattr(generated_actions, action.action_type, None)
-        if not callable(helper):
-            helper = globals().get(action.action_type)
-        if not callable(helper):
-            raise RuntimeError(f"No generated helper registered for {action.action_type}.")
-
-        with runtime_context.runtime_scope(self.runtime):
-            return helper(robot_id, *action.args())
+        return self.execute(robot_id, action)
 
     def to_planned_action(self, action: Optional[Action]) -> Optional[PlannedAction]:
         if action is None:

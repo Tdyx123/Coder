@@ -2245,7 +2245,7 @@ class TolerantExecutorTest(unittest.TestCase):
         runtime = FakeRuntime()
         runtime.objects = [
             {'objectId': 'Cabinet|1', 'objectType': 'Cabinet', 'openable': True, 'isOpen': False},
-            {'objectId': 'Apple|1', 'objectType': 'Apple', 'pickupable': True},
+            {'objectId': 'Apple|1', 'objectType': 'Apple', 'pickupable': True, 'mass': 1.0},
             {'objectId': 'Table|1', 'objectType': 'Table', 'receptacle': True},
         ]
         return runtime
@@ -2394,6 +2394,7 @@ class TolerantExecutorTest(unittest.TestCase):
 
         def fake_execute(_adapter, _robot_id, action, **_kwargs):
             if action.action_type == "PickupObject":
+                runtime.agent_event(0).metadata["inventoryObjects"] = [{"objectId": "Apple|1"}]
                 raise RuntimeError(
                     f"InvalidOperationException: {PICKUP_OBJECT_CLIP_ERROR}"
                 )
@@ -2448,7 +2449,7 @@ class TolerantExecutorTest(unittest.TestCase):
                         "robot1": [
                             Action(
                                 "Teleport",
-                                {},
+                                {"position": {"x": 0.0, "y": 0.0, "z": 0.0}},
                                 on_failure=FAILURE_RETRY,
                                 max_retries=1,
                             ),
@@ -2528,7 +2529,7 @@ class OrdinaryExecutorFailureContinuationTest(unittest.TestCase):
         runtime = FakeRuntime()
         runtime.objects = [
             {'objectId': 'Cabinet|1', 'objectType': 'Cabinet', 'openable': True, 'isOpen': False},
-            {'objectId': 'Apple|1', 'objectType': 'Apple', 'pickupable': True},
+            {'objectId': 'Apple|1', 'objectType': 'Apple', 'pickupable': True, 'mass': 1.0},
             {'objectId': 'Table|1', 'objectType': 'Table', 'receptacle': True},
         ]
         return runtime
@@ -2805,7 +2806,7 @@ class OrdinaryExecutorFailureContinuationTest(unittest.TestCase):
                         "robot1": [
                             Action(
                                 "Teleport",
-                                {},
+                                {"position": {"x": 0.0, "y": 0.0, "z": 0.0}},
                                 on_failure=FAILURE_RETRY,
                                 max_retries=1,
                             ),

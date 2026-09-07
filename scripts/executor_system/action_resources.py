@@ -29,26 +29,6 @@ class ObjectHeldByOther(RuntimeError):
     pass
 
 
-# Each entry declares positional object arguments, never type-wide mutexes.
-ACTION_RESOURCE_ARGUMENTS = {
-    **{name: (0,) for name in (
-        'PickupObject', 'TeleportObjectToHand', 'OpenObject', 'CloseObject',
-        'BreakObject', 'BreakEgg', 'SliceObject', 'CleanObject', 'DirtyObject',
-        'EmptyLiquid', 'SwitchOn', 'SwitchOff')},
-    **{name: (0, 1) for name in (
-        'PutObject', 'PrepareEgg', 'RunMicrowave', 'RunCoffeeMachine',
-        'ColdObject', 'RunToaster', 'HeatByStoveBurner', 'FireByStoveBurner')},
-    'FillWater': (1,),
-    'CookByStoveBurner': (0, 1, 2),
-}
-# These actions can navigate directly or inside an interaction recovery. The
-# existing MoveAhead recovery may close/reopen any open object named by Unity's
-# collision error. Its candidate set is exactly currently open/openable objects;
-# no destination lock and no reservation of closed or unrelated objects.
-NAVIGATION_RECOVERY_ACTIONS = frozenset((
-    'GoToObject', 'PickupObject', 'SliceObject', 'RunToaster', 'FillWater',
-    'CookByStoveBurner', 'HeatByStoveBurner', 'FireByStoveBurner',
-))
 _LOCAL = threading.local()
 
 
@@ -111,6 +91,14 @@ def snapshot_resource_view(runtime, snapshot):
 
 
 def resolve_action_resources(runtime, snapshot, robot_id, action):
+    """Compatibility entry point; the registry owns resource declarations."""
+    from .action_registry import ActionRegistry
+    return ActionRegistry().prepare(runtime, snapshot, robot_id, action).resources
+
+
+def resolve_declared_resources(runtime, snapshot, robot_id, action, *,
+                               object_arguments=(), navigation_recovery=False,
+                               pickup_index=None, special=None, scene_only=False):
     from . import actions, context
     manager = manager_for(runtime)
     view = snapshot_resource_view(runtime, snapshot)
@@ -130,21 +118,23 @@ def resolve_action_resources(runtime, snapshot, robot_id, action):
         return selected
 
     with context.runtime_scope(view):
-        if action.action_type in NAVIGATION_RECOVERY_ACTIONS:
+        if action.action_type == 'GoToObject':
+            view.find_object(args[0], agent_id=agent_id)
+        if navigation_recovery:
             for candidate in snapshot.objects_by_id.values():
                 if candidate.get('openable') and candidate.get('isOpen'):
                     bind(candidate['objectId'], candidate)
                     if candidate.get('name'):
                         bindings[str(candidate['name'])] = str(candidate['objectId'])
-        if 'StoveBurner' in action.action_type:
+        if special == 'stove':
             burner = actions._resolve_stove_burner(robot_id, args[0], supporting_obj=args[1])
             bind(args[0], burner, '@burner')
             knob = actions._resolve_stove_knob_for_burner(robot_id, burner)
             bind(knob['objectId'], knob, '@knob')
-        for index in ACTION_RESOURCE_ARGUMENTS.get(action.action_type, ()):
+        for index in object_arguments:
             if index < len(args) and str(args[index]) not in bindings:
                 bind(args[index])
-        if action.action_type == 'FillWater':
+        if special == 'sink':
             basin = actions._find_sink_basin(robot_id, args[0])
             bind(args[0], basin, '@basin')
             bind('SinkBasin', basin)
@@ -156,15 +146,16 @@ def resolve_action_resources(runtime, snapshot, robot_id, action):
             bind(pattern)
 
         held = snapshot.held_objects.get(robot_id, ())
+        if action.action_type == 'PutObject' and not scene_only:
+            target = bindings.get(str(args[0])) if args else None
+            if not held or (args and target not in held):
+                raise RuntimeError(f'Cannot PutObject for {robot_id}: robot is not holding the requested object.')
         if action.action_type in ('PutObject', 'ThrowObject'):
             for object_id in held:
                 bind(object_id)
         # These helpers may perform a nested PickupObject. Preselect the one
         # receptacle used if a different object is currently occupying the hand.
-        pickup_index = {'PickupObject': 0, 'RunToaster': 1, 'FillWater': 1,
-                        'CookByStoveBurner': 1, 'HeatByStoveBurner': 1,
-                        'FireByStoveBurner': 1}.get(action.action_type)
-        if pickup_index is not None and pickup_index < len(args) and held:
+        if not scene_only and pickup_index is not None and pickup_index < len(args) and held:
             target = bindings.get(str(args[pickup_index]))
             other_held = sorted(set(held) - {target})
             if other_held:
@@ -177,7 +168,7 @@ def resolve_action_resources(runtime, snapshot, robot_id, action):
                 bind(candidates[0]['objectId'], candidates[0], '@hand_receptacle')
 
     keys = tuple(sorted({manager.canonical(object_id) for object_id in ids}))
-    for other_robot, held in snapshot.held_objects.items():
+    for other_robot, held in (() if scene_only else snapshot.held_objects.items()):
         if runtime.physical_agent_id(other_robot) == agent_id:
             continue
         conflicts = set(keys).intersection(manager.canonical(value) for value in held)
@@ -238,6 +229,13 @@ class ActionResourceScope:
         for object_id in ids:
             if manager.canonical(object_id) not in keys:
                 self.invalid(f'unleased helper target {object_id}')
+        if payload.get('action') == 'PickupObject':
+            from .action_registry import validate_runtime_capability
+            robot_id = next((name for name, agent in self.runtime.robot_agent_map.items()
+                             if agent == own_agent), None)
+            obj = next((obj for obj in self.runtime.current_objects()
+                        if obj.get('objectId') == payload.get('objectId')), {})
+            validate_runtime_capability(self.runtime, robot_id, 'PickupObject', obj)
         if mark_effects:
             self.effects_started = True
 

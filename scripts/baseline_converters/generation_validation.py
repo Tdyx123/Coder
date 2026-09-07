@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import ast
 import json
-import math
 import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
-from special_task_skills import canonical_skill_key, robot_skill_for_special_task_skill
+from special_task_skills import canonical_skill_key
+from executor_system.capability_checks import (
+    normalize_skill_name as _skill_key, finite_nonnegative_number, capability_failure,
+)
 
 
 class GenerationValidationError(RuntimeError):
@@ -47,29 +49,10 @@ def generation_failure_result(
     return result
 
 
-def _skill_key(value: str) -> str:
-    key = canonical_skill_key(value)
-    # Normalize both historical robot skills and action names.
-    if key == "prepareegg":
-        return canonical_skill_key(robot_skill_for_special_task_skill("PrepareEgg"))
-    return key
-
-
 def _object_key(value: Any) -> str:
     text = str(value).strip()
     # Coordinates (including their signs) identify an instance, not a type alias.
     return text.lower() if "|" in text else canonical_skill_key(text)
-
-
-def finite_nonnegative_number(value: Any) -> Optional[float]:
-    """Return a usable mass/capacity, or None without inventing a default."""
-    if isinstance(value, bool) or value is None:
-        return None
-    try:
-        number = float(value)
-    except (TypeError, ValueError, OverflowError):
-        return None
-    return number if math.isfinite(number) and number >= 0 else None
 
 
 def _catalog_robot(source: Any) -> Dict[str, Any]:
@@ -293,38 +276,22 @@ def validate_generation_plan(
                 if required_skill in {"wait", "waitonetick", "waituntil", "pass", "done"}:
                     continue
                 robot = _robot_config(robot_id, robots, task_record or {}, robot_id_map, details)
-                skills = robot.get("skills")
-                if not isinstance(skills, list) or any(
-                    not isinstance(s, str) or not s.strip() for s in skills
-                ):
-                    raise GenerationValidationError(
-                        "validation_data_missing", f"Invalid or missing skills for {robot_id}.", details,
-                    )
-                if required_skill not in {_skill_key(skill) for skill in skills}:
-                    details.update(
-                        required_skill="BreakEgg" if required_skill == "breakegg" else action_type,
-                        available_skills=skills,
-                    )
-                    raise GenerationValidationError(
-                        "missing_skill", f"{robot_id} does not have the skill required by {action_type}.", details,
-                    )
+                parameters = action.get("parameters") or {}
+                args = parameters.get("args") or []
+                target = args[0] if args else parameters.get("objectId")
+                # A provisional finite mass checks skill and capacity before lookup.
+                failure = capability_failure(robot, action_type, object_name=target, object_mass=0)
+                if failure:
+                    raise GenerationValidationError(failure['reason'], failure['message'],
+                                                    dict(details, **failure['details']))
                 if required_skill != "pickupobject":
                     continue
-                args = (action.get("parameters") or {}).get("args") or []
-                capacity = finite_nonnegative_number(robot.get("mass_capacity"))
-                if not args or not isinstance(args[0], str) or capacity is None:
-                    raise GenerationValidationError(
-                        "validation_data_missing",
-                        f"Invalid PickupObject argument or mass_capacity for {robot_id}.", details,
-                    )
-                details.update(object=args[0], mass_capacity=capacity)
+                details.update(object=target, mass_capacity=finite_nonnegative_number(robot.get('mass_capacity')))
                 try:
-                    mass = lookup.mass(args[0])
+                    mass = lookup.mass(target)
                 except (ValueError, SyntaxError, TypeError, OSError) as exc:
                     raise GenerationValidationError("validation_data_missing", str(exc), details) from exc
-                details["mass"] = mass
-                if mass > capacity:
-                    raise GenerationValidationError(
-                        "mass_exceeded",
-                        f"{robot_id} cannot pick up {args[0]}: mass {mass} exceeds capacity {capacity}.", details,
-                    )
+                failure = capability_failure(robot, action_type, object_name=target, object_mass=mass)
+                if failure:
+                    raise GenerationValidationError(failure['reason'], failure['message'],
+                                                    dict(details, **failure['details']))

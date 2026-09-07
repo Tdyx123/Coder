@@ -86,7 +86,7 @@ ActionRegistry.execute(runtime, robot_id, prepared, action_context) -> Any
 
 **输入/输出：** 使用本计划动作契约；第二批的 `tests/test_plan_contract.py` 成为行为约束，移交实现但保留测试。
 
-- [ ] 加入高层参数错误和低层参数合法的对照测试，导入 Action、ActionRegistry：
+- [x] 加入高层参数错误和低层参数合法的对照测试，导入 Action、ActionRegistry：
 
 ```python
 def test_direct_pickup_is_not_dispatched_as_empty_helper(self):
@@ -101,12 +101,12 @@ def test_missing_pickup_target_fails_before_execution(self):
         ActionRegistry().validate_shape(Action("PickupObject"))
 ```
 
-- [ ] 为动作参数表逐项建立 subTest；覆盖合法旧生成输入、冲突双形式、未知动作、跨 agentId、非有限数值、Put 未持有、质量超限、缺失技能、复合动作隐式资源绑定。
-- [ ] 运行 `/home/dwb/.pyenv/bin/pyenv exec python -m unittest tests/test_action_registry.py tests/test_plan_contract.py`，确认新增需求为 RED。
-- [ ] 实现固定登记表并验证所有当前支持的动作恰好登记一次。每条记录包含形状检查、执行入口、资源解析，不将技能和参数规则散落到 adapter 分支。
-- [ ] `PlanValidator` 分为纯结构检查和场景检查：前者在创建 controller 前运行，后者在初始化后、任何任务动作前运行。机器人与对象缺失给出 stage/robot/cursor 定位错误，不能让 IndexError 落入失败继续策略。
-- [ ] `AI2ThorAdapter.execute` 委托注册表，但保持公开签名和 next_action/action_wave 传递。旧资源推断 API 委托注册表，删除被替代的重复动作集合。
-- [ ] 运行注册表、计划契约、`test_generation_validation.py`、`test_pddlrun_executor_adapter.py`、`test_executor_retry_policy.py`、`test_parallel_runner.py`。
+- [x] 为动作参数表逐项建立 subTest；覆盖合法旧生成输入、冲突双形式、未知动作、跨 agentId、非有限数值、Put 未持有、质量超限、缺失技能、复合动作隐式资源绑定。
+- [x] 运行 `/home/dwb/.pyenv/bin/pyenv exec python -m unittest tests/test_action_registry.py tests/test_plan_contract.py`，确认新增需求为 RED。
+- [x] 实现固定登记表并验证所有当前支持的动作恰好登记一次。每条记录包含形状检查、执行入口、资源解析，不将技能和参数规则散落到 adapter 分支。
+- [x] `PlanValidator` 分为纯结构检查和场景检查：前者在创建 controller 前运行，后者在初始化后、任何任务动作前运行。机器人与对象缺失给出 stage/robot/cursor 定位错误，不能让 IndexError 落入失败继续策略。
+- [x] `AI2ThorAdapter.execute` 委托注册表，但保持公开签名和 next_action/action_wave 传递。旧资源推断 API 委托注册表，删除被替代的重复动作集合。
+- [x] 运行注册表、计划契约、`test_generation_validation.py`、`test_pddlrun_executor_adapter.py`、`test_executor_retry_policy.py`、`test_parallel_runner.py`。
 
 **交付：** 新动作只需登记一次，输入校验与实际执行接受相同形式。
 

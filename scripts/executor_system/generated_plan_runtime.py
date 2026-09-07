@@ -347,6 +347,10 @@ def run_standalone(
         for warning in bundle.object_mapping_warnings:
             print(f"WARNING: {warning}")
 
+    from .plan_validator import PlanValidator
+    if bundle.task_plan.stages or not bundle.noop_subtasks:
+        PlanValidator().validate_structure(bundle.task_plan)
+
     runtime = ThorRuntime(
         robots,
         floor_no,
@@ -439,6 +443,10 @@ def run_runner_mode(
         )
         if bundle.object_mapping_warnings:
             result["object_mapping_warnings"] = list(bundle.object_mapping_warnings)
+
+        from .plan_validator import PlanValidator
+        if bundle.task_plan.stages or not bundle.noop_subtasks:
+            PlanValidator().validate_structure(bundle.task_plan)
 
         runtime = ThorRuntime(
             robots,

@@ -313,6 +313,7 @@ class NavigationBatchFailureTest(unittest.TestCase):
         snapshot_runtime = SnapshotRuntime()
         runtime.controller_lock = snapshot_runtime.controller_lock
         runtime.robot_agent_map = snapshot_runtime.robot_agent_map
+        runtime.robots = snapshot_runtime.robots
         runtime.state_version = 0
         runtime.controller = snapshot_runtime.controller
         for agent_id, event in enumerate(runtime.controller.last_event.events):

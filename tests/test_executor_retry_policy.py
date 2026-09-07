@@ -496,13 +496,13 @@ class ExecutorRetryPolicyTest(unittest.TestCase):
         )
 
     def test_wait_one_tick_executes_single_pass_step(self):
-        class FakeRuntime:
+        class FakeRuntime(SnapshotFakeRuntime):
+            physical_agent_count = 4
             def __init__(self):
+                super().__init__()
+                self.robot_agent_map['robot1'] = 3
+                self.robot_agent_map['robot4'] = 0
                 self.calls = []
-
-            def physical_agent_id(self, robot_id):
-                self.calls.append(("physical_agent_id", robot_id))
-                return 3
 
             def step(self, payload, **kwargs):
                 self.calls.append(("step", dict(payload), dict(kwargs)))
@@ -515,7 +515,6 @@ class ExecutorRetryPolicyTest(unittest.TestCase):
         self.assertEqual(
             runtime.calls,
             [
-                ("physical_agent_id", "robot1"),
                 (
                     "step",
                     {"action": "Pass", "agentId": 3},
@@ -1448,6 +1447,7 @@ class ExecutorRetryPolicyTest(unittest.TestCase):
             physical_agent_count = 1
 
         runtime = DeferredRuntime()
+        runtime.objects = [{'objectId': 'Apple|1', 'objectType': 'Apple', 'mass': 1}]
         executor = Executor(
             runtime,
             "robot1",

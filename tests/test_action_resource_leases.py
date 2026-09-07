@@ -12,10 +12,11 @@ from executor_system.action_plan import Action
 from executor_system.world_snapshot import WorldSnapshot
 from executor_system.runtime import ThorRuntime
 from executor_system import context
+from tests.snapshot_fakes import FakeRuntime as SnapshotFakeRuntime
 
 
 def obj(object_id, **kw):
-    return dict(objectId=object_id, objectType=object_id.split('|')[0], **kw)
+    return dict(objectId=object_id, objectType=object_id.split('|')[0], **dict({'mass': 1.0}, **kw))
 
 
 class ResourceRuntimeMixin:
@@ -24,8 +25,9 @@ class ResourceRuntimeMixin:
         runtime.current_objects = lambda agent_id=None: objects
         runtime.physical_agent_count = 2
         runtime.robot_agent_map = {'robot1': 0, 'robot2': 1}
+        runtime.robots = SnapshotFakeRuntime().robots
         runtime.agent_held_objects_for = lambda agent_id: set()
-        runtime.snapshot = WorldSnapshot(0, {}, {}, {'robot1': (), 'robot2': ()}, {o['objectId']: o for o in objects})
+        runtime.snapshot = WorldSnapshot(0, {'robot1': {'x': 0, 'y': 0, 'z': 0}, 'robot2': {'x': 1, 'y': 0, 'z': 0}}, {'robot1': 0, 'robot2': 0}, {'robot1': (), 'robot2': ()}, {o['objectId']: o for o in objects})
         return runtime
 
 class ResourceTest(ResourceRuntimeMixin, unittest.TestCase):
@@ -61,6 +63,7 @@ class ResourceTest(ResourceRuntimeMixin, unittest.TestCase):
             'FillWater': ('Faucet|1', 'Mug|1'),
         }
         for name, args in cases.items():
+            runtime.snapshot = replace(runtime.snapshot, held_objects={'robot1': ('Mug|1',) if name == 'PutObject' else (), 'robot2': ()})
             resolved = resolve_action_resources(runtime, runtime.snapshot, 'robot1', Action(name, {'args': args}))
             expected = set(args)
             if name == 'CookByStoveBurner': expected.add('StoveKnob|1')
@@ -80,7 +83,7 @@ class ResourceTest(ResourceRuntimeMixin, unittest.TestCase):
             SimpleNamespace(metadata={'lastActionSuccess': True, 'objects': objects}),
             {'action': 'BreakObject', 'objectId': 'Egg|1'}, {'Egg|1': obj('Egg|1')})
         runtime._set_object_alias_current_object('Egg1', objects[0])
-        snapshot = WorldSnapshot(1, {}, {}, {}, {'EggCracked|2': objects[0]})
+        snapshot = WorldSnapshot(1, {'robot1': {'x': 0, 'y': 0, 'z': 0}, 'robot2': {'x': 1, 'y': 0, 'z': 0}}, {'robot1': 0, 'robot2': 0}, {}, {'EggCracked|2': objects[0]})
         changed = resolve_action_resources(runtime, snapshot, 'robot2', Action('PickupObject', {'args': ('EggCracked|2',)}))
         self.assertIsNone(runtime.action_resource_manager.try_acquire('b', changed.keys))
         lease.release()
@@ -105,7 +108,7 @@ class ResourceTest(ResourceRuntimeMixin, unittest.TestCase):
 
     def test_held_by_other_is_not_an_available_resource(self):
         runtime = self.runtime([obj('Mug|1')])
-        snapshot = WorldSnapshot(0, {}, {}, {'robot2': ('Mug|1',)}, {'Mug|1': obj('Mug|1')})
+        snapshot = WorldSnapshot(0, {'robot1': {'x': 0, 'y': 0, 'z': 0}, 'robot2': {'x': 1, 'y': 0, 'z': 0}}, {'robot1': 0, 'robot2': 0}, {'robot2': ('Mug|1',)}, {'Mug|1': obj('Mug|1')})
         with self.assertRaisesRegex(RuntimeError, 'OBJECT_HELD_BY_OTHER'):
             resolve_action_resources(runtime, snapshot, 'robot1', Action('PickupObject', {'args': ('Mug',)}))
 
@@ -249,7 +252,7 @@ class HelperBindingTest(ResourceRuntimeMixin, unittest.TestCase):
                                 obj('CounterTop|1', position={'x': 0, 'y': 1, 'z': 0}),
                                 obj('CounterTop|2', position={'x': 1, 'y': 1, 'z': 0})])
         runtime.agent_held_objects_for = lambda agent_id: {'Mug|2'} if agent_id == 0 else set()
-        runtime.snapshot = WorldSnapshot(0, {}, {}, {'robot1': ('Mug|2',), 'robot2': ()}, {o['objectId']: o for o in runtime.current_objects()})
+        runtime.snapshot = WorldSnapshot(0, {'robot1': {'x': 0, 'y': 0, 'z': 0}, 'robot2': {'x': 1, 'y': 0, 'z': 0}}, {'robot1': 0, 'robot2': 0}, {'robot1': ('Mug|2',), 'robot2': ()}, {o['objectId']: o for o in runtime.current_objects()})
         candidates = [obj('CounterTop|1'), obj('CounterTop|2')]
         runtime.compatible_receptacle_candidates = lambda *a: list(candidates)
         resolved = resolve_action_resources(runtime, runtime.snapshot, 'robot1', Action('PickupObject', {'args': ('Mug|1',)}))

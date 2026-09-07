@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from tests import test_evaluation_contract
+from executor_system.action_plan import Action, StagePlan, TaskPlan
 from tests.test_evaluation_contract import FakeRuntime
 from tests.test_run_result_storage import complete_result
 from executor_system import generated_plan_runtime as generated, parallel_runner
@@ -139,7 +140,7 @@ class FinalReliabilityFixesTest(unittest.TestCase):
     def _shared_result(self, root, goals, objects, task_changes=None):
         runtime = self._runtime(objects)
         bundle = SimpleNamespace(gcr=goals, noop_subtasks=[],
-                                 task_plan=SimpleNamespace(stages=[]), no_trans=2,
+                                 task_plan=TaskPlan('metrics', [StagePlan('s', {'robot1': [Action('Wait')]})]), no_trans=2,
                                  object_mapping_warnings=[], object_id_bindings=[])
         task = {'trans': 1, 'min_trans': 4, 'max_trans': 9, **(task_changes or {})}
         path = root / 'shared.json'

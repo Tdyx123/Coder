@@ -20,6 +20,15 @@ class FakeRuntime:
     def __init__(self):
         self.robot_agent_map = {f"robot{agent_id + 1}": agent_id
                                 for agent_id in range(self.physical_agent_count)}
+        self.robots = [dict(name=name, skills=[
+            'GoToObject', 'PickupObject', 'TeleportObjectToHand', 'PutObject',
+            'SwitchOn', 'SwitchOff', 'OpenObject', 'CloseObject', 'BreakObject',
+            'BreakEgg', 'SliceObject', 'CleanObject', 'DirtyObject', 'EmptyLiquid',
+            'RunMicrowave', 'RunCoffeeMachine', 'RunToaster', 'CookByStoveBurner',
+            'HeatByStoveBurner', 'FireByStoveBurner', 'FillWater', 'ColdObject',
+            'ThrowObject', 'MoveAhead', 'RotateLeft', 'RotateRight', 'LookUp',
+            'LookDown', 'Teleport', 'ToggleObjectOn', 'ToggleObjectOff'], mass_capacity=100)
+            for name in self.robot_agent_map]
         self.controller_lock = threading.RLock()
         self.state_version = 0
         events = [FakeEvent(agent_id) for agent_id in range(self.physical_agent_count)]

@@ -29,7 +29,7 @@ class ExecutionPolicyCliTest(unittest.TestCase):
         runtime = fixtures.FinalReliabilityFixesTest._runtime([
             {'objectId': 'Mug|1', 'objectType': 'Mug', 'temperature': 'Hot'}])
         goals = [{'name': 'Mug', 'states': ['HOT']}]
-        bundle = SimpleNamespace(gcr=goals, noop_subtasks=[], task_plan=SimpleNamespace(stages=[]),
+        bundle = SimpleNamespace(gcr=goals, noop_subtasks=[], task_plan=TaskPlan('metrics', [StagePlan('s', {'robot1': [Action('Wait')]})]),
             no_trans=2, object_mapping_warnings=[], object_id_bindings=[])
         report = dict(execution_status='failed', execution_quiescent=True, scheduler_version=2,
             execution_policy='strict', global_condition_satisfied=False, stages=[{'status':'failed'}],
@@ -52,7 +52,7 @@ class ExecutionPolicyCliTest(unittest.TestCase):
 
     def test_unquiescent_report_does_not_evaluate_or_commit_done(self):
         runtime = fixtures.FinalReliabilityFixesTest._runtime([])
-        bundle = SimpleNamespace(gcr=[], noop_subtasks=[], task_plan=SimpleNamespace(stages=[]),
+        bundle = SimpleNamespace(gcr=[], noop_subtasks=[], task_plan=TaskPlan('metrics', [StagePlan('s', {'robot1': [Action('Wait')]})]),
             no_trans=0, object_mapping_warnings=[], object_id_bindings=[])
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)/'result.json'

@@ -17,7 +17,7 @@ from executor_system.world_snapshot import SnapshotReadError, SnapshotStore
 
 
 def multi_event(*, x=0, held=(), success=True):
-    objects = [{"objectId": "Apple|1", "objectType": "Apple", "isPickedUp": bool(held),
+    objects = [{"objectId": "Apple|1", "objectType": "Apple", "mass": 1.0, "isPickedUp": bool(held),
                 "position": {"x": x, "y": 0, "z": 0}, "parentReceptacles": []}]
     events = [SimpleNamespace(metadata={
         "lastActionSuccess": success, "errorMessage": "" if success else "rejected",
@@ -43,6 +43,8 @@ def snapshot_runtime():
     runtime.controller = ProgrammableController()
     runtime.controller_lock = threading.RLock()
     runtime.robot_agent_map = {"robot1": 0, "robot2": 1}
+    from tests.snapshot_fakes import FakeRuntime
+    runtime.robots = FakeRuntime().robots
     runtime.physical_agent_count = 2
     runtime.state_version = 0
     runtime.execution_control = ExecutionControl()

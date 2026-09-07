@@ -12,6 +12,8 @@ SCRIPTS_DIR = ROOT / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
+from tests.snapshot_fakes import FakeRuntime as SnapshotFakeRuntime
+
 from executor_system.pddlrun_adapter import (
     ObjectNameResolver,
     PddlRunAdapterError,
@@ -1202,8 +1204,11 @@ class PddlRunExecutorAdapterTest(unittest.TestCase):
             PlanValidator().validate(non_egg_plan)
 
     def test_prepare_egg_executor_breaks_first_egg_arg_and_keeps_two_resources(self):
-        class FakeRuntime:
+        class FakeRuntime(SnapshotFakeRuntime):
             def __init__(self):
+                super().__init__()
+                self.objects = [{'objectId': 'Egg|1', 'objectType': 'Egg', 'mass': .1},
+                                {'objectId': 'Pan|1', 'objectType': 'Pan', 'mass': 1}]
                 self.calls = []
 
             def object_action(self, action_type, robot_id, obj_name):

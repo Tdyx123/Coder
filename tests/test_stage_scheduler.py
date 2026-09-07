@@ -44,7 +44,7 @@ class StageSchedulerTest(unittest.TestCase):
                             if len(calls) == 1:
                                 ready.clear()
                                 raise RuntimeError('transient failure')
-                        action = Action('Teleport', {'object_resources': ['Mug|1']},
+                        action = Action('Teleport', {'position': {'x': 0, 'y': 0, 'z': 0}, 'object_resources': ['Mug|1']},
                             wait_until=condition, on_failure=failure, max_retries=1, timeout_ticks=1)
                         try:
                             with patch.object(AI2ThorAdapter, 'execute', execute):
@@ -80,7 +80,7 @@ class StageSchedulerTest(unittest.TestCase):
                         if next_failure == 'deferred_missing_resource':
                             raise ResourceBindingDeferred('target disappeared before submission')
                         raise RuntimeError('first execution failed')
-                    action = Action('Teleport', {'object_resources': ['Mug|1']},
+                    action = Action('Teleport', {'position': {'x': 0, 'y': 0, 'z': 0}, 'object_resources': ['Mug|1']},
                         wait_until=lambda w: next_failure != 'condition_timeout' or not calls,
                         timeout_ticks=1, on_failure='RETRY', max_retries=1)
                     # A deferred attempt consumes no retry allowance. Its first
@@ -272,6 +272,7 @@ class StageSchedulerTest(unittest.TestCase):
         class ThreeRobots(FakeRuntime):
             physical_agent_count = 3
         runtime = ThreeRobots()
+        runtime.objects = [{'objectId': 'Target|1', 'objectType': 'Target'}]
         runtime.movement_config = MovementConfig.resolve('step')
         done = threading.Event()
         batches = []
@@ -297,6 +298,7 @@ class StageSchedulerTest(unittest.TestCase):
     def test_late_navigation_uses_next_wave_without_waiting_for_prior_high_level_action(self):
         from types import SimpleNamespace
         runtime = FakeRuntime()
+        runtime.objects = [{'objectId': 'Target|1', 'objectType': 'Target'}]
         runtime.movement_config = MovementConfig.resolve('step')
         first_started, late_started = threading.Event(), threading.Event()
         waves = {}
@@ -333,6 +335,7 @@ class StageSchedulerTest(unittest.TestCase):
         from types import SimpleNamespace
         from executor_system.movement import NavigationBatchResult
         runtime = FakeRuntime()
+        runtime.objects = [{'objectId': 'Target|1', 'objectType': 'Target'}]
         runtime.movement_config = MovementConfig.resolve('step')
         batches, observed = [], []
         def execute(adapter, robot, action, **kwargs):
@@ -357,6 +360,7 @@ class StageSchedulerTest(unittest.TestCase):
     def test_pre_submission_navigation_failure_wakes_other_admitted_member(self):
         from types import SimpleNamespace
         runtime = FakeRuntime()
+        runtime.objects = [{'objectId': 'Target|1', 'objectType': 'Target'}]
         runtime.movement_config = MovementConfig.resolve('step')
         submitted = threading.Event()
         def execute(adapter, robot, action, **kwargs):

@@ -282,7 +282,7 @@ class StageConditionsTest(unittest.TestCase):
                         'executor_system.action_plan.AI2ThorAdapter.execute', fail):
                     report = self.run_plan([StagePlan('s', {
                         'robot1': [Action('Wait')],
-                        'robot2': [Action('Teleport', on_failure='RETRY', max_retries=3)]})])
+                        'robot2': [Action('Teleport', {'position': {'x': 0, 'y': 0, 'z': 0}}, on_failure='RETRY', max_retries=3)]})])
                 self.assertEqual(sorted(calls), ['robot1', 'robot2'])
                 self.assertEqual(report['action_counts']['attempts'], 2)
                 self.assertEqual(len(report['stages'][0]['attempts']), 2)
