@@ -669,13 +669,27 @@ class ThorRuntime:
                     if root_control is not None and root_control is not control:
                         root_control.cancel(str(exc))
                     raise
-                self._commit_world_event(event, payload)
+                # The controller has published a new last_event even if its
+                # metadata cannot be read. Publish that version and notify it;
+                # a parsing failure below makes the task unusable, not retryable.
+                self.state_version = getattr(self, "state_version", 0) + 1
                 committed = True
+                try:
+                    self._commit_world_event(event, payload)
+                except BaseException as exc:
+                    control.cancel(f"world event commit failed: {exc}")
+                    root_control = getattr(self, "execution_control", None)
+                    if root_control is not None and root_control is not control:
+                        root_control.cancel(f"world event commit failed: {exc}")
+                    if not isinstance(exc, Exception):
+                        raise
+                    from .world_snapshot import SnapshotReadError
+                    raise SnapshotReadError(f"could not commit world event: {exc}") from exc
                 if save_frame:
                     self.save_frames(event)
         finally:
             # Never acquire the scheduler condition while holding controller_lock.
-            # A frame write failure cannot undo an already committed event.
+            # Metadata/frame failures cannot undo an already published event.
             scheduler = getattr(self, "stage_scheduler", None)
             if committed and scheduler is not None:
                 scheduler.notify_world_changed()
@@ -686,10 +700,10 @@ class ThorRuntime:
     def _commit_world_event(self, event, payload: Dict[str, Any]) -> None:
         """Commit every returned event, including an unsuccessful action event.
 
-        Called only under controller_lock. Hand overrides are evidence of a
+        Called only under controller_lock, after state_version advances.
+        Hand overrides are evidence of a
         successful low-level action, never asynchronous high-level bookkeeping.
         """
-        self.state_version = getattr(self, "state_version", 0) + 1
         committed = getattr(self, "_committed_held_object_overrides", None)
         if committed is None:
             committed = self._committed_held_object_overrides = {}

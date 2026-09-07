@@ -157,6 +157,44 @@ class WorldSnapshotTest(unittest.TestCase):
             self.runtime._step_direct({"action": "Pass"})
         self.assertEqual(versions, [1])
 
+    def test_malformed_teleport_commit_cancels_root_without_retry(self):
+        malformed = multi_event(x=17)
+        malformed.events[1].metadata["inventoryObjects"] = None
+        following = multi_event(x=99)
+        pending = iter((malformed, following))
+        calls, notifications = [], []
+        child = self.control.child()
+        self.runtime.controller_lock = threading.Lock()
+
+        def step(payload):
+            calls.append(payload["action"])
+            self.runtime.controller.last_event = next(pending)
+            return self.runtime.controller.last_event
+
+        def notify():
+            acquired = self.runtime.controller_lock.acquire(blocking=False)
+            self.assertTrue(acquired, "notification must run after controller unlock")
+            self.runtime.controller_lock.release()
+            notifications.append((self.runtime.state_version, self.control.cancelled, child.cancelled))
+
+        self.runtime.controller.step = step
+        self.runtime.stage_scheduler = SimpleNamespace(notify_world_changed=notify)
+        with self.runtime.action_deadline_scope(control=child):
+            with self.assertRaises(SnapshotReadError) as caught:
+                self.runtime._step_with_retries(
+                    {"action": "Teleport", "agentId": 1}, check_success=True,
+                    save_frame=False, retry_on_failure=True, max_retries=1)
+
+        self.assertIsInstance(caught.exception.__cause__, TypeError)
+        self.assertEqual(calls, ["Teleport"])
+        self.assertIs(self.runtime.controller.last_event, malformed)
+        self.assertEqual(self.runtime.state_version, 1)
+        self.assertTrue(self.control.cancelled)
+        self.assertTrue(child.cancelled)
+        self.assertEqual(notifications, [(1, True, True)])
+        with self.assertRaises(ExecutionCancelled):
+            self.store.capture(self.runtime, self.control)
+
     def test_pickup_override_has_commit_provenance_and_release_clears_it(self):
         self.step("PickupObject", objectId="Apple|1")
         snapshot = self.store.capture(self.runtime, self.control)
