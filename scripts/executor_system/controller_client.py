@@ -5,6 +5,8 @@ There is no worker thread or controller copy here: replacements on the runtime
 remain visible, and snapshots share the same controller lock and version.
 """
 from typing import Any, Dict
+from contextlib import nullcontext
+from .runtime_metrics import metrics_for
 
 from .execution_control import ensure_control, ExecutionShutdownTimeout
 
@@ -28,9 +30,12 @@ class ControllerClient:
                 runtime.navigation_metrics.record_action(str(action))
         control = ensure_control(runtime)
         control.check()
+        metrics = metrics_for(runtime)
         committed = False
         try:
+            lock_started = metrics.clock()
             with runtime.controller_lock:
+                metrics.observe("lock_wait", max(0.0, metrics.clock() - lock_started))
                 control.check()
                 from .action_resources import active_resources
                 admitted = active_resources(runtime)
@@ -47,8 +52,15 @@ class ControllerClient:
                     if payload.get('action') in ('PutObject', 'ThrowObject', 'DropHandObject'):
                         held_before = tuple(runtime.agent_held_objects_for(int(payload.get('agentId', 0))))
                 try:
-                    event = runtime.controller.step(dict(payload))
+                    metrics.increment('controller_calls')
+                    reachable = payload.get('action') == 'GetReachablePositions'
+                    if reachable:
+                        metrics.increment('reachable_queries')
+                    with metrics.measure('controller'):
+                        with metrics.measure('reachable_query') if reachable else nullcontext():
+                            event = runtime.controller.step(dict(payload))
                 except BaseException as exc:
+                    metrics.increment("controller_exceptions")
                     control.cancel(str(exc))
                     root_control = getattr(runtime, "execution_control", None)
                     if root_control is not None and root_control is not control:
@@ -60,6 +72,9 @@ class ControllerClient:
                 runtime.state_version = getattr(runtime, "state_version", 0) + 1
                 committed = True
                 try:
+                    metadata = getattr(event, 'metadata', {}) or {}
+                    if metadata.get('lastActionSuccess') is False:
+                        metrics.increment('controller_action_failures')
                     runtime._commit_transformation_identities(event, payload, transformation_objects, held_before)
                     runtime._commit_world_event(event, payload)
                 except BaseException as exc:

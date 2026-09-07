@@ -740,10 +740,15 @@ def run_generated_executable(
     finalization_grace_seconds: float = DEFAULT_FINALIZATION_GRACE_SECONDS,
     termination_grace_seconds: float = DEFAULT_TERMINATION_GRACE_SECONDS,
     process_scope: Optional[OwnedProcessScope] = None,
+    reachable_refresh_mode: str = "full",
+    pythonpath_prepend: Optional[Sequence[str]] = None,
 ) -> Dict[str, Any]:
     execution_policy = ExecutionPolicy(execution_policy).value
     start_time = time.monotonic()
     child_env = os.environ.copy()
+    if pythonpath_prepend:
+        child_env['PYTHONPATH'] = os.pathsep.join(
+            list(pythonpath_prepend) + ([child_env['PYTHONPATH']] if child_env.get('PYTHONPATH') else []))
     identity = {
         "run_id": str(run_id or uuid.uuid4().hex),
         "task_key": task_key_for_executable(executable_path),
@@ -769,6 +774,8 @@ def run_generated_executable(
     ]
     if execution_policy != "legacy":
         command.extend(["--execution-policy", execution_policy])
+    if reachable_refresh_mode != 'full':
+        command.extend(['--reachable-refresh-mode', reachable_refresh_mode])
     total_timeout_seconds = parent_timeout_seconds(
         startup_grace_seconds,
         timeout_seconds,

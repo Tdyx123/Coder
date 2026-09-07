@@ -12,6 +12,7 @@ import tempfile
 import time
 import types
 import uuid
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
@@ -32,6 +33,8 @@ from executor_system.parallel_runner import (
 )
 from executor_system.run_results import task_key_for_executable
 from executor_system.runtime import ThorRuntime
+from executor_system import config as runtime_config
+from executor_system.runtime_metrics import metrics_for, runtime_metadata, file_hash, content_hash
 from executor_system.task_plan import run_action_plan
 
 import resources.robots as robot_catalog
@@ -145,6 +148,7 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Robot movement mode; otherwise LAMMAP_MOVEMENT_MODE or step.",
     )
     parser.add_argument("--execution-policy", choices=("legacy", "strict"), default="legacy")
+    parser.add_argument("--reachable-refresh-mode", choices=("full", "event"), default="full")
     return parser.parse_args(argv)
 
 
@@ -211,6 +215,25 @@ def record_execution_error(result, exc, runtime=None):
     return 124 if timed_out else 1
 
 
+def effective_runtime_config(runtime):
+    movement = getattr(runtime, 'movement_config', None)
+    return {
+        'scene': 'FloorPlan' + str(getattr(runtime, 'floor', 'unknown')),
+        'robot_count': getattr(runtime, 'physical_agent_count', None),
+        'seed': getattr(runtime, 'seed', 0),
+        'movement': asdict(movement) if movement is not None else None,
+        'reachable_refresh_mode': getattr(runtime, 'reachable_refresh_mode', 'full'),
+        'controller': getattr(runtime, 'effective_controller_config', None),
+        'render_image': getattr(runtime, 'render_image', False),
+        'cloud_rendering': getattr(runtime, 'cloud_rendering', None),
+        'show_windows': getattr(runtime, 'show_windows', False),
+        'runtime_constants': {name: getattr(runtime_config, name) for name in (
+            'GENERATE_METADATA', 'NAVIGATION_GRID_SIZE', 'AGENT_CLEARANCE_DISTANCE',
+            'OBJECT_FOOTPRINT_CLEARANCE', 'OPEN_OBJECT_FOOTPRINT_CLEARANCE',
+            'TELEPORT_CANDIDATE_LIMIT', 'NAVIGATION_CHUNK_STEPS', 'INTERACTION_MAX_PASS_STEPS')},
+    }
+
+
 def finalize_runner_result(runtime, result, start_time, metrics_path):
     cleanup_start = time.monotonic()
     try:
@@ -226,6 +249,10 @@ def finalize_runner_result(runtime, result, start_time, metrics_path):
             except Exception as exc:
                 result['cleanup_errors'].append(error_record(exc, phase='cleanup'))
             close_runtime(runtime, result['cleanup_errors'])
+            result['runtime_metrics'] = metrics_for(runtime).snapshot()
+            result['reachable_refresh_mode'] = getattr(runtime, 'reachable_refresh_mode', 'full')
+            config = result.setdefault('reproducibility', {}).setdefault('config', {})
+            config.update(effective_runtime_config(runtime))
     finally:
         result['phase_durations_seconds']['cleanup'] = time.monotonic() - cleanup_start
         result['run_time_seconds'] = time.monotonic() - start_time
@@ -326,6 +353,7 @@ def run_standalone(
     script_file: Optional[str] = None,
     *,
     execution_policy: str = "legacy",
+    reachable_refresh_mode: str = "full",
 ) -> int:
     start_time = time.monotonic()
     failure_result = None
@@ -352,6 +380,7 @@ def run_standalone(
         RENDER_IMAGE,
         movement_mode=movement_mode,
         output_root=runtime_output_root(None, identity),
+        **({"reachable_refresh_mode": reachable_refresh_mode} if reachable_refresh_mode != "full" else {}),
     )
     runtime.evaluation_context = EvaluationContext.from_goals(
         bundle.gcr,
@@ -420,6 +449,8 @@ def run_runner_mode(
     result = build_runner_result("failed", start_time)
     result.update(runner_identity(script_file, task_index))
     result["execution_policy"] = getattr(args, "execution_policy", "legacy")
+    result['scheduler_version'] = 2
+    result['reachable_refresh_mode'] = getattr(args, 'reachable_refresh_mode', 'full')
     return_code = 1
     runtime = None
     interrupt = None
@@ -427,6 +458,16 @@ def run_runner_mode(
     phase_start = start_time
 
     try:
+        result['reproducibility'] = runtime_metadata(
+            Path(__file__).resolve().parents[2], config={
+                'movement_mode': MovementConfig.resolve(args.movement_mode).mode.value,
+                'execution_policy': result['execution_policy'],
+                'reachable_refresh_mode': result['reachable_refresh_mode'],
+                'timeout_seconds': effective_timeout_seconds(args.movement_mode, args.timeout_seconds),
+                'seed': 0, 'runner_mode': True,
+            }, plan=bundle_data)
+        if Path(script_file).is_file():
+            result['reproducibility']['executable_sha256'] = file_hash(script_file)
         resolved_movement = MovementConfig.resolve(args.movement_mode)
         result["movement_mode"] = resolved_movement.mode.value
         result["navigation_metrics"] = {}
@@ -435,6 +476,8 @@ def run_runner_mode(
             task_file,
             task_index,
         )
+        result['reproducibility']['config'].update(scene='FloorPlan' + str(floor_no), robot_count=len(robots))
+        result['reproducibility']['task_record_sha256'] = content_hash(task_record)
         if bundle.object_mapping_warnings:
             result["object_mapping_warnings"] = list(bundle.object_mapping_warnings)
 
@@ -449,6 +492,7 @@ def run_runner_mode(
             False,
             movement_mode=args.movement_mode,
             output_root=runtime_output_root(metrics_path, result),
+            **({"reachable_refresh_mode": result["reachable_refresh_mode"]} if result["reachable_refresh_mode"] != "full" else {}),
         )
         runtime.evaluation_context = EvaluationContext.from_goals(
             bundle.gcr,
@@ -569,4 +613,5 @@ def main(
         timeout_seconds=args.timeout_seconds,
         script_file=script_file,
         execution_policy=args.execution_policy,
+        **({"reachable_refresh_mode": args.reachable_refresh_mode} if args.reachable_refresh_mode != "full" else {}),
     )

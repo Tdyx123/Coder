@@ -307,8 +307,11 @@ def _aggregate_mode(mode: str, results: Sequence[Mapping[str, Any]]) -> Dict[str
     navigation_teleports = 0
     replans = 0
     planning_durations = []
+    planning_durations_complete = True
     for item in items:
         metrics = item.get("navigation_metrics") or {}
+        if metrics.get("planning_durations_truncated"):
+            planning_durations_complete = False
         requests = int(metrics.get("requests", 0) or 0)
         successes = int(metrics.get("successes", 0) or 0)
         failures = int(metrics.get("failures", 0) or 0)
@@ -370,10 +373,11 @@ def _aggregate_mode(mode: str, results: Sequence[Mapping[str, Any]]) -> Dict[str
         "total_run_time_seconds": sum(
             _number(item.get("run_time_seconds")) for item in items
         ),
+        "planner_fixture_p95_is_complete": planning_durations_complete,
         "planner_fixture_p95_seconds": _nearest_rank_percentile(
             planning_durations,
             0.95,
-        ),
+        ) if planning_durations_complete else None,
         "all_subprocesses_within_timeout": all(
             not bool(item.get("timed_out")) for item in items
         ),
@@ -477,6 +481,8 @@ def acceptance_failures(report: Mapping[str, Any]) -> List[Dict[str, Any]]:
     )
     if gcr_gap > 0.05 + 1e-12:
         reject("success_gcr_gap", gcr_gap, "<= 0.05")
+    if step.get("planner_fixture_p95_is_complete") is False:
+        reject("planner_fixture_p95_incomplete", None, "complete planning duration evidence")
     if _number(step.get("planner_fixture_p95_seconds")) > 0.250 + 1e-12:
         reject(
             "planner_fixture_p95",

@@ -95,6 +95,9 @@ from .utils import (
     log,
 )
 
+from .runtime_metrics import RuntimeMetrics
+
+
 LOOK_ACTIONS = {"LookUp", "LookDown"}
 MOVE_BLOCKER_PATTERN = re.compile(
     r"^(?P<object_name>.+?) is blocking Agent \d+ from moving by \("
@@ -219,9 +222,15 @@ class ThorRuntime:
         movement_mode: Optional[str] = None,
         *,
         output_root: Optional[Path] = None,
+        reachable_refresh_mode: str = "full",
     ) -> None:
         # Validate the cleanup target before dependency/controller setup so an
         # invalid caller path can never reach any initialization cleanup.
+        if reachable_refresh_mode != 'full':
+            raise ValueError('event reachable refresh is not implemented yet; use full')
+        self.reachable_refresh_mode = reachable_refresh_mode
+        self.runtime_metrics = RuntimeMetrics()
+        self.seed = 0
         self.output_root = self.resolve_output_root(output_root)
         require_dependencies()
         self.robots = list(robot_defs)
@@ -378,6 +387,10 @@ class ThorRuntime:
         }
         if self.cloud_rendering:
             controller_args["platform"] = CloudRendering
+        self.effective_controller_config = {
+            key: ('CloudRendering' if key == 'platform' else value)
+            for key, value in controller_args.items()
+        }
         return Controller(**controller_args)
 
     def print_agent_metadata(self, event) -> None:

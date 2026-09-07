@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 from .config import PLACEMENT_RESTRICTIONS
 from .utils import RobotRef, event_error_message, is_egg_query, matches_object, object_center, object_distance, object_key, operated_object_name, stable_object_name, step_event_failed, require_break_egg_target, log
 from .execution_control import raise_if_execution_aborted
+from .runtime_metrics import measured
 from .goals import record_verified_goal_state
 
 from .plan_types import PlannedAction
@@ -116,6 +117,7 @@ class ObjectInteractor:
             f"currently holding: {held_description}."
         )
 
+    @measured("recovery", "recovery_calls")
     def retry_move_past_open_object_blocker(
         self,
         agent_id: int,
@@ -310,6 +312,7 @@ class ObjectInteractor:
                 held_objects.add(str(object_id))
         return held_objects
 
+    @measured("recovery", "recovery_calls")
     def prepare_hand_for_goto_if_needed(
         self,
         robot: RobotRef,
@@ -332,6 +335,7 @@ class ObjectInteractor:
             return
         runtime.place_held_objects_for_pickup(robot, pickup_target)
 
+    @measured("recovery", "recovery_calls")
     def prepare_hand_for_pickup(
         self,
         robot: RobotRef,
@@ -367,6 +371,7 @@ class ObjectInteractor:
         runtime.teleport_to_position(agent_id, original_position)
         return runtime.find_object(pickup_target, agent_id=agent_id)
 
+    @measured("recovery", "recovery_calls")
     def place_held_objects_for_pickup(
         self,
         robot: RobotRef,
@@ -629,6 +634,7 @@ class ObjectInteractor:
         position["z"] = float(position.get("z", 0.0)) - math.cos(yaw) * distance
         return position
 
+    @measured("recovery", "recovery_calls")
     def retry_pickup_after_clip_error(
         self,
         agent_id: int,
@@ -739,6 +745,7 @@ class ObjectInteractor:
         )
         return False
 
+    @measured("recovery", "recovery_calls")
     def retry_object_action_after_target_visibility_error(
         self,
         action: str,
@@ -836,6 +843,7 @@ class ObjectInteractor:
             )
         return last_event
 
+    @measured("recovery", "recovery_calls")
     def retry_slice_after_interaction_reposition(
         self,
         agent_id: int,
@@ -909,6 +917,7 @@ class ObjectInteractor:
             active_keys.discard(recovery_key)
             state.active_keys = active_keys
 
+    @measured("recovery", "recovery_calls")
     def retry_pickup_after_target_visibility_error(
         self,
         agent_id: int,

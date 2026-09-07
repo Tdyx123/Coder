@@ -1,0 +1,191 @@
+import copy
+import json
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'scripts'))
+import benchmark_executor_regression as benchmark
+
+
+def record(case='a', refresh='full', repetition=1, **changes):
+    result = dict(case=case, movement_mode='step', execution_policy='legacy',
+                  reachable_refresh_mode=refresh, repetition=repetition,
+                  metrics_schema_version=2, evaluation_version='fixed_goals_v2', scheduler_version=2,
+                  status='success', process_status='completed', execution_status='completed',
+                  evaluation_status='valid', task_success=True, gcr=1.0, timed_out=False,
+                  run_time_seconds=12, phase_durations_seconds={'execution': 10},
+                  navigation_metrics={'requests': 1, 'successes': 1, 'failures': 0, 'action_counts': {}},
+                  runtime_metrics={'counters': {}}, reproducibility={'code_sha': 'abc'})
+    result.update(changes)
+    return result
+
+
+class BenchmarkTests(unittest.TestCase):
+    def test_keeps_repetitions_failures_and_splits_versions(self):
+        results = [record(), record(repetition=2, timed_out=True, evaluation_status='incomplete', gcr=None),
+                   record(repetition=3, scheduler_version=1)]
+        report = benchmark.build_report({'cases': [{'task_id': 'a'}]}, results)
+        self.assertEqual(report['results'], results)
+        self.assertEqual(len(report['groups']), 2)
+        self.assertEqual(report['raw_counts']['timeouts'], 1)
+        self.assertEqual(report['raw_counts']['incomplete_evaluations'], 1)
+        self.assertTrue(benchmark.acceptance_failures(report))
+
+    def test_pair_regression_not_hidden_by_mean(self):
+        rows = [record('a'), record('b', gcr=0),
+                record('a', 'event', gcr=0, task_success=False), record('b', 'event')]
+        failures = benchmark.acceptance_failures(benchmark.build_report({'cases': []}, rows))
+        self.assertTrue(any(f['code'] == 'paired_regression' and f['case'] == 'a' and f['repetition'] == 1 for f in failures))
+
+    def test_per_policy_performance_median_and_p95_gate(self):
+        rows = [record(refresh=refresh, repetition=i, phase_durations_seconds={'execution': 10 if refresh == 'full' else 10.6})
+                for refresh in ('full', 'event') for i in range(1, 6)]
+        failures = benchmark.acceptance_failures(benchmark.build_report({'cases': []}, rows))
+        self.assertIn('execution_p50', {f['code'] for f in failures})
+        self.assertIn('execution_p95', {f['code'] for f in failures})
+        for row in rows:
+            if row['reachable_refresh_mode'] == 'event': row['phase_durations_seconds']['execution'] = 10.5
+        self.assertEqual(benchmark.acceptance_failures(benchmark.build_report({'cases': []}, rows)), [])
+
+    def test_missing_fixed_cases_nonzero_without_reselection(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            manifest = root / 'manifest.json'
+            manifest.write_text(json.dumps({'cases': [{'task_id': 'missing', 'path': 'absent.py'}]}))
+            output = root / 'output'
+            with patch.object(benchmark, 'run_generated_executable') as runner:
+                code = benchmark.main(['--manifest', str(manifest), '--output-dir', str(output), '--check'])
+            self.assertNotEqual(code, 0)
+            runner.assert_not_called()
+            report = json.loads((output / 'report.json').read_text())
+            self.assertEqual(report['case_count'], 1)
+            self.assertEqual(report['missing_cases'][0]['task_id'], 'missing')
+
+    def test_fake_runs_write_every_attempt_with_candidate_import_precedence(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            executable = root / 'plan.py'
+            executable.write_text('BUNDLE_DATA = {"task_plan": {}}\n')
+            manifest = root / 'manifest.json'
+            manifest.write_text(json.dumps({'cases': [{'task_id': 'a', 'path': str(executable)}]}))
+            calls = []
+            def run(path, **kwargs):
+                calls.append(kwargs)
+                result = record(repetition=kwargs['attempt'])
+                if kwargs['attempt'] == 2: result.update(timed_out=True, status='timeout', evaluation_status='incomplete', gcr=None)
+                return result
+            output = root / 'output'
+            with patch.object(benchmark, 'run_generated_executable', side_effect=run):
+                code = benchmark.main(['--manifest', str(manifest), '--output-dir', str(output), '--repetitions', '2', '--check'])
+            self.assertNotEqual(code, 0)
+            self.assertEqual([c['attempt'] for c in calls], [1, 2])
+            self.assertEqual(len(list(output.glob('runs/**/result.json'))), 2)
+            self.assertEqual(calls[0]['pythonpath_prepend'], [str(ROOT / 'scripts'), str(ROOT)])
+            self.assertTrue(calls[0]['save_all_stdout'])
+            report = json.loads((output / 'report.json').read_text())
+            self.assertEqual(len(report['results']), 2)
+            self.assertEqual(report['raw_counts']['timeouts'], 1)
+
+    def test_event_without_full_and_missing_execution_timing_fail(self):
+        for rows in ([record(refresh='event')], [record(), record(refresh='event', phase_durations_seconds={})]):
+            self.assertTrue(benchmark.acceptance_failures(benchmark.build_report({'cases': []}, rows)))
+
+    def test_defaults(self):
+        args = benchmark.parse_arguments(['--output-dir', '/tmp/unused'])
+        self.assertEqual((args.repetitions, args.max_workers), (5, 1))
+        self.assertEqual((args.movement_modes, args.execution_policies, args.reachable_refresh_modes), (['step'], ['legacy'], ['full']))
+
+    def test_real_fake_subprocess_runs_candidate_code_and_preserves_raw_child(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            executable = root / 'plan.py'
+            executable.write_text('''import sys, os, json, time
+from pathlib import Path
+sys.path.append('/home/dwb/thor/Coder/scripts')
+from executor_system import generated_plan_runtime as generated
+from executor_system.runtime_metrics import runtime_metadata
+from executor_system.run_results import ActionLedger
+BUNDLE_DATA = {"task_plan": {}}
+args = generated.parse_arguments()
+result = generated.build_runner_result('success', time.monotonic())
+result.update(generated.runner_identity(__file__, 0))
+result.update(ActionLedger().freeze())
+result['execution_quiescent'] = True
+result['scheduler_version'] = 2
+result.update(process_status='completed', execution_status='completed', evaluation_status='valid',
+              gcr=1.0, tc=1.0, sr=1.0, ru=1.0, task_success=True, original_goal_count=1, satisfied_goal_count=1,
+              movement_mode=args.movement_mode, execution_policy=args.execution_policy,
+              reachable_refresh_mode=args.reachable_refresh_mode, navigation_metrics={},
+              runtime_metrics={'counters': {}}, phase_durations_seconds={'startup': 0, 'execution': 1, 'evaluation': 0, 'cleanup': 0})
+result['reproducibility'] = runtime_metadata(Path(generated.__file__).resolve().parents[2], config={}, plan=BUNDLE_DATA)
+Path(args.metrics_output).write_text(json.dumps(result))
+''')
+            manifest = root / 'manifest.json'
+            manifest.write_text(json.dumps({'cases': [{'task_id': 'a', 'path': str(executable)}]}))
+            output = root / 'output'
+            code = benchmark.main(['--manifest', str(manifest), '--output-dir', str(output), '--repetitions', '2', '--check'])
+            report = json.loads((output / 'report.json').read_text())
+            self.assertEqual(code, 0, report['acceptance_failures'])
+            self.assertEqual(report['raw_counts']['missing_results'], 0)
+            self.assertEqual({r['reproducibility']['code_root'] for r in report['results']}, {str(ROOT)})
+            self.assertEqual(len({r['child_result']['attempt'] for r in report['results']}), 2)
+
+    def test_policy_means_cannot_mask_strict_regression(self):
+        rows = [record(refresh=refresh, execution_policy=policy,
+                       phase_durations_seconds={'execution': 10 if refresh == 'full' else (1 if policy == 'legacy' else 11)})
+                for policy in ('legacy', 'strict') for refresh in ('full', 'event')]
+        failures = benchmark.acceptance_failures(benchmark.build_report({'cases': []}, rows))
+        self.assertTrue(any(f['code'] == 'execution_p50' and f['execution_policy'] == 'strict' for f in failures))
+
+    def test_safety_and_pair_missing_repetition_checks(self):
+        rows = [record(repetition=1), record(repetition=2),
+                record(refresh='event', navigation_metrics={'requests': 1, 'successes': 1, 'action_counts': {'Teleport': 1}},
+                       runtime_metrics={'counters': {'lease_leaks': 1}})]
+        codes = {f['code'] for f in benchmark.acceptance_failures(benchmark.build_report({'cases': []}, rows))}
+        self.assertTrue({'lease_leaks', 'step_navigation_teleports', 'missing_comparison_pair'} <= codes)
+
+    def test_invalid_plan_still_has_one_failure_per_repetition(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            plan = root / 'plan.py'
+            plan.write_text('this is not valid python !')
+            manifest_path = root / 'manifest.json'
+            manifest = {'cases': [{'task_id': 'a', 'path': str(plan)}]}
+            manifest_path.write_text(json.dumps(manifest))
+            with patch.object(benchmark, 'run_generated_executable') as runner:
+                report = benchmark.run_benchmark(manifest, manifest_path=manifest_path, output_dir=root / 'out', repetitions=2)
+            runner.assert_not_called()
+            self.assertEqual(len(report['results']), 2)
+            self.assertTrue(all(r['missing_result'] for r in report['results']))
+
+    def test_partial_runs_still_expose_new_action_failure(self):
+        full = record(task_success=False, execution_status='partial', actions=[
+            {'action_key': '0:robot1:0', 'status': 'succeeded'},
+            {'action_key': '0:robot1:1', 'status': 'failed'}])
+        event = record(refresh='event', task_success=False, execution_status='partial', actions=[
+            {'action_key': '0:robot1:0', 'status': 'failed'},
+            {'action_key': '0:robot1:1', 'status': 'succeeded'}])
+        failures = benchmark.acceptance_failures(benchmark.build_report({'cases': []}, [full, event]))
+        self.assertTrue(any(f['code'] == 'paired_action_regression' and f['action_key'] == '0:robot1:0' for f in failures))
+
+    def test_missing_case_reports_unstarted_denominator(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            manifest = {'cases': [{'task_id': 'missing', 'path': 'absent.py'}]}
+            path = root / 'manifest.json'
+            path.write_text(json.dumps(manifest))
+            report = benchmark.run_benchmark(manifest, manifest_path=path, output_dir=root / 'out', repetitions=5)
+            self.assertEqual(report['raw_counts']['missing_cases'], 1)
+            self.assertEqual(report['raw_counts']['unstarted_runs'], 5)
+
+    def test_output_directory_cannot_overwrite_evidence(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'report.json').write_text('historical')
+            code = benchmark.main(['--output-dir', str(root)])
+            self.assertEqual(code, 2)
+            self.assertEqual((root / 'report.json').read_text(), 'historical')

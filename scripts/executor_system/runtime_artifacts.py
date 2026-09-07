@@ -11,6 +11,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Callable, List, Optional, Sequence
 
+from .runtime_metrics import measured
 from .config import DIRECTIONAL_VIEW_NAMES, THIRD_PARTY_VIEW_NAMES, TOP_VIEW_NAME
 
 
@@ -50,6 +51,7 @@ class RuntimeArtifacts:
         # child belongs to this runtime and may be cleaned by prepare_output_dirs.
         return Path(tempfile.mkdtemp(prefix="lammap-runtime-", dir=str(container))).resolve()
 
+    @measured("artifacts", "artifact_calls")
     def prepare(self) -> None:
         runtime = self.runtime
         if not runtime.render_image:
@@ -71,6 +73,7 @@ class RuntimeArtifacts:
         for view_name in THIRD_PARTY_VIEW_NAMES:
             (runtime.output_root / view_name).mkdir(parents=True, exist_ok=True)
 
+    @measured("artifacts", "artifact_calls")
     def write_final_metadata(self) -> Optional[Path]:
         runtime = self.runtime
         if not self._metadata_enabled():
@@ -89,6 +92,7 @@ class RuntimeArtifacts:
         )
         return metadata_path
 
+    @measured("artifacts", "artifact_calls")
     def save_frames(self, event) -> None:
         runtime = self.runtime
         if not runtime.render_image:
@@ -156,6 +160,7 @@ class RuntimeArtifacts:
                 return list(third_party_frames)
         return []
 
+    @measured("artifacts", "artifact_calls")
     def generate_video(self) -> None:
         runtime = self.runtime
         if not runtime.render_image:

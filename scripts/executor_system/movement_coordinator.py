@@ -29,6 +29,7 @@ from multi_robot_avoidance import (
     plan_scenario,
 )
 
+from .runtime_metrics import measured
 from .execution_control import raise_if_execution_aborted
 from .movement import (
     MovementConfig,
@@ -421,6 +422,7 @@ class StepMovementCoordinator:
             fixed_robot_ids=frozenset(fixed_robot_ids),
         )
 
+    @measured("navigation_planning", "navigation_plans")
     def _plan(
         self,
         active_states: Mapping[int, ActiveNavigationState],

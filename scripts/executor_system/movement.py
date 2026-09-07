@@ -153,6 +153,7 @@ class NavigationMetrics:
     deferred_requests: int = 0
     budget_exhaustions: int = 0
     planning_time_seconds: float = 0.0
+    planning_timing_count: int = 0
     planning_durations_seconds: List[float] = field(default_factory=list)
     action_counts: Dict[str, int] = field(default_factory=dict)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
@@ -181,7 +182,10 @@ class NavigationMetrics:
         with self._lock:
             duration = float(seconds)
             self.planning_time_seconds += duration
+            self.planning_timing_count += 1
             self.planning_durations_seconds.append(duration)
+            # Compatibility preview only; full percentiles use benchmark runs.
+            del self.planning_durations_seconds[:-128]
 
     def to_dict(self) -> Dict[str, Any]:
         with self._lock:
@@ -208,6 +212,10 @@ class NavigationMetrics:
                 "deferred_requests": self.deferred_requests,
                 "budget_exhaustions": self.budget_exhaustions,
                 "planning_time_seconds": self.planning_time_seconds,
+                "planning_durations_sample_limit": 128,
+                "planning_durations_semantics": "bounded preview of latest calls; not a full-run distribution",
+                "planning_durations_truncated": self.planning_timing_count > 128,
+                "planning_timing_count": self.planning_timing_count,
                 "planning_durations_seconds": list(
                     self.planning_durations_seconds
                 ),
