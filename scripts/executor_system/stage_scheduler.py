@@ -1,5 +1,6 @@
 """Main-thread action admission, shared snapshots and bounded robot workers."""
 import queue
+import sys
 import threading
 import time
 from contextlib import nullcontext
@@ -531,8 +532,21 @@ class StageScheduler:
             self.outcome = StageOutcome(status, False, (error_record(exc, phase=self.stage.stage_id),), self.world.snapshot)
             raise
         finally:
+            primary_error = sys.exc_info()[1]
+            finalization_error = None
             if getattr(self.runtime, 'execution_quiescent', True):
-                self._harvest_completed_results()
+                while True:
+                    try:
+                        self._harvest_completed_results()
+                        break
+                    except BaseException as exc:
+                        # The failing result was already dequeued. Preserve its
+                        # cause and continue draining before tail/lease cleanup.
+                        self._errors.append(error_record(exc, phase=self.stage.stage_id))
+                        finalization_error = finalization_error or exc
+                if finalization_error is not None and primary_error is None:
+                    tail_reason = 'condition_evaluation_error'
+                    self.outcome = StageOutcome('failed', False, tuple(self._errors), self.world.snapshot)
                 if self.outcome is not None:
                     errors = tuple(self._errors) + tuple(error for error in self.outcome.errors if error not in self._errors)
                     self.outcome = replace(self.outcome, errors=errors)
@@ -553,4 +567,10 @@ class StageScheduler:
                                                      'world_version': self.world.version})
                     self.resource_leases.pop(key, None)
                     self.resource_requests.pop(key, None)
+            if finalization_error is not None:
+                root = getattr(self.runtime, 'execution_control', None)
+                if root is not None:
+                    root.cancel(str(finalization_error))
+                if primary_error is None:
+                    raise finalization_error
         return self.outcome

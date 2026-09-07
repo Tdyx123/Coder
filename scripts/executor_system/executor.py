@@ -729,7 +729,7 @@ class Executor:
         ledger_key = f"{self.stage_index}:{self.robot_id}:{self.state.action_cursor}"
         retries = self.state.retries_by_action.get(action_key, 0)
         attempts = retries + 1
-        effects_satisfied = (None if finalizing else self.effects_satisfied_after_failure(action))
+        effects_satisfied = self.effects_satisfied_after_failure(action, refresh=not finalizing)
         if (
             action.on_failure == FAILURE_SKIP_IF_EFFECT_ALREADY_TRUE
             and action.expected_effects
@@ -821,10 +821,13 @@ class Executor:
         from .parallel_runner import failure_ignored_for_ratio
         return failure_ignored_for_ratio(action, exc)
 
-    def effects_satisfied_after_failure(self, action: Action) -> Optional[bool]:
+    def effects_satisfied_after_failure(self, action: Action, *, refresh=True) -> Optional[bool]:
         if action.on_failure != FAILURE_SKIP_IF_EFFECT_ALREADY_TRUE or not action.expected_effects:
             return None
-        self.world_state.refresh([self.state])
+        if refresh:
+            self.world_state.refresh([self.state])
+        # Finalization receives the scheduler's post-exit snapshot. It must not
+        # refresh through an already-cancelled stage or issue controller work.
         self.last_effects_evidence = conditions_evidence(action.expected_effects, self.world_state)
         return conditions_satisfied(self.last_effects_evidence)
 

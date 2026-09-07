@@ -228,3 +228,98 @@ class StageConditionsTest(unittest.TestCase):
                 else:
                     self.assertEqual(report['action_counts']['failed'], 2)
                     self.assertEqual(report['actions'][1]['reason'], 'stage_stopped_before_retry')
+
+    def _run_drained_effect_case(self, effect, *, ordinary=False):
+        import time
+        from executor_system.stage_scheduler import StageScheduler
+        self.runtime.objects = [{'objectId': 'Mug|1', 'objectType': 'Mug', 'temperature': 'RoomTemp'}]
+        original_receive = StageScheduler._receive_results
+        def receive(scheduler):
+            if scheduler.inflight and not scheduler.action_records:
+                deadline = time.monotonic() + .5
+                while scheduler.results.qsize() < 2 and time.monotonic() < deadline:
+                    time.sleep(.001)
+                self.assertEqual(scheduler.results.qsize(), 2)
+                results = [scheduler.results.get_nowait(), scheduler.results.get_nowait()]
+                for result in sorted(results, key=lambda item: item[0].robot_id):
+                    scheduler.results.put(result)
+            return original_receive(scheduler)
+        calls = []
+        def fail(adapter, robot, action, **kwargs):
+            calls.append(robot)
+            if robot == 'robot2':
+                with self.runtime.controller_lock:
+                    self.runtime.objects[0]['temperature'] = 'Hot'
+                    self.runtime.state_version += 1
+            raise RuntimeError(robot + ' completed failure')
+        plan = TaskPlan('t', [StagePlan('s', {
+            'robot1': [Action('Wait')],
+            'robot2': [Action('Wait', on_failure='SKIP_IF_EFFECT_ALREADY_TRUE',
+                              expected_effects=(effect,),
+                              resource_policy={'object_resources': ('Mug|1',)}), Action('Wait')]})])
+        with patch.object(StageScheduler, '_receive_results', receive), patch(
+                'executor_system.action_plan.AI2ThorAdapter.execute', fail), patch.object(
+                self.runtime, 'step', side_effect=AssertionError('finalization must not step')):
+            try:
+                if ordinary:
+                    return TaskRunner(self.runtime, execution_policy='strict').execute(plan, timeout_seconds=1)
+                return run_action_plan_tolerant(self.runtime, plan, execution_policy='strict', timeout_seconds=1)
+            finally:
+                self.assertEqual(sorted(calls), ['robot1', 'robot2'])
+
+    def test_drained_effect_proof_uses_final_snapshot(self):
+        for dictionary in (False, True):
+            with self.subTest(dictionary=dictionary):
+                self.runtime = FakeRuntime()
+                seen = []
+                effect = ({'name': 'Mug', 'state': 'HOT'} if dictionary else
+                          lambda world: seen.append(world.version) or world.objects_by_id['Mug|1']['temperature'] == 'Hot')
+                report = self._run_drained_effect_case(effect)
+                self.assertEqual(report['execution_status'], 'failed')
+                self.assertEqual(report['action_counts']['succeeded'], 1)
+                self.assertEqual(report['action_counts']['failed'], 1)
+                self.assertEqual(report['action_counts']['attempts'], 2)
+                self.assertEqual(report['actions'][1]['reason'], 'effects_already_satisfied')
+                self.assertTrue(report['actions'][1]['effects'][0]['satisfied'])
+                self.assertEqual(report['actions'][2]['reason'], 'stage_failed')
+                self.assertEqual(self.runtime.action_resource_manager.holders(), {})
+                if not dictionary:
+                    self.assertEqual(seen, [1])
+
+    def test_drained_effect_callback_error_preserves_cause_and_cleanup(self):
+        from executor_system.execution_policy import PlanExecutionError, ConditionEvaluationError
+        original = ValueError('drained effect callback failed')
+        def effect(world):
+            raise original
+        with self.assertRaises(PlanExecutionError) as caught:
+            self._run_drained_effect_case(effect, ordinary=True)
+        self.assertIsInstance(caught.exception.__cause__, ConditionEvaluationError)
+        self.assertIs(caught.exception.__cause__.__cause__, original)
+        report = caught.exception.report
+        self.assertIn('drained effect callback failed', json.dumps(report['errors']))
+        self.assertEqual(len(report['actions']), 3)
+        self.assertEqual(report['action_counts']['attempts'], 2)
+        self.assertEqual(report['actions'][2]['status'], 'unexecuted')
+        self.assertEqual(self.runtime.action_resource_manager.holders(), {})
+        self.assertIsNone(self.runtime.stage_scheduler)
+
+    def test_drained_callback_cannot_replace_primary_task_timeout(self):
+        from executor_system.execution_control import PlanExecutionTimeout
+        from executor_system.stage_scheduler import StageScheduler
+        original = PlanExecutionTimeout('primary task timeout')
+        receive = StageScheduler._receive_results
+        def timeout_after_results(scheduler):
+            if scheduler.inflight:
+                raise original
+            return receive(scheduler)
+        def effect(world):
+            raise ValueError('secondary cleanup callback error')
+        with patch.object(StageScheduler, '_receive_results', timeout_after_results):
+            with self.assertRaises(PlanExecutionTimeout) as caught:
+                self._run_drained_effect_case(effect, ordinary=True)
+        self.assertIs(caught.exception, original)
+        self.assertEqual(self.runtime.execution_report['execution_status'], 'timeout')
+        self.assertIn('secondary cleanup callback error', json.dumps(self.runtime.execution_report['errors']) +
+                      json.dumps(self.runtime.execution_report['stages']))
+        self.assertEqual(self.runtime.action_resource_manager.holders(), {})
+        self.assertIsNone(self.runtime.stage_scheduler)
