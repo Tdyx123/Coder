@@ -11,6 +11,7 @@ import sys
 import tempfile
 import threading
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -47,6 +48,12 @@ from executor_system.action_plan import (  # noqa: E402
 from executor_system.executor import Executor, PhaseCoordinator  # noqa: E402
 from executor_system.movement import MovementConfig, NavigationDeferred  # noqa: E402
 from executor_system.runtime import is_pickup_object_clip_error  # noqa: E402
+from executor_system.run_results import (  # noqa: E402
+    ActionLedger,
+    atomic_write_json,
+    normalize_output,
+    validate_result,
+)
 from baseline_converters import pddlrun  # noqa: E402
 
 
@@ -81,11 +88,7 @@ class PlanExecutionTimeout(TimeoutError):
 
 
 def write_result_json(path: Path, result: Dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(result, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    atomic_write_json(path, result)
 
 
 def action_success_rate(executed_actions: int, failed_actions: int) -> float:
@@ -98,9 +101,17 @@ def action_success_rate(executed_actions: int, failed_actions: int) -> float:
 
 def normalize_result_metrics(result: Dict[str, Any]) -> Dict[str, Any]:
     result.pop("exec_rate", None)
-    executed_actions = int(result.get("executed_actions", 0) or 0)
-    failed_actions = int(result.get("failed_actions", 0) or 0)
-    result["action_sr"] = action_success_rate(executed_actions, failed_actions)
+    if "raw_action_sr" in result:
+        result["action_sr"] = result.get("raw_action_sr")
+        return result
+    if "action_sr" not in result:
+        executed_actions = int(result.get("executed_actions", 0) or 0)
+        failed_actions = int(result.get("failed_actions", 0) or 0)
+        result["action_sr"] = (
+            action_success_rate(executed_actions, failed_actions)
+            if executed_actions
+            else None
+        )
     return result
 
 
@@ -112,6 +123,7 @@ class TolerantRunStats:
     robot_failures: List[Dict[str, Any]] = field(default_factory=list)
     timed_out: bool = False
     timeout_message: str = ""
+    action_ledger: ActionLedger = field(default_factory=ActionLedger)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def record_started(self) -> None:
@@ -158,7 +170,7 @@ class TolerantRunStats:
             robot_failures = [dict(failure) for failure in self.robot_failures]
             timed_out = bool(self.timed_out)
             timeout_message = self.timeout_message
-        return {
+        result = {
             "status": "timeout" if timed_out else status,
             "timed_out": timed_out,
             "timeout_message": timeout_message,
@@ -171,6 +183,8 @@ class TolerantRunStats:
             ),
             "robot_failures": robot_failures,
         }
+        result.update(self.action_ledger.freeze())
+        return result
 
 
 def _check_deadline(deadline: Optional[float]) -> None:
@@ -188,6 +202,7 @@ class TolerantExecutor(Executor):
         actions: Sequence[Action],
         *,
         stage_id: str,
+        stage_index: int,
         stats: TolerantRunStats,
         deadline: Optional[float],
         logger: Optional[ExecutionLogger] = None,
@@ -202,6 +217,7 @@ class TolerantExecutor(Executor):
             phase_coordinator=phase_coordinator,
         )
         self.stats = stats
+        self.stage_index = int(stage_index)
         self.deadline = deadline
         self.timeout_error_factory = PlanExecutionTimeout
 
@@ -244,10 +260,13 @@ class TolerantExecutor(Executor):
                     break
 
                 action_index = self.state.action_cursor
+                ledger_key = f"{self.stage_index}:{self.robot_id}:{action_index}"
                 self.world_state.tick = tick
                 self.world_state.refresh([self.state])
                 self.state.status = ROBOT_EXECUTING
                 self.stats.record_started()
+                self.stats.action_ledger.record_started(ledger_key)
+                self.stats.action_ledger.record_attempt()
                 action_wave = None
                 try:
                     self.wait_for_condition(action)
@@ -273,6 +292,11 @@ class TolerantExecutor(Executor):
                         action_index,
                         exc,
                     )
+                    self.stats.action_ledger.record_terminal(
+                        ledger_key,
+                        "failed",
+                        ignored_for_legacy=failure_ignored_for_ratio(action, exc),
+                    )
                     raise
                 except Exception as exc:
                     if self.phase_coordinator is not None and action_wave is not None:
@@ -295,6 +319,7 @@ class TolerantExecutor(Executor):
                     else ROBOT_ACTION_SUCCESS
                 )
                 self.logger.result(tick, result)
+                self.stats.action_ledger.record_terminal(ledger_key, "succeeded")
                 tick += 1
         finally:
             self.state.status = ROBOT_FINISHED_STAGE
@@ -311,6 +336,7 @@ class TolerantExecutor(Executor):
         action_index: int,
         exc: BaseException,
         tick: int,
+        ledger_key: Optional[str] = None,
     ) -> bool:
         action_key = action.stable_id(self.robot_id, self.state.action_cursor)
         retries = self.state.retries_by_action.get(action_key, 0)
@@ -349,6 +375,11 @@ class TolerantExecutor(Executor):
             action_index,
             exc,
         )
+        self.stats.action_ledger.record_terminal(
+            ledger_key or f"{self.stage_index}:{self.robot_id}:{action_index}",
+            "failed",
+            ignored_for_legacy=failure_ignored_for_ratio(action, exc),
+        )
         result = ActionResult(
             self.robot_id,
             action,
@@ -374,11 +405,13 @@ class TolerantStageRunner:
         *,
         stats: TolerantRunStats,
         deadline: Optional[float],
+        stage_index: int,
         logger: Optional[ExecutionLogger] = None,
     ) -> None:
         self.runtime = runtime_obj
         self.stats = stats
         self.deadline = deadline
+        self.stage_index = int(stage_index)
         self.logger = logger or ExecutionLogger()
         self.world_state = WorldState(runtime_obj)
 
@@ -401,6 +434,7 @@ class TolerantStageRunner:
                 robot_id,
                 actions,
                 stage_id=stage.stage_id,
+                stage_index=self.stage_index,
                 stats=self.stats,
                 deadline=self.deadline,
                 logger=self.logger,
@@ -460,23 +494,30 @@ def run_action_plan_tolerant(
 ) -> Dict[str, Any]:
     """Run a task plan without letting one robot failure fail the whole plan."""
 
-    stats = TolerantRunStats()
+    plan = PlanLoader().load(raw_plan)
+    planned_keys = [
+        f"{stage_index}:{robot_id}:{cursor}"
+        for stage_index, stage in enumerate(plan.stages)
+        for robot_id, actions in stage.robot_action_queues.items()
+        for cursor, _action in enumerate(actions)
+    ]
+    stats = TolerantRunStats(action_ledger=ActionLedger(planned_keys))
     deadline = (
         stats.start_time + float(timeout_seconds)
         if timeout_seconds is not None and float(timeout_seconds) > 0
         else None
     )
-    plan = PlanLoader().load(raw_plan)
     PlanValidator(runtime_obj).validate(plan)
     logger = logger or ExecutionLogger()
 
     try:
-        for stage in plan.stages:
+        for stage_index, stage in enumerate(plan.stages):
             _check_deadline(deadline)
             runner = TolerantStageRunner(
                 runtime_obj,
                 stats=stats,
                 deadline=deadline,
+                stage_index=stage_index,
                 logger=logger,
             )
             runner.execute_stage(stage)
@@ -849,7 +890,7 @@ def failed_result_for_exception(
         "gcr": None,
         "executed_actions": 0,
         "failed_actions": 0,
-        "action_sr": 1.0,
+        "action_sr": None,
         "failure_action_ratio": 0.0,
         "robot_failures": [],
         "returncode": 1,
@@ -859,6 +900,44 @@ def failed_result_for_exception(
         "error": str(exc),
     }
     return normalize_result_metrics(result)
+
+
+def invalid_runner_result(
+    executable_path: Path,
+    *,
+    movement_mode: str,
+    run_time_seconds: float,
+    returncode: int,
+    identity: Dict[str, Any],
+    error: str,
+) -> Dict[str, Any]:
+    """Represent absent, malformed, or untrusted child metrics conservatively."""
+
+    return {
+        "status": "failed",
+        "process_status": "failed",
+        "execution_status": "failed",
+        "evaluation_status": "incomplete",
+        "task_success": None,
+        "evaluation_version": "legacy_v1",
+        "execution_policy": "legacy",
+        "run_time_seconds": run_time_seconds,
+        "gcr": None,
+        "tc": None,
+        "sr": None,
+        "ru": None,
+        "executed_actions": 0,
+        "failed_actions": 0,
+        "action_sr": None,
+        "failure_action_ratio": 0.0,
+        "robot_failures": [],
+        "returncode": returncode,
+        "executable_path": str(executable_path),
+        "movement_mode": str(movement_mode),
+        "navigation_metrics": {},
+        "error": error,
+        **identity,
+    }
 
 
 def compact_attempt_result(result: Dict[str, Any], attempt: int) -> Dict[str, Any]:
@@ -883,9 +962,24 @@ def run_generated_executable(
     timeout_seconds: float,
     movement_mode: str = "step",
     save_all_stdout: bool = False,
+    run_id: Optional[str] = None,
+    task_key: Optional[str] = None,
+    attempt: int = 1,
 ) -> Dict[str, Any]:
     start_time = time.monotonic()
     child_env = os.environ.copy()
+    identity = {
+        "run_id": str(run_id or uuid.uuid4().hex),
+        "task_key": str(task_key or executable_path.resolve()),
+        "attempt": int(attempt),
+    }
+    child_env.update(
+        {
+            "LAMMAP_RUN_ID": identity["run_id"],
+            "LAMMAP_TASK_KEY": identity["task_key"],
+            "LAMMAP_ATTEMPT": str(identity["attempt"]),
+        }
+    )
     command = [
         sys.executable,
         str(executable_path),
@@ -915,32 +1009,65 @@ def run_generated_executable(
             "gcr": None,
             "executed_actions": 0,
             "failed_actions": 0,
-            "action_sr": 1.0,
+            "action_sr": None,
             "failure_action_ratio": 0.0,
             "robot_failures": [],
             "returncode": 124,
             "executable_path": str(executable_path),
             "movement_mode": str(movement_mode),
             "navigation_metrics": {},
-            "stdout": exc.stdout or "",
-            "stderr": exc.stderr or "",
+            "stdout": normalize_output(exc.stdout),
+            "stderr": normalize_output(exc.stderr),
+            "process_status": "timeout",
+            "execution_status": "timeout",
+            "evaluation_status": "incomplete",
+            "task_success": None,
+            "evaluation_version": "legacy_v1",
+            "execution_policy": "legacy",
+            **identity,
         }
         prune_stdout_for_result(result, save_all_stdout=save_all_stdout)
         return result
 
+    metrics_error = ""
     if metrics_output.is_file():
         try:
             result = json.loads(metrics_output.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             result = {}
+            metrics_error = f"invalid runner metrics: {exc}"
     else:
         result = {}
+        metrics_error = "runner metrics file was not created"
 
-    if not isinstance(result, dict):
-        result = {}
+    if not isinstance(result, dict) or not result:
+        result = invalid_runner_result(
+            executable_path,
+            movement_mode=movement_mode,
+            run_time_seconds=time.monotonic() - start_time,
+            returncode=completed.returncode,
+            identity=identity,
+            error=metrics_error or "runner metrics must be a non-empty JSON object",
+        )
+    else:
+        try:
+            result = validate_result(
+                result,
+                returncode=completed.returncode,
+                expected_identity=identity,
+            )
+        except ValueError as exc:
+            result = invalid_runner_result(
+                executable_path,
+                movement_mode=movement_mode,
+                run_time_seconds=time.monotonic() - start_time,
+                returncode=completed.returncode,
+                identity=identity,
+                error=f"invalid runner metrics: {exc}",
+            )
     result.setdefault(
         "status",
-        "success" if completed.returncode == 0 else "failed",
+        "success" if result.get("process_status") == "completed" else "failed",
     )
     result.setdefault("timed_out", False)
     result.setdefault("run_time_seconds", time.monotonic() - start_time)
@@ -969,6 +1096,7 @@ def run_executable_round(
     timeout_seconds: float,
     movement_mode: str,
     save_all_stdout: bool,
+    run_id: str,
 ) -> Dict[Path, Dict[str, Any]]:
     future_to_path = {}
     for index, executable_path in enumerate(executable_paths, start=1):
@@ -982,6 +1110,9 @@ def run_executable_round(
             timeout_seconds=timeout_seconds,
             movement_mode=movement_mode,
             save_all_stdout=save_all_stdout,
+            run_id=run_id,
+            task_key=str(executable_path.resolve()),
+            attempt=round_index + 1,
         )
         future_to_path[future] = executable_path
 
@@ -1028,7 +1159,9 @@ def run_executables_with_retries(
     timeout_seconds: float,
     movement_mode: str = "step",
     save_all_stdout: bool,
+    run_id: Optional[str] = None,
 ) -> tuple[List[Dict[str, Any]], List[str], List[Dict[str, Any]]]:
+    resolved_run_id = str(run_id or uuid.uuid4().hex)
     attempts_by_path: Dict[Path, List[Dict[str, Any]]] = {
         path: [] for path in executable_paths
     }
@@ -1048,6 +1181,7 @@ def run_executables_with_retries(
                 timeout_seconds=timeout_seconds,
                 movement_mode=movement_mode,
                 save_all_stdout=save_all_stdout,
+                run_id=resolved_run_id,
             )
 
             try:
@@ -1102,6 +1236,32 @@ def build_summary(
         timeout_seconds,
     )
     result_list = [normalize_result_metrics(dict(result)) for result in results]
+    grouped_results: Dict[tuple, Dict[str, Any]] = {}
+    for result in result_list:
+        key = (
+            result.get("metrics_schema_version", 1),
+            result.get("evaluation_version", "legacy_v1"),
+            result.get("execution_policy", "legacy"),
+            result.get("movement_mode", str(movement_mode)),
+        )
+        group = grouped_results.setdefault(
+            key,
+            {
+                "metrics_schema_version": key[0],
+                "evaluation_version": key[1],
+                "execution_policy": key[2],
+                "movement_mode": key[3],
+                "total_task_count": 0,
+                "valid_evaluation_count": 0,
+                "task_success_count": 0,
+            },
+        )
+        group["total_task_count"] += 1
+        if result.get("evaluation_status") == "valid":
+            group["valid_evaluation_count"] += 1
+            if result.get("task_success") is True:
+                group["task_success_count"] += 1
+
     summary = {
         "total_results": len(result_list),
         "success_count": sum(
@@ -1127,6 +1287,9 @@ def build_summary(
         ],
         "total_run_time_seconds": time.monotonic() - start_time,
         "results": result_list,
+        "result_groups": [
+            grouped_results[key] for key in sorted(grouped_results, key=repr)
+        ],
     }
     if base_line:
         summary["base_line"] = base_line

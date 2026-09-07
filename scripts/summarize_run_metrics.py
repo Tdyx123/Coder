@@ -41,6 +41,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "--output",
         help="Optional output path. Defaults to printing to stdout.",
     )
+    parser.add_argument(
+        "--metrics-mode",
+        choices=("auto", "legacy", "v2"),
+        default="auto",
+        help="Use legacy columns, v2 columns, or select v2 for v2 result files.",
+    )
     args = parser.parse_args(argv)
     if bool(args.method) == bool(args.baseline):
         parser.error("exactly one of --method or --baseline is required")
@@ -277,9 +283,41 @@ def coderun_metric_values(
 def coderun_metric_columns(
     coderun_summary: Dict[str, Any],
     generate_code_denominator: Any,
+    *,
+    metrics_mode: str = "auto",
 ) -> List[str]:
     results = coderun_results(coderun_summary)
     total_results = total_results_count(coderun_summary, results)
+    is_v2 = any(
+        result.get("metrics_schema_version") == 2
+        and result.get("evaluation_version") == "fixed_goals_v2"
+        for result in results
+    )
+    if metrics_mode == "v2":
+        is_v2 = True
+    elif metrics_mode == "legacy":
+        is_v2 = False
+    if is_v2:
+        valid_results = [
+            result for result in results if result.get("evaluation_status") == "valid"
+        ]
+        valid_count = len(valid_results)
+        task_success_count = sum(
+            1 for result in valid_results if result.get("task_success") is True
+        )
+        gcr_values = numeric_values(result.get("gcr") for result in valid_results)
+        raw_action_values = numeric_values(
+            result.get("raw_action_sr", result.get("action_sr"))
+            for result in valid_results
+        )
+        return [
+            safe_ratio(total_results, generate_code_denominator),
+            format_number(total_results) if total_results is not None else "",
+            format_number(float(valid_count)),
+            safe_ratio(task_success_count, valid_count),
+            mean_and_population_stddev(gcr_values),
+            mean_and_population_stddev(raw_action_values),
+        ]
     result_count = len(results)
     gcr_values = coderun_metric_values(results, "gcr")
     action_sr_values = coderun_metric_values(results, "action_sr")
@@ -420,6 +458,7 @@ def build_planner_baseline_row(
     baseline_root: Path,
     coderun_summary: Dict[str, Any],
     summary_paths: Sequence[Path],
+    metrics_mode: str = "auto",
 ) -> List[str]:
     baseline_results = read_json_list(resolve_baseline_results_path(baseline, baseline_root))
     task_results, generate_code_denominator = baseline_planner_metrics(summary_paths)
@@ -431,25 +470,30 @@ def build_planner_baseline_row(
         "",
         "",
         mean_and_population_stddev(baseline_action_count_values(baseline_results)),
-        *coderun_metric_columns(coderun_summary, generate_code_denominator),
+        *coderun_metric_columns(
+            coderun_summary, generate_code_denominator, metrics_mode=metrics_mode
+        ),
     ]
 
 
 def build_lammap_row(
     baseline_root: Path,
     coderun_summary: Dict[str, Any],
+    metrics_mode: str = "auto",
 ) -> List[str]:
     return build_planner_baseline_row(
         "LaMMA-P",
         baseline_root,
         coderun_summary,
         [resolve_lammap_planner_summary(baseline_root)],
+        metrics_mode,
     )
 
 
 def build_smart_llm_row(
     baseline_root: Path,
     coderun_summary: Dict[str, Any],
+    metrics_mode: str = "auto",
 ) -> List[str]:
     baseline_results = read_json_list(resolve_baseline_results_path("SMART-LLM", baseline_root))
     generate_code_denominator = smart_llm_decomposed_plan_count(baseline_root)
@@ -461,31 +505,37 @@ def build_smart_llm_row(
         "",
         "",
         mean_and_population_stddev(baseline_action_count_values(baseline_results)),
-        *coderun_metric_columns(coderun_summary, generate_code_denominator),
+        *coderun_metric_columns(
+            coderun_summary, generate_code_denominator, metrics_mode=metrics_mode
+        ),
     ]
 
 
 def build_scale_plan_row(
     baseline_root: Path,
     coderun_summary: Dict[str, Any],
+    metrics_mode: str = "auto",
 ) -> List[str]:
     return build_planner_baseline_row(
         "Scale-Plan",
         baseline_root,
         coderun_summary,
         [resolve_scale_plan_planner_summary(baseline_root)],
+        metrics_mode,
     )
 
 
 def build_kglamp_row(
     baseline_root: Path,
     coderun_summary: Dict[str, Any],
+    metrics_mode: str = "auto",
 ) -> List[str]:
     return build_planner_baseline_row(
         "KGLAMP",
         baseline_root,
         coderun_summary,
         [resolve_kglamp_planner_summary(baseline_root)],
+        metrics_mode,
     )
 
 
@@ -493,6 +543,7 @@ def build_baseline_row(
     baseline: str,
     baseline_root_value: Optional[str],
     coderun_summary: Dict[str, Any],
+    metrics_mode: str = "auto",
 ) -> List[str]:
     baseline_root = (
         Path(baseline_root_value).expanduser()
@@ -502,13 +553,13 @@ def build_baseline_row(
     if not baseline_root.is_dir():
         raise FileNotFoundError(f"baseline root not found or not a directory: {baseline_root}")
     if baseline == "LaMMA-P":
-        return build_lammap_row(baseline_root, coderun_summary)
+        return build_lammap_row(baseline_root, coderun_summary, metrics_mode)
     if baseline == "SMART-LLM":
-        return build_smart_llm_row(baseline_root, coderun_summary)
+        return build_smart_llm_row(baseline_root, coderun_summary, metrics_mode)
     if baseline == "Scale-Plan":
-        return build_scale_plan_row(baseline_root, coderun_summary)
+        return build_scale_plan_row(baseline_root, coderun_summary, metrics_mode)
     if baseline == "KGLAMP":
-        return build_kglamp_row(baseline_root, coderun_summary)
+        return build_kglamp_row(baseline_root, coderun_summary, metrics_mode)
     raise RuntimeError(f"Unsupported baseline: {baseline}")
 
 
@@ -516,6 +567,7 @@ def build_row(
     method: str,
     parallel_summary: Dict[str, Any],
     coderun_summary: Dict[str, Any],
+    metrics_mode: str = "auto",
 ) -> List[str]:
     task_results = parallel_task_results(parallel_summary)
 
@@ -530,7 +582,9 @@ def build_row(
         safe_ratio(parallel_summary.get("all_pass_count"), plan_denominator),
         safe_ratio(parallel_summary.get("pass_one_count"), plan_denominator),
         mean_and_population_stddev(plan_length_for_task(result) for result in task_results),
-        *coderun_metric_columns(coderun_summary, plan_denominator),
+        *coderun_metric_columns(
+            coderun_summary, plan_denominator, metrics_mode=metrics_mode
+        ),
     ]
 
 
@@ -551,10 +605,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
     coderun_summary = read_json(resolve_coderun_result(args.coderun_result))
     if args.baseline:
-        row = build_baseline_row(args.baseline, args.parallel_run, coderun_summary)
+        row = build_baseline_row(
+            args.baseline,
+            args.parallel_run,
+            coderun_summary,
+            args.metrics_mode,
+        )
     else:
         parallel_summary = read_json(resolve_parallel_summary(args.parallel_run))
-        row = build_row(args.method, parallel_summary, coderun_summary)
+        row = build_row(
+            args.method,
+            parallel_summary,
+            coderun_summary,
+            args.metrics_mode,
+        )
     write_or_print(render_row(row), args.output)
     return 0
 

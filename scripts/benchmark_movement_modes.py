@@ -331,9 +331,20 @@ def _aggregate_mode(mode: str, results: Sequence[Mapping[str, Any]]) -> Dict[str
         )
 
     case_count = len(items)
-    gcr_values = [_number(item.get("gcr")) for item in items]
-    tc_values = [_number(item.get("tc")) for item in items]
-    sr_values = [_number(item.get("sr")) for item in items]
+    v2_items = [
+        item
+        for item in items
+        if item.get("metrics_schema_version") == 2
+        and item.get("evaluation_version") == "fixed_goals_v2"
+    ]
+    metric_items = (
+        [item for item in v2_items if item.get("evaluation_status") == "valid"]
+        if v2_items and len(v2_items) == len(items)
+        else items
+    )
+    gcr_values = [_number(item.get("gcr")) for item in metric_items]
+    tc_values = [_number(item.get("tc")) for item in metric_items]
+    sr_values = [_number(item.get("sr")) for item in metric_items]
     return {
         "mode": mode,
         "case_count": case_count,
@@ -353,9 +364,9 @@ def _aggregate_mode(mode: str, results: Sequence[Mapping[str, Any]]) -> Dict[str
         "cases_without_navigation_failure": successful_navigation_cases,
         "goto_navigation_teleports": navigation_teleports,
         "replans": replans,
-        "success_gcr": sum(gcr_values) / case_count if case_count else 0.0,
-        "mean_tc": sum(tc_values) / case_count if case_count else 0.0,
-        "mean_sr": sum(sr_values) / case_count if case_count else 0.0,
+        "success_gcr": sum(gcr_values) / len(gcr_values) if gcr_values else 0.0,
+        "mean_tc": sum(tc_values) / len(tc_values) if tc_values else 0.0,
+        "mean_sr": sum(sr_values) / len(sr_values) if sr_values else 0.0,
         "total_run_time_seconds": sum(
             _number(item.get("run_time_seconds")) for item in items
         ),
@@ -369,16 +380,61 @@ def _aggregate_mode(mode: str, results: Sequence[Mapping[str, Any]]) -> Dict[str
     }
 
 
+def _result_groups(results: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]]:
+    grouped: Dict[Tuple[Any, Any, Any, Any], Dict[str, Any]] = {}
+    for result in results:
+        key = (
+            result.get("metrics_schema_version", 1),
+            result.get("evaluation_version", "legacy_v1"),
+            result.get("execution_policy", "legacy"),
+            result.get("mode", result.get("movement_mode", "step")),
+        )
+        group = grouped.setdefault(
+            key,
+            {
+                "metrics_schema_version": key[0],
+                "evaluation_version": key[1],
+                "execution_policy": key[2],
+                "movement_mode": key[3],
+                "total_task_count": 0,
+                "valid_evaluation_count": 0,
+                "task_success_count": 0,
+            },
+        )
+        group["total_task_count"] += 1
+        if result.get("evaluation_status") == "valid":
+            group["valid_evaluation_count"] += 1
+            if result.get("task_success") is True:
+                group["task_success_count"] += 1
+    return [grouped[key] for key in sorted(grouped, key=repr)]
+
+
 def build_benchmark_report(
     manifest: Mapping[str, Any],
     results: Sequence[Mapping[str, Any]],
 ) -> Dict[str, Any]:
     copied_results = [dict(item) for item in results]
+    groups = _result_groups(copied_results)
+    for group in groups:
+        members = [
+            result
+            for result in copied_results
+            if result.get("metrics_schema_version", 1)
+            == group["metrics_schema_version"]
+            and result.get("evaluation_version", "legacy_v1")
+            == group["evaluation_version"]
+            and result.get("execution_policy", "legacy")
+            == group["execution_policy"]
+            and result.get("mode", result.get("movement_mode", "step"))
+            == group["movement_mode"]
+        ]
+        group["aggregate"] = _aggregate_mode(group["movement_mode"], members)
     return {
         "version": 1,
         "manifest_version": manifest.get("version"),
         "case_count": len(manifest.get("cases") or ()),
         "results": copied_results,
+        "result_groups": groups,
         "aggregates": {
             mode: _aggregate_mode(mode, copied_results)
             for mode in MOVEMENT_MODES

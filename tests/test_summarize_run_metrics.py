@@ -42,6 +42,34 @@ def assert_row(test_case, output, expected_row):
 
 
 class SummarizeRunMetricsTest(unittest.TestCase):
+    def test_v2_columns_report_total_and_valid_evaluation_counts_without_conflating_gcr_and_sr(self):
+        columns = summarize_run_metrics.coderun_metric_columns(
+            {
+                "total_results": 2,
+                "results": [
+                    {
+                        "metrics_schema_version": 2,
+                        "evaluation_version": "fixed_goals_v2",
+                        "evaluation_status": "valid",
+                        "task_success": False,
+                        "gcr": 1.0,
+                        "raw_action_sr": 0.0,
+                    },
+                    {
+                        "metrics_schema_version": 2,
+                        "evaluation_version": "fixed_goals_v2",
+                        "evaluation_status": "incomplete",
+                        "task_success": None,
+                        "gcr": None,
+                        "raw_action_sr": None,
+                    },
+                ],
+            },
+            generate_code_denominator=2,
+        )
+
+        self.assertEqual(columns, ["1", "2", "1", "0", "1 +- 0", "0 +- 0"])
+
     def test_main_summarizes_directory_inputs_as_comma_separated_row(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)

@@ -584,6 +584,26 @@ def load_only_summary(output_dir: Path):
 
 
 class ParallelRunnerCliTest(unittest.TestCase):
+    def test_missing_metrics_is_an_invalid_failed_result_without_action_success_rate(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            executable = root / "plan.py"
+            metrics = root / "missing.json"
+            executable.write_text("raise SystemExit(0)\n", encoding="utf-8")
+
+            result = run_generated_executable(
+                executable,
+                metrics_output=metrics,
+                timeout_seconds=5,
+                run_id="run-a",
+                task_key="task-a",
+                attempt=1,
+            )
+
+        self.assertEqual(result["process_status"], "failed")
+        self.assertEqual(result["evaluation_status"], "incomplete")
+        self.assertIsNone(result["action_sr"])
+
     def test_default_timeout_seconds_is_30(self):
         self.assertEqual(DEFAULT_TIMEOUT_SECONDS, 30.0)
 
@@ -664,6 +684,33 @@ class ParallelRunnerCliTest(unittest.TestCase):
         self.assertEqual(summary["movement_mode"], "step")
         self.assertEqual(summary["effective_timeout_seconds"], 120.0)
         self.assertEqual(summary["timeout_retry_policy"]["timeout_seconds"], 120.0)
+
+    def test_summary_groups_v2_results_and_keeps_goal_and_task_success_distinct(self):
+        summary = build_summary(
+            [
+                {
+                    "metrics_schema_version": 2,
+                    "evaluation_version": "fixed_goals_v2",
+                    "execution_policy": "legacy",
+                    "movement_mode": "step",
+                    "process_status": "completed",
+                    "execution_status": "completed",
+                    "evaluation_status": "valid",
+                    "task_success": False,
+                    "gcr": 1.0,
+                    "sr": 0,
+                    "returncode": 0,
+                }
+            ],
+            time.monotonic(),
+        )
+
+        group = summary["result_groups"][0]
+        self.assertEqual(group["total_task_count"], 1)
+        self.assertEqual(group["valid_evaluation_count"], 1)
+        self.assertEqual(group["task_success_count"], 0)
+        self.assertEqual(summary["results"][0]["gcr"], 1.0)
+        self.assertEqual(summary["results"][0]["sr"], 0)
 
     def test_summary_uses_mode_specific_or_explicit_timeout(self):
         teleport_summary = build_summary(
@@ -1720,7 +1767,7 @@ class ParallelRunnerCliTest(unittest.TestCase):
             self.assertEqual(summary["timeout_count"], 1)
             self.assertTrue(any(result["timed_out"] for result in summary["results"]))
             timeout_result = next(result for result in summary["results"] if result["timed_out"])
-            self.assertEqual(timeout_result["action_sr"], 1.0)
+            self.assertIsNone(timeout_result["action_sr"])
             self.assertNotIn("exec_rate", timeout_result)
             self.assertEqual(timeout_result["attempt_count"], 3)
             self.assertEqual(timeout_result["timed_out_attempt_count"], 3)
@@ -2009,7 +2056,7 @@ class ParallelRunnerCliTest(unittest.TestCase):
                 all("exec_rate" not in result for result in summary["results"])
             )
 
-    def test_future_exception_result_has_action_sr(self):
+    def test_future_exception_result_does_not_fabricate_action_success_rate(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             script = root / "failed" / "plan_to_code" / "executable_plan.py"
@@ -2035,11 +2082,28 @@ class ParallelRunnerCliTest(unittest.TestCase):
             result = summary["results"][0]
             self.assertEqual(result["executed_actions"], 0)
             self.assertEqual(result["failed_actions"], 0)
-            self.assertEqual(result["action_sr"], 1.0)
+            self.assertIsNone(result["action_sr"])
             self.assertNotIn("exec_rate", result)
 
 
 class TolerantExecutorTest(unittest.TestCase):
+    def test_normal_task_runner_pre_registers_stage_index_action_keys(self):
+        runtime = FakeRuntime()
+        plan = TaskPlan(
+            "task",
+            [StagePlan("named-stage", {"robot1": [Action("OpenObject", {})]})],
+        )
+
+        with patch(
+            "executor_system.action_plan.AI2ThorAdapter.execute",
+            return_value=FakeEvent(),
+        ):
+            TaskRunner(runtime).execute(plan)
+
+        self.assertEqual(runtime.action_metrics["action_counts"]["planned"], 1)
+        self.assertEqual(runtime.action_metrics["action_counts"]["succeeded"], 1)
+        self.assertEqual(runtime.action_metrics["raw_action_sr"], 1.0)
+
     def test_deferred_navigation_is_not_counted_or_recorded_as_failure(self):
         runtime = FakeRuntime()
         calls = {"count": 0}
@@ -2222,6 +2286,11 @@ class TolerantExecutorTest(unittest.TestCase):
         self.assertEqual(result["action_sr"], 1.0)
         self.assertEqual(len(result["robot_failures"]), 1)
         self.assertTrue(result["robot_failures"][0]["ignored_for_failure_ratio"])
+        self.assertEqual(result["action_counts"]["planned"], 2)
+        self.assertEqual(result["action_counts"]["failed"], 1)
+        self.assertEqual(result["action_counts"]["attempts"], 3)
+        self.assertEqual(result["raw_action_sr"], 0.5)
+        self.assertEqual(result["ignored_failure_count"], 1)
 
 
 class OrdinaryExecutorFailureContinuationTest(unittest.TestCase):

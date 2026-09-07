@@ -1062,6 +1062,7 @@ class StageRunner:
         *,
         max_ticks_per_stage: int = 10000,
         logger: Optional[ExecutionLogger] = None,
+        stage_index: int = 0,
     ) -> None:
         self.runtime = runtime_obj
         self.max_ticks_per_stage = max_ticks_per_stage
@@ -1072,6 +1073,7 @@ class StageRunner:
         self.failure_handler = FailureHandler()
         self.adapter = AI2ThorAdapter(runtime_obj)
         self.logger = logger or ExecutionLogger()
+        self.stage_index = int(stage_index)
 
     def execute_stage(self, stage: StagePlan) -> WorldState:
         self.logger.stage_started(stage)
@@ -1096,6 +1098,7 @@ class StageRunner:
                 robot_id,
                 actions,
                 stage_id=stage.stage_id,
+                stage_index=self.stage_index,
                 logger=self.logger,
                 phase_coordinator=phase_coordinator,
             )
@@ -1184,18 +1187,31 @@ class TaskRunner:
     ) -> WorldState:
         plan = self.loader.load(raw_plan)
         self.validator.validate(plan)
+        from .run_results import ActionLedger
+
+        planned_keys = [
+            f"{stage_index}:{robot_id}:{cursor}"
+            for stage_index, stage in enumerate(plan.stages)
+            for robot_id, actions in stage.robot_action_queues.items()
+            for cursor, _action in enumerate(actions)
+        ]
+        self.runtime.action_ledger = ActionLedger(planned_keys)
         world_state = WorldState(self.runtime)
-        for stage in plan.stages:
-            executor = StageRunner(
-                self.runtime,
-                logger=self.logger,
-            )
-            world_state = executor.execute_stage(stage)
-        if plan.global_success_condition is not None:
-            world_state.refresh([])
-            if not plan.global_success_condition(world_state):
-                raise RuntimeError(f"Global success condition failed for {plan.task_id}.")
-        return world_state
+        try:
+            for stage_index, stage in enumerate(plan.stages):
+                executor = StageRunner(
+                    self.runtime,
+                    logger=self.logger,
+                    stage_index=stage_index,
+                )
+                world_state = executor.execute_stage(stage)
+            if plan.global_success_condition is not None:
+                world_state.refresh([])
+                if not plan.global_success_condition(world_state):
+                    raise RuntimeError(f"Global success condition failed for {plan.task_id}.")
+            return world_state
+        finally:
+            self.runtime.action_metrics = self.runtime.action_ledger.freeze()
 
 
 class StageController(TaskRunner):

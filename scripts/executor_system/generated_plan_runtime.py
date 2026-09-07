@@ -5,9 +5,11 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import os
 import re
 import time
 import types
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
@@ -159,6 +161,30 @@ def build_runner_result(status: str, start_time: float) -> Dict[str, Any]:
         "failed_actions": 0,
         "failure_action_ratio": 0.0,
         "robot_failures": [],
+        "metrics_schema_version": 2,
+        "evaluation_version": "fixed_goals_v2",
+        "execution_policy": "legacy",
+        "process_status": "failed",
+        "execution_status": "failed",
+        "evaluation_status": "incomplete",
+        "task_success": None,
+    }
+
+
+def runner_identity(script_file: str, task_index: int) -> Dict[str, Any]:
+    """Use the parent identity when present, otherwise identify standalone runs."""
+
+    raw_attempt = os.environ.get("LAMMAP_ATTEMPT", "1")
+    try:
+        attempt = int(raw_attempt)
+    except ValueError as exc:
+        raise RuntimeError("LAMMAP_ATTEMPT must be an integer") from exc
+    return {
+        "run_id": os.environ.get("LAMMAP_RUN_ID", uuid.uuid4().hex),
+        "task_key": os.environ.get(
+            "LAMMAP_TASK_KEY", f"{Path(script_file).resolve()}:{task_index}"
+        ),
+        "attempt": attempt,
     }
 
 
@@ -251,6 +277,7 @@ def run_runner_mode(
     start_time = time.monotonic()
     metrics_path = runner_metrics_path(args.metrics_output, script_file)
     result = build_runner_result("failed", start_time)
+    result.update(runner_identity(script_file, task_index))
     return_code = 1
     runtime = None
 
@@ -302,7 +329,10 @@ def run_runner_mode(
         metrics = runtime.evaluate(ground_truth)
         no_trans_gt = int(task_record.get("trans", 0) or 0)
         max_trans = int(task_record.get("min_trans", task_record.get("max_trans", 0)) or 0)
-        evaluation_valid = metrics["evaluation_status"] == "valid"
+        evaluation_valid = (
+            metrics["evaluation_status"] == "valid"
+            and not bool(execution_report.get("timed_out"))
+        )
         ru = (
             transition_metric(bundle.no_trans, no_trans_gt, max_trans)
             if evaluation_valid
@@ -311,17 +341,29 @@ def run_runner_mode(
         result.update(
             {
                 "status": "timeout" if execution_report.get("timed_out") else "success",
-                "gcr": metrics["gcr"],
-                "tc": metrics["tc"],
+                "process_status": "timeout" if execution_report.get("timed_out") else "completed",
+                "execution_status": (
+                    "timeout"
+                    if execution_report.get("timed_out")
+                    else (
+                        "partial"
+                        if execution_report.get("action_counts", {}).get("failed", 0)
+                        else "completed"
+                    )
+                ),
+                "gcr": metrics["gcr"] if evaluation_valid else None,
+                "tc": metrics["tc"] if evaluation_valid else None,
                 "sr": (
                     1 if metrics["tc"] == 1.0 and ru == 1.0 else 0
                 ) if evaluation_valid else None,
                 "ru": ru,
                 "exec_rate": metrics["exec_rate"],
                 "evaluation_version": metrics["evaluation_version"],
-                "evaluation_status": metrics["evaluation_status"],
+                "evaluation_status": "valid" if evaluation_valid else "incomplete",
                 "original_goal_count": metrics["original_goal_count"],
-                "satisfied_goal_count": metrics["satisfied_goal_count"],
+                "satisfied_goal_count": (
+                    metrics["satisfied_goal_count"] if evaluation_valid else None
+                ),
                 "goal_results": metrics["goal_results"],
                 "task_success": (
                     bool(metrics["tc"] == 1.0 and ru == 1.0)
@@ -335,6 +377,10 @@ def run_runner_mode(
         result.update(
             {
                 "status": "failed",
+                "process_status": "failed",
+                "execution_status": "failed",
+                "evaluation_status": "incomplete",
+                "task_success": None,
                 "error": str(exc),
             }
         )

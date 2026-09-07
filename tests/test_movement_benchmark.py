@@ -215,6 +215,27 @@ class MovementBenchmarkThresholdTest(unittest.TestCase):
 
         self.assertEqual(acceptance_failures(report), [])
 
+    def test_report_keeps_v2_result_groups_separate_by_metric_contract(self):
+        manifest, results = self.baseline_inputs()
+        results[0].update(
+            metrics_schema_version=2,
+            evaluation_version="fixed_goals_v2",
+            execution_policy="legacy",
+            evaluation_status="valid",
+            task_success=False,
+        )
+
+        report = build_benchmark_report(manifest, results)
+
+        self.assertTrue(
+            any(
+                group["metrics_schema_version"] == 2
+                and group["valid_evaluation_count"] == 1
+                and group["task_success_count"] == 0
+                for group in report["result_groups"]
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -432,6 +432,7 @@ class Executor:
         actions: Sequence[Action] = (),
         *,
         stage_id: str = "stage",
+        stage_index: int = 0,
         logger: Optional[ExecutionLogger] = None,
         phase_coordinator: Optional[PhaseCoordinator] = None,
     ) -> None:
@@ -452,6 +453,7 @@ class Executor:
         self.active_agent_ids = set()
         self.agent_phase_done = set()
         self.phase_coordinator = phase_coordinator
+        self.stage_index = int(stage_index)
 
     def start(self) -> None:
         """Compatibility hook for the removed central worker."""
@@ -491,6 +493,12 @@ class Executor:
             if action is None:
                 break
 
+            action_cursor = self.state.action_cursor
+            action_key = f"{self.stage_index}:{self.robot_id}:{action_cursor}"
+            action_ledger = getattr(self.runtime, "action_ledger", None)
+            if action_ledger is not None:
+                action_ledger.record_started(action_key)
+                action_ledger.record_attempt()
             self.world_state.tick = tick
             self.world_state.refresh([self.state])
             action_wave = None
@@ -524,6 +532,8 @@ class Executor:
                 else ROBOT_ACTION_SUCCESS
             )
             self.logger.result(tick, result)
+            if action_ledger is not None:
+                action_ledger.record_terminal(action_key, "succeeded")
             tick += 1
 
         self.state.status = ROBOT_FINISHED_STAGE
@@ -649,6 +659,12 @@ class Executor:
             else ROBOT_ACTION_FAILED
         )
         self.logger.result(tick, result)
+        action_ledger = getattr(self.runtime, "action_ledger", None)
+        if action_ledger is not None:
+            action_ledger.record_terminal(
+                f"{self.stage_index}:{self.robot_id}:{self.state.action_cursor - 1}",
+                "failed",
+            )
         return True
 
     def submit(
