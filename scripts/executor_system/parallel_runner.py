@@ -51,6 +51,8 @@ from executor_system.movement import MovementConfig, NavigationDeferred  # noqa:
 from executor_system.runtime import is_pickup_object_clip_error  # noqa: E402
 from executor_system.run_results import (  # noqa: E402
     ActionLedger,
+    RunResultStore,
+    ResultStorageError,
     atomic_write_json,
     normalize_output,
     task_key_for_executable,
@@ -758,23 +760,40 @@ def discover_executable_plans(
 
 
 def summary_output_path(output_dir: Path, base_line: Optional[str] = None) -> Path:
+    """Reserve a daily sequence atomically before returning a valid summary."""
+    output_dir.mkdir(parents=True, exist_ok=True)
     date_suffix = time.strftime("%m%d")
     stem = f"{base_line}_{date_suffix}" if base_line else date_suffix
-    max_sequence = 0
-    for path in output_dir.glob(f"{stem}_*.json"):
-        sequence_text = path.stem[len(stem) + 1 :]
-        if sequence_text.isdigit():
-            max_sequence = max(max_sequence, int(sequence_text))
-    return output_dir / f"{stem}_{max_sequence + 1:02d}.json"
+    sequence = 1
+    while True:
+        path = output_dir / f"{stem}_{sequence:02d}.json"
+        try:
+            descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        except FileExistsError:
+            sequence += 1
+            continue
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                json.dump({"run_status": "in_progress", "results": [], "total_results": 0},
+                          handle, allow_nan=False)
+                handle.write("\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+        except BaseException:
+            path.unlink(missing_ok=True)
+            raise
+        return path
 
 
-def prune_stdout_for_result(
-    result: Dict[str, Any],
-    *,
-    save_all_stdout: bool,
-) -> Dict[str, Any]:
-    if not save_all_stdout and not result.get("robot_failures"):
+def prune_stdout_for_result(result: Dict[str, Any], *, save_all_stdout: bool) -> Dict[str, Any]:
+    successful = (result.get("status") == "success" and not result.get("robot_failures")
+                  and result.get("execution_status", "completed") == "completed"
+                  and result.get("task_success") is not False)
+    if not save_all_stdout and successful:
         result.pop("stdout", None)
+        path = result.pop("stdout_path", None)
+        if path is not None:
+            Path(path).unlink(missing_ok=True)
     return result
 
 
@@ -897,7 +916,7 @@ def compact_attempt_result(result: Dict[str, Any], attempt: int) -> Dict[str, An
         "run_time_seconds": result.get("run_time_seconds", 0.0),
         "executed_actions": result.get("executed_actions", 0),
         "failed_actions": result.get("failed_actions", 0),
-        "action_sr": result.get("action_sr", 1.0),
+        "action_sr": result.get("action_sr"),
         "failure_action_ratio": result.get("failure_action_ratio", 0.0),
     }
 
@@ -964,8 +983,10 @@ def run_generated_executable(
         timeout_seconds,
         finalization_grace_seconds,
     )
-    stdout_path = metrics_output.with_suffix(".stdout.log")
-    stderr_path = metrics_output.with_suffix(".stderr.log")
+    stdout_path = (metrics_output.with_name("stdout.log") if metrics_output.name == "child_metrics.json"
+                   else metrics_output.with_suffix(".stdout.log"))
+    stderr_path = (metrics_output.with_name("stderr.log") if metrics_output.name == "child_metrics.json"
+                   else metrics_output.with_suffix(".stderr.log"))
     try:
         outcome = run_owned_process(
             command,
@@ -1015,6 +1036,10 @@ def run_generated_executable(
             ),
             "run_time_seconds": outcome.wall_time_seconds,
             "gcr": None,
+            "tc": None,
+            "sr": None,
+            "ru": None,
+            "satisfied_goal_count": None,
             "executed_actions": 0,
             "failed_actions": 0,
             "action_sr": None,
@@ -1101,6 +1126,26 @@ def run_generated_executable(
     return result
 
 
+def _run_and_record(executable_path: Path, *, result_store: Optional[RunResultStore], **kwargs) -> Dict[str, Any]:
+    """Persist inside the worker, independently of as_completed/parent interrupts."""
+    try:
+        result = run_generated_executable(executable_path, **kwargs)
+    except Exception as exc:
+        result = failed_result_for_exception(executable_path, exc, kwargs["movement_mode"])
+        result.update(process_status="failed", execution_status="failed", evaluation_status="incomplete",
+                      task_success=None, tc=None, sr=None, ru=None)
+    identity = dict(run_id=kwargs["run_id"], task_key=kwargs["task_key"], attempt=kwargs["attempt"])
+    # This wrapper also labels failures raised before a child was started.
+    for key, value in identity.items():
+        result.setdefault(key, value)
+    if result_store is not None:
+        try:
+            result_store.record_attempt(identity["task_key"], identity["attempt"], result)
+        except Exception as exc:
+            raise ResultStorageError(f"could not persist attempt for {executable_path}: {exc}") from exc
+    return result
+
+
 def run_executable_round(
     *,
     executor: ThreadPoolExecutor,
@@ -1117,15 +1162,19 @@ def run_executable_round(
     process_scope: OwnedProcessScope,
     submitted_futures: Optional[List[Any]] = None,
     completed_results: Optional[Dict[Path, Dict[str, Any]]] = None,
+    result_store: Optional[RunResultStore] = None,
 ) -> Dict[Path, Dict[str, Any]]:
     future_to_path = {}
     for index, executable_path in enumerate(executable_paths, start=1):
-        metrics_output = temp_metrics_dir / (
-            f"metrics_round_{round_index:02d}_{index:04d}.json"
-        )
+        task_key = task_key_for_executable(executable_path)
+        if result_store is not None:
+            metrics_output = result_store.start_attempt(task_key, round_index + 1) / "child_metrics.json"
+        else:
+            metrics_output = temp_metrics_dir / f"metrics_round_{round_index:02d}_{index:04d}.json"
         future = executor.submit(
-            run_generated_executable,
+            _run_and_record,
             executable_path,
+            result_store=result_store,
             metrics_output=metrics_output,
             timeout_seconds=timeout_seconds,
             movement_mode=movement_mode,
@@ -1148,6 +1197,8 @@ def run_executable_round(
             executable_path = future_to_path[future]
             try:
                 result = future.result()
+            except ResultStorageError:
+                raise
             except Exception as exc:
                 result = failed_result_for_exception(
                     executable_path,
@@ -1207,6 +1258,7 @@ def run_executables_with_retries(
     termination_grace_seconds: float = DEFAULT_TERMINATION_GRACE_SECONDS,
     completed_results: Optional[Dict[Path, Dict[str, Any]]] = None,
     process_scope: Optional[OwnedProcessScope] = None,
+    result_store: Optional[RunResultStore] = None,
 ) -> tuple[List[Dict[str, Any]], List[str], List[Dict[str, Any]]]:
     resolved_run_id = str(run_id or uuid.uuid4().hex)
     attempts_by_path: Dict[Path, List[Dict[str, Any]]] = {
@@ -1238,6 +1290,7 @@ def run_executables_with_retries(
                 completed_results=completed_results,
                 process_scope=scope,
                 submitted_futures=submitted_futures,
+                result_store=result_store,
             )
 
             next_pending_paths: List[Path] = []
@@ -1268,6 +1321,13 @@ def run_executables_with_retries(
             )
         )
         executor.shutdown(wait=True)
+        # Storage failures remain fatal even when iteration was interrupted
+        # before the failed future could be consumed.
+        for future in submitted_futures:
+            if not future.cancelled():
+                failure = future.exception()
+                if isinstance(failure, ResultStorageError):
+                    raise failure
 
     results: List[Dict[str, Any]] = []
     timeout_retry_tasks: List[str] = []
@@ -1446,11 +1506,27 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="Keep stdout in every result instead of only results with robot_failures.",
     )
+    parser.add_argument("--rebuild-summary", metavar="RUN_DIR",
+                        help="Rebuild a summary from completed durable attempts without running tasks.")
     return parser.parse_args(argv)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_arguments(argv)
+    if args.rebuild_summary:
+        run_dir = Path(args.rebuild_summary).expanduser().resolve()
+        if not run_dir.is_dir() or run_dir.parent.name != "runs":
+            print("ERROR: --rebuild-summary requires an existing output_dir/runs/RUN_ID directory")
+            return 1
+        try:
+            store = RunResultStore(run_dir.parent.parent, run_dir.name)
+            store.summary_path = summary_output_path(store.output_dir)
+            summary = store.write_summary("rebuilt")
+            print(f"Summary rebuilt from {run_dir}: {store.summary_path}")
+            return 0
+        except (OSError, ValueError) as exc:
+            print(f"ERROR: could not rebuild summary: {exc}")
+            return 1
     try:
         movement_mode = MovementConfig.resolve(args.movement_mode).mode.value
     except RuntimeError as exc:
@@ -1501,70 +1577,51 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 1
 
     output_dir = Path(args.output_dir).expanduser().resolve()
-    output_dir.mkdir(parents=True, exist_ok=True)
     start_time = time.monotonic()
-    results: List[Dict[str, Any]] = []
-    timeout_retry_tasks: List[str] = []
-    process_cleanup_events: List[Dict[str, Any]] = []
+    run_id = uuid.uuid4().hex
+    store = RunResultStore(output_dir, run_id)
+    discovery_root = None
+    if args.base_line:
+        discovery_root = (Path(args.root).expanduser() if args.root
+                          else default_baseline_root(args.base_line)).resolve()
+    store.summary_metadata = build_summary([], start_time, base_line=args.base_line,
+        discovery_root=discovery_root, timeout_seconds=timeout_seconds, movement_mode=movement_mode)
     completed_results: Dict[Path, Dict[str, Any]] = {}
-    temp_metrics_dir = output_dir / "process_logs"
-    temp_metrics_dir.mkdir(parents=True, exist_ok=True)
     try:
+        store.summary_path = summary_output_path(output_dir, args.base_line)
+        store.write_summary("in_progress")
         results, timeout_retry_tasks, process_cleanup_events = run_executables_with_retries(
             executable_paths,
             max_workers=args.max_workers,
-            temp_metrics_dir=temp_metrics_dir,
+            temp_metrics_dir=store.run_dir,
             timeout_seconds=timeout_seconds,
             movement_mode=movement_mode,
             save_all_stdout=args.save_all_stdout,
+            run_id=run_id,
+            result_store=store,
             startup_grace_seconds=args.startup_grace_seconds,
             finalization_grace_seconds=args.finalization_grace_seconds,
             termination_grace_seconds=args.termination_grace_seconds,
             completed_results=completed_results,
         )
+        store.summary_metadata = build_summary(results, start_time, base_line=args.base_line,
+            discovery_root=discovery_root, timeout_seconds=timeout_seconds, movement_mode=movement_mode,
+            timeout_retry_tasks=timeout_retry_tasks, process_cleanup_events=process_cleanup_events)
+        summary = store.write_summary("completed")
     except (KeyboardInterrupt, SystemExit):
-        # Keep finished children visible to the caller. Task 5 adds durable
-        # attempt storage; this summary is the minimal interruption artifact.
-        results = [
-            completed_results[path]
-            for path in executable_paths
-            if path in completed_results
-        ]
-        summary = build_summary(
-            results,
-            start_time,
-            base_line=args.base_line,
-            timeout_seconds=timeout_seconds,
-            movement_mode=movement_mode,
-            gpu_cleanup_events=[],
-        )
-        summary_path = summary_output_path(output_dir, args.base_line)
-        write_result_json(summary_path, summary)
+        try:
+            store.write_summary("interrupted")
+        except (OSError, ValueError) as exc:
+            print(f"ERROR: could not save interrupted summary: {exc}")
         raise
-
-    results.sort(key=lambda result: str(result.get("executable_path", "")))
-    discovery_root = None
-    if args.base_line:
-        discovery_root = (
-            Path(args.root).expanduser()
-            if args.root
-            else default_baseline_root(args.base_line)
-        ).resolve()
-    summary = build_summary(
-        results,
-        start_time,
-        base_line=args.base_line,
-        discovery_root=discovery_root,
-        timeout_seconds=timeout_seconds,
-        movement_mode=movement_mode,
-        timeout_retry_tasks=timeout_retry_tasks,
-        gpu_cleanup_events=[],
-        process_cleanup_events=process_cleanup_events,
-    )
-    summary_path = summary_output_path(output_dir, args.base_line)
-    write_result_json(summary_path, summary)
-    print(f"Summary saved to: {summary_path}")
-
+    except (OSError, ValueError, ResultStorageError) as exc:
+        print(f"ERROR: result storage failed: {exc}")
+        try:
+            store.write_summary("failed", storage_error=str(exc))
+        except (OSError, ValueError) as summary_exc:
+            print(f"ERROR: could not save failure summary: {summary_exc}")
+        return 1
+    print(f"Summary saved to: {store.summary_path}")
     return 0 if summary["failure_count"] == 0 and summary["timeout_count"] == 0 else 1
 
 

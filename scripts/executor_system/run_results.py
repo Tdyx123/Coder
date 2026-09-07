@@ -8,6 +8,7 @@ run identity before a result becomes part of an experiment summary.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import tempfile
@@ -115,14 +116,24 @@ def normalize_output(value: Union[str, bytes, None]) -> str:
 
 
 def atomic_write_json(path: Path, value: Mapping[str, Any]) -> None:
+    """Replace only after a complete, standard JSON file has reached disk."""
+    path = Path(path)
+    payload = json.dumps(value, indent=2, ensure_ascii=False, sort_keys=True,
+                         allow_nan=False) + "\n"
     path.parent.mkdir(parents=True, exist_ok=True)
-    payload = json.dumps(value, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
-    with tempfile.NamedTemporaryFile(
-        mode="w", encoding="utf-8", dir=str(path.parent), delete=False
-    ) as handle:
-        handle.write(payload)
-        temporary_path = Path(handle.name)
-    temporary_path.replace(path)
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=str(path.parent), delete=False
+        ) as handle:
+            temporary_path = Path(handle.name)
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, path)
+    finally:
+        if temporary_path is not None and temporary_path.exists():
+            temporary_path.unlink()
 
 
 def _expected_identity() -> Dict[str, Any]:
@@ -159,7 +170,15 @@ def validate_result(
         if expected_identity is not None
         else _expected_identity()
     )
-    is_v2 = result.get("metrics_schema_version") == 2
+    # Includes nested metrics; JSON's default permissive NaN parser is unsafe.
+    try:
+        json.dumps(result, allow_nan=False)
+    except (ValueError, TypeError) as exc:
+        raise ValueError("runner metrics must contain finite JSON values") from exc
+    version = result.get("metrics_schema_version", 1)
+    if type(version) is not int or version not in (1, 2):
+        raise ValueError("unsupported metrics_schema_version")
+    is_v2 = version == 2
     if is_v2:
         if result.get("evaluation_version") != "fixed_goals_v2":
             raise ValueError("v2 result must use evaluation_version=fixed_goals_v2")
@@ -168,10 +187,17 @@ def validate_result(
         for key, expected in expected_identity.items():
             if result.get(key) != expected:
                 raise ValueError(f"v2 result {key} does not match parent identity")
+        if returncode == 0:
+            _validate_completed_v2(result)
     else:
-        result.setdefault("evaluation_version", "legacy_v1")
+        result["evaluation_version"] = "legacy_v1"
+        if returncode == 0 and result.get("task_success") is not None:
+            if (result.get("evaluation_status") != "valid" or type(result.get("task_success")) is not bool
+                    or type(result.get("sr")) not in (int, float) or result["sr"] not in (0, 1)
+                    or result["task_success"] != bool(result["sr"])):
+                raise ValueError("legacy task_success is inconsistent with evaluation/sr")
         for key, expected in expected_identity.items():
-            result.setdefault(key, expected)
+            result[key] = expected
 
     if returncode == 0:
         result["process_status"] = "completed"
@@ -186,6 +212,7 @@ def validate_result(
         result["tc"] = None
         result["sr"] = None
         result["ru"] = None
+        result["satisfied_goal_count"] = None
         result["status"] = "timeout"
         result["timed_out"] = True
     else:
@@ -197,82 +224,218 @@ def validate_result(
         result["tc"] = None
         result["sr"] = None
         result["ru"] = None
+        result["satisfied_goal_count"] = None
         result["status"] = "failed"
         result["timed_out"] = False
     return result
 
 
+def _validate_completed_v2(result: Mapping[str, Any]) -> None:
+    if (not isinstance(result.get("run_id"), str) or not result["run_id"]
+            or not isinstance(result.get("task_key"), str)
+            or not _TASK_KEY_PATTERN.fullmatch(result["task_key"])
+            or type(result.get("attempt")) is not int or result["attempt"] < 1):
+        raise ValueError("invalid v2 run identity")
+    if result.get("execution_status") not in {"completed", "partial", "failed", "timeout", "cancelled"}:
+        raise ValueError("invalid v2 execution_status")
+    counts = result.get("action_counts")
+    names = ("planned", "started", "succeeded", "failed", "skipped", "cancelled", "unexecuted", "attempts")
+    if not isinstance(counts, Mapping) or any(type(counts.get(name)) is not int or counts[name] < 0 for name in names):
+        raise ValueError("v2 requires nonnegative integer action_counts")
+    terminal = sum(counts[name] for name in ("succeeded", "failed", "skipped", "cancelled"))
+    if (terminal + counts["unexecuted"] != counts["planned"]
+            or not terminal <= counts["started"] <= counts["planned"]
+            or counts["attempts"] < counts["started"]):
+        raise ValueError("inconsistent logical action counts")
+    denominator = counts["succeeded"] + counts["failed"]
+    raw = result.get("raw_action_sr")
+    if denominator:
+        if type(raw) not in (int, float) or not math.isclose(raw, counts["succeeded"] / denominator):
+            raise ValueError("raw_action_sr is inconsistent with action counts")
+    elif raw is not None:
+        raise ValueError("raw_action_sr must be null without terminal actions")
+    ignored = result.get("ignored_failure_count")
+    if type(ignored) is not int or not 0 <= ignored <= counts["failed"]:
+        raise ValueError("invalid ignored_failure_count")
+    if ((result["execution_status"] == "completed" and counts["failed"])
+            or (result["execution_status"] == "partial" and not counts["failed"])):
+        raise ValueError("execution_status is inconsistent with action failures")
+    evaluation_status = result.get("evaluation_status")
+    if evaluation_status not in {"valid", "invalid", "incomplete"}:
+        raise ValueError("invalid v2 evaluation_status")
+    if evaluation_status == "valid":
+        if result.get("execution_status") not in {"completed", "partial"}:
+            raise ValueError("valid evaluation requires completed execution")
+        for name in ("gcr", "tc", "sr", "ru"):
+            value = result.get(name)
+            if type(value) not in (int, float) or not math.isfinite(value):
+                raise ValueError(f"valid evaluation requires finite {name}")
+        if result["sr"] not in (0, 1) or result["tc"] not in (0, 1):
+            raise ValueError("sr and tc must be binary")
+        if not 0 <= result["gcr"] <= 1:
+            raise ValueError("gcr must be between zero and one")
+        if type(result.get("task_success")) is not bool or result["task_success"] != bool(result["sr"]):
+            raise ValueError("task_success must equal bool(sr)")
+        original, satisfied = result.get("original_goal_count"), result.get("satisfied_goal_count")
+        if type(original) is not int or type(satisfied) is not int or not 0 <= satisfied <= original:
+            raise ValueError("invalid fixed goal counts")
+        expected_gcr = satisfied / original if original else 1.0
+        if not math.isclose(result["gcr"], expected_gcr, rel_tol=1e-9, abs_tol=1e-12):
+            raise ValueError("gcr is inconsistent with fixed goal counts")
+        if result["tc"] != int(satisfied == original):
+            raise ValueError("tc is inconsistent with fixed goal counts")
+        if result["sr"] != int(result["tc"] == 1 and result["ru"] == 1):
+            raise ValueError("sr is inconsistent with tc/ru")
+    elif any(result.get(name) is not None for name in
+             ("task_success", "gcr", "tc", "sr", "ru", "satisfied_goal_count")):
+        raise ValueError("unreliable evaluation must not contain final metrics")
+
+
+class ResultStorageError(RuntimeError):
+    """Durable evidence could not be saved; the batch must fail explicitly."""
+
+
 class RunResultStore:
-    """File-backed attempt collection with conservative v2 grouped summaries."""
+    """Each completed attempt is authoritative; summaries are replaceable views."""
 
     def __init__(self, output_dir: Path, run_id: str) -> None:
         self.output_dir = Path(output_dir)
         self.run_id = str(run_id)
-        self.attempts_dir = self.output_dir / "attempts"
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", self.run_id):
+            raise ValueError("run_id must be a safe path component")
+        self.run_dir = self.output_dir / "runs" / self.run_id
+        self.summary_path: Optional[Path] = None
+        self.summary_metadata: Dict[str, Any] = {}
+        self._lock = threading.RLock()
 
-    def record_attempt(
-        self,
-        task_key: str,
-        attempt: int,
-        result: Mapping[str, Any],
-    ) -> Path:
-        checked = dict(result)
-        if checked.get("run_id") != self.run_id:
-            raise ValueError("attempt run_id does not match store run_id")
-        if checked.get("task_key") != str(task_key):
-            raise ValueError("attempt task_key does not match record target")
-        if checked.get("attempt") != int(attempt):
-            raise ValueError("attempt number does not match record target")
+    def attempt_dir(self, task_key: str, attempt: int) -> Path:
         if not _TASK_KEY_PATTERN.fullmatch(str(task_key)):
             raise ValueError("task_key must be a SHA-256 executable path digest")
-        if int(attempt) < 1:
-            raise ValueError("attempt must be positive")
-        target = self.attempts_dir / f"{task_key}.attempt-{int(attempt)}.json"
-        atomic_write_json(target, checked)
-        return target
+        if type(attempt) is not int or attempt < 1:
+            raise ValueError("attempt must be a positive integer")
+        return self.run_dir / task_key / f"attempt_{attempt}"
+
+    def start_attempt(self, task_key: str, attempt: int) -> Path:
+        directory = self.attempt_dir(task_key, attempt)
+        directory.mkdir(parents=True, exist_ok=False)
+        return directory
+
+    def _checked_attempt(self, task_key, attempt, result):
+        identity = dict(run_id=self.run_id, task_key=task_key, attempt=attempt)
+        if any(type(result.get(key)) is not type(value) or result.get(key) != value
+               for key, value in identity.items()):
+            raise ValueError("attempt identity does not match storage path")
+        returncode = result.get("returncode")
+        if returncode is None:
+            returncode = {"completed": 0, "timeout": 124}.get(result.get("process_status"), 1)
+        if type(returncode) is not int:
+            raise ValueError("returncode must be an integer")
+        checked = validate_result(result, returncode=returncode, expected_identity=identity)
+        # Parent rejection of zero-exit malformed metrics must remain failed.
+        if result.get("process_status") in {"failed", "cancelled"}:
+            checked.update(process_status=result["process_status"], status=result.get("status", "failed"),
+                           execution_status=result.get("execution_status", "failed"),
+                           evaluation_status="incomplete", task_success=None,
+                           gcr=None, tc=None, sr=None, ru=None, satisfied_goal_count=None)
+        checked["returncode"] = returncode
+        return checked
+
+    def record_attempt(self, task_key: str, attempt: int, result: Mapping[str, Any]) -> Path:
+        with self._lock:
+            directory = self.attempt_dir(task_key, attempt)
+            normalized = dict(result)
+            for stream in ("stdout", "stderr"):
+                if stream in normalized:
+                    normalized[stream] = normalize_output(normalized[stream])
+            checked = self._checked_attempt(task_key, attempt, normalized)
+            target = directory / "result.json"
+            if target.exists():
+                raise FileExistsError(f"completed attempt already exists: {target}")
+            directory.mkdir(parents=True, exist_ok=True)
+            # Sync the full file-backed output before publishing completion.
+            # Existing logs can include undecodable bytes: never rewrite them.
+            for stream in ("stdout", "stderr"):
+                log = directory / f"{stream}.log"
+                keep = stream == "stderr" or stream in checked or checked.get("status") != "success"
+                if not log.exists() and keep:
+                    with log.open("x", encoding="utf-8") as handle:
+                        handle.write(checked.get(stream, ""))
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                elif log.exists():
+                    with log.open("rb") as handle:
+                        os.fsync(handle.fileno())
+                if log.exists():
+                    checked[f"{stream}_path"] = str(log)
+            checked["storage_status"] = "completed"
+            atomic_write_json(target, checked)
+            if self.summary_path is not None:
+                self.write_summary("in_progress")
+            return target
+
+    def write_summary(self, run_status: str, **extra: Any) -> Dict[str, Any]:
+        with self._lock:
+            summary = {**self.summary_metadata, **self.rebuild_summary(),
+                       "run_status": run_status, **extra}
+            if self.summary_path is not None:
+                atomic_write_json(self.summary_path, summary)
+            return summary
 
     def rebuild_summary(self) -> Dict[str, Any]:
-        results = []
-        for path in sorted(self.attempts_dir.glob("*.json")) if self.attempts_dir.is_dir() else ():
-            try:
-                candidate = json.loads(path.read_text(encoding="utf-8"))
-                if not isinstance(candidate, dict):
+        with self._lock:
+            latest: Dict[str, Dict[str, Any]] = {}
+            histories: Dict[str, list] = {}
+            interrupted = []
+            directories = sorted(self.run_dir.glob("*/attempt_*"))
+            for directory in directories:
+                task_key = directory.parent.name
+                try:
+                    attempt = int(directory.name.removeprefix("attempt_"))
+                    if self.attempt_dir(task_key, attempt) != directory:
+                        continue
+                except (ValueError, TypeError):
                     continue
-                if candidate.get("run_id") != self.run_id:
+                path = directory / "result.json"
+                try:
+                    candidate = json.loads(path.read_text(encoding="utf-8"))
+                    if not isinstance(candidate, dict) or candidate.get("storage_status") != "completed":
+                        raise ValueError("attempt completion was not committed by parent")
+                    checked = self._checked_attempt(task_key, attempt, candidate)
+                except (ValueError, TypeError, UnicodeError, OSError) as exc:
+                    interrupted.append(dict(run_id=self.run_id, task_key=task_key, attempt=attempt,
+                                            status="interrupted", error=str(exc), attempt_dir=str(directory)))
                     continue
-                results.append(candidate)
-            except (OSError, ValueError, json.JSONDecodeError):
-                continue
-        grouped: Dict[tuple, Dict[str, Any]] = {}
-        for result in results:
-            key = (
-                result.get("metrics_schema_version", 1),
-                result.get("evaluation_version", "legacy_v1"),
-                result.get("execution_policy", "legacy"),
-                result.get("movement_mode", "step"),
-            )
-            group = grouped.setdefault(
-                key,
-                {
-                    "metrics_schema_version": key[0],
-                    "evaluation_version": key[1],
-                    "execution_policy": key[2],
-                    "movement_mode": key[3],
-                    "task_count": 0,
-                    "valid_evaluation_count": 0,
-                    "task_success_count": 0,
-                },
-            )
-            group["task_count"] += 1
-            if result.get("evaluation_status") == "valid":
-                group["valid_evaluation_count"] += 1
-                if result.get("task_success") is True:
-                    group["task_success_count"] += 1
-        return {
-            "run_id": self.run_id,
-            "total_results": len(results),
-            "success_count": sum(1 for result in results if result.get("task_success") is True),
-            "failure_count": sum(1 for result in results if result.get("task_success") is False),
-            "groups": [grouped[key] for key in sorted(grouped, key=repr)],
-            "results": results,
-        }
+                histories.setdefault(task_key, []).append(checked)
+                if task_key not in latest or attempt > latest[task_key]["attempt"]:
+                    latest[task_key] = checked
+            results = []
+            for task_key in sorted(latest):
+                result = dict(latest[task_key])
+                history = sorted(histories[task_key], key=lambda value: value["attempt"])
+                result["attempt_count"] = len(history)
+                result["timed_out_attempt_count"] = sum(bool(r.get("timed_out")) for r in history)
+                result["attempts"] = [dict(attempt=r["attempt"], status=r.get("status"),
+                    timed_out=bool(r.get("timed_out")), returncode=r.get("returncode"),
+                    result_path=str(self.attempt_dir(task_key, r["attempt"]) / "result.json")) for r in history]
+                results.append(result)
+            results.sort(key=lambda result: (str(result.get("executable_path", "")), result["task_key"]))
+            grouped: Dict[tuple, Dict[str, Any]] = {}
+            for result in results:
+                key = (result.get("metrics_schema_version", 1), result["evaluation_version"],
+                       result.get("execution_policy", "legacy"), result.get("movement_mode", "step"))
+                group = grouped.setdefault(key, dict(metrics_schema_version=key[0], evaluation_version=key[1],
+                    execution_policy=key[2], movement_mode=key[3], task_count=0, total_task_count=0,
+                    valid_evaluation_count=0, task_success_count=0))
+                group["task_count"] += 1
+                group["total_task_count"] += 1
+                if result.get("evaluation_status") == "valid":
+                    group["valid_evaluation_count"] += 1
+                    group["task_success_count"] += int(result.get("task_success") is True)
+            groups = [grouped[key] for key in sorted(grouped, key=repr)]
+            return dict(run_id=self.run_id, run_dir=str(self.run_dir), total_results=len(results),
+                success_count=sum(r.get("process_status") == "completed" for r in results),
+                failure_count=sum(r.get("process_status") in {"failed", "cancelled"} for r in results),
+                timeout_count=sum(r.get("process_status") == "timeout" for r in results),
+                groups=groups, result_groups=groups, results=results, interrupted_attempts=interrupted,
+                timeout_retry_tasks=[r.get("executable_path", r["task_key"]) for r in results
+                                     if r["timed_out_attempt_count"]])

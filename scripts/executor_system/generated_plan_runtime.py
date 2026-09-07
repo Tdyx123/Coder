@@ -230,7 +230,7 @@ def finalize_runner_result(runtime, result, start_time, metrics_path):
         result['phase_durations_seconds']['cleanup'] = time.monotonic() - cleanup_start
         result['run_time_seconds'] = time.monotonic() - start_time
         write_result_json(metrics_path, result)
-        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True, allow_nan=False))
 
 
 def close_standalone_runtime(runtime, start_time, script_file, task_index):

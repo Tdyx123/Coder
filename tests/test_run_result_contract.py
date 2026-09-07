@@ -158,16 +158,24 @@ class ResultValidationContractTest(unittest.TestCase):
                     "execution_status": "completed",
                     "evaluation_status": "valid",
                     "task_success": False,
+                    "gcr": 0.0, "tc": 0, "sr": 0, "ru": 1.0,
+                    "original_goal_count": 1, "satisfied_goal_count": 0,
+                    "action_counts": dict(planned=0, started=0, succeeded=0, failed=0,
+                                          skipped=0, cancelled=0, unexecuted=0, attempts=0),
+                    "raw_action_sr": None, "ignored_failure_count": 0,
                     "movement_mode": "step",
                 },
             )
-            (Path(temp_dir) / "attempts" / "broken.json").write_text("{", encoding="utf-8")
+            broken = store.start_attempt(task_key, 2) / "result.json"
+            broken.write_text("{", encoding="utf-8")
 
             summary = store.rebuild_summary()
 
         self.assertEqual(summary["total_results"], 1)
-        self.assertEqual(summary["success_count"], 0)
+        self.assertEqual(summary["success_count"], 1)  # Legacy process-success counter.
+        self.assertEqual(summary["groups"][0]["task_success_count"], 0)
         self.assertEqual(summary["groups"][0]["valid_evaluation_count"], 1)
+        self.assertEqual(summary["interrupted_attempts"][0]["attempt"], 2)
 
     def test_task_keys_hash_resolved_executable_paths_and_store_rejects_unsafe_keys(self):
         with tempfile.TemporaryDirectory() as temp_dir:
