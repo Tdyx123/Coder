@@ -107,19 +107,58 @@ def _is_main_guard(node: ast.AST) -> bool:
     )
 
 
+def _matches_python(statements: Sequence[ast.stmt], source: str) -> bool:
+    expected = ast.parse(source).body
+    return len(statements) == len(expected) and all(
+        ast.dump(actual) == ast.dump(template)
+        for actual, template in zip(statements, expected)
+    )
+
+
+def _has_canonical_generated_prefix(statements: Sequence[ast.stmt]) -> bool:
+    """Recognize the bootstrap emitted by baseline_converters.common, not arbitrary Python."""
+    if statements and isinstance(statements[0], ast.Expr):
+        value = statements[0].value
+        if isinstance(value, ast.Constant) and isinstance(value.value, str):
+            statements = statements[1:]
+    if statements and _matches_python(statements[:1], "from __future__ import annotations"):
+        statements = statements[1:]
+    # Minimal historical/test wrappers rely on the caller's import path.
+    if not statements or _matches_python(statements, "import sys"):
+        return True
+    try:
+        repo_root = ast.literal_eval(statements[3].value.args[0])
+    except (AttributeError, IndexError, ValueError, TypeError):
+        return False
+    if not isinstance(repo_root, str):
+        return False
+    return _matches_python(statements, f'''
+import os
+import sys
+from pathlib import Path
+REPO_ROOT = Path({repo_root!r})
+_SCRIPT_DIR = REPO_ROOT / "scripts"
+for path in (_SCRIPT_DIR, REPO_ROOT):
+    path_str = str(path)
+    if path_str not in sys.path:
+        sys.path.append(path_str)
+RUNNER_MODE_ARG = "--runner-mode"
+if RUNNER_MODE_ARG in sys.argv[1:]:
+    os.environ["renderImage"] = "0"
+''')
+
+
 def _has_canonical_generated_bindings(tree: ast.Module, runtime_alias: str) -> bool:
-    # The import must not overwrite the guard/exit machinery or be overwritten
-    # by a required generated assignment before the shared main is called.
-    if runtime_alias in REQUIRED_GENERATED_BINDINGS or runtime_alias in {
-        "__name__", "__file__", "SystemExit", "exit", "sys", "RuntimeError"
-    }:
+    # Only the shared entrypoint names used by supported generated wrappers.
+    if runtime_alias not in {"main", "run_generated_plan"}:
         return False
     imports = []
     guards = []
     for index, node in enumerate(tree.body):
         if _is_main_guard(node):
             guards.append(index)
-        if not isinstance(node, ast.ImportFrom) or node.module != GENERATED_RUNTIME_IMPORT:
+        if (not isinstance(node, ast.ImportFrom)
+                or node.module != GENERATED_RUNTIME_IMPORT or node.level):
             continue
         if len(node.names) != 1:
             continue
@@ -128,13 +167,15 @@ def _has_canonical_generated_bindings(tree: ast.Module, runtime_alias: str) -> b
             imports.append(index)
     if len(imports) != 1 or len(guards) != 1 or imports[0] >= guards[0]:
         return False
+    if guards[0] != len(tree.body) - 1:
+        return False
+    if not _has_canonical_generated_prefix(tree.body[:imports[0]]):
+        return False
 
     seen = set()
     for statement in tree.body[imports[0] + 1:guards[0]]:
         if isinstance(statement, ast.Assign):
             targets = statement.targets
-        elif isinstance(statement, ast.AnnAssign):
-            targets = [statement.target]
         else:
             return False
         if len(targets) != 1 or not isinstance(targets[0], ast.Name):
@@ -146,65 +187,21 @@ def _has_canonical_generated_bindings(tree: ast.Module, runtime_alias: str) -> b
     return seen == set(REQUIRED_GENERATED_BINDINGS)
 
 
-def _is_shared_runtime_call(node: ast.AST, aliases: Sequence[str]) -> bool:
-    if not isinstance(node, ast.Call) or node.keywords:
-        return False
-    if not isinstance(node.func, ast.Name) or node.func.id not in aliases:
-        return False
-    expected = ("BUNDLE_DATA", "TASK_FILE", "TASK_INDEX", "__file__")
-    return len(node.args) == len(expected) and all(
-        isinstance(argument, ast.Name) and argument.id == name
-        for argument, name in zip(node.args, expected)
-    )
-
-
-def _statement_exits_with_shared_runtime(statement: ast.stmt, aliases: Sequence[str]) -> bool:
-    if isinstance(statement, ast.Raise):
-        exit_call = statement.exc
-        valid_exit = (
-            isinstance(exit_call, ast.Call)
-            and isinstance(exit_call.func, ast.Name)
-            and exit_call.func.id == "SystemExit"
-        )
-    elif isinstance(statement, ast.Expr):
-        exit_call = statement.value
-        valid_exit = isinstance(exit_call, ast.Call) and (
-            (isinstance(exit_call.func, ast.Name) and exit_call.func.id == "exit")
-            or (
-                isinstance(exit_call.func, ast.Attribute)
-                and isinstance(exit_call.func.value, ast.Name)
-                and exit_call.func.value.id == "sys"
-                and exit_call.func.attr == "exit"
-            )
-        )
-    else:
-        return False
-    return (
-        valid_exit
-        and len(exit_call.args) == 1
-        and _is_shared_runtime_call(exit_call.args[0], aliases)
-    )
-
-
 def _exits_with_shared_runtime(tree: ast.Module, aliases: Sequence[str]) -> bool:
     guards = [node for node in tree.body if _is_main_guard(node)]
-    if len(guards) != 1 or not guards[0].body:
+    if len(guards) != 1 or len(aliases) != 1:
         return False
-    first = guards[0].body[0]
-    if _statement_exits_with_shared_runtime(first, aliases):
-        return True
-    # The repository's generated wrapper puts the direct exit first in a try
-    # whose RuntimeError handler reports a diagnostic. This exact handler cannot
-    # intercept SystemExit, and a finally block could replace the propagated exit.
-    return (
-        isinstance(first, ast.Try)
-        and first.body
-        and not first.finalbody
-        and len(first.handlers) == 1
-        and isinstance(first.handlers[0].type, ast.Name)
-        and first.handlers[0].type.id == "RuntimeError"
-        and _statement_exits_with_shared_runtime(first.body[0], aliases)
-    )
+    call = f"{aliases[0]}(BUNDLE_DATA, TASK_FILE, TASK_INDEX, __file__)"
+    # Match the complete guard, including the known diagnostic handler. Extra
+    # branches, finalizers, exception changes, and exit arguments are unsupported.
+    return any(_matches_python(guards, source) for source in (
+        f"if __name__ == '__main__':\n    raise SystemExit({call})",
+        f"if __name__ == '__main__':\n    try:\n        raise SystemExit({call})\n"
+        "    except RuntimeError:\n        raise SystemExit(1)",
+        f"if __name__ == '__main__':\n    try:\n        raise SystemExit({call})\n"
+        "    except RuntimeError as exc:\n        print(f'ERROR: {exc}')\n"
+        "        raise SystemExit(1)",
+    ))
 
 
 def verify_generated_runtime(path: Path) -> Optional[str]:

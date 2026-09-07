@@ -12,6 +12,7 @@ SCRIPT = ROOT / "scripts" / "execute_plan.py"
 if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 import execute_plan
+from baseline_converters.common import render_executable_plan
 
 
 class ExecutePlanCompatibilityTests(unittest.TestCase):
@@ -97,6 +98,110 @@ class ExecutePlanCompatibilityTests(unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(completed.stdout, "")
+
+    def test_repository_generated_bootstrap_reaches_shared_runtime(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            command_dir = root / "selected"
+            command_dir.mkdir()
+            generated = command_dir / "executable_plan.py"
+            self.write_shared_runtime_stub(
+                root, return_code=23, expected_arguments=("--runner-mode",)
+            )
+            generated.write_text(render_executable_plan(
+                bundle_data={"task_plan": {"task_id": "generated"}, "gcr": []},
+                task_file=root / "FloorPlan1.jsonl",
+                task_index=0,
+                description="Compatibility fixture from the repository generator.",
+                repo_root=root,
+            ), encoding="utf-8")
+
+            self.assertIsNone(execute_plan.verify_generated_runtime(generated))
+            completed = self.run_cli(root, "--command", str(command_dir), "--runner-mode")
+
+        self.assertEqual(completed.returncode, 23, completed.stderr)
+        self.assertIn("SHARED_MAIN generated", completed.stdout)
+
+    def test_noncanonical_module_does_not_shadow_generated_fallback(self):
+        shared_import = "from executor_system.generated_plan_runtime import main as run_generated_plan"
+        for before, after in (
+            (shared_import, "raise SystemExit(0)\n" + shared_import),
+            (shared_import, "__name__ = 'generated_plan'\n" + shared_import),
+            (shared_import, "SystemExit = lambda value: Exception(value)\n" + shared_import),
+            (shared_import, "RuntimeError = BaseException\n" + shared_import),
+            ("import os", "import os as SystemExit"),
+            ("sys.path.append(path_str)", "sys.path.append(path_str)\n        raise SystemExit(0)"),
+            ("BUNDLE_DATA =", "BUNDLE_DATA: object ="),
+            ("if __name__ ==", "raise SystemExit(0)\nif __name__ =="),
+            ("    try:\n", "    try:\n"),  # Appended module statement below.
+            ("    except RuntimeError as exc:", "    except RuntimeError as exc:\n        raise SystemExit(0)"),
+        ):
+            with self.subTest(change=after), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                command_dir = root / "selected"
+                preferred = command_dir / "plan_to_code" / "executable_plan.py"
+                preferred.parent.mkdir(parents=True)
+                fallback = command_dir / "executable_plan.py"
+                self.write_shared_runtime_stub(root, return_code=23)
+                source = render_executable_plan(
+                    bundle_data={"task_plan": {"task_id": "fallback"}, "gcr": []},
+                    task_file=root / "FloorPlan1.jsonl", task_index=0,
+                    description="Generated fallback.", repo_root=root,
+                )
+                fallback.write_text(source, encoding="utf-8")
+                invalid = source.replace("'fallback'", "'invalid'").replace(before, after)
+                if before == after:
+                    invalid += "raise SystemExit(0)\n"
+                preferred.write_text(invalid, encoding="utf-8")
+
+                selected, rejected = execute_plan.find_generated_runtime(command_dir)
+
+                self.assertEqual(selected, fallback)
+                self.assertEqual(len(rejected), 1)
+                completed = self.run_cli(root, "--command", str(command_dir))
+                self.assertEqual(completed.returncode, 23, completed.stderr)
+                self.assertIn("SHARED_MAIN fallback", completed.stdout)
+                self.assertNotIn("SHARED_MAIN invalid", completed.stdout)
+
+    def test_historical_generated_bootstrap_reaches_shared_runtime(self):
+        # Frozen bootstrap/exit structure from common.py at a8764a45; keep this
+        # independent of the renderer so future template edits retain coverage.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.write_shared_runtime_stub(root, return_code=23)
+            generated = root / "executable_plan.py"
+            generated.write_text(f'''#!/usr/bin/env python3
+"""Historical generated wrapper."""
+from __future__ import annotations
+import os
+import sys
+from pathlib import Path
+REPO_ROOT = Path({str(root)!r})
+_SCRIPT_DIR = REPO_ROOT / "scripts"
+for path in (_SCRIPT_DIR, REPO_ROOT):
+    path_str = str(path)
+    if path_str not in sys.path:
+        sys.path.append(path_str)
+RUNNER_MODE_ARG = "--runner-mode"
+if RUNNER_MODE_ARG in sys.argv[1:]:
+    os.environ["renderImage"] = "0"
+from executor_system.generated_plan_runtime import main as run_generated_plan
+BUNDLE_DATA = {{'task_plan': {{'task_id': 'historical'}}, 'gcr': []}}
+TASK_FILE = 'FloorPlan1.jsonl'
+TASK_INDEX = 0
+if __name__ == "__main__":
+    try:
+        raise SystemExit(run_generated_plan(BUNDLE_DATA, TASK_FILE, TASK_INDEX, __file__))
+    except RuntimeError as exc:
+        print(f"ERROR: {{exc}}")
+        raise SystemExit(1)
+''', encoding="utf-8")
+
+            self.assertIsNone(execute_plan.verify_generated_runtime(generated))
+            completed = self.run_cli(root, "--command", str(root))
+
+        self.assertEqual(completed.returncode, 23, completed.stderr)
+        self.assertIn("SHARED_MAIN historical", completed.stdout)
 
     def test_verified_generated_runtime_is_preferred_and_return_code_is_forwarded(self):
         with tempfile.TemporaryDirectory() as directory:
