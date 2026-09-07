@@ -235,6 +235,8 @@ class ThorRuntime:
         self.controller = None
         self._stopped = False
         self.controller_lock = threading.RLock()
+        self.state_version = 0
+        self._committed_held_object_overrides = {}
         self.stats_lock = threading.Lock()
         self.operated_object_names: Set[str] = set()
         self.operated_object_names_lock = threading.Lock()
@@ -655,21 +657,73 @@ class ThorRuntime:
                 self.navigation_metrics.record_action(str(action))
         control = ensure_control(self)
         control.check()
-        with self.controller_lock:
-            control.check()
-            try:
-                event = self.controller.step(dict(payload))
-            except BaseException as exc:
-                control.cancel(str(exc))
-                root_control = getattr(self, "execution_control", None)
-                if root_control is not None and root_control is not control:
-                    root_control.cancel(str(exc))
-                raise
-            if check_success:
-                self.assert_success(event, payload)
-            if save_frame:
-                self.save_frames(event)
-            return event
+        committed = False
+        try:
+            with self.controller_lock:
+                control.check()
+                try:
+                    event = self.controller.step(dict(payload))
+                except BaseException as exc:
+                    control.cancel(str(exc))
+                    root_control = getattr(self, "execution_control", None)
+                    if root_control is not None and root_control is not control:
+                        root_control.cancel(str(exc))
+                    raise
+                self._commit_world_event(event, payload)
+                committed = True
+                if save_frame:
+                    self.save_frames(event)
+        finally:
+            # Never acquire the scheduler condition while holding controller_lock.
+            # A frame write failure cannot undo an already committed event.
+            scheduler = getattr(self, "stage_scheduler", None)
+            if committed and scheduler is not None:
+                scheduler.notify_world_changed()
+        if check_success:
+            self.assert_success(event, payload)
+        return event
+
+    def _commit_world_event(self, event, payload: Dict[str, Any]) -> None:
+        """Commit every returned event, including an unsuccessful action event.
+
+        Called only under controller_lock. Hand overrides are evidence of a
+        successful low-level action, never asynchronous high-level bookkeeping.
+        """
+        self.state_version = getattr(self, "state_version", 0) + 1
+        committed = getattr(self, "_committed_held_object_overrides", None)
+        if committed is None:
+            committed = self._committed_held_object_overrides = {}
+        # Once inventory metadata confirms an object, it takes over as the
+        # source of truth. A later empty inventory must not revive old evidence.
+        events = getattr(event, "events", None) or [event]
+        confirmed = {
+            str(obj["objectId"])
+            for agent_event in events
+            for obj in (getattr(agent_event, "metadata", {}) or {}).get("inventoryObjects", ())
+            if isinstance(obj, dict) and obj.get("objectId")
+        }
+        overrides, override_lock = self._held_object_override_state()
+        with override_lock:
+            for owner, evidence in committed.items():
+                for object_id in confirmed:
+                    evidence.pop(object_id, None)
+                    overrides.get(owner, set()).discard(object_id)
+        metadata = getattr(event, "metadata", {}) or {}
+        if not metadata.get("lastActionSuccess", not bool(metadata.get("errorMessage"))):
+            return
+        action = payload.get("action")
+        agent_id = int(payload.get("agentId", 0))
+        if action == "PickupObject" and payload.get("objectId"):
+            object_id = str(payload["objectId"])
+            committed[agent_id] = {} if object_id in confirmed else {object_id: {
+                "source": "action_commit", "action": action, "version": self.state_version,
+            }}
+            self.release_agent_held_objects(agent_id)
+            if object_id not in confirmed:
+                self.record_agent_held_object(agent_id, object_id)
+        elif action in {"PutObject", "ThrowObject", "DropHandObject"}:
+            committed.pop(agent_id, None)
+            self.release_agent_held_objects(agent_id)
 
     def assert_success(self, event, payload: Dict[str, Any]) -> None:
         metadata = getattr(event, "metadata", {}) or {}
@@ -2942,7 +2996,6 @@ class ThorRuntime:
             max_retries=0,
         )
         if not step_event_failed(event):
-            self.release_agent_held_objects(agent_id)
             with self.stats_lock:
                 self.success_exec += 1
             self.record_operated_object_name(receptacle)
@@ -3756,10 +3809,6 @@ class ThorRuntime:
                         break
             openness = "unknown" if opened_obj is None else opened_obj.get("openness", "unknown")
             log(f"OpenObject openness: {object_id} openness={openness}")
-        if action == "PickupObject":
-            self.record_agent_held_object(agent_id, str(obj["objectId"]))
-        elif action in {"PutObject", "ThrowObject"}:
-            self.release_agent_held_objects(agent_id)
         if action == "SliceObject":
             self.record_created_slice_object_names(obj, event, known_object_ids)
             sliced_goal_name = (
@@ -3819,7 +3868,6 @@ class ThorRuntime:
             agent_id=agent_id,
             event=event,
         )
-        self.release_agent_held_objects(agent_id)
         return event
 
     def toggle_objects(self, action: str, robot: RobotRef, obj_name: Any) -> None:

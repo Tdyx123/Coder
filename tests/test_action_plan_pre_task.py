@@ -14,34 +14,7 @@ from executor_system.parallel_runner import run_action_plan_tolerant
 from executor_system.task_plan import TaskPlanParser
 
 
-class FakeEvent:
-    def __init__(self):
-        self.metadata = {
-            "lastActionSuccess": True,
-            "agent": {"rotation": {"y": 0.0}},
-        }
-
-
-class FakeRuntime:
-    physical_agent_count = 2
-
-    def __init__(self):
-        self.robot_agent_map = {"robot1": 0, "robot2": 1}
-
-    def physical_agent_id(self, robot_id):
-        return self.robot_agent_map[str(robot_id)]
-
-    def current_agent_position(self, agent_id):
-        return {"x": float(agent_id), "y": 0.0, "z": 0.0}
-
-    def agent_event(self, _agent_id):
-        return FakeEvent()
-
-    def agent_held_objects_for(self, _agent_id):
-        return set()
-
-    def step(self, _payload, **_kwargs):
-        return FakeEvent()
+from tests.snapshot_fakes import FakeEvent, FakeRuntime
 
 
 class PreTaskActionPlanTest(unittest.TestCase):

@@ -739,8 +739,10 @@ class Executor:
             return False
         if goal_effects:
             from .evaluation import EvaluationContext
-            evaluated = EvaluationContext.from_goals(goal_effects).evaluate(self.runtime)
-            statuses = [item.get("status") for item in evaluated.get("goal_results", ())]
+            context = EvaluationContext.from_goals(goal_effects)
+            objects = tuple(self.world_state.snapshot.objects_by_id.values())
+            statuses = [context.evaluate_goal(self.runtime, goal, objects=objects)["status"]
+                        for goal in context.goals]
             if any(status == "unsatisfied" for status in statuses):
                 return False
             if any(status != "satisfied" for status in statuses):
@@ -767,7 +769,6 @@ class Executor:
             retry_on_failure=retry_on_failure,
             max_retries=max_retries,
         )
-        self._record_payload_effect(copied_payload, event)
         return event
 
     def submit_move_to_position(
@@ -859,19 +860,6 @@ class Executor:
         if not candidates:
             raise RuntimeError("TeleportToPosition requires at least one target position.")
         return candidates
-
-    def _record_payload_effect(self, payload: dict, event: Any) -> None:
-        metadata = getattr(event, "metadata", {}) or {}
-        if not metadata.get("lastActionSuccess", not bool(metadata.get("errorMessage"))):
-            return
-        action = payload.get("action")
-        agent_id = int(payload.get("agentId", 0))
-        object_id = payload.get("objectId")
-        if action == "PickupObject" and object_id:
-            self.runtime.record_agent_held_object(agent_id, str(object_id))
-        elif action in {"PutObject", "ThrowObject", "DropHandObject"}:
-            self.runtime.release_agent_held_objects(agent_id)
-
 
 CentralStepExecutor = Executor
 SynchronousExecutor = Executor

@@ -63,38 +63,7 @@ from executor_system.run_results import task_key_for_executable
 from executor_system.process_supervisor import OwnedProcessScope, run_owned_process
 
 
-class FakeEvent:
-    def __init__(self):
-        self.metadata = {
-            "lastActionSuccess": True,
-            "agent": {"rotation": {"y": 0.0}},
-        }
-
-
-class FakeRuntime:
-    physical_agent_count = 2
-
-    def __init__(self):
-        self.robot_agent_map = {"robot1": 0, "robot2": 1}
-        self.objects = []
-
-    def physical_agent_id(self, robot_id):
-        return self.robot_agent_map[str(robot_id)]
-
-    def current_agent_position(self, agent_id):
-        return {"x": float(agent_id), "y": 0.0, "z": 0.0}
-
-    def agent_event(self, _agent_id):
-        return FakeEvent()
-
-    def agent_held_objects_for(self, _agent_id):
-        return set()
-
-    def current_objects(self, _agent_id=None):
-        return [dict(obj) for obj in self.objects]
-
-    def step(self, _payload, **_kwargs):
-        return FakeEvent()
+from tests.snapshot_fakes import FakeEvent, FakeRuntime
 
 
 def wait_for_process_exit(pid: int, timeout: float = 2.0) -> bool:

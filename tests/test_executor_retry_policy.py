@@ -32,6 +32,7 @@ from executor_system.movement import (
     NoInteractionPoseError,
 )
 from executor_system.utils import position_to_grid_key
+from tests.snapshot_fakes import FakeRuntime as SnapshotFakeRuntime
 
 
 class FakeEvent:
@@ -1422,25 +1423,12 @@ class ExecutorRetryPolicyTest(unittest.TestCase):
         self.assertEqual(runtime.success_exec, 0)
 
     def test_non_teleport_action_retry_policy_skips_without_rerunning(self):
-        class FailingRuntime:
+        class FailingRuntime(SnapshotFakeRuntime):
             physical_agent_count = 1
 
             def __init__(self):
+                super().__init__()
                 self.step_calls = 0
-
-            def physical_agent_id(self, _robot_id):
-                return 0
-
-            def current_agent_position(self, _agent_id):
-                return {"x": 0.0, "y": 0.0, "z": 0.0}
-
-            def agent_event(self, _agent_id):
-                event = FakeEvent(True)
-                event.metadata["agent"] = {"rotation": {"y": 0.0}}
-                return event
-
-            def agent_held_objects_for(self, _agent_id):
-                return set()
 
             def step(self, _payload, **_kwargs):
                 self.step_calls += 1
@@ -1456,20 +1444,8 @@ class ExecutorRetryPolicyTest(unittest.TestCase):
         self.assertTrue(executor.state.finished())
 
     def test_navigation_deferred_retries_same_cursor_without_failure_handler(self):
-        class DeferredRuntime:
+        class DeferredRuntime(SnapshotFakeRuntime):
             physical_agent_count = 1
-
-            def physical_agent_id(self, _robot_id):
-                return 0
-
-            def current_agent_position(self, _agent_id):
-                return {"x": 0.0, "y": 0.0, "z": 0.0}
-
-            def agent_event(self, _agent_id):
-                return FakeEvent(True)
-
-            def agent_held_objects_for(self, _agent_id):
-                return set()
 
         runtime = DeferredRuntime()
         executor = Executor(

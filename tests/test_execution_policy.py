@@ -180,8 +180,13 @@ class ChildExecutionControlTest(unittest.TestCase):
         runtime.physical_agent_count = 2
         runtime.controller_lock = threading.RLock()
         controller_calls = []
-        runtime.controller = SimpleNamespace(
-            step=lambda payload: controller_calls.append(payload["action"]) or FakeEvent()
+        from tests.snapshot_fakes import FakeRuntime as SnapshotFakeRuntime
+        snapshot_runtime = SnapshotFakeRuntime()
+        runtime.robot_agent_map = snapshot_runtime.robot_agent_map
+        runtime.state_version = 0
+        runtime.controller = snapshot_runtime.controller
+        runtime.controller.step = lambda payload: (
+            controller_calls.append(payload["action"]) or runtime.controller.last_event
         )
         runtime.save_frames = lambda _event: None
         runtime.physical_agent_id = lambda robot_id: {"robot1": 0, "robot2": 1}[robot_id]

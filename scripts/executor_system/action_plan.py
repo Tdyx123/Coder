@@ -322,32 +322,44 @@ class WorldState:
     def __init__(self, runtime_obj: Optional["ThorRuntime"]) -> None:
         self.runtime = runtime_obj
         self.tick = 0
-        self.robot_positions: Dict[str, Dict[str, float]] = {}
-        self.robot_rotations: Dict[str, float] = {}
-        self.held_objects: Dict[str, Set[str]] = {}
+        from .world_snapshot import WorldSnapshot
+        self.snapshot = WorldSnapshot(0, {}, {}, {}, {})
+
+    @property
+    def version(self):
+        return self.snapshot.version
+
+    @property
+    def robot_positions(self):
+        return self.snapshot.robot_positions
+
+    @property
+    def robot_rotations(self):
+        return self.snapshot.robot_rotations
+
+    @property
+    def held_objects(self):
+        return self.snapshot.held_objects
+
+    @property
+    def objects_by_id(self):
+        return self.snapshot.objects_by_id
+
+    @property
+    def held_object_sources(self):
+        return self.snapshot.held_object_sources
 
     def refresh(self, robot_states: Sequence[RobotExecutionState]) -> None:
         if self.runtime is None:
             return
+        from .execution_control import ensure_control
+        from .world_snapshot import SnapshotStore
+
+        snapshot = SnapshotStore().capture(self.runtime, ensure_control(self.runtime))
+        self.snapshot = snapshot
         for state in robot_states:
-            try:
-                agent_id = self.runtime.physical_agent_id(state.robot_id)
-                self.robot_positions[state.robot_id] = self.runtime.current_agent_position(
-                    agent_id
-                )
-                event = self.runtime.agent_event(agent_id)
-                rotation = (
-                    getattr(event, "metadata", {})
-                    .get("agent", {})
-                    .get("rotation", {})
-                    .get("y", 0.0)
-                )
-                self.robot_rotations[state.robot_id] = float(rotation)
-                held = self.runtime.agent_held_objects_for(agent_id)
-                self.held_objects[state.robot_id] = set(held)
-                state.held_object = sorted(held)[0] if held else None
-            except BaseException:
-                continue
+            held = snapshot.held_objects[state.robot_id]
+            state.held_object = sorted(held)[0] if held else None
 
 
 class PlanLoader:
