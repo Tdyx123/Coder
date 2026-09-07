@@ -20,6 +20,7 @@ from .plan_types import (PlannedAction)
 from .controller_client import ControllerClient
 from .runtime_artifacts import RuntimeArtifacts
 from .object_resolver import ObjectResolver
+from .object_interactor import ObjectInteractor
 from .config import (
     AGENT_CLEARANCE_DISTANCE,
     DIRECTIONAL_VIEW_NAMES,
@@ -256,6 +257,7 @@ class ThorRuntime:
         self.controller_lock = threading.RLock()
         self.controller_client = ControllerClient(self)
         self.object_resolver = ObjectResolver(self)
+        self.object_interactor = ObjectInteractor(self)
         self.artifacts = self._make_artifacts()
         self.state_version = 0
         self._committed_held_object_overrides = {}
@@ -714,73 +716,63 @@ class ThorRuntime:
             self.log_put_object_failure_held_items(agent_id)
         raise RuntimeError(f"{action} failed for agent {agent_id}: {error}")
 
+    def _get_object_interactor(self) -> ObjectInteractor:
+        interactor = getattr(self, 'object_interactor', None)
+        if interactor is None:
+            interactor = self.object_interactor = ObjectInteractor(self)
+        return interactor
+
+    @staticmethod
+    def _object_interaction_settings():
+        # Preserve the established runtime module configuration/patch points.
+        return {
+            'MOVE_BLOCKER_PATTERN': MOVE_BLOCKER_PATTERN,
+            'PUT_OBJECT_FORCE_ACTION': PUT_OBJECT_FORCE_ACTION,
+            'OPEN_OBJECT_FORCE_ACTION': OPEN_OBJECT_FORCE_ACTION,
+            'CLOSE_OBJECT_FORCE_ACTION': CLOSE_OBJECT_FORCE_ACTION,
+            'DIRTY_OBJECT_FORCE_ACTION': DIRTY_OBJECT_FORCE_ACTION,
+            'TOGGLE_OBJECT_ON_FORCE_ACTION': TOGGLE_OBJECT_ON_FORCE_ACTION,
+            'TOGGLE_OBJECT_OFF_FORCE_ACTION': TOGGLE_OBJECT_OFF_FORCE_ACTION,
+            'EMPTY_LIQUID_FORCE_ACTION': EMPTY_LIQUID_FORCE_ACTION,
+            'PICKUP_OBJECT_CLIP_BACKOFF_DISTANCES': PICKUP_OBJECT_CLIP_BACKOFF_DISTANCES,
+            'PICKUP_OBJECT_TARGET_VISIBILITY_LOOK_OFFSETS': PICKUP_OBJECT_TARGET_VISIBILITY_LOOK_OFFSETS,
+            'OBJECT_ACTION_TARGET_VISIBILITY_RETRY_ACTIONS': OBJECT_ACTION_TARGET_VISIBILITY_RETRY_ACTIONS,
+            'log': log,
+        }
+
     def held_objects_description_for_log(self, agent_id: Any) -> str:
-        try:
-            held_objects = sorted(self.agent_held_objects_for(int(agent_id)))
-        except (RuntimeError, TypeError, ValueError):
-            held_objects = []
-        return ", ".join(held_objects) if held_objects else "nothing"
+        return self._get_object_interactor().held_objects_description_for_log(agent_id)
 
     def object_name_for_log(self, obj: Dict[str, Any]) -> str:
-        return stable_object_name(obj) or str(obj.get("objectId") or "")
+        return self._get_object_interactor().object_name_for_log(obj)
 
     def object_id_name_for_log(self, agent_id: int, object_id: Any) -> str:
-        object_id_text = str(object_id or "")
-        for obj in self.current_objects(agent_id):
-            if str(obj.get("objectId") or "") == object_id_text:
-                return self.object_name_for_log(obj)
-        return object_id_text.split("|", 1)[0] if object_id_text else ""
+        return self._get_object_interactor().object_id_name_for_log(agent_id, object_id)
 
     def current_object_by_id(
         self,
         agent_id: int,
         object_id: Any,
     ) -> Optional[Dict[str, Any]]:
-        object_id_text = str(object_id or "")
-        for obj in self.current_objects(agent_id):
-            if str(obj.get("objectId") or "") == object_id_text:
-                return obj
-        return None
+        return self._get_object_interactor().current_object_by_id(agent_id, object_id)
 
     def toggle_action_target_state(self, action: str) -> Optional[bool]:
-        if action == "ToggleObjectOn":
-            return True
-        if action == "ToggleObjectOff":
-            return False
-        return None
+        return self._get_object_interactor().toggle_action_target_state(action)
 
     def object_toggle_state(self, obj: Dict[str, Any]) -> Optional[bool]:
-        if "isToggled" in obj and obj.get("isToggled") is not None:
-            return bool(obj.get("isToggled"))
-        if "isOn" in obj and obj.get("isOn") is not None:
-            return bool(obj.get("isOn"))
-        return None
+        return self._get_object_interactor().object_toggle_state(obj)
 
     def toggle_state_matches(self, action: str, obj: Dict[str, Any]) -> bool:
-        desired_state = self.toggle_action_target_state(action)
-        current_state = self.object_toggle_state(obj)
-        return desired_state is not None and current_state is not None and desired_state == current_state
+        return self._get_object_interactor().toggle_state_matches(action, obj)
 
     def toggle_error_matches_desired_state(self, action: str, error: str) -> bool:
-        error_text = str(error or "").lower()
-        if action == "ToggleObjectOn":
-            return "already on" in error_text
-        if action == "ToggleObjectOff":
-            return "already off" in error_text
-        return False
+        return self._get_object_interactor().toggle_error_matches_desired_state(action, error)
 
     def held_object_names_for_log(self, agent_id: int) -> List[str]:
-        return [
-            self.object_id_name_for_log(agent_id, object_id)
-            for object_id in sorted(self.agent_held_objects_for(agent_id))
-        ]
+        return self._get_object_interactor().held_object_names_for_log(agent_id)
 
     def log_put_object_failure_held_items(self, agent_id: Any) -> None:
-        held_description = self.held_objects_description_for_log(agent_id)
-        log(
-            f"PutObject failed for agent {agent_id}; "
-            f"currently holding: {held_description}."
-        )
+        return self._get_object_interactor().log_put_object_failure_held_items(agent_id)
 
     def save_frames(self, event) -> None:
         return self._get_artifacts().save_frames(event)
@@ -1665,54 +1657,7 @@ class ThorRuntime:
         move_payload: Dict[str, Any],
         failed_event: Any,
     ) -> Optional[bool]:
-        match = MOVE_BLOCKER_PATTERN.match(event_error_message(failed_event))
-        if match is None:
-            return None
-        try:
-            blocker = self.find_object(match.group("object_name"), agent_id=agent_id)
-        except RuntimeError as exc:
-            raise_if_execution_aborted(self, exc)
-            return None
-        if not blocker.get("openable") or not blocker.get("isOpen"):
-            return None
-
-        object_id = str(blocker.get("objectId") or "")
-        if not object_id:
-            return None
-        from .action_registry import validate_recovery_capabilities
-        # A robot that can close but cannot restore must leave the blocker open.
-        validate_recovery_capabilities(self, agent_id, 'CloseObject', 'OpenObject')
-        close_event = self._step_direct(
-            {
-                "action": "CloseObject",
-                "objectId": object_id,
-                "agentId": agent_id,
-                "forceAction": CLOSE_OBJECT_FORCE_ACTION,
-            },
-            check_success=False,
-        )
-        if step_event_failed(close_event):
-            return None
-
-        retry_event = None
-        try:
-            retry_event = self._step_direct(move_payload, check_success=False)
-        finally:
-            reopen_event = self._step_direct(
-                {
-                    "action": "OpenObject",
-                    "objectId": object_id,
-                    "agentId": agent_id,
-                    "forceAction": OPEN_OBJECT_FORCE_ACTION,
-                },
-                check_success=False,
-            )
-            if step_event_failed(reopen_event):
-                raise RuntimeError(
-                    f"Could not restore open navigation blocker {object_id!r}: "
-                    f"{event_error_message(reopen_event) or 'no error message returned'}"
-                )
-        return retry_event is not None and not step_event_failed(retry_event)
+        return self._get_object_interactor().retry_move_past_open_object_blocker(agent_id, move_payload, failed_event)
 
     @navigation_operation
     def teleport_completed_agent_to_free_position(
@@ -1908,126 +1853,31 @@ class ThorRuntime:
         to_agent_id: int,
         object_resource: str,
     ):
-        log(
-            "Transferring held object "
-            f"{object_resource} from agent {from_agent_id} to agent {to_agent_id}."
-        )
-        drop_event = self._step_direct(
-            {
-                "action": "DropHandObject",
-                "agentId": from_agent_id,
-                "forceAction": False,
-            },
-            check_success=False,
-            save_frame=False,
-        )
-        if step_event_failed(drop_event):
-            metadata = getattr(drop_event, "metadata", {}) or {}
-            error = metadata.get("errorMessage") or "no error message returned"
-            raise RuntimeError(f"DropHandObject failed for agent {from_agent_id}: {error}")
-        self.update_object_aliases_for_object_ids(
-            [object_resource],
-            agent_id=to_agent_id,
-            event=drop_event,
-        )
-
-        dropped = self.find_object(object_resource, agent_id=to_agent_id, require_center=True)
-        center = object_center(dropped)
-        if not center:
-            raise RuntimeError(f"Dropped object {object_resource!r} has no usable center.")
-        target_position = self.closest_reachable(center, agent_id=to_agent_id)
-        try:
-            if from_agent_id in self.navigation_blockers(to_agent_id, target_position):
-                self.teleport_completed_agent_to_free_position(
-                    from_agent_id,
-                    to_agent_id,
-                    target_position,
-                )
-        except RuntimeError as exc:
-            raise_if_execution_aborted(self, exc)
-            pass
-        self.move_to_position_direct(
-            to_agent_id,
-            target_position,
-        )
-        self.face_position_direct(to_agent_id, center)
-        pickup_event = self._step_direct(
-            {
-                "action": "PickupObject",
-                "objectId": dropped["objectId"],
-                "agentId": to_agent_id,
-                "forceAction": False,
-            },
-            check_success=False,
-        )
-        if step_event_failed(pickup_event):
-            metadata = getattr(pickup_event, "metadata", {}) or {}
-            error = metadata.get("errorMessage") or "no error message returned"
-            raise RuntimeError(f"PickupObject handoff failed for agent {to_agent_id}: {error}")
-        return pickup_event
+        return self._get_object_interactor().handoff_held_object_direct(from_agent_id, to_agent_id, object_resource)
 
     def agent_holds_object(self, agent_id: int, object_resource: str) -> bool:
-        return object_resource in self.agent_held_objects_for(agent_id)
+        return self._get_object_interactor().agent_holds_object(agent_id, object_resource)
 
     def agent_held_object_matching(self, agent_id: int, pattern: Any) -> Optional[str]:
-        resolved_pattern = self.object_alias_current_id(pattern) or pattern
-        for object_resource in self.agent_held_objects_for(agent_id):
-            stub = {
-                "objectId": object_resource,
-                "objectType": object_resource.split("|", 1)[0],
-            }
-            if matches_object(resolved_pattern, stub) or (
-                resolved_pattern != pattern and matches_object(pattern, stub)
-            ):
-                return object_resource
-        return None
+        return self._get_object_interactor().agent_held_object_matching(agent_id, pattern)
 
     def agent_held_objects_for(self, agent_id: int) -> Set[str]:
-        held_objects = self.agent_held_object_overrides_snapshot(agent_id)
-        held_objects.update(self.metadata_held_objects(agent_id))
-        return held_objects
+        return self._get_object_interactor().agent_held_objects_for(agent_id)
 
     def _held_object_override_state(self) -> Tuple[Dict[int, Set[str]], threading.Lock]:
-        overrides = getattr(self, "agent_held_object_overrides", None)
-        if overrides is None:
-            overrides = {}
-            self.agent_held_object_overrides = overrides
-        lock = getattr(self, "agent_held_object_overrides_lock", None)
-        if lock is None:
-            lock = threading.Lock()
-            self.agent_held_object_overrides_lock = lock
-        return overrides, lock
+        return self._get_object_interactor()._held_object_override_state()
 
     def agent_held_object_overrides_snapshot(self, agent_id: int) -> Set[str]:
-        overrides, lock = self._held_object_override_state()
-        with lock:
-            return set(overrides.get(agent_id, set()))
+        return self._get_object_interactor().agent_held_object_overrides_snapshot(agent_id)
 
     def record_agent_held_object(self, agent_id: int, object_id: str) -> None:
-        if not object_id:
-            return
-        overrides, lock = self._held_object_override_state()
-        with lock:
-            overrides.setdefault(agent_id, set()).add(str(object_id))
+        return self._get_object_interactor().record_agent_held_object(agent_id, object_id)
 
     def release_agent_held_objects(self, agent_id: int) -> None:
-        overrides, lock = self._held_object_override_state()
-        with lock:
-            overrides.setdefault(agent_id, set()).clear()
+        return self._get_object_interactor().release_agent_held_objects(agent_id)
 
     def metadata_held_objects(self, agent_id: int) -> Set[str]:
-        held_objects = set()
-        with self.controller_lock:
-            event = self._agent_event_unlocked(agent_id)
-            metadata = getattr(event, "metadata", {}) or {}
-            inventory_objects = metadata.get("inventoryObjects") or []
-        for obj in inventory_objects:
-            if not isinstance(obj, dict):
-                continue
-            object_id = obj.get("objectId")
-            if object_id:
-                held_objects.add(str(object_id))
-        return held_objects
+        return self._get_object_interactor().metadata_held_objects(agent_id)
 
     def teleport_to_position(
         self,
@@ -2288,21 +2138,7 @@ class ThorRuntime:
         robot: RobotRef,
         next_action: Optional[PlannedAction],
     ) -> None:
-        from .action_resources import active_resources
-        if active_resources(self) is not None:
-            return
-        if next_action is None or next_action.name != "PickupObject":
-            return
-        pickup_target = next_action.args[0] if next_action.args else None
-        agent_id = self.physical_agent_id(robot)
-        if not self.agent_held_objects_for(agent_id):
-            return
-        if pickup_target is not None and self.agent_held_object_matching(
-            agent_id,
-            pickup_target,
-        ):
-            return
-        self.place_held_objects_for_pickup(robot, pickup_target)
+        return self._get_object_interactor().prepare_hand_for_goto_if_needed(robot, next_action)
 
     @navigation_operation
     def prepare_hand_for_pickup(
@@ -2311,32 +2147,7 @@ class ThorRuntime:
         pickup_target: Any,
         target_obj: Dict[str, Any],
     ) -> Dict[str, Any]:
-        agent_id = self.physical_agent_id(robot)
-        if not self.agent_held_objects_for(agent_id):
-            return target_obj
-
-        original_position = dict(self.current_agent_position(agent_id))
-        target_object_id = str(target_obj.get("objectId") or "")
-        can_return_to_target = bool(target_object_id and object_center(target_obj))
-
-        self.place_held_objects_for_pickup(robot, pickup_target)
-
-        if can_return_to_target:
-            try:
-                return self.navigate_to_object(
-                    robot,
-                    target_object_id,
-                    allow_hand_preparation=False,
-                )
-            except RuntimeError as exc:
-                raise_if_execution_aborted(self, exc)
-                log(
-                    "Could not return directly to pickup target "
-                    f"{target_object_id}: {exc}; returning to prior position."
-                )
-
-        self.teleport_to_position(agent_id, original_position)
-        return self.find_object(pickup_target, agent_id=agent_id)
+        return self._get_object_interactor().prepare_hand_for_pickup(robot, pickup_target, target_obj)
 
     @navigation_operation
     def place_held_objects_for_pickup(
@@ -2344,86 +2155,13 @@ class ThorRuntime:
         robot: RobotRef,
         pickup_target: Any,
     ) -> None:
-        agent_id = self.physical_agent_id(robot)
-        held_objects = sorted(self.agent_held_objects_for(agent_id))
-        if not held_objects:
-            return
-
-        from .action_registry import validate_recovery_capabilities
-        validate_recovery_capabilities(self, agent_id, 'GoToObject', 'PutObject')
-        held_object = held_objects[0]
-        held_object_type = self.held_object_type(agent_id, held_object)
-        candidates = self.compatible_receptacle_candidates(
-            agent_id,
-            held_object,
-            held_object_type,
-        )
-        if not candidates:
-            raise RuntimeError(
-                "No compatible receptacle found for held object "
-                f"{held_object} ({held_object_type}) before PickupObject "
-                f"{pickup_target!r} for agent {agent_id}."
-            )
-
-        from .action_resources import active_resources
-        admitted = active_resources(self)
-        if admitted is not None:
-            bound_id = admitted.resolved.bindings.get('@hand_receptacle')
-            if bound_id is None:
-                admitted.invalid('unbound automatic hand placement')
-            candidates = [self.find_object(bound_id, agent_id=agent_id)]
-
-        last_error = "no candidate was attempted"
-        for receptacle in candidates:
-            receptacle_id = str(receptacle.get("objectId"))
-            try:
-                self.navigate_to_object(
-                    robot,
-                    receptacle_id,
-                    allow_hand_preparation=False,
-                )
-                event = self.put_held_object_in_receptacle(agent_id, receptacle)
-            except RuntimeError as exc:
-                raise_if_execution_aborted(self, exc)
-                last_error = str(exc)
-                log(
-                    f"Could not place held object {held_object} into "
-                    f"{receptacle_id}: {last_error}"
-                )
-                continue
-
-            if not step_event_failed(event):
-                log(f"Placed held object {held_object} into {receptacle_id}.")
-                return
-
-            metadata = getattr(event, "metadata", {}) or {}
-            last_error = metadata.get("errorMessage") or "PutObject failed"
-            log(
-                f"Could not place held object {held_object} into "
-                f"{receptacle_id}: {last_error}"
-            )
-
-        raise RuntimeError(
-            "Could not place held object "
-            f"{held_object} ({held_object_type}) before PickupObject "
-            f"{pickup_target!r} for agent {agent_id}: {last_error}"
-        )
+        return self._get_object_interactor().place_held_objects_for_pickup(robot, pickup_target)
 
     def held_object_type(self, agent_id: int, held_object: str) -> str:
-        for obj in self.current_objects(agent_id):
-            if obj.get("objectId") != held_object:
-                continue
-            object_type = obj.get("objectType") or obj.get("name")
-            if object_type:
-                return str(object_type)
-        return held_object.split("|", 1)[0]
+        return self._get_object_interactor().held_object_type(agent_id, held_object)
 
     def allowed_receptacle_type_keys(self, held_object_type: str) -> Set[str]:
-        held_key = object_key(held_object_type)
-        for object_type, receptacle_types in PLACEMENT_RESTRICTIONS.items():
-            if object_key(object_type) == held_key:
-                return {object_key(receptacle_type) for receptacle_type in receptacle_types}
-        return set()
+        return self._get_object_interactor().allowed_receptacle_type_keys(held_object_type)
 
     def compatible_receptacle_candidates(
         self,
@@ -2431,68 +2169,17 @@ class ThorRuntime:
         held_object: str,
         held_object_type: str,
     ) -> List[Dict[str, Any]]:
-        allowed_type_keys = self.allowed_receptacle_type_keys(held_object_type)
-        if not allowed_type_keys:
-            return []
-
-        candidates = []
-        for obj in self.current_objects(agent_id):
-            object_id = obj.get("objectId")
-            if not object_id or str(object_id) == held_object:
-                continue
-            object_type = obj.get("objectType") or str(object_id).split("|", 1)[0]
-            if object_key(object_type) not in allowed_type_keys:
-                continue
-            if object_center(obj) is None:
-                continue
-            candidates.append(obj)
-
-        candidates.sort(
-            key=lambda obj: (
-                not bool(obj.get("visible", False)),
-                object_distance(obj),
-                str(obj.get("objectId") or ""),
-            )
-        )
-        return candidates
+        return self._get_object_interactor().compatible_receptacle_candidates(agent_id, held_object, held_object_type)
 
     def put_held_object_in_receptacle(
         self,
         agent_id: int,
         receptacle: Dict[str, Any],
     ):
-        held_names = self.held_object_names_for_log(agent_id)
-        put_name = ", ".join(held_names) if held_names else "nothing"
-        log(f"PutObject names: {put_name}, {self.object_name_for_log(receptacle)}")
-        payload = {
-            "action": "PutObject",
-            "objectId": receptacle["objectId"],
-            "agentId": agent_id,
-            "forceAction": PUT_OBJECT_FORCE_ACTION,
-            "objectResources": [
-                *self.agent_held_objects_for(agent_id),
-                receptacle["objectId"],
-            ],
-        }
-        with self.stats_lock:
-            self.total_exec += 1
-        event = self.step(
-            payload,
-            check_success=False,
-            retry_on_failure=False,
-            max_retries=0,
-        )
-        if not step_event_failed(event):
-            with self.stats_lock:
-                self.success_exec += 1
-            self.record_operated_object_name(receptacle)
-        return event
+        return self._get_object_interactor().put_held_object_in_receptacle(agent_id, receptacle)
 
     def held_item_rotation_failure(self, exc: BaseException) -> bool:
-        message = str(exc).lower()
-        if "held item" not in message:
-            return False
-        return "rotateright failed" in message or "rotateleft failed" in message
+        return self._get_object_interactor().held_item_rotation_failure(exc)
 
     def configure_movement(
         self,
@@ -2748,91 +2435,17 @@ class ThorRuntime:
         extra_object_resources: Sequence[str] = (),
         action_parameters: Optional[Dict[str, Any]] = None,
     ):
-        agent_id = self.physical_agent_id(robot)
-        if action == "PickupObject":
-            held_object = self.agent_held_object_matching(agent_id, obj_name)
-            if held_object is not None:
-                log(
-                    "PickupObject name: "
-                    f"{self.object_id_name_for_log(agent_id, held_object)}"
-                )
-                log(f"Skipping PickupObject for agent {agent_id}; already holding {held_object}")
-                with self.stats_lock:
-                    self.total_exec += 1
-                    self.success_exec += 1
-                self.update_object_alias_for_pattern(obj_name, held_object, agent_id=agent_id)
-                return self.agent_event(agent_id)
-            obj = self.find_object(obj_name, agent_id=agent_id)
-            if self.agent_held_objects_for(agent_id):
-                obj = self.prepare_hand_for_pickup(robot, obj_name, obj)
-        else:
-            obj = self.find_object(obj_name, agent_id=agent_id)
-        if action == "PickupObject":
-            log(f"PickupObject name: {self.object_name_for_log(obj)}")
-        elif action == "PutObject":
-            held_names = self.held_object_names_for_log(agent_id)
-            put_name = ", ".join(held_names) if held_names else "nothing"
-            log(f"PutObject names: {put_name}, {self.object_name_for_log(obj)}")
-        log(f"{action} {obj_name} -> {operated_object_name(obj)} {obj.get('objectId')}")
-        return self.object_action_by_object(
-            action,
-            agent_id,
-            obj,
-            force_action=force_action,
-            extra_object_resources=extra_object_resources,
-            action_parameters=action_parameters,
-            goal_object_name=obj_name,
-        )
+        return self._get_object_interactor().object_action(action, robot, obj_name, force_action=force_action, extra_object_resources=extra_object_resources, action_parameters=action_parameters)
 
     def teleport_object_to_hand(self, robot: RobotRef, obj_name: Any):
-        agent_id = self.physical_agent_id(robot)
-        held_object = self.agent_held_object_matching(agent_id, obj_name)
-        if held_object is not None:
-            log(
-                "Skipping TeleportObjectToHand for agent "
-                f"{agent_id}; already holding {held_object}"
-            )
-            with self.stats_lock:
-                self.total_exec += 1
-                self.success_exec += 1
-            self.update_object_alias_for_pattern(obj_name, held_object, agent_id=agent_id)
-            return self.agent_event(agent_id)
-
-        held_objects = sorted(self.agent_held_objects_for(agent_id))
-        if held_objects:
-            held_description = ", ".join(held_objects)
-            raise RuntimeError(
-                f"Cannot TeleportObjectToHand {obj_name!r} for agent {agent_id}: "
-                "robot hand is not empty. "
-                f"Currently holding: {held_description}."
-            )
-
-        obj = self.find_object(obj_name, agent_id=agent_id)
-        log(
-            "TeleportObjectToHand "
-            f"{obj_name} -> {operated_object_name(obj)} {obj.get('objectId')}"
-        )
-        return self.object_action_by_object(
-            "PickupObject",
-            agent_id,
-            obj,
-            force_action=True,
-            goal_object_name=obj_name,
-        )
+        return self._get_object_interactor().teleport_object_to_hand(robot, obj_name)
 
     def pickup_clip_backoff_position(
         self,
         agent_id: int,
         distance: float,
     ) -> Dict[str, float]:
-        metadata = self.agent_event(agent_id).metadata
-        agent = metadata.get("agent", {})
-        position = dict(agent.get("position") or self.current_agent_position(agent_id))
-        rotation = agent.get("rotation", {})
-        yaw = math.radians(float(rotation.get("y", 0.0) or 0.0))
-        position["x"] = float(position.get("x", 0.0)) - math.sin(yaw) * distance
-        position["z"] = float(position.get("z", 0.0)) - math.cos(yaw) * distance
-        return position
+        return self._get_object_interactor().pickup_clip_backoff_position(agent_id, distance)
 
     @navigation_operation
     def retry_pickup_after_clip_error(
@@ -2841,67 +2454,14 @@ class ThorRuntime:
         payload: Dict[str, Any],
         initial_event: Optional[Any],
     ) -> Optional[Any]:
-        last_event = initial_event
-        for distance in PICKUP_OBJECT_CLIP_BACKOFF_DISTANCES:
-            target_position = self.pickup_clip_backoff_position(agent_id, distance)
-            try:
-                self.teleport_to_position_direct(agent_id, target_position)
-            except Exception as exc:
-                raise_if_execution_aborted(self, exc)
-                log(
-                    "PickupObject clip backoff teleport failed for agent "
-                    f"{agent_id} by {distance}: {exc}"
-                )
-                continue
-
-            try:
-                retry_event = self.step(
-                    payload,
-                    check_success=False,
-                    retry_on_failure=False,
-                )
-            except Exception as exc:
-                raise_if_execution_aborted(self, exc)
-                if not is_pickup_object_clip_error(exc):
-                    raise
-                log(
-                    "PickupObject still clipped after moving agent "
-                    f"{agent_id} back by {distance}; trying another distance."
-                )
-                continue
-            metadata = getattr(retry_event, "metadata", {}) or {}
-            error = metadata.get("errorMessage")
-            last_event = retry_event
-            if metadata.get("lastActionSuccess", not bool(error)):
-                return retry_event
-            if not is_pickup_object_clip_error(error):
-                return retry_event
-            log(
-                "PickupObject still clipped after moving agent "
-                f"{agent_id} back by {distance}; trying another distance."
-            )
-        return last_event
+        return self._get_object_interactor().retry_pickup_after_clip_error(agent_id, payload, initial_event)
 
     def camera_horizon(
         self,
         agent_id: int,
         event: Optional[Any] = None,
     ) -> Optional[float]:
-        metadata = getattr(event, "metadata", {}) if event is not None else {}
-        agent = metadata.get("agent", {}) if isinstance(metadata, dict) else {}
-        horizon = agent.get("cameraHorizon")
-        if horizon is None:
-            try:
-                metadata = self.agent_event(agent_id).metadata
-            except Exception as exc:
-                raise_if_execution_aborted(self, exc)
-                return None
-            agent = metadata.get("agent", {}) if isinstance(metadata, dict) else {}
-            horizon = agent.get("cameraHorizon")
-        try:
-            return float(horizon)
-        except (TypeError, ValueError):
-            return None
+        return self._get_object_interactor().camera_horizon(agent_id, event)
 
     def try_look_to_camera_horizon(
         self,
@@ -2910,35 +2470,7 @@ class ThorRuntime:
         *,
         action_name: str = "PickupObject",
     ) -> bool:
-        current_horizon = self.camera_horizon(agent_id)
-        if current_horizon is None:
-            return False
-        delta = float(target_horizon) - current_horizon
-        if abs(delta) < 1e-3:
-            return True
-        action = "LookDown" if delta > 0.0 else "LookUp"
-        try:
-            event = self.step(
-                {"action": action, "degrees": abs(delta), "agentId": agent_id},
-                check_success=False,
-                retry_on_failure=False,
-            )
-        except Exception as exc:
-            raise_if_execution_aborted(self, exc)
-            log(
-                f"{action_name} visibility look adjustment failed for agent "
-                f"{agent_id}: {exc}"
-            )
-            return False
-        metadata = getattr(event, "metadata", {}) or {}
-        error = metadata.get("errorMessage")
-        if metadata.get("lastActionSuccess", not bool(error)):
-            return True
-        log(
-            f"{action_name} visibility look adjustment failed for agent "
-            f"{agent_id}: {error or 'no error message returned'}"
-        )
-        return False
+        return self._get_object_interactor().try_look_to_camera_horizon(agent_id, target_horizon, action_name=action_name)
 
     @navigation_operation
     def retry_object_action_after_target_visibility_error(
@@ -2948,93 +2480,7 @@ class ThorRuntime:
         payload: Dict[str, Any],
         initial_event: Optional[Any],
     ) -> Optional[Any]:
-        initial_horizon = self.camera_horizon(agent_id, initial_event)
-        if initial_horizon is None:
-            if action == "SliceObject":
-                return self.retry_slice_after_interaction_reposition(
-                    agent_id,
-                    payload,
-                    initial_event,
-                )
-            return initial_event
-
-        last_event = initial_event
-        restore_horizon = True
-        try:
-            for offset in PICKUP_OBJECT_TARGET_VISIBILITY_LOOK_OFFSETS:
-                target_horizon = initial_horizon + offset
-                if not self.try_look_to_camera_horizon(
-                    agent_id,
-                    target_horizon,
-                    action_name=action,
-                ):
-                    continue
-
-                try:
-                    retry_event = self.step(
-                        payload,
-                        check_success=False,
-                        retry_on_failure=False,
-                    )
-                except Exception as exc:
-                    raise_if_execution_aborted(self, exc)
-                    if action == "PickupObject" and is_pickup_object_clip_error(exc):
-                        retry_event = self.retry_pickup_after_clip_error(
-                            agent_id,
-                            payload,
-                            None,
-                        )
-                        if retry_event is None:
-                            continue
-                    elif is_object_action_target_visibility_error(exc):
-                        log(
-                            f"{action} target still outside visibility for agent "
-                            f"{agent_id} after camera offset {offset:g}; "
-                            "trying another angle."
-                        )
-                        continue
-                    else:
-                        raise
-
-                metadata = getattr(retry_event, "metadata", {}) or {}
-                error = metadata.get("errorMessage")
-                last_event = retry_event
-                if metadata.get("lastActionSuccess", not bool(error)):
-                    restore_horizon = False
-                    return retry_event
-                if action == "PickupObject" and is_pickup_object_clip_error(error):
-                    retry_event = self.retry_pickup_after_clip_error(
-                        agent_id,
-                        payload,
-                        retry_event,
-                    )
-                    metadata = getattr(retry_event, "metadata", {}) or {}
-                    error = metadata.get("errorMessage")
-                    last_event = retry_event
-                    if metadata.get("lastActionSuccess", not bool(error)):
-                        restore_horizon = False
-                    return retry_event
-                if not is_object_action_target_visibility_error(error):
-                    return retry_event
-                log(
-                    f"{action} target still outside visibility for agent "
-                    f"{agent_id} after camera offset {offset:g}; "
-                    "trying another angle."
-                )
-        finally:
-            if restore_horizon:
-                self.try_look_to_camera_horizon(
-                    agent_id,
-                    initial_horizon,
-                    action_name=action,
-                )
-        if action == "SliceObject":
-            return self.retry_slice_after_interaction_reposition(
-                agent_id,
-                payload,
-                last_event,
-            )
-        return last_event
+        return self._get_object_interactor().retry_object_action_after_target_visibility_error(action, agent_id, payload, initial_event)
 
     def retry_slice_after_interaction_reposition(
         self,
@@ -3042,70 +2488,7 @@ class ThorRuntime:
         payload: Dict[str, Any],
         initial_event: Optional[Any],
     ) -> Optional[Any]:
-        movement_config = getattr(self, "movement_config", None)
-        if getattr(getattr(movement_config, "mode", None), "value", None) != "step":
-            return initial_event
-
-        target = payload.get("objectId")
-        if not target:
-            return initial_event
-        robot_names = sorted(
-            name
-            for name, mapped_agent_id in self.robot_agent_map.items()
-            if int(mapped_agent_id) == int(agent_id)
-        )
-        if not robot_names:
-            return initial_event
-
-        from .action_registry import validate_recovery_capabilities
-        validate_recovery_capabilities(self, agent_id, 'GoToObject')
-        state = self._interaction_reposition_state
-        active_keys = set(getattr(state, "active_keys", set()))
-        recovery_key = (int(agent_id), "SliceObject", str(target))
-        if recovery_key in active_keys:
-            return initial_event
-        active_keys.add(recovery_key)
-        state.active_keys = active_keys
-        try:
-            # Include request construction and the final Slice: both must observe
-            # the same static peers as the reposition plan. RLock permits the
-            # single-request coordinator to enter the same execution scope.
-            with self.navigation_execution_scope():
-                try:
-                    self.navigate_to_object(
-                        robot_names[0],
-                        target,
-                        allow_hand_preparation=False,
-                        next_action=PlannedAction("SliceObject", (str(target),)),
-                        exclude_current_position=True,
-                    )
-                except TimeoutError:
-                    raise
-                except Exception as exc:
-                    raise_if_execution_aborted(self, exc)
-                    log(
-                        "SliceObject interaction reposition failed for agent "
-                        f"{agent_id}: {exc}"
-                    )
-                    return initial_event
-
-                self.check_navigation_deadline()
-                self.navigation_metrics.increment("interaction_repositions")
-                try:
-                    return self.step(
-                        payload,
-                        check_success=False,
-                        retry_on_failure=False,
-                    )
-                except Exception as exc:
-                    raise_if_execution_aborted(self, exc)
-                    if is_object_action_target_visibility_error(exc):
-                        return initial_event
-                    raise
-        finally:
-            active_keys = set(getattr(state, "active_keys", set()))
-            active_keys.discard(recovery_key)
-            state.active_keys = active_keys
+        return self._get_object_interactor().retry_slice_after_interaction_reposition(agent_id, payload, initial_event)
 
     def retry_pickup_after_target_visibility_error(
         self,
@@ -3113,12 +2496,7 @@ class ThorRuntime:
         payload: Dict[str, Any],
         initial_event: Optional[Any],
     ) -> Optional[Any]:
-        return self.retry_object_action_after_target_visibility_error(
-            "PickupObject",
-            agent_id,
-            payload,
-            initial_event,
-        )
+        return self._get_object_interactor().retry_pickup_after_target_visibility_error(agent_id, payload, initial_event)
 
     def object_action_by_object(
         self,
@@ -3131,251 +2509,13 @@ class ThorRuntime:
         action_parameters: Optional[Dict[str, Any]] = None,
         goal_object_name: Any = None,
     ):
-        payload = {"action": action, "objectId": obj["objectId"], "agentId": agent_id}
-        if action_parameters:
-            payload.update(action_parameters)
-        object_resources = [
-            *[str(resource) for resource in extra_object_resources if resource],
-            str(obj["objectId"]),
-        ]
-        payload["objectResources"] = list(dict.fromkeys(object_resources))
-        if "forceAction" not in payload:
-            if action == "PutObject":
-                payload["forceAction"] = PUT_OBJECT_FORCE_ACTION
-            elif action == "OpenObject":
-                payload["forceAction"] = OPEN_OBJECT_FORCE_ACTION
-            elif action == "CloseObject":
-                payload["forceAction"] = CLOSE_OBJECT_FORCE_ACTION
-            elif action == "DirtyObject":
-                payload["forceAction"] = DIRTY_OBJECT_FORCE_ACTION
-            elif action == "ToggleObjectOn":
-                payload["forceAction"] = TOGGLE_OBJECT_ON_FORCE_ACTION
-            elif action == "ToggleObjectOff":
-                payload["forceAction"] = TOGGLE_OBJECT_OFF_FORCE_ACTION
-            elif action == "EmptyLiquidFromObject":
-                payload["forceAction"] = EMPTY_LIQUID_FORCE_ACTION
-            elif force_action:
-                payload["forceAction"] = True
-        if action == "PickupObject" and self.agent_holds_object(agent_id, obj["objectId"]):
-            log(f"Skipping PickupObject for agent {agent_id}; already holding {obj['objectId']}")
-            with self.stats_lock:
-                self.total_exec += 1
-                self.success_exec += 1
-            self.update_object_alias_after_action(
-                action,
-                agent_id,
-                obj,
-                goal_object_name=goal_object_name,
-            )
-            self.record_operated_object_name(obj)
-            return self.agent_event(agent_id)
-        if action in {"ToggleObjectOn", "ToggleObjectOff"} and self.toggle_state_matches(action, obj):
-            desired_state = "on" if action == "ToggleObjectOn" else "off"
-            log(
-                f"Skipping {action} for agent {agent_id}; "
-                f"{obj['objectId']} is already {desired_state}"
-            )
-            with self.stats_lock:
-                self.total_exec += 1
-                self.success_exec += 1
-            self.update_object_alias_after_action(
-                action,
-                agent_id,
-                obj,
-                goal_object_name=goal_object_name,
-            )
-            self.record_operated_object_name(obj)
-            return self.agent_event(agent_id)
-
-        source_resource = (
-            goal_object_name
-            if goal_object_name is not None
-            else (obj.get("objectId") or stable_object_name(obj))
-        )
-        breaks_egg = action == "BreakObject" and is_egg_query(source_resource)
-
-        known_object_ids = set()
-        if action == "SliceObject" or breaks_egg:
-            known_object_ids = {
-                str(current.get("objectId") or "")
-                for current in self.current_objects(agent_id)
-                if current.get("objectId")
-            }
-
-        with self.stats_lock:
-            self.total_exec += 1
-        target_visibility_retry_attempted = False
-        try:
-            event = self.step(
-                payload,
-                check_success=False,
-                retry_on_failure=False,
-            )
-        except Exception as exc:
-            raise_if_execution_aborted(self, exc)
-            if action == "PickupObject" and is_pickup_object_clip_error(exc):
-                retry_event = self.retry_pickup_after_clip_error(agent_id, payload, None)
-            elif (
-                action in OBJECT_ACTION_TARGET_VISIBILITY_RETRY_ACTIONS
-                and is_object_action_target_visibility_error(exc)
-            ):
-                target_visibility_retry_attempted = True
-                retry_event = self.retry_object_action_after_target_visibility_error(
-                    action,
-                    agent_id,
-                    payload,
-                    None,
-                )
-            else:
-                raise
-            if retry_event is None:
-                raise
-            event = retry_event
-        metadata = getattr(event, "metadata", {}) or {}
-        error = metadata.get("errorMessage")
-        if not metadata.get("lastActionSuccess", not bool(error)):
-            recovered_from_failure = False
-            if action == "PickupObject" and is_pickup_object_clip_error(error):
-                event = self.retry_pickup_after_clip_error(agent_id, payload, event)
-                metadata = getattr(event, "metadata", {}) or {}
-                error = metadata.get("errorMessage")
-                recovered_from_failure = metadata.get("lastActionSuccess", not bool(error))
-            if (
-                not recovered_from_failure
-                and action in OBJECT_ACTION_TARGET_VISIBILITY_RETRY_ACTIONS
-                and not target_visibility_retry_attempted
-                and is_object_action_target_visibility_error(error)
-            ):
-                event = self.retry_object_action_after_target_visibility_error(
-                    action,
-                    agent_id,
-                    payload,
-                    event,
-                )
-                metadata = getattr(event, "metadata", {}) or {}
-                error = metadata.get("errorMessage")
-                recovered_from_failure = metadata.get("lastActionSuccess", not bool(error))
-            if not recovered_from_failure:
-                if action == "PutObject":
-                    self.log_put_object_failure_held_items(agent_id)
-                if action in {"ToggleObjectOn", "ToggleObjectOff"}:
-                    observed_obj = self.current_object_by_id(agent_id, obj["objectId"])
-                    if (
-                        observed_obj is not None
-                        and self.toggle_error_matches_desired_state(action, error or "")
-                        and self.toggle_state_matches(action, observed_obj)
-                    ):
-                        with self.stats_lock:
-                            self.success_exec += 1
-                        self.update_object_alias_after_action(
-                            action,
-                            agent_id,
-                            observed_obj,
-                            event=event,
-                            goal_object_name=goal_object_name,
-                        )
-                        self.record_operated_object_name(observed_obj)
-                        return event
-                raise RuntimeError(
-                    f"{action} failed for agent {agent_id} on {obj['objectId']}: "
-                    f"{error or 'no error message returned'}"
-                )
-        with self.stats_lock:
-            self.success_exec += 1
-        self.update_object_alias_after_action(
-            action,
-            agent_id,
-            obj,
-            event=event,
-            goal_object_name=goal_object_name,
-            extra_object_resources=extra_object_resources,
-            known_object_ids=known_object_ids,
-        )
-        if action == "OpenObject":
-            object_id = str(obj["objectId"])
-            opened_obj = self.current_object_by_id(agent_id, object_id)
-            if opened_obj is None:
-                for metadata_obj in metadata.get("objects") or []:
-                    if str(metadata_obj.get("objectId") or "") == object_id:
-                        opened_obj = metadata_obj
-                        break
-            openness = "unknown" if opened_obj is None else opened_obj.get("openness", "unknown")
-            log(f"OpenObject openness: {object_id} openness={openness}")
-        if action == "SliceObject":
-            self.record_created_slice_object_names(obj, event, known_object_ids)
-            sliced_goal_name = (
-                goal_object_name
-                if goal_object_name is not None
-                else stable_object_name(obj)
-            )
-            record_verified_goal_state(
-                sliced_goal_name,
-                "SLICED",
-                str(obj.get("objectId") or "") or None,
-                getattr(self, "evaluation_context", None),
-            )
-        if breaks_egg:
-            self.record_created_broken_egg_object_names(obj, event, known_object_ids)
-            broken_goal_name = (
-                goal_object_name
-                if goal_object_name is not None
-                else stable_object_name(obj)
-            )
-            record_verified_goal_state(
-                broken_goal_name,
-                "BROKEN",
-                str(obj.get("objectId") or "") or None,
-                getattr(self, "evaluation_context", None),
-            )
-        self.record_operated_object_name(obj)
-        return event
+        return self._get_object_interactor().object_action_by_object(action, agent_id, obj, force_action=force_action, extra_object_resources=extra_object_resources, action_parameters=action_parameters, goal_object_name=goal_object_name)
 
     def throw_object(self, robot: RobotRef, move_magnitude: float = 7):
-        agent_id = self.physical_agent_id(robot)
-        held_objects = sorted(self.agent_held_objects_for(agent_id))
-        with self.stats_lock:
-            self.total_exec += 1
-        event = self.step(
-            {
-                "action": "ThrowObject",
-                "moveMagnitude": move_magnitude,
-                "agentId": agent_id,
-                "forceAction": False,
-                "objectResources": held_objects,
-            },
-            check_success=False,
-            retry_on_failure=False,
-        )
-        metadata = getattr(event, "metadata", {}) or {}
-        error = metadata.get("errorMessage")
-        if not metadata.get("lastActionSuccess", not bool(error)):
-            raise RuntimeError(
-                f"ThrowObject failed for agent {agent_id}: "
-                f"{error or 'no error message returned'}"
-            )
-        with self.stats_lock:
-            self.success_exec += 1
-        self.update_object_aliases_for_object_ids(
-            held_objects,
-            agent_id=agent_id,
-            event=event,
-        )
-        return event
+        return self._get_object_interactor().throw_object(robot, move_magnitude)
 
     def toggle_objects(self, action: str, robot: RobotRef, obj_name: Any) -> None:
-        agent_id = self.physical_agent_id(robot)
-        matches = self.find_objects(obj_name, agent_id=agent_id)
-        if not matches:
-            raise RuntimeError(f"Could not find switchable object {obj_name!r}")
-        obj = matches[0]
-        force_action = object_key(obj.get("objectType") or "") == "stoveknob"
-        return self.object_action_by_object(
-            action,
-            agent_id,
-            obj,
-            force_action=force_action,
-            goal_object_name=obj_name,
-        )
+        return self._get_object_interactor().toggle_objects(action, robot, obj_name)
 
     def goal_satisfied(self, goal: Dict[str, Any]) -> bool:
         goal_spec = GoalSpec.from_value(goal)

@@ -73,10 +73,8 @@ def _direct(runtime, robot_id, normalized, context):
 
 
 def _helper(function, runtime, robot_id, normalized, context):
-    from .context import runtime_scope
-    from . import actions
-    with runtime_scope(runtime):
-        return function(actions)(robot_id, *normalized.parameters['args'])
+    from .object_interactor import ObjectInteractor
+    return function(ObjectInteractor(runtime))(robot_id, *normalized.parameters['args'])
 
 
 def _object(action_type, runtime, robot_id, normalized, context):
@@ -276,5 +274,5 @@ class ActionRegistry:
         agent = runtime.physical_agent_id(robot_id)
         if normalized.parameters.get('agentId', agent) != agent:
             raise ValueError('agentId must match the queue robot')
-        executor = _direct if normalized.form == 'thor' else self.get(action.action_type).executor
-        return executor(runtime, robot_id, normalized, context)
+        from .object_interactor import ObjectInteractor
+        return ObjectInteractor(runtime).execute(robot_id, prepared, context, registry=self)

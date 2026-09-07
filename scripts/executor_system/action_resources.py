@@ -99,7 +99,7 @@ def resolve_action_resources(runtime, snapshot, robot_id, action):
 def resolve_declared_resources(runtime, snapshot, robot_id, action, *,
                                object_arguments=(), navigation_recovery=False,
                                pickup_index=None, special=None, scene_only=False):
-    from . import actions, context
+    from .object_interactor import ObjectInteractor
     manager = manager_for(runtime)
     view = snapshot_resource_view(runtime, snapshot)
     args = action.args()
@@ -117,55 +117,55 @@ def resolve_declared_resources(runtime, snapshot, robot_id, action, *,
         ids.add(object_id)
         return selected
 
-    with context.runtime_scope(view):
-        if action.action_type == 'GoToObject':
-            view.find_object(args[0], agent_id=agent_id)
-        if navigation_recovery:
-            for candidate in snapshot.objects_by_id.values():
-                if candidate.get('openable') and candidate.get('isOpen'):
-                    bind(candidate['objectId'], candidate)
-                    if candidate.get('name'):
-                        bindings[str(candidate['name'])] = str(candidate['objectId'])
-        if special == 'stove':
-            burner = actions._resolve_stove_burner(robot_id, args[0], supporting_obj=args[1])
-            bind(args[0], burner, '@burner')
-            knob = actions._resolve_stove_knob_for_burner(robot_id, burner)
-            bind(knob['objectId'], knob, '@knob')
-        for index in object_arguments:
-            if index < len(args) and str(args[index]) not in bindings:
-                bind(args[index])
-        if special == 'sink':
-            basin = actions._find_sink_basin(robot_id, args[0])
-            bind(args[0], basin, '@basin')
-            bind('SinkBasin', basin)
-            bind('Faucet', role='@faucet')
-        for field in ('objectId',):
-            if action.parameters.get(field) and action.action_type != 'GoToObject':
-                bind(action.parameters[field])
-        for pattern in (action.resource_policy.get('object_resources') or action.parameters.get('object_resources') or action.parameters.get('objectResources') or ()):
-            bind(pattern)
+    interactor = ObjectInteractor(view)
+    if action.action_type == 'GoToObject':
+        view.find_object(args[0], agent_id=agent_id)
+    if navigation_recovery:
+        for candidate in snapshot.objects_by_id.values():
+            if candidate.get('openable') and candidate.get('isOpen'):
+                bind(candidate['objectId'], candidate)
+                if candidate.get('name'):
+                    bindings[str(candidate['name'])] = str(candidate['objectId'])
+    if special == 'stove':
+        burner = interactor._resolve_stove_burner(robot_id, args[0], supporting_obj=args[1])
+        bind(args[0], burner, '@burner')
+        knob = interactor._resolve_stove_knob_for_burner(robot_id, burner)
+        bind(knob['objectId'], knob, '@knob')
+    for index in object_arguments:
+        if index < len(args) and str(args[index]) not in bindings:
+            bind(args[index])
+    if special == 'sink':
+        basin = interactor._find_sink_basin(robot_id, args[0])
+        bind(args[0], basin, '@basin')
+        bind('SinkBasin', basin)
+        bind('Faucet', role='@faucet')
+    for field in ('objectId',):
+        if action.parameters.get(field) and action.action_type != 'GoToObject':
+            bind(action.parameters[field])
+    for pattern in (action.resource_policy.get('object_resources') or action.parameters.get('object_resources') or action.parameters.get('objectResources') or ()):
+        bind(pattern)
 
-        held = snapshot.held_objects.get(robot_id, ())
-        if action.action_type == 'PutObject' and not scene_only:
-            target = bindings.get(str(args[0])) if args else None
-            if not held or (args and target not in held):
-                raise RuntimeError(f'Cannot PutObject for {robot_id}: robot is not holding the requested object.')
-        if action.action_type in ('PutObject', 'ThrowObject'):
-            for object_id in held:
-                bind(object_id)
-        # These helpers may perform a nested PickupObject. Preselect the one
-        # receptacle used if a different object is currently occupying the hand.
-        if not scene_only and pickup_index is not None and pickup_index < len(args) and held:
-            target = bindings.get(str(args[pickup_index]))
-            other_held = sorted(set(held) - {target})
-            if other_held:
-                held_id = other_held[0]
-                bind(held_id)
-                candidates = view.compatible_receptacle_candidates(
-                    agent_id, held_id, view.held_object_type(agent_id, held_id))
-                if not candidates:
-                    raise RuntimeError(f'No compatible receptacle for {held_id}')
-                bind(candidates[0]['objectId'], candidates[0], '@hand_receptacle')
+    held = snapshot.held_objects.get(robot_id, ())
+    if action.action_type == 'PutObject' and not scene_only:
+        target = bindings.get(str(args[0])) if args else None
+        if not held or (args and target not in held):
+            raise RuntimeError(f'Cannot PutObject for {robot_id}: robot is not holding the requested object.')
+    if action.action_type in ('PutObject', 'ThrowObject'):
+        for object_id in held:
+            bind(object_id)
+    # These helpers may perform a nested PickupObject. Preselect the one
+    # receptacle used if a different object is currently occupying the hand.
+    if not scene_only and pickup_index is not None and pickup_index < len(args) and held:
+        target = bindings.get(str(args[pickup_index]))
+        other_held = sorted(set(held) - {target})
+        if other_held:
+            held_id = other_held[0]
+            bind(held_id)
+            candidates = view.compatible_receptacle_candidates(
+                agent_id, held_id, view.held_object_type(agent_id, held_id))
+            if not candidates:
+                raise RuntimeError(f'No compatible receptacle for {held_id}')
+            bind(candidates[0]['objectId'], candidates[0], '@hand_receptacle')
 
     keys = tuple(sorted({manager.canonical(object_id) for object_id in ids}))
     for other_robot, held in (() if scene_only else snapshot.held_objects.items()):
