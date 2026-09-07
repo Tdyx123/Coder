@@ -46,5 +46,114 @@ assert not any(name in sys.modules for name in (
         self.assertEqual(result.returncode, 0, result.stderr)
 
 
+class ControllerFacadeTest(unittest.TestCase):
+    def setUp(self):
+        from executor_system.controller_client import ControllerClient
+        self.runtime = snapshot_runtime()
+        self.runtime.controller_client = ControllerClient(self.runtime)
+
+    def test_one_submission_commits_one_version_and_two_safety_checks(self):
+        calls = []
+        original = self.runtime.controller.step
+        def submit(payload):
+            calls.append(payload)
+            return original(payload)
+        self.runtime.controller.step = submit
+        with patch.object(self.runtime.execution_control, 'check',
+                          wraps=self.runtime.execution_control.check) as check:
+            event = self.runtime._step_direct({'action': 'Pass'}, save_frame=False)
+        self.assertIs(event, self.runtime.controller.last_event)
+        self.assertEqual(calls, [{'action': 'Pass'}])
+        self.assertEqual(self.runtime.state_version, 1)
+        self.assertEqual(check.call_count, 2)
+
+    def test_client_accepts_replaced_controller_and_commits_failed_event(self):
+        replacement = SimpleNamespace(last_event=multi_event(success=False))
+        replacement.step = lambda payload: replacement.last_event
+        self.runtime.controller = replacement
+        with self.assertRaisesRegex(RuntimeError, 'Pass failed'):
+            self.runtime.controller_client.step({'action': 'Pass'}, save_frame=False)
+        self.assertEqual(self.runtime.state_version, 1)
+
+    def test_controller_submissions_are_mutually_exclusive(self):
+        entered, release, second_started = (threading.Event() for _ in range(3))
+        calls, errors = [], []
+        original = self.runtime.controller.step
+        def submit(payload):
+            calls.append(payload['agentId'])
+            if payload['agentId'] == 0:
+                entered.set()
+                if not release.wait(3):
+                    raise RuntimeError('test release timed out')
+            return original(payload)
+        self.runtime.controller.step = submit
+        def run(agent):
+            try:
+                if agent == 1:
+                    second_started.set()
+                self.runtime._step_direct({'action': 'Pass', 'agentId': agent}, save_frame=False)
+            except BaseException as exc:
+                errors.append(exc)
+        workers = [threading.Thread(target=run, args=(agent,)) for agent in (0, 1)]
+        workers[0].start()
+        try:
+            self.assertTrue(entered.wait(3))
+            workers[1].start()
+            self.assertTrue(second_started.wait(3))
+            self.assertEqual(calls, [0])
+        finally:
+            release.set()
+            for worker in workers:
+                if worker.ident is not None:
+                    worker.join(3)
+        self.assertFalse(errors)
+        self.assertFalse(any(worker.is_alive() for worker in workers))
+        self.assertEqual(calls, [0, 1])
+        self.assertEqual(self.runtime.state_version, 2)
+
+    def test_cancellation_while_waiting_for_lock_prevents_submission(self):
+        checked, errors = threading.Event(), []
+        original = self.runtime.execution_control.check
+        def check():
+            original()
+            checked.set()
+        def run():
+            try:
+                self.runtime._step_direct({'action': 'Pass'}, save_frame=False)
+            except BaseException as exc:
+                errors.append(exc)
+        worker = threading.Thread(target=run)
+        with patch.object(self.runtime.execution_control, 'check', side_effect=check):
+            with self.runtime.controller_lock:
+                worker.start()
+                self.assertTrue(checked.wait(3))
+                self.runtime.execution_control.cancel('cancel during lock wait')
+            worker.join(3)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(len(errors), 1)
+        self.assertIsInstance(errors[0], ExecutionCancelled)
+        self.assertEqual(self.runtime.state_version, 0)
+
+    def test_repeated_stop_does_not_retry_failed_controller_shutdown(self):
+        calls = []
+        def stop():
+            calls.append('stop')
+            raise RuntimeError('shutdown failed')
+        self.runtime.controller.stop = stop
+        self.runtime.show_windows = False
+        with self.assertRaisesRegex(RuntimeError, 'shutdown failed'):
+            self.runtime.stop()
+        self.runtime.stop()
+        self.assertEqual(calls, ['stop'])
+        self.assertIsNone(self.runtime.controller)
+
+    def test_legacy_executor_aliases_remain_identical(self):
+        from executor_system.executor import Executor
+        from executor_system.central_executor import CentralStepExecutor
+        from executor_system.synchronous_executor import SynchronousExecutor
+        self.assertIs(CentralStepExecutor, Executor)
+        self.assertIs(SynchronousExecutor, Executor)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from .plan_types import (PlannedAction)
+from .controller_client import ControllerClient
 from .config import (
     AGENT_CLEARANCE_DISTANCE,
     DIRECTIONAL_VIEW_NAMES,
@@ -252,6 +253,7 @@ class ThorRuntime:
         self.controller = None
         self._stopped = False
         self.controller_lock = threading.RLock()
+        self.controller_client = ControllerClient(self)
         self.state_version = 0
         self._committed_held_object_overrides = {}
         self.stats_lock = threading.Lock()
@@ -668,6 +670,13 @@ class ThorRuntime:
             f"({attempts}/{max_retries}); retrying serially."
         )
 
+    def _get_controller_client(self) -> ControllerClient:
+        # Legacy callers and test fixtures may build a runtime via __new__.
+        client = getattr(self, "controller_client", None)
+        if client is None:
+            client = self.controller_client = ControllerClient(self)
+        return client
+
     def _step_direct(
         self,
         payload: Dict[str, Any],
@@ -675,67 +684,9 @@ class ThorRuntime:
         check_success: bool = True,
         save_frame: bool = True,
     ):
-        scope_state = getattr(self, "_navigation_action_scope_state", None)
-        if scope_state is not None and getattr(scope_state, "depth", 0) > 0:
-            action = payload.get("action")
-            if action:
-                self.navigation_metrics.record_action(str(action))
-        control = ensure_control(self)
-        control.check()
-        committed = False
-        try:
-            with self.controller_lock:
-                control.check()
-                from .action_resources import active_resources
-                admitted = active_resources(self)
-                if admitted is not None:
-                    admitted.before_step(payload)
-                transformation_objects = None
-                held_before = ()
-                if payload.get('action') in ('SliceObject', 'BreakObject', 'PickupObject',
-                                             'PutObject', 'ThrowObject', 'DropHandObject'):
-                    transformation_objects = {
-                        str(obj.get('objectId')): dict(obj)
-                        for obj in self.current_objects() if obj.get('objectId')
-                    }
-                    if payload.get('action') in ('PutObject', 'ThrowObject', 'DropHandObject'):
-                        held_before = tuple(self.agent_held_objects_for(int(payload.get('agentId', 0))))
-                try:
-                    event = self.controller.step(dict(payload))
-                except BaseException as exc:
-                    control.cancel(str(exc))
-                    root_control = getattr(self, "execution_control", None)
-                    if root_control is not None and root_control is not control:
-                        root_control.cancel(str(exc))
-                    raise
-                # The controller has published a new last_event even if its
-                # metadata cannot be read. Publish that version and notify it;
-                # a parsing failure below makes the task unusable, not retryable.
-                self.state_version = getattr(self, "state_version", 0) + 1
-                committed = True
-                try:
-                    self._commit_transformation_identities(event, payload, transformation_objects, held_before)
-                    self._commit_world_event(event, payload)
-                except BaseException as exc:
-                    control.cancel(f"world event commit failed: {exc}")
-                    root_control = getattr(self, "execution_control", None)
-                    if root_control is not None and root_control is not control:
-                        root_control.cancel(f"world event commit failed: {exc}")
-                    if not isinstance(exc, Exception):
-                        raise
-                    from .world_snapshot import SnapshotReadError
-                    raise SnapshotReadError(f"could not commit world event: {exc}") from exc
-                if save_frame:
-                    self.save_frames(event)
-        finally:
-            # Never acquire the scheduler condition while holding controller_lock.
-            # Metadata/frame failures cannot undo an already published event.
-            scheduler = getattr(self, "stage_scheduler", None)
-            if committed and scheduler is not None:
-                scheduler.notify_world_changed()
-        if check_success:
-            self.assert_success(event, payload)
-        return event
+        return self._get_controller_client().step(
+            payload, check_success=check_success, save_frame=save_frame,
+        )
 
     def _commit_transformation_identities(self, event, payload, before, held_before=()):
         """Publish source/descendant identity under the same lock as the event.
@@ -784,46 +735,7 @@ class ThorRuntime:
                 manager.bind_identity(source_id, object_id)
 
     def _commit_world_event(self, event, payload: Dict[str, Any]) -> None:
-        """Commit every returned event, including an unsuccessful action event.
-
-        Called only under controller_lock, after state_version advances.
-        Hand overrides are evidence of a
-        successful low-level action, never asynchronous high-level bookkeeping.
-        """
-        committed = getattr(self, "_committed_held_object_overrides", None)
-        if committed is None:
-            committed = self._committed_held_object_overrides = {}
-        # Once inventory metadata confirms an object, it takes over as the
-        # source of truth. A later empty inventory must not revive old evidence.
-        events = getattr(event, "events", None) or [event]
-        confirmed = {
-            str(obj["objectId"])
-            for agent_event in events
-            for obj in (getattr(agent_event, "metadata", {}) or {}).get("inventoryObjects", ())
-            if isinstance(obj, dict) and obj.get("objectId")
-        }
-        overrides, override_lock = self._held_object_override_state()
-        with override_lock:
-            for owner, evidence in committed.items():
-                for object_id in confirmed:
-                    evidence.pop(object_id, None)
-                    overrides.get(owner, set()).discard(object_id)
-        metadata = getattr(event, "metadata", {}) or {}
-        if not metadata.get("lastActionSuccess", not bool(metadata.get("errorMessage"))):
-            return
-        action = payload.get("action")
-        agent_id = int(payload.get("agentId", 0))
-        if action == "PickupObject" and payload.get("objectId"):
-            object_id = str(payload["objectId"])
-            committed[agent_id] = {} if object_id in confirmed else {object_id: {
-                "source": "action_commit", "action": action, "version": self.state_version,
-            }}
-            self.release_agent_held_objects(agent_id)
-            if object_id not in confirmed:
-                self.record_agent_held_object(agent_id, object_id)
-        elif action in {"PutObject", "ThrowObject", "DropHandObject"}:
-            committed.pop(agent_id, None)
-            self.release_agent_held_objects(agent_id)
+        return self._get_controller_client().commit_world_event(event, payload)
 
     def assert_success(self, event, payload: Dict[str, Any]) -> None:
         metadata = getattr(event, "metadata", {}) or {}
@@ -4094,18 +4006,6 @@ class ThorRuntime:
                 log(f"Warning: ffmpeg failed for {view}: {result.stderr.strip()}")
 
     def stop(self) -> None:
-        if not getattr(self, "execution_quiescent", True):
-            raise ExecutionShutdownTimeout("cannot stop a controller with active workers")
-        with self.controller_lock:
-            if getattr(self, "_stopped", False):
-                return
-            self._stopped = True
-            controller = self.controller
-            # Claim the controller before stopping it.  A cleanup failure is
-            # recorded by the caller, while concurrent/repeated close calls
-            # remain bounded and never retry a partially stopped controller.
-            self.controller = None
-        if controller is not None:
-            controller.stop()
-        if self.show_windows and cv2 is not None:
-            cv2.destroyAllWindows()
+        if self._get_controller_client().stop():
+            if self.show_windows and cv2 is not None:
+                cv2.destroyAllWindows()
