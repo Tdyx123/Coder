@@ -10,12 +10,7 @@ from .capability_checks import capability_failure
 from .utils import require_break_egg_target
 
 
-# Supported flat THOR payload fields. Nested parameters remain the canonical
-# representation; Action.from_any preserves these fields before normalization.
-DIRECT_PAYLOAD_FIELDS = (
-    'objectId', 'agentId', 'degrees', 'moveMagnitude', 'position', 'rotation',
-    'horizon', 'throwMagnitude', 'standing', 'forceAction', 'placeStationary',
-)
+from .plan_types import DIRECT_PAYLOAD_FIELDS
 
 
 @dataclass(frozen=True)
@@ -89,7 +84,7 @@ def _object(action_type, runtime, robot_id, normalized, context):
 
 
 def _navigate(runtime, robot_id, normalized, context):
-    from .action_plan import PlannedAction
+    from .plan_types import (PlannedAction)
     following = context.get('next_action')
     return runtime.navigate_to_object(robot_id, normalized.parameters['args'][0],
         next_action=PlannedAction(following.action_type, following.args()) if following else None,

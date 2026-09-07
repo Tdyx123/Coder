@@ -4,7 +4,7 @@ import threading
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from .action_plan import PlannedAction
+from .plan_types import (PlannedAction)
 from .config import INTERACTION_MAX_PASS_STEPS
 from .context import get_runtime
 from .goals import (

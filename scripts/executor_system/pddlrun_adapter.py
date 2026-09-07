@@ -12,7 +12,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 from parsing_utils import ParsingUtils
 from pddl_noop_audit import verify_zero_action_plan
 
-from .action_plan import Action, StagePlan, TaskPlan
+from .plan_types import (Action, StagePlan, TaskPlan)
 from .utils import robot_name
 
 

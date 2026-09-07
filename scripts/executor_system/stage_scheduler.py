@@ -7,10 +7,14 @@ from contextlib import nullcontext
 from dataclasses import dataclass, replace
 from typing import Optional
 
-from .action_plan import (
-    ACTION_SUCCESS, Action, ActionResult, ExecutionLogger, WorldState,
-    ROBOT_EXECUTING, ROBOT_FINISHED_STAGE,
+from .plan_types import (
+    ACTION_SUCCESS,
+    Action,
+    ActionResult,
+    ROBOT_EXECUTING,
+    ROBOT_FINISHED_STAGE,
 )
+from .action_plan import (ExecutionLogger, WorldState)
 from .execution_control import (
     ExecutionCancelled, PlanExecutionTimeout, error_record,
     raise_if_execution_aborted, run_workers,

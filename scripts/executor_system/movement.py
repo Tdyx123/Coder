@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, FrozenSet, Iterator, List, Mapping, Optional, Protocol, Tuple
 
-from .action_plan import PlannedAction
+from .plan_types import (PlannedAction)
 from .utils import RobotRef
 
 

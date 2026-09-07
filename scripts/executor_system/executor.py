@@ -12,22 +12,20 @@ from contextlib import nullcontext
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
-from .action_plan import (
+from .plan_types import (
     ACTION_FAILED,
     ACTION_SUCCESS,
     FAILURE_SKIP_IF_EFFECT_ALREADY_TRUE,
     Action,
     ActionResult,
-    AI2ThorAdapter,
-    ExecutionLogger,
     RobotExecutionState,
-    WorldState,
     ROBOT_ACTION_FAILED,
     ROBOT_ACTION_SUCCESS,
     ROBOT_EXECUTING,
     ROBOT_FINISHED_STAGE,
     ROBOT_WAITING_CONDITION,
 )
+from .action_plan import (AI2ThorAdapter, ExecutionLogger, WorldState)
 from .execution_policy import (
     ExecutionPolicy,
     StageFailureDecisionError,
@@ -113,7 +111,8 @@ class PhaseCoordinator:
 
     def execute_registered(self, executor):
         """Bridge concurrent legacy callers into one supervised stage scheduler."""
-        from .action_plan import StagePlan, TaskPlan, PlanValidator
+        from .plan_types import (StagePlan, TaskPlan)
+        from .action_plan import (PlanValidator)
         from .stage_scheduler import StageScheduler
         from .run_results import ActionLedger
         with self.condition:
@@ -587,7 +586,8 @@ class Executor:
             return self._provided_phase_coordinator.execute_registered(self)
         if not self.robot_id:
             raise RuntimeError("Executor requires a robot_id to execute an action queue.")
-        from .action_plan import StagePlan, TaskPlan, PlanValidator
+        from .plan_types import (StagePlan, TaskPlan)
+        from .action_plan import (PlanValidator)
         from .stage_scheduler import StageScheduler
         from .run_results import ActionLedger
         stage = StagePlan(self.state.current_stage_id, {self.robot_id: self.state.action_queue})

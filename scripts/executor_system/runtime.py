@@ -17,7 +17,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
-from .action_plan import PlannedAction
+from .plan_types import (PlannedAction)
 from .config import (
     AGENT_CLEARANCE_DISTANCE,
     DIRECTIONAL_VIEW_NAMES,
@@ -36,7 +36,12 @@ from .config import (
     SceneObjectFootprint,
 )
 from .evaluation import EvaluationContext, GoalSpec
-from .execution_control import (ensure_control, ExecutionShutdownTimeout, raise_if_execution_aborted, close_runtime)
+from .execution_control import (
+    ensure_control,
+    ExecutionShutdownTimeout,
+    raise_if_execution_aborted,
+    close_runtime,
+)
 from .dependencies import CloudRendering, Controller, cv2, require_dependencies
 from .goals import (
     format_goal,

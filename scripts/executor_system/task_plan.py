@@ -1,7 +1,8 @@
 """Task plan parser and phase execution helpers."""
 from typing import Any, Dict, List, Sequence, Tuple
 
-from .action_plan import Action, PlannedAction, StagePlan, TaskPlan, TaskRunner
+from .plan_types import (Action, PlannedAction, StagePlan, TaskPlan)
+from .action_plan import (TaskRunner)
 from .actions import _PlannedActionContext, _planned_action_local
 from .context import get_runtime
 from .utils import RobotRef, log, robot_name

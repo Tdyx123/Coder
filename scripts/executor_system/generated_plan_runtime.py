@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from executor_system import context as _context
 from executor_system import demo_state as _demo_state
-from executor_system.action_plan import TaskPlan
+from executor_system.plan_types import (TaskPlan)
 from executor_system.config import CLOUD_RENDERING, RENDER_IMAGE
 from executor_system.evaluation import EvaluationContext
 from executor_system.execution_control import (
