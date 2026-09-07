@@ -2,7 +2,9 @@
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Dict, Optional, Tuple
+
+from .world_snapshot import WorldSnapshot
 
 
 class ExecutionPolicy(str, Enum):
@@ -70,3 +72,15 @@ def resolve_failure(
             error_code = "effects_unsatisfied"
         return FailureDecision(strict_fallback, error_code, 0)
     raise ValueError(f"Unsupported action failure policy: {requested!r}")
+
+
+@dataclass(frozen=True)
+class StageOutcome:
+    status: str
+    continue_task: bool
+    errors: Tuple[Dict[str, Any], ...] = ()
+    snapshot: Optional[WorldSnapshot] = None
+
+
+class ConditionEvaluationError(RuntimeError):
+    """A callback raised instead of returning condition truth."""

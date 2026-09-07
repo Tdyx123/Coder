@@ -43,9 +43,14 @@ class SnapshotStore:
     def capture(self, runtime: Any, control) -> WorldSnapshot:
         control.check()
         try:
-            with runtime.controller_lock:
+            lock = runtime.controller_lock
+            while not lock.acquire(timeout=0.05):
+                control.check()
+            try:
                 control.check()
                 return self._capture_locked(runtime)
+            finally:
+                lock.release()
         except (ExecutionCancelled, PlanExecutionTimeout):
             raise
         except BaseException as exc:

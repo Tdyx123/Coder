@@ -101,6 +101,45 @@ class PhaseCoordinator:
             MovementMode.STEP.value,
         }
         self._action_wave = _ActionWaveState(wave_id=0)
+        self._admitted_waves = {}
+        self._next_admitted_wave = 1
+
+    def admit_wave(self, actions) -> ActionWave:
+        """Freeze only scheduler-admitted actions, independent of older waves."""
+        with self.condition:
+            self.control.check()
+            wave_id = self._next_admitted_wave
+            self._next_admitted_wave += 1
+            participants = tuple(sorted(actions))
+            navigation = tuple(agent_id for agent_id in participants
+                               if actions[agent_id][0] == "GoToObject"
+                               and self.action_waves_enabled)
+            state = _ActionWaveState(
+                wave_id=wave_id, announced=dict(actions),
+                participant_agent_ids=participants, navigation_agent_ids=navigation,
+                completed_agent_ids=frozenset(self.completed_agent_ids),
+                navigation_complete=not navigation,
+            )
+            self._admitted_waves[wave_id] = state
+            return ActionWave(wave_id, navigation)
+
+    def wait_admitted_navigation(self, wave, agent_id):
+        with self.condition:
+            self.control.check()
+            state = self._admitted_waves[wave.wave_id]
+            while not state.navigation_complete:
+                self.control.check()
+                self.condition.wait(timeout=self._condition_wait_seconds())
+            self.control.check()
+            self._depart_action_wave_locked(state, agent_id)
+            if state.root_exception is not None:
+                raise NavigationBatchAborted(
+                    f"action wave {wave.wave_id} was aborted by navigation "
+                    f"agent {state.root_agent_id}: {state.root_exception}"
+                ) from state.root_exception
+
+    def _state_for_wave(self, wave):
+        return self._admitted_waves.get(wave.wave_id, self._action_wave)
 
     def mark_agent_done(self, agent_id: int) -> None:
         with self.condition:
@@ -185,7 +224,8 @@ class PhaseCoordinator:
         completed_agent_ids = frozenset()
         state: _ActionWaveState
         with self.condition:
-            state = self._action_wave
+            self.control.check()
+            state = self._state_for_wave(wave)
             if state.wave_id != wave.wave_id:
                 raise RuntimeError(f"action wave {wave.wave_id} is no longer active")
             if agent_id not in state.navigation_agent_ids:
@@ -307,7 +347,7 @@ class PhaseCoordinator:
         """Wake a joint wave when navigation fails before batch submission."""
 
         with self.condition:
-            state = self._action_wave
+            state = self._state_for_wave(wave)
             current_agent_id = int(agent_id)
             if (
                 state.wave_id != wave.wave_id
@@ -351,7 +391,10 @@ class PhaseCoordinator:
         state.departed_agent_ids.add(int(agent_id))
         participant_agent_ids = set(state.participant_agent_ids or ())
         if participant_agent_ids <= state.departed_agent_ids:
-            self._action_wave = _ActionWaveState(wave_id=state.wave_id + 1)
+            if state.wave_id in self._admitted_waves:
+                del self._admitted_waves[state.wave_id]
+            else:
+                self._action_wave = _ActionWaveState(wave_id=state.wave_id + 1)
         self.condition.notify_all()
 
     def wait_until_goto_candidates_clear(
@@ -475,6 +518,8 @@ class Executor:
         self.agent_phase_done.add(agent_id)
 
     def execute(self) -> WorldState:
+        if getattr(self, "scheduler", None) is not None:
+            return self.scheduler.execute_worker(self)
         if not self.robot_id:
             raise RuntimeError("Executor requires a robot_id to execute an action queue.")
 

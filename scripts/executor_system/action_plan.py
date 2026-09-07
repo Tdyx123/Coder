@@ -961,7 +961,8 @@ class AI2ThorAdapter:
         phase_coordinator: Optional[Any] = None,
         action_wave: Optional[Any] = None,
     ) -> Any:
-        if action.wait_until is not None and world_state is not None:
+        if (action.wait_until is not None and world_state is not None
+                and not getattr(phase_coordinator, "scheduler_admissions", False)):
             if not action.wait_until(world_state):
                 raise RuntimeError(f"wait condition for {action.action_type} is not satisfied")
         if action.action_type == "WaitUntil":
@@ -1116,40 +1117,18 @@ class StageRunner:
             if stage.stage_success_condition(self.world_state):
                 return self.world_state
 
-        from .executor import Executor, PhaseCoordinator
-
-        active_agent_ids = {
-            self.runtime.physical_agent_id(robot_id)
-            for robot_id in stage.robot_action_queues
-        }
+        from .stage_scheduler import StageScheduler
         from .execution_control import ensure_control
         root_control = self.control or ensure_control(self.runtime)
-        phase_coordinator = PhaseCoordinator(
-            self.runtime,
-            active_agent_ids,
-            control=root_control.child(),
+        scheduler = StageScheduler(
+            self.runtime, stage, control=root_control.child(),
+            policy=self.execution_policy, logger=self.logger, stage_index=self.stage_index,
         )
-        executors = [
-            Executor(
-                self.runtime,
-                robot_id,
-                actions,
-                stage_id=stage.stage_id,
-                stage_index=self.stage_index,
-                logger=self.logger,
-                phase_coordinator=phase_coordinator,
-                execution_policy=self.execution_policy,
-            )
-            for robot_id, actions in stage.robot_action_queues.items()
-        ]
-
-        from .execution_control import run_workers
-        run_workers(self.runtime, executors, phase_coordinator, stage.stage_id)
-        states = [executor.state for executor in executors]
-        self.world_state.refresh(states)
-
-        if stage.stage_success_condition is not None:
-            self.world_state.refresh(states)
+        self.outcome = scheduler.run()
+        if self.outcome.status == "failed":
+            from .execution_policy import StageFailureDecisionError
+            raise StageFailureDecisionError(self.outcome.errors[-1]["message"])
+        self.world_state.snapshot = self.outcome.snapshot
         return self.world_state
 
     def ready_items(

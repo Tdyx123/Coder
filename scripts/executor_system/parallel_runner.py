@@ -267,6 +267,8 @@ class TolerantExecutor(Executor):
         self.timeout_error_factory = PlanExecutionTimeout
 
     def execute(self) -> WorldState:
+        if getattr(self, "scheduler", None) is not None:
+            return self.scheduler.execute_worker(self)
         if not self.robot_id:
             raise RuntimeError("Executor requires a robot_id to execute an action queue.")
         return self._execute_queue()
@@ -486,37 +488,17 @@ class TolerantStageRunner:
     def execute_stage(self, stage: StagePlan) -> WorldState:
         self.logger.stage_started(stage)
         _check_deadline(self.deadline)
-        active_agent_ids = {
-            self.runtime.physical_agent_id(robot_id)
-            for robot_id in stage.robot_action_queues
-        }
+        from .stage_scheduler import StageScheduler
         root_control = self.control or ensure_control(self.runtime, self.deadline)
-        phase_coordinator = PhaseCoordinator(
-            self.runtime,
-            active_agent_ids,
-            deadline=self.deadline,
-            timeout_error_factory=PlanExecutionTimeout,
-            control=root_control.child(deadline=self.deadline),
+        scheduler = StageScheduler(
+            self.runtime, stage, control=root_control.child(deadline=self.deadline),
+            policy=self.execution_policy, stats=self.stats, logger=self.logger,
+            stage_index=self.stage_index,
         )
-        executors = [
-            TolerantExecutor(
-                self.runtime,
-                robot_id,
-                actions,
-                stage_id=stage.stage_id,
-                stage_index=self.stage_index,
-                stats=self.stats,
-                deadline=self.deadline,
-                logger=self.logger,
-                phase_coordinator=phase_coordinator,
-                execution_policy=self.execution_policy,
-            )
-            for robot_id, actions in stage.robot_action_queues.items()
-        ]
-
-        run_workers(self.runtime, executors, phase_coordinator, stage.stage_id)
-
-        self.world_state.refresh([executor.state for executor in executors])
+        self.outcome = scheduler.run()
+        if self.outcome.status == "failed":
+            raise StageFailureDecisionError(self.outcome.errors[-1]["message"])
+        self.world_state.snapshot = self.outcome.snapshot
         return self.world_state
 
 

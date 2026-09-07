@@ -153,7 +153,7 @@ def raise_if_execution_aborted(runtime, exc):
         raise exc.with_traceback(exc.__traceback__)
 
 
-def run_workers(runtime, executors, coordinator, stage_id):
+def run_workers(runtime, executors, coordinator, stage_id, *, drive=None):
     from .execution_policy import StageFailureDecisionError
 
     control = coordinator.control
@@ -207,6 +207,8 @@ def run_workers(runtime, executors, coordinator, stage_id):
             # exit evidence for every launch that may have reached the OS.
             launched_workers.append((thread, exited))
             thread.start()
+        if drive is not None:
+            drive()
         while any(not exited.is_set() for _thread, exited in launched_workers):
             control.check()
             for thread, exited in launched_workers:

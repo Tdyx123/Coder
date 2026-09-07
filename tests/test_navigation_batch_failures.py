@@ -309,7 +309,16 @@ class NavigationBatchFailureTest(unittest.TestCase):
         runtime.navigate_to_object = ThorRuntime.navigate_to_object.__get__(runtime)
         runtime.prepare_hand_for_goto_if_needed = lambda *_args: None
         runtime.record_operated_object_name = lambda _destination: None
-        runtime.agent_event = lambda _agent_id: SimpleNamespace(metadata={})
+        from tests.snapshot_fakes import FakeRuntime as SnapshotRuntime
+        snapshot_runtime = SnapshotRuntime()
+        runtime.controller_lock = snapshot_runtime.controller_lock
+        runtime.robot_agent_map = snapshot_runtime.robot_agent_map
+        runtime.state_version = 0
+        runtime.controller = snapshot_runtime.controller
+        for agent_id, event in enumerate(runtime.controller.last_event.events):
+            event.metadata["agent"]["position"] = runtime.positions[agent_id]
+            event.metadata["objects"] = list(runtime.objects.values())
+        runtime.agent_event = snapshot_runtime.agent_event
         runtime.agent_held_objects_for = lambda _agent_id: set()
         seen = []
 
