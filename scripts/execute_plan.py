@@ -118,50 +118,53 @@ def _is_shared_runtime_call(node: ast.AST, aliases: Sequence[str]) -> bool:
     )
 
 
-def _walk_executable_nodes(node: ast.AST):
-    """Walk a guarded execution path without entering deferred definitions."""
-    yield node
-    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-        return
-    for child in ast.iter_child_nodes(node):
-        yield from _walk_executable_nodes(child)
-
-
-def _exits_with_shared_runtime(tree: ast.Module, aliases: Sequence[str]) -> bool:
-    for guard in (node for node in tree.body if _is_main_guard(node)):
-        for node in _walk_executable_nodes(guard):
-            if isinstance(node, ast.Raise):
-                exit_call = node.exc
-                expected_exit = "raise"
-            elif isinstance(node, ast.Expr):
-                exit_call = node.value
-                expected_exit = "call"
-            else:
-                continue
-            if not isinstance(exit_call, ast.Call) or len(exit_call.args) != 1:
-                continue
-            is_system_exit = (
-                expected_exit == "raise"
-                and isinstance(exit_call.func, ast.Name)
-                and exit_call.func.id == "SystemExit"
-            )
-            is_builtin_exit = (
-                expected_exit == "call"
-                and isinstance(exit_call.func, ast.Name)
-                and exit_call.func.id == "exit"
-            )
-            is_sys_exit = (
-                expected_exit == "call"
-                and isinstance(exit_call.func, ast.Attribute)
+def _statement_exits_with_shared_runtime(statement: ast.stmt, aliases: Sequence[str]) -> bool:
+    if isinstance(statement, ast.Raise):
+        exit_call = statement.exc
+        valid_exit = (
+            isinstance(exit_call, ast.Call)
+            and isinstance(exit_call.func, ast.Name)
+            and exit_call.func.id == "SystemExit"
+        )
+    elif isinstance(statement, ast.Expr):
+        exit_call = statement.value
+        valid_exit = isinstance(exit_call, ast.Call) and (
+            (isinstance(exit_call.func, ast.Name) and exit_call.func.id == "exit")
+            or (
+                isinstance(exit_call.func, ast.Attribute)
                 and isinstance(exit_call.func.value, ast.Name)
                 and exit_call.func.value.id == "sys"
                 and exit_call.func.attr == "exit"
             )
-            if (is_system_exit or is_builtin_exit or is_sys_exit) and _is_shared_runtime_call(
-                exit_call.args[0], aliases
-            ):
-                return True
-    return False
+        )
+    else:
+        return False
+    return (
+        valid_exit
+        and len(exit_call.args) == 1
+        and _is_shared_runtime_call(exit_call.args[0], aliases)
+    )
+
+
+def _exits_with_shared_runtime(tree: ast.Module, aliases: Sequence[str]) -> bool:
+    guards = [node for node in tree.body if _is_main_guard(node)]
+    if len(guards) != 1 or not guards[0].body:
+        return False
+    first = guards[0].body[0]
+    if _statement_exits_with_shared_runtime(first, aliases):
+        return True
+    # The repository's generated wrapper puts the direct exit first in a try
+    # whose RuntimeError handler reports a diagnostic. This exact handler cannot
+    # intercept SystemExit, and a finally block could replace the propagated exit.
+    return (
+        isinstance(first, ast.Try)
+        and first.body
+        and not first.finalbody
+        and len(first.handlers) == 1
+        and isinstance(first.handlers[0].type, ast.Name)
+        and first.handlers[0].type.id == "RuntimeError"
+        and _statement_exits_with_shared_runtime(first.body[0], aliases)
+    )
 
 
 def verify_generated_runtime(path: Path) -> Optional[str]:
@@ -254,12 +257,19 @@ def _rewrite_legacy_robot_placeholders(source: str, robots: Sequence[Any]) -> st
         except (ValueError, SyntaxError):
             continue
         if value in placeholders:
-            replacements.append((node.lineno - 1, node.end_lineno))
-    lines = source.splitlines(keepends=True)
-    for start, end in reversed(replacements):
-        newline = "\n" if lines[end - 1].endswith("\n") else ""
-        lines[start:end] = [f"robots = {list(robots)!r}{newline}"]
-    return "".join(lines)
+            replacements.append((node.lineno, node.col_offset, node.end_lineno, node.end_col_offset))
+    encoded = source.encode("utf-8")
+    line_starts = []
+    offset = 0
+    for line in encoded.splitlines(keepends=True):
+        line_starts.append(offset)
+        offset += len(line)
+    replacement = f"robots = {list(robots)!r}".encode("utf-8")
+    for start_line, start_column, end_line, end_column in reversed(replacements):
+        start = line_starts[start_line - 1] + start_column
+        end = line_starts[end_line - 1] + end_column
+        encoded = encoded[:start] + replacement + encoded[end:]
+    return encoded.decode("utf-8")
 
 
 def compile_aithor_exec_file(command_dir: Path) -> Path:
