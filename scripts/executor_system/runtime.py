@@ -661,6 +661,9 @@ class ThorRuntime:
                 event = self.controller.step(dict(payload))
             except BaseException as exc:
                 control.cancel(str(exc))
+                root_control = getattr(self, "execution_control", None)
+                if root_control is not None and root_control is not control:
+                    root_control.cancel(str(exc))
                 raise
             if check_success:
                 self.assert_success(event, payload)
@@ -2974,12 +2977,32 @@ class ThorRuntime:
         )
 
     @contextmanager
-    def action_deadline_scope(self, deadline=None, timeout_error_factory=None):
-        # Deadlines tighten the shared task control and cannot be removed by
-        # leaving a helper scope. Cancellation is monotonic across robots.
-        control = ensure_control(self, deadline)
-        control.check()
-        yield
+    def action_deadline_scope(
+        self,
+        deadline=None,
+        timeout_error_factory=None,
+        *,
+        control=None,
+    ):
+        del timeout_error_factory  # ExecutionControl determines the exception type.
+        scope_state = getattr(self, "_execution_control_scope_state", None)
+        if scope_state is None:
+            scope_state = self._execution_control_scope_state = threading.local()
+        previous = getattr(scope_state, "control", None)
+        active_control = control or ensure_control(self)
+        active_control.tighten_deadline(deadline)
+        scope_state.control = active_control
+        try:
+            active_control.check()
+            yield
+        finally:
+            if previous is None:
+                try:
+                    del scope_state.control
+                except AttributeError:
+                    pass
+            else:
+                scope_state.control = previous
 
     def check_navigation_deadline(self) -> None:
         ensure_control(self).check()

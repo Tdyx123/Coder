@@ -1,7 +1,10 @@
 import sys
+import threading
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -10,6 +13,7 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 from executor_system.action_plan import (
+    AI2ThorAdapter,
     FAILURE_FAIL_ROBOT,
     FAILURE_FAIL_STAGE,
     FAILURE_RETRY,
@@ -17,9 +21,28 @@ from executor_system.action_plan import (
     FAILURE_SKIP_IF_EFFECT_ALREADY_TRUE,
     FAILURE_WAIT_AND_RETRY,
     Action,
+    StagePlan,
+    TaskPlan,
+    TaskRunner,
 )
-from executor_system.execution_control import ExecutionCancelled, ExecutionControl
-from executor_system.execution_policy import ExecutionPolicy, resolve_failure
+from executor_system.execution_control import (
+    ExecutionCancelled,
+    ExecutionControl,
+    ensure_control,
+)
+from executor_system.execution_policy import (
+    ExecutionPolicy,
+    StageFailureDecisionError,
+    resolve_failure,
+)
+from executor_system.runtime import ThorRuntime
+
+
+class FakeEvent:
+    metadata = {
+        "lastActionSuccess": True,
+        "agent": {"rotation": {"y": 0.0}},
+    }
 
 
 class FailurePolicyTest(unittest.TestCase):
@@ -148,6 +171,86 @@ class ChildExecutionControlTest(unittest.TestCase):
 
         self.assertEqual(parent.child(deadline=child_deadline).deadline, child_deadline)
         self.assertEqual(parent.child(deadline=parent_deadline + 10).deadline, parent_deadline)
+
+    def test_strict_stage_cancel_blocks_sibling_substep_at_controller_boundary(self):
+        runtime = object.__new__(ThorRuntime)
+        runtime.reusable = True
+        runtime.execution_quiescent = True
+        runtime.worker_errors = []
+        runtime.physical_agent_count = 2
+        runtime.controller_lock = threading.RLock()
+        controller_calls = []
+        runtime.controller = SimpleNamespace(
+            step=lambda payload: controller_calls.append(payload["action"]) or FakeEvent()
+        )
+        runtime.save_frames = lambda _event: None
+        runtime.physical_agent_id = lambda robot_id: {"robot1": 0, "robot2": 1}[robot_id]
+        runtime.current_agent_position = lambda agent_id: {
+            "x": float(agent_id),
+            "y": 0.0,
+            "z": 0.0,
+        }
+        runtime.agent_event = lambda _agent_id: FakeEvent()
+        runtime.agent_held_objects_for = lambda _agent_id: set()
+        runtime.current_objects = lambda _agent_id=None: []
+
+        first_substep_done = threading.Event()
+        scoped_controls = []
+        stage_controls = []
+
+        def execute(_adapter, robot_id, _action, **kwargs):
+            if robot_id == "robot1":
+                if not first_substep_done.wait(1):
+                    raise RuntimeError("robot2 did not submit its first substep")
+                raise RuntimeError("strict stage failure")
+
+            stage_control = kwargs["phase_coordinator"].control
+            stage_controls.append(stage_control)
+            scoped_controls.append(ensure_control(runtime))
+            runtime._step_direct(
+                {"action": "FirstSubstep", "agentId": 1},
+                save_frame=False,
+            )
+            first_substep_done.set()
+            if not stage_control.wait(1):
+                raise RuntimeError("strict failure did not cancel stage")
+            runtime._step_direct(
+                {"action": "SubstepAfterStageCancellation", "agentId": 1},
+                save_frame=False,
+            )
+            return FakeEvent()
+
+        plan = TaskPlan(
+            "task",
+            [
+                StagePlan(
+                    "stage",
+                    {
+                        "robot1": [Action("OpenObject")],
+                        "robot2": [Action("OpenObject")],
+                    },
+                )
+            ],
+        )
+
+        with patch.object(AI2ThorAdapter, "execute", execute):
+            with self.assertRaisesRegex(StageFailureDecisionError, "strict stage failure"):
+                TaskRunner(runtime, execution_policy=ExecutionPolicy.STRICT).execute(plan)
+
+        root_control = runtime.execution_control
+        self.assertEqual(controller_calls, ["FirstSubstep"])
+        self.assertIs(scoped_controls[0], stage_controls[0])
+        self.assertTrue(stage_controls[0].cancelled)
+        self.assertFalse(root_control.cancelled)
+
+        next_stage_control = root_control.child()
+        with runtime.action_deadline_scope(control=next_stage_control):
+            runtime._step_direct(
+                {"action": "NextStageSubstep", "agentId": 1},
+                save_frame=False,
+            )
+        self.assertEqual(controller_calls, ["FirstSubstep", "NextStageSubstep"])
+        self.assertFalse(next_stage_control.cancelled)
 
 
 if __name__ == "__main__":

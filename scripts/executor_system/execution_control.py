@@ -109,6 +109,15 @@ class ExecutionControl:
 def ensure_control(runtime, deadline=None):
     if not getattr(runtime, 'reusable', True):
         raise ExecutionShutdownTimeout('runtime has unquiescent workers and cannot be reused')
+    scope_state = getattr(runtime, '_execution_control_scope_state', None)
+    control = (
+        getattr(scope_state, 'control', None)
+        if scope_state is not None
+        else None
+    )
+    if control is not None:
+        control.tighten_deadline(deadline)
+        return control
     control = getattr(runtime, 'execution_control', None)
     if control is None:
         control = runtime.execution_control = ExecutionControl(deadline)
@@ -122,6 +131,7 @@ def install_control(runtime, timeout_seconds):
         raise ExecutionShutdownTimeout('runtime has unquiescent workers and cannot be reused')
     deadline = None if timeout_seconds is None else time.monotonic() + max(0, float(timeout_seconds))
     runtime.execution_control = ExecutionControl(deadline)
+    runtime._execution_control_scope_state = threading.local()
     runtime.execution_quiescent = True
     runtime.worker_errors = []
     runtime.execution_report = {}

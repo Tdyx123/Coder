@@ -600,7 +600,11 @@ class Executor:
         scope = getattr(self.runtime, "action_deadline_scope", None)
         # Only propagate context here; locking before wave request collection
         # would deadlock joint navigation waiting for its other participants.
-        with scope(deadline, factory) if callable(scope) else nullcontext():
+        with (
+            scope(deadline, factory, control=self.control)
+            if callable(scope)
+            else nullcontext()
+        ):
             return self.adapter.execute(
                 self.robot_id,
                 action,
