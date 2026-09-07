@@ -108,6 +108,12 @@ def _is_main_guard(node: ast.AST) -> bool:
 
 
 def _has_canonical_generated_bindings(tree: ast.Module, runtime_alias: str) -> bool:
+    # The import must not overwrite the guard/exit machinery or be overwritten
+    # by a required generated assignment before the shared main is called.
+    if runtime_alias in REQUIRED_GENERATED_BINDINGS or runtime_alias in {
+        "__name__", "__file__", "SystemExit", "exit", "sys", "RuntimeError"
+    }:
+        return False
     imports = []
     guards = []
     for index, node in enumerate(tree.body):

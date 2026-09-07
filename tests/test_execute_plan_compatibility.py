@@ -249,6 +249,56 @@ class ExecutePlanCompatibilityTests(unittest.TestCase):
         self.assertIn("rebound", completed.stderr)
         self.assertNotIn("SHARED_MAIN", completed.stdout)
 
+    def test_colliding_runtime_alias_does_not_shadow_valid_fallback(self):
+        for alias, exit_expression in (
+            ("BUNDLE_DATA", "raise SystemExit({call})"),
+            ("TASK_FILE", "raise SystemExit({call})"),
+            ("TASK_INDEX", "raise SystemExit({call})"),
+            ("SystemExit", "raise SystemExit({call})"),
+            ("exit", "exit({call})"),
+            ("sys", "sys.exit({call})"),
+            ("__file__", "raise SystemExit({call})"),
+            ("__name__", "raise SystemExit({call})"),
+            ("RuntimeError", "raise SystemExit({call})"),
+        ):
+            with self.subTest(alias=alias), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                command_dir = root / "selected"
+                preferred = command_dir / "plan_to_code" / "executable_plan.py"
+                preferred.parent.mkdir(parents=True)
+                fallback = command_dir / "executable_plan.py"
+                self.write_shared_runtime_stub(root, return_code=23)
+                bindings = (
+                    "BUNDLE_DATA = {'task_plan': {'task_id': 'fallback'}, 'gcr': []}\n"
+                    "TASK_FILE = 'FloorPlan1.jsonl'\n"
+                    "TASK_INDEX = 0\n"
+                )
+                call = f"{alias}(BUNDLE_DATA, TASK_FILE, TASK_INDEX, __file__)"
+                preferred.write_text(
+                    f"from executor_system.generated_plan_runtime import main as {alias}\n"
+                    + bindings.replace("'fallback'", "'colliding'")
+                    + "if __name__ == '__main__':\n"
+                    + "    try:\n        " + exit_expression.format(call=call) + "\n"
+                    + "    except RuntimeError:\n        raise SystemExit(1)\n",
+                    encoding="utf-8",
+                )
+                fallback.write_text(
+                    "from executor_system.generated_plan_runtime import main\n"
+                    + bindings
+                    + "if __name__ == '__main__':\n"
+                    + "    raise SystemExit(main(BUNDLE_DATA, TASK_FILE, TASK_INDEX, __file__))\n",
+                    encoding="utf-8",
+                )
+
+                selected, rejected = execute_plan.find_generated_runtime(command_dir)
+
+                self.assertEqual(selected, fallback)
+                self.assertEqual(len(rejected), 1)
+                completed = self.run_cli(root, "--command", str(command_dir))
+                self.assertEqual(completed.returncode, 23, completed.stderr)
+                self.assertIn("SHARED_MAIN fallback", completed.stdout)
+                self.assertNotIn("SHARED_MAIN colliding", completed.stdout)
+
     def test_legacy_robot_placeholders_use_recorded_robot_context(self):
         actual_robots = [{"name": "recorded-robot", "skills": ["NavigateTo"]}]
         for placeholder in ([], ["robot1"], ["Robot2"]):
