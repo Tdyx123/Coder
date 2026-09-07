@@ -32,6 +32,54 @@ def output_runtime(output_root: Path, *, render_image: bool = True):
 
 
 class RuntimeOutputIsolationTest(unittest.TestCase):
+    def test_shared_explicit_parent_allocates_owned_children_without_cleanup(self):
+        """A shared output container must retain pre-existing run media."""
+        controller = SimpleNamespace(last_event=SimpleNamespace(metadata={}))
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            parent = Path(tmp_dir) / "attempt_1"
+            for relative_path, content in {
+                "agent_1/img_00000.png": b"older frame",
+                "top_view/img_00000.png": b"older view",
+                "video_agent_1.mp4": b"older video",
+                "metadata.txt": b"older metadata",
+            }.items():
+                path = parent / relative_path
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(content)
+            preserved = {
+                path.relative_to(parent): path.read_bytes()
+                for path in parent.rglob("*")
+                if path.is_file()
+            }
+
+            with patch("executor_system.runtime.require_dependencies"), patch.object(
+                ThorRuntime, "resolve_physical_agent_count", return_value=1
+            ), patch.object(ThorRuntime, "resolve_agent_mode", return_value="default"), patch.object(
+                ThorRuntime, "resolve_show_windows", return_value=False
+            ), patch.object(ThorRuntime, "build_robot_agent_map", return_value={}), patch.object(
+                ThorRuntime, "configure_movement"
+            ), patch.object(ThorRuntime, "create_controller", return_value=controller), patch.object(
+                ThorRuntime, "print_agent_metadata"
+            ), patch.object(ThorRuntime, "initialize_scene"):
+                first = ThorRuntime([object()], "1", False, True, output_root=parent)
+                second = ThorRuntime([object()], "1", False, True, output_root=parent)
+                first.prepare_output_dirs()
+                second.prepare_output_dirs()
+
+            self.assertNotEqual(first.output_root, second.output_root)
+            self.assertEqual(first.output_root.parent, parent)
+            self.assertEqual(second.output_root.parent, parent)
+            self.assertEqual(
+                {
+                    path.relative_to(parent): path.read_bytes()
+                    for path in parent.rglob("*")
+                    if path.is_file()
+                    and not path.is_relative_to(first.output_root)
+                    and not path.is_relative_to(second.output_root)
+                },
+                preserved,
+            )
+
     def test_prepare_output_dirs_only_cleans_its_owned_root(self):
         """Cleaning one run must not alter another run's media or metadata."""
         with tempfile.TemporaryDirectory() as tmp_dir:

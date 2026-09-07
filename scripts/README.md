@@ -273,13 +273,15 @@ Behavior worth knowing:
 - `--movement-mode` accepts `teleport` or `step`; when omitted, the runner uses
   `LAMMAP_MOVEMENT_MODE`, then defaults to `step`
 - default subprocess timeouts are 30 seconds for `teleport` and 120 seconds for
-  `step`; an explicit `--timeout-seconds` overrides either default
+  `step`; this is the execution budget, and the parent separately adds startup
+  and finalization allowances described below
 - timed-out tasks are retried up to two times after each full round completes
-- each completed round cleans up matching GPU processes before the next retry round
+- timeout/interruption cleanup terminates only process groups owned by this
+  runner; no matching GPU processes are scanned or killed
 - summary metrics are written to a dated JSON filename, such as `0628_01.json`
   or `LaMMA-P_0628_01.json`
-- `stdout` is kept only for results with `robot_failures` by default; pass
-  `--save-all-stdout` to keep it for every result
+- failed and timed-out attempts retain full stdout/stderr log files; fully
+  successful stdout is removed by default, while `--save-all-stdout` retains it
 - the summary records the effective movement mode, timeout, and each generated
   runtime's `navigation_metrics`
 
@@ -290,18 +292,21 @@ The executor writes each attempt before updating its replaceable summary:
 ```text
 <output-dir>/runs/<run-id>/<task-key>/attempt_<N>/
   child_metrics.json  stdout.log  stderr.log  result.json
-  agent_*/  top_view/  video_*.mp4  metadata.txt   # when rendering/metadata is enabled
+  lammap-runtime-<unique>/
+    agent_*/  top_view/  video_*.mp4  metadata.txt # when rendering/metadata is enabled
 ```
 
 `run_id`, `task_key`, and `attempt` are passed to the child through
 `LAMMAP_RUN_ID`, `LAMMAP_TASK_KEY`, and `LAMMAP_ATTEMPT`.  A runner-mode child
-uses its parent-reserved `attempt_<N>` directory as its output root, so retries
-cannot share media.  Standalone generated and demo scripts use an
-identity-addressed temporary output directory. `ThorRuntime` resolves every
-output path to an absolute owned root and rejects the runtime source directory
-or an ancestor such as the project root; it clears only its own `agent_*`, view,
-and `video_*.mp4` paths. Closing is idempotent even if the first controller stop
-fails, and that cleanup error is retained in the result.
+uses its parent-reserved `attempt_<N>` directory as an output container and
+allocates a unique `lammap-runtime-<unique>` child, so retries and concurrent
+runtimes cannot share media. Standalone generated and demo scripts use an
+identity-addressed temporary container. `ThorRuntime.output_root` and every
+media path are absolute paths to that owned child. The runtime rejects the
+runtime source directory or an ancestor such as the project root as a container;
+it clears only its own `agent_*`, view, and `video_*.mp4` paths. Closing is
+idempotent even if the first controller stop fails, and that cleanup error is
+retained in the result.
 
 `--timeout-seconds` is the plan-execution budget: 120 seconds by default for
 `step` and 30 seconds for `teleport`. The parent hard limit is execution plus a

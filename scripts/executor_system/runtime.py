@@ -281,19 +281,22 @@ class ThorRuntime:
         if output_root is None:
             return Path(tempfile.mkdtemp(prefix="lammap-thor-")).resolve()
 
-        resolved = Path(output_root).expanduser().resolve()
+        container = Path(output_root).expanduser().resolve()
         # ``prepare_output_dirs`` removes media-shaped children.  Refuse the
         # module directory and every ancestor of it so a caller cannot turn
         # that targeted cleanup into source-tree cleanup.
-        if module_source_root == resolved or module_source_root.is_relative_to(resolved):
+        if module_source_root == container or module_source_root.is_relative_to(container):
             raise ValueError(
-                "output_root must be an owned run directory, not the runtime "
+                "output_root must be a run-output container, not the runtime "
                 "source directory or one of its ancestors."
             )
-        if resolved.exists() and not resolved.is_dir():
+        if container.exists() and not container.is_dir():
             raise ValueError("output_root must be a directory")
-        resolved.mkdir(parents=True, exist_ok=True)
-        return resolved
+        container.mkdir(parents=True, exist_ok=True)
+        # An explicit root is a caller-owned container, which can hold metrics,
+        # prior attempts, or concurrent runtimes.  Only a freshly allocated
+        # child belongs to this runtime and may be cleaned by prepare_output_dirs.
+        return Path(tempfile.mkdtemp(prefix="lammap-runtime-", dir=str(container))).resolve()
 
     def resolve_physical_agent_count(self) -> int:
         expected_count = self.no_robot

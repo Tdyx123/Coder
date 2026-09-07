@@ -278,14 +278,17 @@ Attempts are stored under:
 ```text
 <output-dir>/runs/<run-id>/<task-key>/attempt_<N>/
   child_metrics.json  stdout.log  stderr.log  result.json
-  agent_*/  top_view/  video_*.mp4  metadata.txt   # when media is enabled
+  lammap-runtime-<unique>/
+    agent_*/  top_view/  video_*.mp4  metadata.txt # when media is enabled
 ```
 
-Each runtime owns only its attempt directory.  A standalone generated script
-uses a distinct temporary directory keyed by the same run identity and attempt;
-the runtime rejects its source directory and source-tree ancestors as output
-roots.  Cleanup removes only that runtime's media-shaped children and never
-cleans other runs or performs machine-wide GPU/process cleanup.
+An explicit `ThorRuntime(output_root=...)` treats the supplied path as a
+container and creates a fresh `lammap-runtime-<unique>` child; `runtime.output_root`
+and media API paths point to that child. A standalone generated script uses a
+distinct temporary directory keyed by the same run identity and attempt. The
+runtime rejects its source directory and source-tree ancestors as output
+containers. Cleanup removes only the runtime's own media-shaped children and
+never cleans other runs or performs machine-wide GPU/process cleanup.
 
 To rebuild a daily summary from completed attempt records without executing
 plans again:
