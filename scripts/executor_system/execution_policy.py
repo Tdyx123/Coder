@@ -84,3 +84,89 @@ class StageOutcome:
 
 class ConditionEvaluationError(RuntimeError):
     """A callback raised instead of returning condition truth."""
+
+
+class PlanExecutionError(RuntimeError):
+    """An unsuccessful plan with its completed, serializable execution report."""
+
+    def __init__(self, report):
+        self.report = report
+        errors = report.get('errors') or ()
+        detail = ': ' + str(errors[-1].get('message', '')) if errors else ''
+        super().__init__(f"Plan {report.get('task_id', '')} {report.get('execution_status', 'failed')}{detail}")
+
+
+def condition_evidence(condition, world):
+    """Return detached evidence for one condition at the supplied version."""
+    if callable(condition):
+        try:
+            value = bool(condition(world))
+        except Exception as exc:
+            from .execution_control import raise_if_execution_aborted
+            raise_if_execution_aborted(world.runtime, exc)
+            raise ConditionEvaluationError(str(exc)) from exc
+        return {'kind': 'callable', 'name': getattr(condition, '__name__', type(condition).__name__),
+                'satisfied': value, 'world_version': world.version}
+    from .evaluation import EvaluationContext
+    from .action_resources import snapshot_resource_view
+    context = EvaluationContext.from_goals([condition])
+    view = snapshot_resource_view(world.runtime, world.snapshot)
+    result = context.evaluate_goal(view, context.goals[0],
+                                   objects=tuple(world.objects_by_id.values()))
+    return {'kind': 'goal', 'satisfied': {'satisfied': True, 'unsatisfied': False, 'unknown': None}[result['status']],
+            'world_version': world.version, 'goal': result}
+
+
+def evaluate_condition(condition, world):
+    return condition_evidence(condition, world)['satisfied']
+
+
+def conditions_evidence(conditions, world):
+    return [condition_evidence(condition, world) for condition in conditions]
+
+
+def conditions_satisfied(evidence):
+    values = [record['satisfied'] for record in evidence]
+    if any(value is False for value in values):
+        return False
+    if any(value is None for value in values):
+        return None
+    return True
+
+
+def evaluate_conditions(conditions, world):
+    return conditions_satisfied(conditions_evidence(conditions, world))
+
+
+def snapshot_report(snapshot):
+    """Serialize snapshot data without leaking mutable or controller objects."""
+    from collections.abc import Mapping
+    def plain(value):
+        if isinstance(value, Mapping):
+            return {str(key): plain(item) for key, item in value.items()}
+        if isinstance(value, (tuple, list, set, frozenset)):
+            return [plain(item) for item in value]
+        return value
+    return {'version': snapshot.version, **{name: plain(getattr(snapshot, name)) for name in
+        ('robot_positions', 'robot_rotations', 'held_objects', 'objects_by_id', 'held_object_sources')}}
+
+
+def resolve_stage_outcome(policy, stage, robot_outcomes, condition_satisfied):
+    """Resolve robot failure separately from queue exhaustion and stage truth.
+
+    A strict fail_robot also fails the stage after peers finish. SKIP action
+    failures produce a partial stage; FAIL_STAGE and false conditions produce
+    a failed stage. Legacy failures are partial unless the condition is false.
+    """
+    selected = ExecutionPolicy(policy)
+    outcomes = tuple(robot_outcomes.values() if isinstance(robot_outcomes, dict) else robot_outcomes)
+    errors = tuple(error for outcome in outcomes for error in outcome.errors)
+    snapshot = next((o.snapshot for o in reversed(outcomes) if o.snapshot is not None), None)
+    for status in ('timeout', 'cancelled'):
+        if any(o.status == status for o in outcomes):
+            return StageOutcome(status, False, errors, snapshot)
+    failed = condition_satisfied is False or any(o.status == 'failed' for o in outcomes)
+    if failed:
+        return StageOutcome('failed', selected is ExecutionPolicy.LEGACY or stage.stage_failure_policy == 'SKIP', errors, snapshot)
+    return StageOutcome('partial' if errors or any(o.status == 'partial' for o in outcomes) else 'completed',
+                        True, errors, snapshot)

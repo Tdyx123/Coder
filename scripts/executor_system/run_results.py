@@ -30,7 +30,11 @@ def task_key_for_executable(executable_path: Path) -> str:
 
 
 class ActionLedger:
-    """Count logical plan actions independently from their attempts."""
+    """Count logical plan actions independently from their attempts.
+
+    ``record_terminal(started=False)`` records scheduler skips/cancellations
+    before admission without fabricating either a start or an attempt.
+    """
 
     def __init__(self, planned_keys: Sequence[str] = ()) -> None:
         self._planned = {str(key) for key in planned_keys}
@@ -62,6 +66,7 @@ class ActionLedger:
         status: str,
         *,
         ignored_for_legacy: bool = False,
+        started: bool = True,
     ) -> None:
         with self._lock:
             self._ensure_mutable()
@@ -70,8 +75,11 @@ class ActionLedger:
                 raise ValueError(f"unsupported action terminal status: {status!r}")
             if normalized in self._terminal:
                 raise RuntimeError(f"action already has a terminal result: {normalized}")
+            if not started and status not in {'skipped', 'cancelled'}:
+                raise ValueError('unstarted terminal actions must be skipped or cancelled')
             self._planned.add(normalized)
-            self._started.add(normalized)
+            if started:
+                self._started.add(normalized)
             self._terminal[normalized] = {
                 "status": status,
                 "ignored_for_legacy": bool(ignored_for_legacy),
@@ -254,8 +262,10 @@ def _validate_completed_v2(result: Mapping[str, Any]) -> None:
     if not isinstance(counts, Mapping) or any(type(counts.get(name)) is not int or counts[name] < 0 for name in names):
         raise ValueError("v2 requires nonnegative integer action_counts")
     terminal = sum(counts[name] for name in ("succeeded", "failed", "skipped", "cancelled"))
+    minimum_started = (counts['succeeded'] + counts['failed']
+                       if result.get('scheduler_version') == 2 else terminal)
     if (terminal + counts["unexecuted"] != counts["planned"]
-            or not terminal <= counts["started"] <= counts["planned"]
+            or not minimum_started <= counts["started"] <= counts["planned"]
             or counts["attempts"] < counts["started"]):
         raise ValueError("inconsistent logical action counts")
     denominator = counts["succeeded"] + counts["failed"]

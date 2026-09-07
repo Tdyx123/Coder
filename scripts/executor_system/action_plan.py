@@ -427,7 +427,15 @@ class PlanValidator:
     def validate(self, plan: MultiStageActionPlan) -> None:
         if not plan.stages:
             raise RuntimeError("Action-level plan must contain at least one stage.")
+        if plan.global_success_condition is not None and not callable(plan.global_success_condition):
+            raise ValueError("global_success_condition must be callable")
         for stage in plan.stages:
+            if stage.stage_failure_policy not in {'FAIL_STAGE', 'SKIP'}:
+                raise ValueError("invalid stage_failure_policy")
+            if stage.synchronization_policy not in {'BARRIER_AT_STAGE_END', 'BARRIER_EACH_STEP', 'EVENT_CONDITION'}:
+                raise ValueError("invalid synchronization_policy")
+            if stage.stage_success_condition is not None and not callable(stage.stage_success_condition):
+                raise ValueError("stage_success_condition must be callable")
             if not stage.robot_action_queues:
                 raise RuntimeError(f"Stage {stage.stage_id!r} has no robot queues.")
             for robot_id, actions in stage.robot_action_queues.items():
@@ -441,6 +449,27 @@ class PlanValidator:
                     self.validate_action(stage.stage_id, robot_id, action)
 
     def validate_action(self, stage_id: str, robot_id: str, action: Action) -> None:
+        if action.on_failure not in {'FAIL_STAGE', 'FAIL_ROBOT', 'SKIP', 'RETRY', 'WAIT_AND_RETRY', 'SKIP_IF_EFFECT_ALREADY_TRUE'}:
+            raise ValueError("invalid on_failure")
+        if action.on_conflict not in {'WAIT', 'RETRY_NEXT_TICK', 'SKIP', 'FAIL_STAGE'}:
+            raise ValueError("invalid on_conflict")
+        for name, value in (("max_retries", action.max_retries), ("timeout_ticks", action.timeout_ticks)):
+            if value is not None and (type(value) is not int or value < 0):
+                raise ValueError(f"{name} must be a nonnegative integer")
+        if action.wait_until is not None and not callable(action.wait_until):
+            raise ValueError("wait_until must be callable")
+        for condition in (*action.expected_preconditions, *action.expected_effects):
+            if callable(condition):
+                continue
+            if not isinstance(condition, dict) or not condition.get('name') or set(condition) - {'name', 'states', 'state', 'contains'}:
+                raise ValueError("conditions must be callable or a named goal dictionary")
+        args = action.args()
+        object_id = action.parameters.get('objectId')
+        if args and object_id is not None and str(args[0]) != str(object_id):
+            raise ValueError("args and objectId specify conflicting objects")
+        target_actions = self.HIGH_LEVEL_ACTIONS - {'ThrowObject'}
+        if action.action_type in target_actions and not args and not object_id:
+            raise ValueError(f"{action.action_type} requires an object argument")
         if action.action_type == "BreakEgg":
             self.validate_break_egg_action(stage_id, robot_id, action)
             return
@@ -1100,23 +1129,15 @@ class StageRunner:
 
     def execute_stage(self, stage: StagePlan) -> WorldState:
         self.logger.stage_started(stage)
-        self.queue_manager = ActionQueueManager(stage)
-        self.world_state.refresh(self.queue_manager.states())
-        if stage.stage_success_condition is not None:
-            if stage.stage_success_condition(self.world_state):
-                return self.world_state
-
         from .stage_scheduler import StageScheduler
         from .execution_control import ensure_control
         root_control = self.control or ensure_control(self.runtime)
-        scheduler = StageScheduler(
+        self.scheduler = StageScheduler(
             self.runtime, stage, control=root_control.child(),
             policy=self.execution_policy, logger=self.logger, stage_index=self.stage_index,
+            stats=getattr(self, 'stats', None),
         )
-        self.outcome = scheduler.run()
-        if self.outcome.status == "failed":
-            from .execution_policy import StageFailureDecisionError
-            raise StageFailureDecisionError(self.outcome.errors[-1]["message"])
+        self.outcome = self.scheduler.run()
         self.world_state.snapshot = self.outcome.snapshot
         return self.world_state
 
@@ -1173,38 +1194,95 @@ class TaskRunner:
         *,
         timeout_seconds: Optional[float] = None,
     ) -> WorldState:
-        from .execution_control import install_control
-        control = install_control(self.runtime, timeout_seconds)
+        import math
+        from .execution_control import install_control, error_record, PlanExecutionTimeout, ExecutionCancelled
+        from .execution_policy import PlanExecutionError, ConditionEvaluationError, evaluate_condition, snapshot_report
+        from .run_results import ActionLedger
+        from .parallel_runner import TolerantRunStats
+        if timeout_seconds is not None and (not math.isfinite(float(timeout_seconds)) or float(timeout_seconds) <= 0):
+            raise ValueError('timeout_seconds must be finite and positive')
         plan = self.loader.load(raw_plan)
         self.validator.validate(plan)
-        from .run_results import ActionLedger
-
+        control = install_control(self.runtime, timeout_seconds)
         planned_keys = [
             f"{stage_index}:{robot_id}:{cursor}"
             for stage_index, stage in enumerate(plan.stages)
             for robot_id, actions in stage.robot_action_queues.items()
             for cursor, _action in enumerate(actions)
         ]
-        self.runtime.action_ledger = ActionLedger(planned_keys)
+        stats = TolerantRunStats(action_ledger=ActionLedger(planned_keys),
+                                 execution_policy=self.execution_policy.value)
+        self.runtime.action_ledger = stats.action_ledger
         world_state = WorldState(self.runtime)
+        stage_reports, errors = [], []
+        status = 'completed'
+        global_result = None
+        exception = None
         try:
             for stage_index, stage in enumerate(plan.stages):
                 control.check()
-                executor = StageRunner(
-                    self.runtime,
-                    logger=self.logger,
-                    stage_index=stage_index,
-                    execution_policy=self.execution_policy,
-                    control=control,
-                )
-                world_state = executor.execute_stage(stage)
+                runner = StageRunner(self.runtime, logger=self.logger, stage_index=stage_index,
+                                     execution_policy=self.execution_policy, control=control)
+                runner.stats = stats
+                try:
+                    world_state = runner.execute_stage(stage)
+                finally:
+                    if getattr(runner, 'scheduler', None) is not None:
+                        stage_reports.append(runner.scheduler.report)
+                        world_state = runner.scheduler.world
+                outcome = runner.outcome
+                errors.extend(outcome.errors)
+                if outcome.status == 'failed':
+                    status = 'failed'
+                elif outcome.status == 'partial' and status == 'completed':
+                    status = 'partial'
+                if not outcome.continue_task:
+                    break
+            # Always capture all physical robots before an explicit final condition.
+            world_state.refresh([])
             if plan.global_success_condition is not None:
-                world_state.refresh([])
-                if not plan.global_success_condition(world_state):
-                    raise RuntimeError(f"Global success condition failed for {plan.task_id}.")
-            return world_state
+                global_result = evaluate_condition(plan.global_success_condition, world_state)
+                if global_result is not True:
+                    status = 'failed'
+                    errors.append({'phase': 'global_condition', 'exception_type': 'GlobalConditionUnsatisfied',
+                                   'message': f'Global success condition failed for {plan.task_id}.'})
+        except ConditionEvaluationError as exc:
+            control.cancel(str(exc))
+            exception = exc
+            status = 'failed'
+            errors.append(error_record(exc, phase='condition'))
+        except BaseException as exc:
+            exception = exc
+            status = 'timeout' if isinstance(exc, PlanExecutionTimeout) else 'cancelled' if isinstance(exc, ExecutionCancelled) else 'failed'
+            if status == 'timeout':
+                stats.record_timeout(str(exc))
+            errors.append(error_record(exc, phase='task'))
+            raise
         finally:
-            self.runtime.action_metrics = self.runtime.action_ledger.freeze()
+            actions = [action for stage_report in stage_reports for action in stage_report['actions']]
+            known = {action['action_key'] for action in actions}
+            for stage_index, stage in enumerate(plan.stages):
+                for robot_id, queue in stage.robot_action_queues.items():
+                    for cursor, action in enumerate(queue):
+                        key = f'{stage_index}:{robot_id}:{cursor}'
+                        if key not in known:
+                            actions.append({'action_key': key, 'stage_id': stage.stage_id,
+                                'robot_id': robot_id, 'cursor': cursor, 'action_type': action.action_type,
+                                'status': 'unexecuted', 'reason': 'previous_stage_failed' if exception is None else status,
+                                'attempts': 0, 'requested_failure_policy': action.on_failure})
+            report = stats.to_dict(status='failed' if status == 'failed' else 'success')
+            report.update(task_id=plan.task_id, execution_status=status, scheduler_version=2,
+                          stages=stage_reports, actions=actions, errors=errors,
+                          global_condition_satisfied=global_result,
+                          final_snapshot=snapshot_report(world_state.snapshot),
+                          worker_errors=list(getattr(self.runtime, 'worker_errors', [])),
+                          execution_quiescent=getattr(self.runtime, 'execution_quiescent', True))
+            self.runtime.execution_report = report
+            self.runtime.action_metrics = {key: report[key] for key in
+                ('action_counts', 'raw_action_sr', 'ignored_failure_count')}
+        if status == 'failed' and self.execution_policy is ExecutionPolicy.STRICT:
+            raise PlanExecutionError(report) from exception
+        return world_state
 
 
 class StageController(TaskRunner):

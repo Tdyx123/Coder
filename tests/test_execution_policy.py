@@ -231,15 +231,16 @@ class ChildExecutionControlTest(unittest.TestCase):
                 StagePlan(
                     "stage",
                     {
-                        "robot1": [Action("OpenObject")],
-                        "robot2": [Action("OpenObject")],
+                        "robot1": [Action("Wait")],
+                        "robot2": [Action("Wait")],
                     },
                 )
             ],
         )
 
         with patch.object(AI2ThorAdapter, "execute", execute):
-            with self.assertRaisesRegex(StageFailureDecisionError, "strict stage failure"):
+            from executor_system.execution_policy import PlanExecutionError
+            with self.assertRaisesRegex(PlanExecutionError, "strict stage failure"):
                 TaskRunner(runtime, execution_policy=ExecutionPolicy.STRICT).execute(plan)
 
         root_control = runtime.execution_control

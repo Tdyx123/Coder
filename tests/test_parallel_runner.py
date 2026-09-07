@@ -55,7 +55,7 @@ from executor_system.demo_state import (
     verified_ground_truth_goal_signatures,
 )
 from executor_system.executor import PhaseCoordinator
-from executor_system.execution_policy import ExecutionPolicy
+from executor_system.execution_policy import ExecutionPolicy, PlanExecutionError
 from executor_system.evaluation import EvaluationContext
 from executor_system.movement import NavigationDeferred
 from executor_system.runtime import PICKUP_OBJECT_CLIP_ERROR, ThorRuntime
@@ -430,6 +430,7 @@ class TemperatureGroundTruthProgressTest(unittest.TestCase):
                 "temperature": "Cold",
             }
         ]
+        runtime.objects.append({"objectId": "Cabinet|1", "objectType": "Cabinet", "openable": True, "isOpen": False})
         goals = [{"name": "Apple", "contains": [], "states": ["COLD"]}]
         runtime.evaluation_context = EvaluationContext.from_goals(goals)
 
@@ -438,7 +439,7 @@ class TemperatureGroundTruthProgressTest(unittest.TestCase):
 
         plan = TaskPlan(
             "task",
-            [StagePlan("Phase 1", {"robot1": [Action("OpenObject", {})]})],
+            [StagePlan("Phase 1", {"robot1": [Action("OpenObject", {"args": ("Cabinet",)})]})],
         )
 
         with patch("executor_system.action_plan.AI2ThorAdapter.execute", fake_execute):
@@ -2228,7 +2229,7 @@ class TolerantExecutorTest(unittest.TestCase):
         runtime = self.make_runtime()
         plan = TaskPlan(
             "task",
-            [StagePlan("named-stage", {"robot1": [Action("OpenObject", {})]})],
+            [StagePlan("named-stage", {"robot1": [Action("OpenObject", {"args": ("Cabinet",)})]})],
         )
 
         with patch(
@@ -2481,14 +2482,16 @@ class TolerantExecutorTest(unittest.TestCase):
         )
 
         with patch("executor_system.action_plan.AI2ThorAdapter.execute", fake_execute):
-            with self.assertRaisesRegex(RuntimeError, "open failed"):
-                run_action_plan_tolerant(
-                    runtime,
-                    plan,
-                    timeout_seconds=5,
-                    logger=logger,
-                    execution_policy=ExecutionPolicy.STRICT,
-                )
+            report = run_action_plan_tolerant(
+                runtime,
+                plan,
+                timeout_seconds=5,
+                logger=logger,
+                execution_policy=ExecutionPolicy.STRICT,
+            )
+
+        self.assertEqual(report["execution_status"], "failed")
+        self.assertIs(report, runtime.execution_report)
 
         self.assertEqual(calls, [("robot1", "OpenObject")])
         self.assertEqual(runtime.execution_report["execution_policy"], "strict")
@@ -2639,7 +2642,8 @@ class OrdinaryExecutorFailureContinuationTest(unittest.TestCase):
         )
 
         with patch("executor_system.action_plan.AI2ThorAdapter.execute", fake_execute):
-            TaskRunner(runtime, execution_policy=ExecutionPolicy.STRICT).execute(plan)
+            with self.assertRaises(PlanExecutionError):
+                TaskRunner(runtime, execution_policy=ExecutionPolicy.STRICT).execute(plan)
 
         self.assertIn(("robot1", "OpenObject"), calls)
         self.assertNotIn(("robot1", "CloseObject"), calls)

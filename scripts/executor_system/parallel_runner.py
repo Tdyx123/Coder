@@ -40,7 +40,7 @@ from executor_system.action_plan import (  # noqa: E402
     ROBOT_FINISHED_STAGE,
     ROBOT_ACTION_FAILED,
     ROBOT_ACTION_SUCCESS,
-    StagePlan,
+    StagePlan, StageRunner, TaskRunner,
     WorldState,
 )
 from executor_system.execution_policy import (  # noqa: E402
@@ -236,7 +236,7 @@ def _check_deadline(deadline: Optional[float]) -> None:
 
 
 class TolerantExecutor(Executor):
-    """Execute one robot queue, stopping only this robot on action failure."""
+    """Compatibility constructor for the shared loop and legacy statistics."""
 
     def __init__(
         self,
@@ -266,294 +266,32 @@ class TolerantExecutor(Executor):
         self.deadline = deadline
         self.timeout_error_factory = PlanExecutionTimeout
 
-    def execute(self) -> WorldState:
-        if getattr(self, "scheduler", None) is not None:
-            return self.scheduler.execute_worker(self)
-        if not self.robot_id:
-            raise RuntimeError("Executor requires a robot_id to execute an action queue.")
-        return self._execute_queue()
-
-    def wait_for_condition(self, action: Action) -> None:
-        if action.wait_until is None:
-            return
-
-        while True:
-            self.control.check()
-            self.world_state.refresh([self.state])
-            if action.wait_until(self.world_state):
-                return
-            if (
-                action.timeout_ticks is not None
-                and self.state.wait_ticks >= action.timeout_ticks
-            ):
-                raise RuntimeError(
-                    f"{self.robot_id} timed out waiting for {action.action_type}."
-                )
-            self.state.wait_ticks += 1
-            agent_id = self.runtime.physical_agent_id(self.robot_id)
-            self.runtime.step(
-                {"action": "Pass", "agentId": agent_id},
-                check_success=False,
-                save_frame=False,
-            )
-
-    def _execute_queue(self) -> WorldState:
-        tick = 0
-        try:
-            while not self.state.finished():
-                self.control.check()
-                action = self.state.next_action()
-                if action is None:
-                    break
-
-                action_index = self.state.action_cursor
-                ledger_key = f"{self.stage_index}:{self.robot_id}:{action_index}"
-                self.world_state.tick = tick
-                self.world_state.refresh([self.state])
-                self.state.status = ROBOT_EXECUTING
-                self.stats.record_started()
-                self.stats.action_ledger.record_started(ledger_key)
-                self.stats.action_ledger.record_attempt()
-                action_wave = None
-                try:
-                    self.wait_for_condition(action)
-                    self.control.check()
-                    action_wave = self.before_action(action)
-                    event = self.execute_action(action, action_wave=action_wave)
-                    self.control.check()
-                    self.record_temperature_goal_progress()
-                except NavigationDeferred:
-                    self.stats.record_deferred()
-                    tick += 1
-                    continue
-                except (PlanExecutionTimeout, ExecutionCancelled):
-                    raise
-                except Exception as exc:
-                    raise_if_execution_aborted(self.runtime, exc)
-                    if self.phase_coordinator is not None and action_wave is not None:
-                        self.phase_coordinator.abort_action_wave(
-                            action_wave,
-                            self.runtime.physical_agent_id(self.robot_id),
-                            exc,
-                        )
-                    if self.handle_failure(action, action_index, exc, tick):
-                        tick += 1
-                    continue
-
-                result = ActionResult(self.robot_id, action, ACTION_SUCCESS, event=event)
-                self.state.last_action_result = result
-                self.state.action_cursor += 1
-                self.state.wait_ticks = 0
-                self.state.status = (
-                    ROBOT_FINISHED_STAGE
-                    if self.state.finished()
-                    else ROBOT_ACTION_SUCCESS
-                )
-                self.logger.result(tick, result)
-                self.stats.action_ledger.record_terminal(ledger_key, "succeeded")
-                tick += 1
-        finally:
-            self.state.status = ROBOT_FINISHED_STAGE
-            self.world_state.refresh([self.state])
-            if self.phase_coordinator is not None and self.robot_id:
-                self.phase_coordinator.mark_agent_done(
-                    self.runtime.physical_agent_id(self.robot_id)
-                )
-        return self.world_state
-
-    def handle_failure(
-        self,
-        action: Action,
-        action_index: int,
-        exc: BaseException,
-        tick: int,
-        ledger_key: Optional[str] = None,
-    ) -> bool:
-        raise_if_execution_aborted(self.runtime, exc)
-        self.control.check()
-        action_key = action.stable_id(self.robot_id, self.state.action_cursor)
-        retries = self.state.retries_by_action.get(action_key, 0)
-        attempts = retries + 1
-        effects_satisfied = self.effects_satisfied_after_failure(action)
-        if (
-            action.on_failure == "SKIP_IF_EFFECT_ALREADY_TRUE"
-            and action.expected_effects
-            and effects_satisfied is True
-        ):
-            result = ActionResult(
-                self.robot_id,
-                action,
-                ACTION_SUCCESS,
-                error_message=str(exc),
-                attempts=attempts,
-                requested_failure_policy=action.on_failure,
-            )
-            self.state.last_action_result = result
-            self.state.action_cursor += 1
-            self.state.wait_ticks = 0
-            self.state.status = ROBOT_FINISHED_STAGE if self.state.finished() else ROBOT_ACTION_SUCCESS
-            self.logger.result(tick, result)
-            self.stats.action_ledger.record_terminal(
-                ledger_key or f"{self.stage_index}:{self.robot_id}:{action_index}",
-                "succeeded",
-            )
-            return True
-
-        decision = resolve_failure(
-            self.execution_policy,
-            action,
-            attempts=attempts,
-            effects_satisfied=effects_satisfied,
-        )
-        result = ActionResult(
-            self.robot_id,
-            action,
-            ACTION_FAILED,
-            error_message=str(exc),
-            attempts=attempts,
-            requested_failure_policy=action.on_failure,
-            failure_decision=decision.kind,
-            failure_error_code=decision.error_code,
-        )
-
-        if decision.kind in {"retry", "wait_retry"}:
-            self.state.retries_by_action[action_key] = decision.retry_number
-            self.state.wait_ticks += 1
-            self.state.status = ROBOT_ACTION_FAILED
-            self.state.last_action_result = result
-            self.logger.result(tick, result)
-            if decision.kind == "wait_retry":
-                agent_id = self.runtime.physical_agent_id(self.robot_id)
-                self.runtime.step(
-                    {"action": "Pass", "agentId": agent_id},
-                    check_success=False,
-                    save_frame=False,
-                )
-            return False
-
-        self.stats.record_failure(
-            self.state.current_stage_id,
-            self.robot_id,
-            action,
-            action_index,
-            exc,
-            decision=decision,
-        )
-        self.stats.action_ledger.record_terminal(
-            ledger_key or f"{self.stage_index}:{self.robot_id}:{action_index}",
-            "failed",
-            ignored_for_legacy=failure_ignored_for_ratio(action, exc),
-        )
-        self.state.last_action_result = result
-        if decision.kind == "fail_robot":
-            self.state.action_cursor = len(self.state.action_queue)
-        else:
-            self.state.action_cursor += 1
-        self.state.wait_ticks = 0
-        self.state.status = (
-            ROBOT_FINISHED_STAGE
-            if self.state.finished()
-            else ROBOT_ACTION_FAILED
-        )
-        self.logger.result(tick, result)
-        if decision.kind == "fail_stage":
-            raise StageFailureDecisionError(
-                f"Stage {self.state.current_stage_id} failed on {self.robot_id} "
-                f"{action.action_type}: {exc}"
-            ) from exc
-        return True
 
 
-class TolerantStageRunner:
-    def __init__(
-        self,
-        runtime_obj: Any,
-        *,
-        stats: TolerantRunStats,
-        deadline: Optional[float],
-        stage_index: int,
-        logger: Optional[ExecutionLogger] = None,
-        execution_policy: Any = ExecutionPolicy.LEGACY,
-        control: Optional[Any] = None,
-    ) -> None:
-        self.runtime = runtime_obj
+class TolerantStageRunner(StageRunner):
+    """Compatibility constructor; stage execution is inherited unchanged."""
+
+    def __init__(self, runtime_obj, *, stats, deadline, stage_index, logger=None,
+                 execution_policy=ExecutionPolicy.LEGACY, control=None):
+        from .execution_control import ensure_control
+        super().__init__(runtime_obj, logger=logger, stage_index=stage_index,
+                         execution_policy=execution_policy,
+                         control=control or ensure_control(runtime_obj, deadline))
         self.stats = stats
         self.deadline = deadline
-        self.stage_index = int(stage_index)
-        self.logger = logger or ExecutionLogger()
-        self.world_state = WorldState(runtime_obj)
-        self.execution_policy = ExecutionPolicy(execution_policy)
-        self.control = control
-
-    def execute_stage(self, stage: StagePlan) -> WorldState:
-        self.logger.stage_started(stage)
-        _check_deadline(self.deadline)
-        from .stage_scheduler import StageScheduler
-        root_control = self.control or ensure_control(self.runtime, self.deadline)
-        scheduler = StageScheduler(
-            self.runtime, stage, control=root_control.child(deadline=self.deadline),
-            policy=self.execution_policy, stats=self.stats, logger=self.logger,
-            stage_index=self.stage_index,
-        )
-        self.outcome = scheduler.run()
-        if self.outcome.status == "failed":
-            raise StageFailureDecisionError(self.outcome.errors[-1]["message"])
-        self.world_state.snapshot = self.outcome.snapshot
-        return self.world_state
 
 
-def run_action_plan_tolerant(
-    runtime_obj: Any,
-    raw_plan: Any,
-    *,
-    timeout_seconds: Optional[float] = DEFAULT_TIMEOUT_SECONDS,
-    logger: Optional[ExecutionLogger] = None,
-    execution_policy: Any = ExecutionPolicy.LEGACY,
-) -> Dict[str, Any]:
-    """Run a task plan without letting one robot failure fail the whole plan."""
-
-    control = install_control(runtime_obj, timeout_seconds)
-    plan = PlanLoader().load(raw_plan)
-    planned_keys = [
-        f"{stage_index}:{robot_id}:{cursor}"
-        for stage_index, stage in enumerate(plan.stages)
-        for robot_id, actions in stage.robot_action_queues.items()
-        for cursor, _action in enumerate(actions)
-    ]
-    selected_policy = ExecutionPolicy(execution_policy)
-    stats = TolerantRunStats(
-        action_ledger=ActionLedger(planned_keys),
-        execution_policy=selected_policy.value,
-    )
-    runtime_obj.action_ledger = stats.action_ledger
-    deadline = control.deadline
-    PlanValidator(runtime_obj).validate(plan)
-    logger = logger or ExecutionLogger()
-
+def run_action_plan_tolerant(runtime_obj, raw_plan, *, timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
+                             logger=None, execution_policy=ExecutionPolicy.LEGACY):
+    """Return the same report as TaskRunner, preserving infrastructure errors."""
+    from .execution_policy import PlanExecutionError
     try:
-        for stage_index, stage in enumerate(plan.stages):
-            control.check()
-            runner = TolerantStageRunner(
-                runtime_obj,
-                stats=stats,
-                deadline=deadline,
-                stage_index=stage_index,
-                logger=logger,
-                execution_policy=selected_policy,
-                control=control,
-            )
-            runner.execute_stage(stage)
-        if plan.global_success_condition is not None:
-            world_state = WorldState(runtime_obj)
-            world_state.refresh([])
-            if not plan.global_success_condition(world_state):
-                raise RuntimeError(f"Global success condition failed for {plan.task_id}.")
-    except PlanExecutionTimeout as exc:
-        stats.record_timeout(str(exc))
-    finally:
-        runtime_obj.execution_report = stats.to_dict()
-        runtime_obj.action_metrics = {key: runtime_obj.execution_report[key] for key in
-                                     ('action_counts', 'raw_action_sr', 'ignored_failure_count')}
+        TaskRunner(runtime_obj, logger=logger, execution_policy=execution_policy).execute(
+            raw_plan, timeout_seconds=timeout_seconds)
+    except PlanExecutionError as exc:
+        return exc.report
+    except PlanExecutionTimeout:
+        return runtime_obj.execution_report
     return runtime_obj.execution_report
 
 

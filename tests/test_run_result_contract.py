@@ -22,6 +22,16 @@ from executor_system.run_results import (
 
 
 class ActionLedgerContractTest(unittest.TestCase):
+    def test_never_started_skip_does_not_invent_attempts(self):
+        ledger = ActionLedger(['a'])
+        ledger.record_terminal('a', 'skipped', started=False)
+        counts = ledger.freeze()['action_counts']
+        self.assertEqual((counts['planned'], counts['started'], counts['skipped'], counts['attempts']), (1, 0, 1, 0))
+
+    def test_unstarted_success_is_rejected(self):
+        with self.assertRaises(ValueError):
+            ActionLedger(['a']).record_terminal('a', 'succeeded', started=False)
+
     def test_retries_do_not_inflate_logical_success(self):
         ledger = ActionLedger()
         ledger.record_started("0:robot1:0")
@@ -190,6 +200,20 @@ class ResultValidationContractTest(unittest.TestCase):
                     1,
                     {"run_id": "run-a", "task_key": "../../escape", "attempt": 1},
                 )
+
+
+class SchedulerTwoCountContractTest(unittest.TestCase):
+    def test_scheduler_two_allows_unstarted_skip_but_legacy_remains_strict(self):
+        from executor_system.run_results import _validate_completed_v2
+        counts = dict(planned=1, started=0, succeeded=0, failed=0, skipped=1,
+                      cancelled=0, unexecuted=0, attempts=0)
+        result = dict(run_id='r', task_key='a' * 64, attempt=1, scheduler_version=2,
+                      execution_status='completed', action_counts=counts, raw_action_sr=None,
+                      ignored_failure_count=0, evaluation_status='incomplete')
+        _validate_completed_v2(result)
+        del result['scheduler_version']
+        with self.assertRaisesRegex(ValueError, 'logical action counts'):
+            _validate_completed_v2(result)
 
 
 if __name__ == "__main__":

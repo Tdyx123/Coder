@@ -6,6 +6,7 @@ the actual controller.step boundary with its controller lock.
 """
 
 import threading
+import queue
 import time
 from contextlib import nullcontext
 from dataclasses import dataclass, field
@@ -30,7 +31,8 @@ from .action_plan import (
 from .execution_policy import (
     ExecutionPolicy,
     StageFailureDecisionError,
-    resolve_failure,
+    resolve_failure, evaluate_conditions, conditions_evidence, conditions_satisfied,
+    ConditionEvaluationError, PlanExecutionError,
 )
 from .goals import record_satisfied_temperature_goal_states
 from .movement import (
@@ -42,6 +44,7 @@ from .movement import (
     NavigationRequest,
     NavigationResult,
 )
+from .action_resources import action_resource_scope
 from .utils import log
 from .execution_control import ensure_control, raise_if_execution_aborted
 
@@ -518,107 +521,89 @@ class Executor:
         self.agent_phase_done.add(agent_id)
 
     def execute(self) -> WorldState:
-        if getattr(self, "scheduler", None) is not None:
-            return self.scheduler.execute_worker(self)
-        if not self.robot_id:
-            raise RuntimeError("Executor requires a robot_id to execute an action queue.")
-
-        agent_id = self.runtime.physical_agent_id(self.robot_id)
-        try:
+        if getattr(self, 'scheduler', None) is not None:
             return self._execute_queue()
-        except BaseException as exc:
-            self.control.cancel(str(exc))
-            if self.phase_coordinator is not None:
-                self.phase_coordinator.mark_agent_failed(agent_id, exc)
-            raise
-
-    def _execute_queue(self) -> WorldState:
         if not self.robot_id:
             raise RuntimeError("Executor requires a robot_id to execute an action queue.")
+        from .action_plan import StagePlan, TaskPlan, PlanValidator
+        from .stage_scheduler import StageScheduler
+        from .run_results import ActionLedger
+        stage = StagePlan(self.state.current_stage_id, {self.robot_id: self.state.action_queue})
+        PlanValidator(self.runtime).validate(TaskPlan('standalone', [stage]))
+        stats = getattr(self, 'stats', None)
+        self.runtime.action_ledger = (stats.action_ledger if stats is not None else ActionLedger([
+            f'{self.stage_index}:{self.robot_id}:{cursor}' for cursor in range(len(self.state.action_queue))]))
+        scheduler = StageScheduler(self.runtime, stage, control=self.control.child(),
+            policy=self.execution_policy, stats=stats, logger=self.logger,
+            stage_index=self.stage_index, executors={self.robot_id: self})
+        try:
+            outcome = scheduler.run()
+            self.world_state.snapshot = outcome.snapshot
+            if outcome.status == 'failed' and self.execution_policy is ExecutionPolicy.STRICT:
+                raise PlanExecutionError({'execution_status': 'failed', 'stages': [scheduler.report],
+                                          'actions': scheduler.report['actions']})
+            return self.world_state
+        finally:
+            self.scheduler = None
 
-        tick = 0
-        while not self.state.finished():
-            self.control.check()
-            action = self.state.next_action()
-            if action is None:
-                break
-
-            action_cursor = self.state.action_cursor
-            action_key = f"{self.stage_index}:{self.robot_id}:{action_cursor}"
-            action_ledger = getattr(self.runtime, "action_ledger", None)
-            if action_ledger is not None:
-                action_ledger.record_started(action_key)
-                action_ledger.record_attempt()
-            self.world_state.tick = tick
-            self.world_state.refresh([self.state])
-            action_wave = None
-            try:
-                self.wait_for_condition(action)
-                self.state.status = ROBOT_EXECUTING
-                action_wave = self.before_action(action)
-                event = self.execute_action(action, action_wave=action_wave)
-                self.control.check()
-                self.record_temperature_goal_progress()
-            except NavigationDeferred:
-                tick += 1
-                continue
-            except BaseException as exc:
-                raise_if_execution_aborted(self.runtime, exc)
-                if self.phase_coordinator is not None and action_wave is not None:
-                    self.phase_coordinator.abort_action_wave(
-                        action_wave,
-                        self.runtime.physical_agent_id(self.robot_id),
-                        exc,
-                    )
-                if self.handle_failure(action, exc, tick):
-                    tick += 1
-                continue
-
-            result = ActionResult(self.robot_id, action, ACTION_SUCCESS, event=event)
-            self.state.last_action_result = result
-            self.state.action_cursor += 1
-            self.state.wait_ticks = 0
-            self.state.status = (
-                ROBOT_FINISHED_STAGE
-                if self.state.finished()
-                else ROBOT_ACTION_SUCCESS
-            )
-            self.logger.result(tick, result)
-            if action_ledger is not None:
-                action_ledger.record_terminal(action_key, "succeeded")
-            tick += 1
-
-        self.state.status = ROBOT_FINISHED_STAGE
-        self.world_state.refresh([self.state])
-        if self.phase_coordinator is not None:
-            self.phase_coordinator.mark_agent_done(
-                self.runtime.physical_agent_id(self.robot_id)
-            )
-        return self.world_state
-
-    def wait_for_condition(self, action: Action) -> None:
-        if action.wait_until is None:
-            return
-
+    def _execute_queue(self):
+        """One persistent thread per robot; state transitions belong to drive()."""
+        executor = self
+        scheduler = self.scheduler
+        mailbox = scheduler.mailboxes[self.robot_id]
         while True:
             self.control.check()
-            self.world_state.refresh([self.state])
-            if action.wait_until(self.world_state):
-                return
-            if (
-                action.timeout_ticks is not None
-                and self.state.wait_ticks >= action.timeout_ticks
-            ):
-                raise RuntimeError(
-                    f"{self.robot_id} timed out waiting for {action.action_type}."
-                )
-            self.state.wait_ticks += 1
-            self.state.status = ROBOT_WAITING_CONDITION
-            agent_id = self.runtime.physical_agent_id(self.robot_id)
-            self.runtime.step(
-                {"action": "Pass", "agentId": agent_id},
-                check_success=False,
-            )
+            try:
+                job = mailbox.get(timeout=0.05)
+            except queue.Empty:
+                continue
+            if job is None:
+                return executor.world_state
+            if job is scheduler.IDLE_TICK:
+                self.control.check()
+                scope = getattr(self.runtime, 'action_deadline_scope', None)
+                with (scope(control=self.control) if callable(scope) else nullcontext()):
+                    event = self.runtime.step(
+                        {'action': 'Pass', 'agentId': self.runtime.physical_agent_id(executor.robot_id)},
+                        check_success=False, save_frame=False,
+                    )
+                self.control.check()
+                scheduler.results.put((None, event, None))
+                with scheduler.condition:
+                    scheduler.condition.notify_all()
+                continue
+            pending, wave, snapshot = job
+            self.control.check()
+            executor.world_state.snapshot = snapshot
+            agent_id = self.runtime.physical_agent_id(executor.robot_id)
+            event, error = None, None
+            self.last_effects_evidence = []
+            try:
+                action_wave = wave if agent_id in wave.navigation_agent_ids else None
+                if action_wave is None:
+                    scheduler.coordinator.wait_admitted_navigation(wave, agent_id)
+                with action_resource_scope(self.runtime, scheduler._ledger_key(pending),
+                                           scheduler.resource_requests[scheduler._ledger_key(pending)]):
+                    event = executor.execute_action(pending.action, action_wave=action_wave)
+                self.control.check()
+                executor.world_state.refresh([executor.state])
+                self.last_effects_evidence = conditions_evidence(pending.action.expected_effects, self.world_state)
+                if conditions_satisfied(self.last_effects_evidence) is not True:
+                    raise RuntimeError('expected_effects_not_satisfied')
+                executor.record_temperature_goal_progress()
+            except Exception as exc:
+                raise_if_execution_aborted(self.runtime, exc)
+                if isinstance(exc, ConditionEvaluationError):
+                    raise
+                self.control.check()
+                scheduler.coordinator.abort_action_wave(wave, agent_id, exc)
+                error = exc
+            except BaseException as exc:
+                scheduler.coordinator.abort_action_wave(wave, agent_id, exc)
+                raise
+            scheduler.results.put((pending, event, error))
+            with scheduler.condition:
+                scheduler.condition.notify_all()
 
     def before_action(self, action: Action) -> Optional[ActionWave]:
         if self.phase_coordinator is None:
@@ -675,6 +660,7 @@ class Executor:
     def handle_failure(self, action: Action, exc: BaseException, tick: int) -> bool:
         raise_if_execution_aborted(self.runtime, exc)
         self.control.check()
+        action_index = self.state.action_cursor
         action_key = action.stable_id(self.robot_id, self.state.action_cursor)
         ledger_key = f"{self.stage_index}:{self.robot_id}:{self.state.action_cursor}"
         retries = self.state.retries_by_action.get(action_key, 0)
@@ -692,6 +678,7 @@ class Executor:
                 error_message=str(exc),
                 attempts=attempts,
                 requested_failure_policy=action.on_failure,
+                failure_error_code="effects_already_satisfied",
             )
             self.state.last_action_result = result
             self.state.action_cursor += 1
@@ -732,30 +719,27 @@ class Executor:
             self.state.last_action_result = result
             self.logger.result(tick, result)
             if decision.kind == "wait_retry":
-                agent_id = self.runtime.physical_agent_id(self.robot_id)
-                self.runtime.step(
-                    {"action": "Pass", "agentId": agent_id},
-                    check_success=False,
-                )
+                self.scheduler.retry_after[self.robot_id] = time.monotonic() + .05
             return False
 
+        stats = getattr(self, 'stats', None)
+        if stats is not None:
+            stats.record_failure(self.state.current_stage_id, self.robot_id, action,
+                                 action_index, exc, decision=decision)
         self.state.last_action_result = result
         if decision.kind == "fail_robot":
             self.state.action_cursor = len(self.state.action_queue)
         else:
             self.state.action_cursor += 1
         self.state.wait_ticks = 0
-        self.state.status = (
-            ROBOT_FINISHED_STAGE
-            if self.state.finished()
-            else ROBOT_ACTION_FAILED
-        )
+        self.state.status = ROBOT_ACTION_FAILED
         self.logger.result(tick, result)
         action_ledger = getattr(self.runtime, "action_ledger", None)
         if action_ledger is not None:
             action_ledger.record_terminal(
                 ledger_key,
                 "failed",
+                ignored_for_legacy=self.ignored_failure(action, exc),
             )
         if decision.kind == "fail_stage":
             raise StageFailureDecisionError(
@@ -764,35 +748,17 @@ class Executor:
             ) from exc
         return True
 
+    @staticmethod
+    def ignored_failure(action, exc):
+        from .parallel_runner import failure_ignored_for_ratio
+        return failure_ignored_for_ratio(action, exc)
+
     def effects_satisfied_after_failure(self, action: Action) -> Optional[bool]:
-        if action.on_failure != FAILURE_SKIP_IF_EFFECT_ALREADY_TRUE:
-            return None
-        effects = tuple(action.expected_effects or ())
-        if not effects:
+        if action.on_failure != FAILURE_SKIP_IF_EFFECT_ALREADY_TRUE or not action.expected_effects:
             return None
         self.world_state.refresh([self.state])
-        callable_values = []
-        goal_effects = []
-        for effect in effects:
-            if callable(effect):
-                callable_values.append(bool(effect(self.world_state)))
-            elif isinstance(effect, dict):
-                goal_effects.append(effect)
-            else:
-                return None
-        if any(value is False for value in callable_values):
-            return False
-        if goal_effects:
-            from .evaluation import EvaluationContext
-            context = EvaluationContext.from_goals(goal_effects)
-            objects = tuple(self.world_state.snapshot.objects_by_id.values())
-            statuses = [context.evaluate_goal(self.runtime, goal, objects=objects)["status"]
-                        for goal in context.goals]
-            if any(status == "unsatisfied" for status in statuses):
-                return False
-            if any(status != "satisfied" for status in statuses):
-                return None
-        return True
+        self.last_effects_evidence = conditions_evidence(action.expected_effects, self.world_state)
+        return conditions_satisfied(self.last_effects_evidence)
 
     def submit(
         self,

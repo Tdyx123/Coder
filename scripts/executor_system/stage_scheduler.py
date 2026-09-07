@@ -15,7 +15,9 @@ from .execution_control import (
     raise_if_execution_aborted, run_workers,
 )
 from .execution_policy import (
-    ConditionEvaluationError, ExecutionPolicy, StageFailureDecisionError, StageOutcome,
+    ConditionEvaluationError, ExecutionPolicy, FailureDecision, StageFailureDecisionError, StageOutcome,
+    evaluate_condition, evaluate_conditions, conditions_evidence, conditions_satisfied,
+    resolve_stage_outcome, snapshot_report,
 )
 from .executor import Executor, PhaseCoordinator
 from .movement import NavigationDeferred
@@ -42,8 +44,9 @@ class RobotAdmission:
 
 
 class StageScheduler:
+    IDLE_TICK = _IDLE_TICK
     def __init__(self, runtime, stage, *, control, policy, stats=None,
-                 logger=None, stage_index=0):
+                 logger=None, stage_index=0, executors=None):
         self.runtime, self.stage, self.control = runtime, stage, control
         self.policy = ExecutionPolicy(policy)
         self.stats, self.stage_index = stats, stage_index
@@ -67,6 +70,14 @@ class StageScheduler:
         self.snapshot_store = SnapshotStore()
         self._world_changed = True
         self._errors = []
+        self.retry_after = {}
+        self.action_records = {}
+        self.attempt_counts = {}
+        self.precondition_evidence = {}
+        self.report = {'stage_id': stage.stage_id, 'stage_index': stage_index,
+                       'actions': [], 'attempts': [], 'waits': [], 'waves': [],
+                       'resources': [], 'condition': {'initial': None, 'final': None}}
+        self.outcome = None
         self._tick = 0
         self._last_pass = time.monotonic()
         self._tick_inflight = False
@@ -74,7 +85,11 @@ class StageScheduler:
             kwargs = dict(stage_id=stage.stage_id, stage_index=stage_index,
                           logger=self.logger, phase_coordinator=self.coordinator,
                           execution_policy=self.policy)
-            if stats is None:
+            if executors is not None:
+                executor = executors[robot]
+                executor.phase_coordinator = self.coordinator
+                executor.control = control
+            elif stats is None:
                 executor = Executor(runtime, robot, actions, **kwargs)
             else:
                 from .parallel_runner import TolerantExecutor
@@ -98,72 +113,24 @@ class StageScheduler:
             last = state.last_action_result
             status = 'FAILED' if last is not None and last.failure_decision == 'fail_robot' else 'FINISHED'
             self.admissions[robot] = RobotAdmission(status)
-            state.status = ROBOT_FINISHED_STAGE
+            if status != 'FAILED':
+                state.status = ROBOT_FINISHED_STAGE
             self.coordinator.mark_agent_done(self.runtime.physical_agent_id(robot))
         else:
             self.admissions[robot] = RobotAdmission(
                 'READY', PendingAction(robot, state.action_cursor, state.next_action()))
 
     def execute_worker(self, executor):
-        """One persistent thread per robot; state transitions belong to drive()."""
-        mailbox = self.mailboxes[executor.robot_id]
-        while True:
-            self.control.check()
-            try:
-                job = mailbox.get(timeout=0.05)
-            except queue.Empty:
-                continue
-            if job is None:
-                return executor.world_state
-            if job is _IDLE_TICK:
-                self.control.check()
-                scope = getattr(self.runtime, 'action_deadline_scope', None)
-                with (scope(control=self.control) if callable(scope) else nullcontext()):
-                    event = self.runtime.step(
-                        {'action': 'Pass', 'agentId': self.runtime.physical_agent_id(executor.robot_id)},
-                        check_success=False, save_frame=False,
-                    )
-                self.control.check()
-                self.results.put((None, event, None))
-                with self.condition:
-                    self.condition.notify_all()
-                continue
-            pending, wave, snapshot = job
-            self.control.check()
-            executor.world_state.snapshot = snapshot
-            agent_id = self.runtime.physical_agent_id(executor.robot_id)
-            event, error = None, None
-            try:
-                action_wave = wave if agent_id in wave.navigation_agent_ids else None
-                if action_wave is None:
-                    self.coordinator.wait_admitted_navigation(wave, agent_id)
-                with action_resource_scope(self.runtime, self._ledger_key(pending),
-                                           self.resource_requests[self._ledger_key(pending)]):
-                    event = executor.execute_action(pending.action, action_wave=action_wave)
-                self.control.check()
-                executor.record_temperature_goal_progress()
-            except Exception as exc:
-                raise_if_execution_aborted(self.runtime, exc)
-                self.control.check()
-                self.coordinator.abort_action_wave(wave, agent_id, exc)
-                error = exc
-            except BaseException as exc:
-                self.coordinator.abort_action_wave(wave, agent_id, exc)
-                raise
-            self.results.put((pending, event, error))
-            with self.condition:
-                self.condition.notify_all()
+        """Compatibility hook; Executor owns the single robot worker loop."""
+        return executor._execute_queue()
 
     def _condition_ready(self, pending):
-        condition = pending.action.wait_until
-        if condition is None:
-            return True
-        try:
-            return bool(condition(self.world))
-        except Exception as exc:
-            raise ConditionEvaluationError(
-                f'{pending.robot_id} condition for {pending.action.action_type}: {exc}'
-            ) from exc
+        conditions = list(pending.action.expected_preconditions)
+        if pending.action.wait_until is not None:
+            conditions.insert(0, pending.action.wait_until)
+        evidence = conditions_evidence(conditions, self.world)
+        self.precondition_evidence[self._ledger_key(pending)] = evidence
+        return conditions_satisfied(evidence) is True
 
     def _admit_resources(self, pending):
         key = self._ledger_key(pending)
@@ -176,6 +143,8 @@ class StageScheduler:
             lease = self.resource_manager.try_acquire(key, resolved.keys)
             if lease is not None:
                 self.resource_leases[key] = lease
+                self.report['resources'].append({'event': 'acquired', 'action_key': key,
+                    'keys': list(resolved.keys), 'world_version': self.world.version})
                 return True
             blockers = self.resource_manager.blockers(resolved.keys)
             reason = f'resources held by {blockers}'
@@ -187,7 +156,16 @@ class StageScheduler:
                 self.logger.result(self._tick, result)
                 ledger = getattr(self.runtime, 'action_ledger', None)
                 if ledger is not None:
+                    ledger.record_started(key)
+                    ledger.record_attempt()
                     ledger.record_terminal(key, 'failed')
+                self.attempt_counts[key] = self.attempt_counts.get(key, 0) + 1
+                if self.stats is not None:
+                    self.stats.record_started()
+                    self.stats.record_failure(self.stage.stage_id, pending.robot_id, pending.action,
+                        pending.cursor, RuntimeError(reason),
+                        decision=FailureDecision('fail_stage', 'resource_conflict', 0))
+                self._observe_result(pending, result)
                 raise StageFailureDecisionError(f'RESOURCE_CONFLICT: {reason}')
             if pending.action.on_conflict == 'SKIP':
                 executor = self.executors[pending.robot_id]
@@ -201,7 +179,8 @@ class StageScheduler:
                 self.logger.result(self._tick, result)
                 ledger = getattr(self.runtime, 'action_ledger', None)
                 if ledger is not None:
-                    ledger.record_terminal(key, 'skipped')
+                    ledger.record_terminal(key, 'skipped', started=False)
+                self._observe_result(pending, result)
                 self._release_resources(pending)
                 self._set_pending(executor)
                 return False
@@ -214,6 +193,12 @@ class StageScheduler:
         except Exception as exc:
             raise_if_execution_aborted(self.runtime, exc)
             self._release_resources(pending)
+            ledger = getattr(self.runtime, 'action_ledger', None)
+            if ledger is not None:
+                ledger.record_started(key)
+                ledger.record_attempt()
+            if self.stats is not None:
+                self.stats.record_started()
             self._record_failure(self.executors[pending.robot_id], pending, exc)
             self._set_pending(self.executors[pending.robot_id])
         return False
@@ -223,19 +208,42 @@ class StageScheduler:
         lease = self.resource_leases.pop(key, None)
         self.resource_requests.pop(key, None)
         if lease is not None:
+            self.report['resources'].append({'event': 'released', 'action_key': key,
+                                             'world_version': self.world.version})
             lease.release()
             self.notify_world_changed()
 
+    def _observe_result(self, pending, result):
+        if result is None:
+            return
+        record = {'action_key': self._ledger_key(pending), 'stage_id': self.stage.stage_id,
+                  'robot_id': pending.robot_id, 'cursor': pending.cursor,
+                  'action_type': pending.action.action_type, 'status': result.status.lower(),
+                  'reason': result.failure_error_code or result.error_message or 'action_completed',
+                  'error': result.error_message, 'attempts': result.attempts,
+                  'requested_failure_policy': pending.action.on_failure,
+                  'failure_decision': result.failure_decision,
+                  'world_version': self.world.version,
+                  'preconditions': self.precondition_evidence.get(self._ledger_key(pending), []),
+                  'effects': getattr(self.executors[pending.robot_id], 'last_effects_evidence', [])}
+        record['attempts'] = self.attempt_counts.get(self._ledger_key(pending), result.attempts)
+        if record['status'] == 'success':
+            record['status'] = 'succeeded'
+        self.report['attempts'].append(dict(record))
+        if result.failure_decision not in ('retry', 'wait_retry'):
+            self.action_records[self._ledger_key(pending)] = record
+
     def _record_failure(self, executor, pending, exc):
         executor.world_state.snapshot = self.world.snapshot
-        if self.stats is None:
+        executor.state.last_action_result = None
+        try:
             executor.handle_failure(pending.action, exc, self._tick)
-        else:
-            executor.handle_failure(pending.action, pending.cursor, exc, self._tick)
-        result = executor.state.last_action_result
-        if result is not None and result.status != ACTION_SUCCESS and result.failure_decision not in ('retry', 'wait_retry'):
-            self._errors.append(error_record(exc, phase=self.stage.stage_id,
-                                             robot_id=pending.robot_id))
+        finally:
+            result = executor.state.last_action_result
+            self._observe_result(pending, result)
+            if result is not None and result.status != ACTION_SUCCESS and result.failure_decision not in ('retry', 'wait_retry'):
+                self._errors.append(error_record(exc, phase=self.stage.stage_id,
+                                                 robot_id=pending.robot_id))
 
     def _receive_results(self):
         changed = False
@@ -255,9 +263,13 @@ class StageScheduler:
                 continue
             robot = pending.robot_id
             executor = self.executors[robot]
+            if executor.world_state.version > self.world.version:
+                self.world.snapshot = executor.world_state.snapshot
             self.inflight.remove(robot)
-            self._release_resources(pending)
             if isinstance(exc, (NavigationDeferred, ResourceBindingDeferred)):
+                self.report['attempts'].append({'action_key': self._ledger_key(pending),
+                    'status': 'deferred', 'reason': type(exc).__name__, 'error': str(exc),
+                    'world_version': self.world.version})
                 if self.stats is not None:
                     self.stats.record_deferred()
             elif exc is not None:
@@ -268,9 +280,11 @@ class StageScheduler:
                 executor.state.action_cursor += 1
                 executor.state.wait_ticks = 0
                 self.logger.result(self._tick, result)
+                self._observe_result(pending, result)
                 ledger = getattr(self.runtime, 'action_ledger', None)
                 if ledger is not None:
                     ledger.record_terminal(self._ledger_key(pending), 'succeeded')
+            self._release_resources(pending)
             self._tick += 1
             self._set_pending(executor)
 
@@ -288,11 +302,20 @@ class StageScheduler:
             if admission.status in ('EXECUTING', 'FINISHED', 'FAILED'):
                 continue
             pending = admission.pending
+            if self.retry_after.get(robot, 0) > time.monotonic():
+                self.admissions[robot] = RobotAdmission('WAITING_CONDITION', pending, 'wait_retry')
+                continue
             if not self._condition_ready(pending):
                 state = self.executors[robot].state
                 self.admissions[robot] = RobotAdmission('WAITING_CONDITION', pending,
-                                                       'wait_until is false')
+                                                       'precondition_or_wait_until_not_satisfied')
                 if pending.action.timeout_ticks is not None and state.wait_ticks >= pending.action.timeout_ticks:
+                    ledger = getattr(self.runtime, 'action_ledger', None)
+                    if ledger is not None:
+                        ledger.record_started(self._ledger_key(pending))
+                        ledger.record_attempt()
+                    if self.stats is not None:
+                        self.stats.record_started()
                     self._record_failure(self.executors[robot], pending, RuntimeError(
                         f'{robot} timed out waiting for {pending.action.action_type}.'))
                     self._set_pending(self.executors[robot])
@@ -315,6 +338,10 @@ class StageScheduler:
             self.runtime.physical_agent_id(p.robot_id): (p.action.action_type, p.cursor)
             for p in admitted
         })
+        self.report['waves'].append({'wave_id': wave.wave_id,
+            'robots': [p.robot_id for p in admitted],
+            'navigation_agent_ids': list(wave.navigation_agent_ids),
+            'action_keys': [self._ledger_key(p) for p in admitted]})
         for pending in admitted:
             self.control.check()
             robot = pending.robot_id
@@ -322,6 +349,8 @@ class StageScheduler:
             self.executors[robot].state.status = ROBOT_EXECUTING
             self.admissions[robot] = RobotAdmission('EXECUTING', pending)
             self.inflight.add(robot)
+            key = self._ledger_key(pending)
+            self.attempt_counts[key] = self.attempt_counts.get(key, 0) + 1
             if self.stats is not None:
                 self.stats.record_started()
             ledger = getattr(self.runtime, 'action_ledger', None)
@@ -332,6 +361,15 @@ class StageScheduler:
         return True
 
     def _diagnose(self):
+        for robot, admission in self.admissions.items():
+            if admission.status in ('WAITING_CONDITION', 'WAITING_RESOURCE'):
+                record = {'robot_id': robot, 'status': admission.status,
+                          'reason': admission.reason, 'world_version': self.world.version,
+                          'cursor': admission.pending.cursor,
+                          'wait_ticks': self.executors[robot].state.wait_ticks,
+                          'resource_holders': self.resource_manager.holders()}
+                if not self.report['waits'] or self.report['waits'][-1] != record:
+                    self.report['waits'].append(record)
         self.runtime.scheduler_diagnostics = {
             'stage_id': self.stage.stage_id, 'world_version': self.world.version,
             'robots': {robot: {
@@ -381,30 +419,120 @@ class StageScheduler:
                     continue
                 self.condition.wait(timeout=max(0, min(.05, remaining)))
 
+    def _harvest_completed_successes(self):
+        """Keep completed evidence when a peer stops the stage before dequeue."""
+        while True:
+            try:
+                pending, event, exc = self.results.get_nowait()
+            except queue.Empty:
+                return
+            if pending is None or exc is not None or self._ledger_key(pending) in self.action_records:
+                continue
+            executor = self.executors[pending.robot_id]
+            result = ActionResult(pending.robot_id, pending.action, ACTION_SUCCESS, event=event)
+            executor.state.last_action_result = result
+            executor.state.action_cursor = pending.cursor + 1
+            self.inflight.discard(pending.robot_id)
+            self.logger.result(self._tick, result)
+            self._observe_result(pending, result)
+            ledger = getattr(self.runtime, 'action_ledger', None)
+            if ledger is not None:
+                ledger.record_terminal(self._ledger_key(pending), 'succeeded')
+            self._release_resources(pending)
+            self._set_pending(executor)
+
+    def _tail_records(self, reason, *, skipped=False):
+        ledger = getattr(self.runtime, 'action_ledger', None)
+        for robot, executor in self.executors.items():
+            last = executor.state.last_action_result
+            robot_failed = last is not None and last.failure_decision == 'fail_robot'
+            for cursor, action in enumerate(executor.state.action_queue):
+                key = f'{self.stage_index}:{robot}:{cursor}'
+                if key in self.action_records:
+                    continue
+                admitted = robot in self.inflight and self.admissions[robot].pending.cursor == cursor
+                status = 'skipped' if skipped else 'cancelled' if admitted else 'unexecuted'
+                tail_reason = 'robot_failed' if robot_failed else reason
+                self.action_records[key] = {'action_key': key, 'stage_id': self.stage.stage_id,
+                    'robot_id': robot, 'cursor': cursor, 'action_type': action.action_type,
+                    'status': status, 'reason': tail_reason, 'attempts': self.attempt_counts.get(key, 0),
+                    'requested_failure_policy': action.on_failure}
+                if ledger is not None and status in ('skipped', 'cancelled'):
+                    ledger.record_terminal(key, status, started=admitted)
+            if skipped:
+                executor.state.action_cursor = len(executor.state.action_queue)
+                self._set_pending(executor)
+
     def run(self):
         previous = getattr(self.runtime, 'stage_scheduler', None)
         self.runtime.stage_scheduler = self
+        tail_reason = 'queue_not_executed'
         try:
-            run_workers(self.runtime, list(self.executors.values()), self.coordinator,
-                        self.stage.stage_id, drive=self._drive)
             self.world.snapshot = self.snapshot_store.capture(self.runtime, self.control)
-            return StageOutcome('partial' if self._errors else 'completed', True,
-                                tuple(self._errors), self.world.snapshot)
-        except StageFailureDecisionError as exc:
-            # run_workers has quiesced the stage, preserving root cancellation
-            # and infrastructure exceptions. Read the final world with the root.
+            condition = self.stage.stage_success_condition
+            initial = None if condition is None else evaluate_condition(condition, self.world)
+            self.report['condition']['initial'] = initial
+            if initial is True:
+                self._tail_records('stage_condition_already_satisfied', skipped=True)
+            else:
+                run_workers(self.runtime, list(self.executors.values()), self.coordinator,
+                            self.stage.stage_id, drive=self._drive)
+            self.world.snapshot = self.snapshot_store.capture(self.runtime, self.control)
+            final = None if condition is None else evaluate_condition(condition, self.world)
+            self.report['condition']['final'] = final
+            if final is False:
+                self._errors.append({'phase': self.stage.stage_id, 'robot_id': None,
+                    'exception_type': 'StageConditionUnsatisfied',
+                    'message': 'stage_success_condition is false'})
+                tail_reason = 'stage_condition_unsatisfied'
+            failed_robot = any(a.status == 'FAILED' for a in self.admissions.values())
+            base = StageOutcome('failed' if failed_robot else 'partial' if self._errors else 'completed',
+                                True, tuple(self._errors), self.world.snapshot)
+            self.outcome = resolve_stage_outcome(self.policy, self.stage, [base], final)
+            return self.outcome
+        except (StageFailureDecisionError, ConditionEvaluationError) as exc:
             root = getattr(self.runtime, 'execution_control', None)
-            if root is not None:
+            if root is not None and not root.cancelled:
                 self.world.snapshot = self.snapshot_store.capture(self.runtime, root)
             errors = tuple(self._errors) + (error_record(exc, phase=self.stage.stage_id),)
-            return StageOutcome('failed', self.stage.stage_failure_policy == 'SKIP',
-                                errors, self.world.snapshot)
+            tail_reason = 'condition_evaluation_error' if isinstance(exc, ConditionEvaluationError) else 'stage_failed'
+            self.outcome = resolve_stage_outcome(self.policy, self.stage,
+                [StageOutcome('failed', False, errors, self.world.snapshot)], None)
+            if isinstance(exc, ConditionEvaluationError):
+                if root is not None:
+                    root.cancel(str(exc))
+                raise
+            if self.stage.stage_success_condition is not None:
+                try:
+                    self.report['condition']['final'] = evaluate_condition(self.stage.stage_success_condition, self.world)
+                except ConditionEvaluationError as condition_error:
+                    if root is not None:
+                        root.cancel(str(condition_error))
+                    self.outcome = StageOutcome('failed', False, errors + (error_record(condition_error, phase=self.stage.stage_id),), self.world.snapshot)
+                    raise
+            return self.outcome
+        except BaseException as exc:
+            status = 'timeout' if isinstance(exc, PlanExecutionTimeout) else 'cancelled' if isinstance(exc, ExecutionCancelled) else 'failed'
+            tail_reason = status
+            self.outcome = StageOutcome(status, False, (error_record(exc, phase=self.stage.stage_id),), self.world.snapshot)
+            raise
         finally:
-            self._diagnose()
-            self.runtime.stage_scheduler = previous
-            # run_workers has established target exit (or made runtime unusable).
-            # Task 4 also releases leases for cancelled admissions here.
             if getattr(self.runtime, 'execution_quiescent', True):
-                for admission in self.admissions.values():
-                    if admission.pending is not None:
-                        self._release_resources(admission.pending)
+                self._harvest_completed_successes()
+            self._diagnose()
+            self._tail_records(tail_reason)
+            self.report['actions'] = [self.action_records[key] for key in sorted(self.action_records,
+                key=lambda key: (key.split(':')[1], int(key.split(':')[-1])))]
+            if self.outcome is not None:
+                self.report.update(status=self.outcome.status, continue_task=self.outcome.continue_task,
+                    errors=list(self.outcome.errors), world_version=self.world.version)
+            self.report['snapshot'] = snapshot_report(self.world.snapshot)
+            self.report['diagnostics'] = self.runtime.scheduler_diagnostics
+            self.runtime.stage_scheduler = previous
+            if getattr(self.runtime, 'execution_quiescent', True):
+                for key, lease in list(self.resource_leases.items()):
+                    lease.release()
+                    self.report['resources'].append({'event': 'released', 'action_key': key,
+                                                     'world_version': self.world.version})
+                    self.resource_leases.pop(key, None)
+                    self.resource_requests.pop(key, None)
