@@ -1,0 +1,23 @@
+Executor batch 3 implementation verification
+Date: 2026-09-08 Asia/Shanghai
+Python: /home/dwb/.pyenv/bin/pyenv exec python (3.9.25)
+
+Command: bash reports/executor_batch_3/verify.sh
+Exit: 0
+Batch 1 suite: 583 tests, OK
+Batch 2 suite: 588 tests, OK
+Batch 3 focused suite: 310 tests, OK (7.950s)
+
+Command: /home/dwb/.pyenv/bin/pyenv exec python -m unittest tests/test_execute_plan_compatibility.py
+Exit: 0
+Result: 6 tests, OK (1.333s)
+
+Command: /home/dwb/.pyenv/bin/pyenv exec python -m py_compile scripts/execute_plan.py scripts/executor_system/__init__.py tests/test_execute_plan_compatibility.py
+Exit: 0
+
+Curated evidence decompression/hash check: all four archives match the
+original_report_sha256 recorded in their adjacent report.json files.
+
+Real acceptance remains incomplete. The 120-run full baseline failed its corrected
+gate, the corrected 24-run smoke failed the event performance gate, and the final 240
+step plus 24 teleport runs are pending.

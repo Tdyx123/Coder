@@ -1,0 +1,1970 @@
+{
+  "note": "before/after functional comparison; batch2 one repeat versus batch3 five; no timing speedup claim",
+  "rows": [
+    {
+      "case": "FloorPlan1_task_2",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 1,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.3333333333333333,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.3333333333333333
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan1_task_2",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 2,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.3333333333333333,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.3333333333333333
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan1_task_2",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 3,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.3333333333333333,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.3333333333333333
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan1_task_2",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 4,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.3333333333333333,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.3333333333333333
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan1_task_2",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 5,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.3333333333333333,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.3333333333333333
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan1_task_2",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 1,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.3333333333333333,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.3333333333333333
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan1_task_2",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 2,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.3333333333333333,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.3333333333333333
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan1_task_2",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 3,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.3333333333333333,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.3333333333333333
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan1_task_2",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 4,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.3333333333333333,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.3333333333333333
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan1_task_2",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 5,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.3333333333333333,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.3333333333333333
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan1_task_13",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 1,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 1.0,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 1.0
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan1_task_13",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 2,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 1.0,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 1.0
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan1_task_13",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 3,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 1.0,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 1.0
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan1_task_13",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 4,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 1.0,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 1.0
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan1_task_13",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 5,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 1.0,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 1.0
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan1_task_13",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 1,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 1.0,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 1.0
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan1_task_13",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 2,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 1.0,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 1.0
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan1_task_13",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 3,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 1.0,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 1.0
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan1_task_13",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 4,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 1.0,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 1.0
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan1_task_13",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 5,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 1.0,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 1.0
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan1_task_0",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 1,
+      "evaluation_status": "incomplete",
+      "execution_status": "failed",
+      "gcr": null,
+      "error": "stage 'Phase 1' robot 'robot1' cursor 5: mass_exceeded: robot1: Robot cannot pick up Pot|-01.22|+00.90|-02.36: mass 0.5699999928474426 exceeds capacity 0.08.",
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "partial",
+        "gcr": 0.5
+      },
+      "changed": [
+        "evaluation_status",
+        "execution_status",
+        "gcr"
+      ]
+    },
+    {
+      "case": "FloorPlan1_task_0",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 2,
+      "evaluation_status": "incomplete",
+      "execution_status": "failed",
+      "gcr": null,
+      "error": "stage 'Phase 1' robot 'robot1' cursor 5: mass_exceeded: robot1: Robot cannot pick up Pot|-01.22|+00.90|-02.36: mass 0.5699999928474426 exceeds capacity 0.08.",
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "partial",
+        "gcr": 0.5
+      },
+      "changed": [
+        "evaluation_status",
+        "execution_status",
+        "gcr"
+      ]
+    },
+    {
+      "case": "FloorPlan1_task_0",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 3,
+      "evaluation_status": "incomplete",
+      "execution_status": "failed",
+      "gcr": null,
+      "error": "stage 'Phase 1' robot 'robot1' cursor 5: mass_exceeded: robot1: Robot cannot pick up Pot|-01.22|+00.90|-02.36: mass 0.5699999928474426 exceeds capacity 0.08.",
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "partial",
+        "gcr": 0.5
+      },
+      "changed": [
+        "evaluation_status",
+        "execution_status",
+        "gcr"
+      ]
+    },
+    {
+      "case": "FloorPlan1_task_0",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 4,
+      "evaluation_status": "incomplete",
+      "execution_status": "failed",
+      "gcr": null,
+      "error": "stage 'Phase 1' robot 'robot1' cursor 5: mass_exceeded: robot1: Robot cannot pick up Pot|-01.22|+00.90|-02.36: mass 0.5699999928474426 exceeds capacity 0.08.",
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "partial",
+        "gcr": 0.5
+      },
+      "changed": [
+        "evaluation_status",
+        "execution_status",
+        "gcr"
+      ]
+    },
+    {
+      "case": "FloorPlan1_task_0",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 5,
+      "evaluation_status": "incomplete",
+      "execution_status": "failed",
+      "gcr": null,
+      "error": "stage 'Phase 1' robot 'robot1' cursor 5: mass_exceeded: robot1: Robot cannot pick up Pot|-01.22|+00.90|-02.36: mass 0.5699999928474426 exceeds capacity 0.08.",
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "partial",
+        "gcr": 0.5
+      },
+      "changed": [
+        "evaluation_status",
+        "execution_status",
+        "gcr"
+      ]
+    },
+    {
+      "case": "FloorPlan1_task_0",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 1,
+      "evaluation_status": "incomplete",
+      "execution_status": "failed",
+      "gcr": null,
+      "error": "stage 'Phase 1' robot 'robot1' cursor 5: mass_exceeded: robot1: Robot cannot pick up Pot|-01.22|+00.90|-02.36: mass 0.5699999928474426 exceeds capacity 0.08.",
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "failed",
+        "gcr": 0.25
+      },
+      "changed": [
+        "evaluation_status",
+        "gcr"
+      ]
+    },
+    {
+      "case": "FloorPlan1_task_0",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 2,
+      "evaluation_status": "incomplete",
+      "execution_status": "failed",
+      "gcr": null,
+      "error": "stage 'Phase 1' robot 'robot1' cursor 5: mass_exceeded: robot1: Robot cannot pick up Pot|-01.22|+00.90|-02.36: mass 0.5699999928474426 exceeds capacity 0.08.",
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "failed",
+        "gcr": 0.25
+      },
+      "changed": [
+        "evaluation_status",
+        "gcr"
+      ]
+    },
+    {
+      "case": "FloorPlan1_task_0",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 3,
+      "evaluation_status": "incomplete",
+      "execution_status": "failed",
+      "gcr": null,
+      "error": "stage 'Phase 1' robot 'robot1' cursor 5: mass_exceeded: robot1: Robot cannot pick up Pot|-01.22|+00.90|-02.36: mass 0.5699999928474426 exceeds capacity 0.08.",
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "failed",
+        "gcr": 0.25
+      },
+      "changed": [
+        "evaluation_status",
+        "gcr"
+      ]
+    },
+    {
+      "case": "FloorPlan1_task_0",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 4,
+      "evaluation_status": "incomplete",
+      "execution_status": "failed",
+      "gcr": null,
+      "error": "stage 'Phase 1' robot 'robot1' cursor 5: mass_exceeded: robot1: Robot cannot pick up Pot|-01.22|+00.90|-02.36: mass 0.5699999928474426 exceeds capacity 0.08.",
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "failed",
+        "gcr": 0.25
+      },
+      "changed": [
+        "evaluation_status",
+        "gcr"
+      ]
+    },
+    {
+      "case": "FloorPlan1_task_0",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 5,
+      "evaluation_status": "incomplete",
+      "execution_status": "failed",
+      "gcr": null,
+      "error": "stage 'Phase 1' robot 'robot1' cursor 5: mass_exceeded: robot1: Robot cannot pick up Pot|-01.22|+00.90|-02.36: mass 0.5699999928474426 exceeds capacity 0.08.",
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "failed",
+        "gcr": 0.25
+      },
+      "changed": [
+        "evaluation_status",
+        "gcr"
+      ]
+    },
+    {
+      "case": "FloorPlan201_task_16",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 1,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.6666666666666666,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.6666666666666666
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan201_task_16",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 2,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.6666666666666666,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.6666666666666666
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan201_task_16",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 3,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.6666666666666666,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.6666666666666666
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan201_task_16",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 4,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.6666666666666666,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.6666666666666666
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan201_task_16",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 5,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.6666666666666666,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.6666666666666666
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan201_task_16",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 1,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.6666666666666666,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.6666666666666666
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan201_task_16",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 2,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.6666666666666666,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.6666666666666666
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan201_task_16",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 3,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.6666666666666666,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.6666666666666666
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan201_task_16",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 4,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.6666666666666666,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.6666666666666666
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan201_task_16",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 5,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.6666666666666666,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.6666666666666666
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan201_task_13",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 1,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 1.0,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 1.0
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan201_task_13",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 2,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 1.0,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 1.0
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan201_task_13",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 3,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 1.0,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 1.0
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan201_task_13",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 4,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 1.0,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 1.0
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan201_task_13",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 5,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 1.0,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 1.0
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan201_task_13",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 1,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 1.0,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 1.0
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan201_task_13",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 2,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 1.0,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 1.0
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan201_task_13",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 3,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 1.0,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 1.0
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan201_task_13",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 4,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 1.0,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 1.0
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan201_task_13",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 5,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 1.0,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 1.0
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan201_task_1",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 1,
+      "evaluation_status": "valid",
+      "execution_status": "partial",
+      "gcr": 0.6666666666666666,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.6666666666666666
+      },
+      "changed": [
+        "execution_status"
+      ]
+    },
+    {
+      "case": "FloorPlan201_task_1",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 2,
+      "evaluation_status": "valid",
+      "execution_status": "partial",
+      "gcr": 0.6666666666666666,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.6666666666666666
+      },
+      "changed": [
+        "execution_status"
+      ]
+    },
+    {
+      "case": "FloorPlan201_task_1",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 3,
+      "evaluation_status": "valid",
+      "execution_status": "partial",
+      "gcr": 0.6666666666666666,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.6666666666666666
+      },
+      "changed": [
+        "execution_status"
+      ]
+    },
+    {
+      "case": "FloorPlan201_task_1",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 4,
+      "evaluation_status": "valid",
+      "execution_status": "partial",
+      "gcr": 0.6666666666666666,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.6666666666666666
+      },
+      "changed": [
+        "execution_status"
+      ]
+    },
+    {
+      "case": "FloorPlan201_task_1",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 5,
+      "evaluation_status": "valid",
+      "execution_status": "partial",
+      "gcr": 0.6666666666666666,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.6666666666666666
+      },
+      "changed": [
+        "execution_status"
+      ]
+    },
+    {
+      "case": "FloorPlan201_task_1",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 1,
+      "evaluation_status": "valid",
+      "execution_status": "failed",
+      "gcr": 0.3333333333333333,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "failed",
+        "gcr": 0.3333333333333333
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan201_task_1",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 2,
+      "evaluation_status": "valid",
+      "execution_status": "failed",
+      "gcr": 0.3333333333333333,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "failed",
+        "gcr": 0.3333333333333333
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan201_task_1",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 3,
+      "evaluation_status": "valid",
+      "execution_status": "failed",
+      "gcr": 0.3333333333333333,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "failed",
+        "gcr": 0.3333333333333333
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan201_task_1",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 4,
+      "evaluation_status": "valid",
+      "execution_status": "failed",
+      "gcr": 0.3333333333333333,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "failed",
+        "gcr": 0.3333333333333333
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan201_task_1",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 5,
+      "evaluation_status": "valid",
+      "execution_status": "failed",
+      "gcr": 0.3333333333333333,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "failed",
+        "gcr": 0.3333333333333333
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan301_task_12",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 1,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.75,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.75
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan301_task_12",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 2,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.75,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.75
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan301_task_12",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 3,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.75,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.75
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan301_task_12",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 4,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.75,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.75
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan301_task_12",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 5,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.75,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.75
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan301_task_12",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 1,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.75,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.75
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan301_task_12",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 2,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.75,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.75
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan301_task_12",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 3,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.75,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.75
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan301_task_12",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 4,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.75,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.75
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan301_task_12",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 5,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.75,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.75
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan301_task_10",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 1,
+      "evaluation_status": "valid",
+      "execution_status": "partial",
+      "gcr": 0.6666666666666666,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "partial",
+        "gcr": 0.6666666666666666
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan301_task_10",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 2,
+      "evaluation_status": "valid",
+      "execution_status": "partial",
+      "gcr": 0.6666666666666666,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "partial",
+        "gcr": 0.6666666666666666
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan301_task_10",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 3,
+      "evaluation_status": "valid",
+      "execution_status": "partial",
+      "gcr": 0.6666666666666666,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "partial",
+        "gcr": 0.6666666666666666
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan301_task_10",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 4,
+      "evaluation_status": "valid",
+      "execution_status": "partial",
+      "gcr": 0.6666666666666666,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "partial",
+        "gcr": 0.6666666666666666
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan301_task_10",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 5,
+      "evaluation_status": "valid",
+      "execution_status": "partial",
+      "gcr": 0.6666666666666666,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "partial",
+        "gcr": 0.6666666666666666
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan301_task_10",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 1,
+      "evaluation_status": "valid",
+      "execution_status": "failed",
+      "gcr": 0.6666666666666666,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "failed",
+        "gcr": 0.6666666666666666
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan301_task_10",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 2,
+      "evaluation_status": "valid",
+      "execution_status": "failed",
+      "gcr": 0.6666666666666666,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "failed",
+        "gcr": 0.6666666666666666
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan301_task_10",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 3,
+      "evaluation_status": "valid",
+      "execution_status": "failed",
+      "gcr": 0.6666666666666666,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "failed",
+        "gcr": 0.6666666666666666
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan301_task_10",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 4,
+      "evaluation_status": "valid",
+      "execution_status": "failed",
+      "gcr": 0.6666666666666666,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "failed",
+        "gcr": 0.6666666666666666
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan301_task_10",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 5,
+      "evaluation_status": "valid",
+      "execution_status": "failed",
+      "gcr": 0.6666666666666666,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "failed",
+        "gcr": 0.6666666666666666
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan301_task_0",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 1,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.5,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.5
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan301_task_0",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 2,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.5,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.5
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan301_task_0",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 3,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.5,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.5
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan301_task_0",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 4,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.5,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.5
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan301_task_0",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 5,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.5,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.5
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan301_task_0",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 1,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.5,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.5
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan301_task_0",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 2,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.5,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.5
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan301_task_0",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 3,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.5,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.5
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan301_task_0",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 4,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.5,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.5
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan301_task_0",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 5,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.5,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.5
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan401_task_22",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 1,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.5,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.5
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan401_task_22",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 2,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.5,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.5
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan401_task_22",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 3,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.5,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.5
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan401_task_22",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 4,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.5,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.5
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan401_task_22",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 5,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.5,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.5
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan401_task_22",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 1,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.5,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.5
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan401_task_22",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 2,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.5,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.5
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan401_task_22",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 3,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.5,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.5
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan401_task_22",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 4,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.5,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.5
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan401_task_22",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 5,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 0.5,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 0.5
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan401_task_1",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 1,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 1.0,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 1.0
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan401_task_1",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 2,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 1.0,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 1.0
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan401_task_1",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 3,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 1.0,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 1.0
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan401_task_1",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 4,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 1.0,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 1.0
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan401_task_1",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 5,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 1.0,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 1.0
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan401_task_1",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 1,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 1.0,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 1.0
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan401_task_1",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 2,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 1.0,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 1.0
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan401_task_1",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 3,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 1.0,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 1.0
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan401_task_1",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 4,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 1.0,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 1.0
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan401_task_1",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 5,
+      "evaluation_status": "valid",
+      "execution_status": "completed",
+      "gcr": 1.0,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "completed",
+        "gcr": 1.0
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan401_task_10",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 1,
+      "evaluation_status": "valid",
+      "execution_status": "partial",
+      "gcr": 0.6666666666666666,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "partial",
+        "gcr": 0.6666666666666666
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan401_task_10",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 2,
+      "evaluation_status": "valid",
+      "execution_status": "partial",
+      "gcr": 0.6666666666666666,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "partial",
+        "gcr": 0.6666666666666666
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan401_task_10",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 3,
+      "evaluation_status": "valid",
+      "execution_status": "partial",
+      "gcr": 0.6666666666666666,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "partial",
+        "gcr": 0.6666666666666666
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan401_task_10",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 4,
+      "evaluation_status": "valid",
+      "execution_status": "partial",
+      "gcr": 0.6666666666666666,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "partial",
+        "gcr": 0.6666666666666666
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan401_task_10",
+      "movement_mode": "step",
+      "execution_policy": "legacy",
+      "repetition": 5,
+      "evaluation_status": "valid",
+      "execution_status": "partial",
+      "gcr": 0.6666666666666666,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "partial",
+        "gcr": 0.6666666666666666
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan401_task_10",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 1,
+      "evaluation_status": "valid",
+      "execution_status": "failed",
+      "gcr": 0.3333333333333333,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "failed",
+        "gcr": 0.3333333333333333
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan401_task_10",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 2,
+      "evaluation_status": "valid",
+      "execution_status": "failed",
+      "gcr": 0.3333333333333333,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "failed",
+        "gcr": 0.3333333333333333
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan401_task_10",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 3,
+      "evaluation_status": "valid",
+      "execution_status": "failed",
+      "gcr": 0.3333333333333333,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "failed",
+        "gcr": 0.3333333333333333
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan401_task_10",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 4,
+      "evaluation_status": "valid",
+      "execution_status": "failed",
+      "gcr": 0.3333333333333333,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "failed",
+        "gcr": 0.3333333333333333
+      },
+      "changed": []
+    },
+    {
+      "case": "FloorPlan401_task_10",
+      "movement_mode": "step",
+      "execution_policy": "strict",
+      "repetition": 5,
+      "evaluation_status": "valid",
+      "execution_status": "failed",
+      "gcr": 0.3333333333333333,
+      "error": null,
+      "batch2": {
+        "evaluation_status": "valid",
+        "execution_status": "failed",
+        "gcr": 0.3333333333333333
+      },
+      "changed": []
+    }
+  ]
+}

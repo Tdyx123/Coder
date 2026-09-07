@@ -380,26 +380,35 @@ python scripts/benchmark_movement_modes.py \
 
 ### `execute_plan.py`
 
-Executes a generated `code_plan.py` by assembling an `executable_plan.py`.
+Compatibility entry point for one generated task directory. It first verifies and
+runs the current shared-runtime `plan_to_code/executable_plan.py`, and returns that
+child's exit code. `--command` accepts a directory path or a name directly below
+`./logs`; options after it are forwarded to the generated runtime.
 
 ```bash
-python scripts/execute_plan.py --command <log_folder_name>
+python scripts/execute_plan.py \
+  --command logs/path/to/task-run \
+  --movement-mode step --execution-policy legacy --reachable-refresh-mode full
 ```
 
-The script currently resolves the target folder as:
+For old directories containing only `log.txt` and `code_plan.py`, compatibility
+assembly is available only when the log records a positive `floor_no`, nonempty
+`robots`, nonempty `ground_truth`, and nonnegative `no_trans_gt`/`max_trans` values.
+Missing context exits nonzero and directs the operator to `scripts/plantocode.py`; it
+does not synthesize FloorPlan1, a robot, goals, or transition metrics.
 
-```text
-logs/<log_folder_name>/
+Generate the current executable before retrying an incomplete legacy directory:
+
+```bash
+python scripts/plantocode.py --logs-dir ./logs --validate-code
 ```
-
-So the command value should be a directory name directly inside `logs/`.
 
 ### `multi_robot_avoidance.py`
 
-Standalone deterministic L0/L1 prototype for multi-robot endpoint assignment,
-space-time path reservations, and failure injection. It does not import
-AI2-THOR or `executor_system`, and it is not wired into generated plan
-execution.
+Standalone deterministic harness for the multi-robot endpoint assignment and
+space-time planner used by step execution. Its CLI does not start AI2-THOR; generated
+plans reach the same planning library through `executor_system.movement_coordinator`.
+The harness also supports deterministic failure injection.
 
 Run the built-in crossing demo:
 
@@ -616,3 +625,32 @@ planner, VAL, subprocess, or another LLM call.
 共享生成运行时、parallel_runner 与 benchmark 接受 `--execution-policy legacy|strict`，默认 legacy，无同名环境覆盖；strict 按动作与阶段失败策略停止工作。benchmark 在输出父目录下按策略分目录。普通/容错入口使用同一调度循环。
 
 运行 `bash reports/executor_batch_2/verify.sh` 验证第一批兼容与新增集合；运行 `python reports/executor_batch_2/semantic_examples.py` 复现三个带完整报告的确定性语义例子。Python 请使用 `/home/dwb/.pyenv/bin/pyenv exec python`。结果、资源需求、快照接口和独立的真实 Unity 验收说明见 [第二批文档](../docs/executor_batch_2.md)。
+
+### 执行器第三批边界、刷新与诊断
+
+`executor_system.plan_types` 是动作、计划、机器人状态和动作结果的规范定义；
+`action_plan` 保留旧导入并重导出相同对象。包根同时导出 `Action`、`TaskPlan`、
+`ActionSpec`、`ControllerClient`、`ObjectResolver`、`ObjectInteractor`、
+`RuntimeArtifacts`、`RuntimeMetrics` 和 `ReachableMapCache`。生产执行显式传递
+runtime 与 action context；`executor_system.context.runtime_scope` 只作为旧 helper
+的 `ContextVar` 兼容入口。
+
+`ActionRegistry` 的固定 `ActionSpec` 表统一参数形式、场景/能力校验、资源解析和
+执行。新增动作时必须登记 executor 与现有 resource resolver，并为实际参数和
+准入行为添加测试；不能用动态代码或任意 `getattr` 分派。
+
+实际默认值来自 `executor_system.movement.MovementConfig`、
+`generated_plan_runtime` 和 `parallel_runner`：移动为 `step`（显式参数优先，随后
+`LAMMAP_MOVEMENT_MODE`），策略为 `legacy`，可达点刷新为 `full`。`event` 是显式
+可选模式，当前真实 smoke 未通过性能门槛，因此默认值没有切换。当前结果协议为
+`metrics_schema_version=2`、`evaluation_version=fixed_goals_v2` 和
+`scheduler_version=2`。
+
+运行 `bash reports/executor_batch_3/verify.sh` 验证三批集合。中断后可用
+`parallel_runner.py --rebuild-summary <output-dir>/runs/<run-id>` 从持久结果重建摘要；
+诊断时检查阶段结果中的 `diagnostics`，以及顶层的 `runtime_metrics`、
+`navigation_metrics`、`worker_errors` 与 `cleanup_errors`。使用
+`--reachable-refresh-mode full` 回退刷新优化并隔离问题。实现边界、动作表、命令、
+精选证据和当前未完成的真实验收见
+[`reports/executor_batch_3/README.md`](../reports/executor_batch_3/README.md)。历史设计
+文档保留作背景，不作为当前默认值来源。

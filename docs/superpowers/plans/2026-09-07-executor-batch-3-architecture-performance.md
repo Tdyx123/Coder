@@ -195,7 +195,7 @@ def test_metrics_keep_counts_without_unbounded_samples(self):
 - [ ] 基准脚本实现 `--manifest`、`--output-dir`、`--repetitions`（默认 5）、`--movement-modes`、`--execution-policies`、`--reachable-refresh-modes`、`--max-workers`（默认 1）、`--check`。重复编号从 1 开始，每次运行一个新仿真实例。
 - [ ] 保留每个 `(case, mode, policy, refresh_mode, repetition)` 结果，平均值不覆盖单次失败。不同评估/调度版本不能自动聚合，原始缺失/超时数量必须展示。
 - [ ] 使用固定 manifest 路径，不重新挑选更容易的样例。样例缺失时列出缺失项并返回非零，不缩小分母。
-- [ ] 先保存完整刷新下的功能和耗时基准，再开始下一任务；没有真实环境时先完成 fake 基准，真实验收状态明确保持未完成。
+- [x] 先保存完整刷新下的功能和耗时基准，再开始下一任务；没有真实环境时先完成 fake 基准，真实验收状态明确保持未完成。
 
 **交付：** 性能问题能归因到调用和等待成本，后续优化有固定对照。
 
@@ -236,13 +236,13 @@ def test_event_refresh_reuses_unchanged_map(self):
 
 **文件：** 修改 `scripts/execute_plan.py`、`scripts/README.md`、`README.md`、`executor_system/__init__.py`；新建 `tests/test_execute_plan_compatibility.py`，修改基准相关测试。
 
-- [ ] 添加旧入口缺少楼层、机器人或目标时失败的测试：退出非零，错误列出缺失字段，不创建默认 FloorPlan1/空目标脚本。存在共享 generated runtime 脚本时直接运行并透传返回码。
-- [ ] 运行 `/home/dwb/.pyenv/bin/pyenv exec python -m unittest tests/test_execute_plan_compatibility.py`，确认 RED。
-- [ ] `execute_plan.py` 增加 main guard，兼容 `--command` 选择目录；优先运行目录中可验证的 generated runtime 脚本。旧日志不能确定必要上下文时明确要求先执行现有 plantocode 转换，不推测任务内容、不继续拼接默认参数。
-- [ ] 删除 README 中已经失效的入口示例和“多机器人导航原型未接入”的说法；保留现有历史设计文档，标注它们不是当前默认值的来源。当前默认值说明引用实际配置模块。
-- [ ] 文档说明兼容导入、显式上下文、动作登记步骤、策略/评分/调度版本、完整与事件刷新模式，以及诊断与恢复命令。
-- [ ] 仅删除经过 `rg` 确认无生产调用的重复内部实现；公共旧导入保留重导出。测试关注行为和兼容性，不为每个一行委托写镜像测试。
-- [ ] 每项职责提取和优化独立审查、提交；通过后运行前两批完整测试与本批新增测试。
+- [x] 添加旧入口缺少楼层、机器人或目标时失败的测试：退出非零，错误列出缺失字段，不创建默认 FloorPlan1/空目标脚本。存在共享 generated runtime 脚本时直接运行并透传返回码。
+- [x] 运行 `/home/dwb/.pyenv/bin/pyenv exec python -m unittest tests/test_execute_plan_compatibility.py`，确认 RED。
+- [x] `execute_plan.py` 增加 main guard，兼容 `--command` 选择目录；优先运行目录中可验证的 generated runtime 脚本。旧日志不能确定必要上下文时明确要求先执行现有 plantocode 转换，不推测任务内容、不继续拼接默认参数。
+- [x] 删除 README 中已经失效的入口示例和“多机器人导航原型未接入”的说法；保留现有历史设计文档，标注它们不是当前默认值的来源。当前默认值说明引用实际配置模块。
+- [x] 文档说明兼容导入、显式上下文、动作登记步骤、策略/评分/调度版本、完整与事件刷新模式，以及诊断与恢复命令。
+- [x] 仅删除经过 `rg` 确认无生产调用的重复内部实现；公共旧导入保留重导出。测试关注行为和兼容性，不为每个一行委托写镜像测试。
+- [x] 每项职责提取和优化独立审查、提交；通过后运行前两批完整测试与本批新增测试。
 
 ```bash
 /home/dwb/.pyenv/bin/pyenv exec python -m unittest \

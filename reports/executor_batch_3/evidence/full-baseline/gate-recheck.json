@@ -1,0 +1,289 @@
+{
+  "acceptance_failures": [
+    {
+      "actual": "failed",
+      "case": "FloorPlan1_task_0",
+      "code": "baseline_process_failed",
+      "execution_policy": "legacy",
+      "movement_mode": "step",
+      "repetition": 1
+    },
+    {
+      "actual": "incomplete",
+      "case": "FloorPlan1_task_0",
+      "code": "baseline_evaluation_invalid",
+      "execution_policy": "legacy",
+      "movement_mode": "step",
+      "repetition": 1
+    },
+    {
+      "actual": "failed",
+      "case": "FloorPlan1_task_0",
+      "code": "baseline_process_failed",
+      "execution_policy": "legacy",
+      "movement_mode": "step",
+      "repetition": 2
+    },
+    {
+      "actual": "incomplete",
+      "case": "FloorPlan1_task_0",
+      "code": "baseline_evaluation_invalid",
+      "execution_policy": "legacy",
+      "movement_mode": "step",
+      "repetition": 2
+    },
+    {
+      "actual": "failed",
+      "case": "FloorPlan1_task_0",
+      "code": "baseline_process_failed",
+      "execution_policy": "legacy",
+      "movement_mode": "step",
+      "repetition": 3
+    },
+    {
+      "actual": "incomplete",
+      "case": "FloorPlan1_task_0",
+      "code": "baseline_evaluation_invalid",
+      "execution_policy": "legacy",
+      "movement_mode": "step",
+      "repetition": 3
+    },
+    {
+      "actual": "failed",
+      "case": "FloorPlan1_task_0",
+      "code": "baseline_process_failed",
+      "execution_policy": "legacy",
+      "movement_mode": "step",
+      "repetition": 4
+    },
+    {
+      "actual": "incomplete",
+      "case": "FloorPlan1_task_0",
+      "code": "baseline_evaluation_invalid",
+      "execution_policy": "legacy",
+      "movement_mode": "step",
+      "repetition": 4
+    },
+    {
+      "actual": "failed",
+      "case": "FloorPlan1_task_0",
+      "code": "baseline_process_failed",
+      "execution_policy": "legacy",
+      "movement_mode": "step",
+      "repetition": 5
+    },
+    {
+      "actual": "incomplete",
+      "case": "FloorPlan1_task_0",
+      "code": "baseline_evaluation_invalid",
+      "execution_policy": "legacy",
+      "movement_mode": "step",
+      "repetition": 5
+    },
+    {
+      "actual": "failed",
+      "case": "FloorPlan1_task_0",
+      "code": "baseline_process_failed",
+      "execution_policy": "strict",
+      "movement_mode": "step",
+      "repetition": 1
+    },
+    {
+      "actual": "incomplete",
+      "case": "FloorPlan1_task_0",
+      "code": "baseline_evaluation_invalid",
+      "execution_policy": "strict",
+      "movement_mode": "step",
+      "repetition": 1
+    },
+    {
+      "actual": "failed",
+      "case": "FloorPlan1_task_0",
+      "code": "baseline_process_failed",
+      "execution_policy": "strict",
+      "movement_mode": "step",
+      "repetition": 2
+    },
+    {
+      "actual": "incomplete",
+      "case": "FloorPlan1_task_0",
+      "code": "baseline_evaluation_invalid",
+      "execution_policy": "strict",
+      "movement_mode": "step",
+      "repetition": 2
+    },
+    {
+      "actual": "failed",
+      "case": "FloorPlan1_task_0",
+      "code": "baseline_process_failed",
+      "execution_policy": "strict",
+      "movement_mode": "step",
+      "repetition": 3
+    },
+    {
+      "actual": "incomplete",
+      "case": "FloorPlan1_task_0",
+      "code": "baseline_evaluation_invalid",
+      "execution_policy": "strict",
+      "movement_mode": "step",
+      "repetition": 3
+    },
+    {
+      "actual": "failed",
+      "case": "FloorPlan1_task_0",
+      "code": "baseline_process_failed",
+      "execution_policy": "strict",
+      "movement_mode": "step",
+      "repetition": 4
+    },
+    {
+      "actual": "incomplete",
+      "case": "FloorPlan1_task_0",
+      "code": "baseline_evaluation_invalid",
+      "execution_policy": "strict",
+      "movement_mode": "step",
+      "repetition": 4
+    },
+    {
+      "actual": "failed",
+      "case": "FloorPlan1_task_0",
+      "code": "baseline_process_failed",
+      "execution_policy": "strict",
+      "movement_mode": "step",
+      "repetition": 5
+    },
+    {
+      "actual": "incomplete",
+      "case": "FloorPlan1_task_0",
+      "code": "baseline_evaluation_invalid",
+      "execution_policy": "strict",
+      "movement_mode": "step",
+      "repetition": 5
+    }
+  ],
+  "check_exit_code": 1,
+  "check_passed": false,
+  "checker_commit": "57a89ef2113871d0327a31ce031eadb2d65e1acb",
+  "checker_source_sha256": "8e9e514c9a26d6b8646b24fac440a64dbf18307f08ef0bbed59cc3ae661577a3",
+  "failure_counts": {
+    "baseline_evaluation_invalid": 10,
+    "baseline_process_failed": 10
+  },
+  "invalid_runs": [
+    {
+      "case": "FloorPlan1_task_0",
+      "case_index": 3,
+      "error": "stage 'Phase 1' robot 'robot1' cursor 5: mass_exceeded: robot1: Robot cannot pick up Pot|-01.22|+00.90|-02.36: mass 0.5699999928474426 exceeds capacity 0.08.",
+      "evaluation_status": "incomplete",
+      "execution_policy": "legacy",
+      "execution_status": "failed",
+      "process_status": "failed",
+      "repetition": 1
+    },
+    {
+      "case": "FloorPlan1_task_0",
+      "case_index": 3,
+      "error": "stage 'Phase 1' robot 'robot1' cursor 5: mass_exceeded: robot1: Robot cannot pick up Pot|-01.22|+00.90|-02.36: mass 0.5699999928474426 exceeds capacity 0.08.",
+      "evaluation_status": "incomplete",
+      "execution_policy": "legacy",
+      "execution_status": "failed",
+      "process_status": "failed",
+      "repetition": 2
+    },
+    {
+      "case": "FloorPlan1_task_0",
+      "case_index": 3,
+      "error": "stage 'Phase 1' robot 'robot1' cursor 5: mass_exceeded: robot1: Robot cannot pick up Pot|-01.22|+00.90|-02.36: mass 0.5699999928474426 exceeds capacity 0.08.",
+      "evaluation_status": "incomplete",
+      "execution_policy": "legacy",
+      "execution_status": "failed",
+      "process_status": "failed",
+      "repetition": 3
+    },
+    {
+      "case": "FloorPlan1_task_0",
+      "case_index": 3,
+      "error": "stage 'Phase 1' robot 'robot1' cursor 5: mass_exceeded: robot1: Robot cannot pick up Pot|-01.22|+00.90|-02.36: mass 0.5699999928474426 exceeds capacity 0.08.",
+      "evaluation_status": "incomplete",
+      "execution_policy": "legacy",
+      "execution_status": "failed",
+      "process_status": "failed",
+      "repetition": 4
+    },
+    {
+      "case": "FloorPlan1_task_0",
+      "case_index": 3,
+      "error": "stage 'Phase 1' robot 'robot1' cursor 5: mass_exceeded: robot1: Robot cannot pick up Pot|-01.22|+00.90|-02.36: mass 0.5699999928474426 exceeds capacity 0.08.",
+      "evaluation_status": "incomplete",
+      "execution_policy": "legacy",
+      "execution_status": "failed",
+      "process_status": "failed",
+      "repetition": 5
+    },
+    {
+      "case": "FloorPlan1_task_0",
+      "case_index": 3,
+      "error": "stage 'Phase 1' robot 'robot1' cursor 5: mass_exceeded: robot1: Robot cannot pick up Pot|-01.22|+00.90|-02.36: mass 0.5699999928474426 exceeds capacity 0.08.",
+      "evaluation_status": "incomplete",
+      "execution_policy": "strict",
+      "execution_status": "failed",
+      "process_status": "failed",
+      "repetition": 1
+    },
+    {
+      "case": "FloorPlan1_task_0",
+      "case_index": 3,
+      "error": "stage 'Phase 1' robot 'robot1' cursor 5: mass_exceeded: robot1: Robot cannot pick up Pot|-01.22|+00.90|-02.36: mass 0.5699999928474426 exceeds capacity 0.08.",
+      "evaluation_status": "incomplete",
+      "execution_policy": "strict",
+      "execution_status": "failed",
+      "process_status": "failed",
+      "repetition": 2
+    },
+    {
+      "case": "FloorPlan1_task_0",
+      "case_index": 3,
+      "error": "stage 'Phase 1' robot 'robot1' cursor 5: mass_exceeded: robot1: Robot cannot pick up Pot|-01.22|+00.90|-02.36: mass 0.5699999928474426 exceeds capacity 0.08.",
+      "evaluation_status": "incomplete",
+      "execution_policy": "strict",
+      "execution_status": "failed",
+      "process_status": "failed",
+      "repetition": 3
+    },
+    {
+      "case": "FloorPlan1_task_0",
+      "case_index": 3,
+      "error": "stage 'Phase 1' robot 'robot1' cursor 5: mass_exceeded: robot1: Robot cannot pick up Pot|-01.22|+00.90|-02.36: mass 0.5699999928474426 exceeds capacity 0.08.",
+      "evaluation_status": "incomplete",
+      "execution_policy": "strict",
+      "execution_status": "failed",
+      "process_status": "failed",
+      "repetition": 4
+    },
+    {
+      "case": "FloorPlan1_task_0",
+      "case_index": 3,
+      "error": "stage 'Phase 1' robot 'robot1' cursor 5: mass_exceeded: robot1: Robot cannot pick up Pot|-01.22|+00.90|-02.36: mass 0.5699999928474426 exceeds capacity 0.08.",
+      "evaluation_status": "incomplete",
+      "execution_policy": "strict",
+      "execution_status": "failed",
+      "process_status": "failed",
+      "repetition": 5
+    }
+  ],
+  "original_check_passed": true,
+  "original_check_valid": false,
+  "real_acceptance": "failed: immutable case03 mass/capability conflict; overall acceptance remains incomplete",
+  "recheck_scope": "Gate correction and unknown git-status metadata only; runtime execution, instrumentation, fixed plans and robot capability checks unchanged. No simulator rerun.",
+  "run_counts": {
+    "incomplete": 10,
+    "missing_results": 0,
+    "timeouts": 0,
+    "total": 120,
+    "valid": 110
+  },
+  "runtime_baseline_sha": "e82e20f5a7aeb1f53c1c11d7050b6791a3772b12",
+  "source_report": "/tmp/coder-executor-batch-3/reports/executor_batch_3/e82e20f5_full_baseline/report.json",
+  "source_report_sha256": "0cd34b68dbd5d80f0dbe9b5e6aa9c03ddc7a1ac9d21a74429bc3dba47e3fc08b",
+  "source_report_unchanged": true
+}

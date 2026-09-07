@@ -243,17 +243,26 @@ python scripts/plantocode.py --logs-dir ./logs/task_manager_runs --no-validate-c
 
 ### 4. Execute a Generated Plan in AI2-THOR
 
-Once `code_plan.py` exists in a specific log folder, execute it with:
+After `plantocode.py` writes a task's `plan_to_code/executable_plan.py`, execute its
+directory with the compatibility entry point:
 
 ```bash
-python scripts/execute_plan.py --command <log_folder_name>
+python scripts/execute_plan.py \
+  --command logs/path/to/task-run \
+  --movement-mode step --execution-policy legacy --reachable-refresh-mode full
 ```
 
-`<log_folder_name>` should be the folder name directly under `logs/`, because `execute_plan.py` resolves the target as:
+`--command` also accepts a directory name directly below `./logs`. The entry point
+verifies and prefers the shared-runtime executable, forwards runtime options, and
+returns the child's exit code. For an old directory with only `log.txt` and
+`code_plan.py`, it assembles the historical executable only when the log records a
+positive floor number, nonempty robot metadata, nonempty goals, and nonnegative
+transition metrics. Missing context fails with a request to run `scripts/plantocode.py`;
+no default scene, robot, goal list, or transition count is invented.
 
-```text
-logs/<log_folder_name>/
-```
+Current defaults are `step` movement, `legacy` execution policy, and `full` reachable
+refresh. The movement environment variable `LAMMAP_MOVEMENT_MODE` is consulted only
+when no movement option is supplied.
 
 ### 5. Versioned Executor Results and Isolated Runtime Media
 
@@ -320,3 +329,13 @@ If you find this work useful for your research, please consider citing:
 We sincerely thank the researchers and developers for [SMART-LLM](https://github.com/SMARTlab-Purdue/SMART-LLM), [AI2THOR](https://github.com/allenai/ai2thor), and [Fast Downward](https://github.com/aibasel/downward/) for their amazing work.
 
 执行器第二批支持 `--execution-policy legacy|strict`（默认 legacy）、条件准入和共享资源租约，结果记录实际策略与 `scheduler_version=2`。用法、资源表、可复现语义示例及验收状态见 [第二批执行语义说明](docs/executor_batch_2.md)。
+
+执行器第三批将规范计划类型放在 `executor_system.plan_types`，并以固定
+`ActionRegistry` 统一校验、资源和分派；控制器、对象解析/交互、输出、指标与可达图
+缓存均为显式服务。旧 `action_plan` 导入保持对象身份兼容，生产路径显式传递 runtime
+和 action context。当前协议为 `metrics_schema_version=2`、
+`evaluation_version=fixed_goals_v2`、`scheduler_version=2`。`event` 刷新仍是可选项；
+真实 smoke 的正确性对照匹配，但性能门槛失败，因此默认仍为 `full`，最终 240+24 次
+真实验收尚待执行。动作表、诊断/恢复命令、三批验证入口和精选证据见
+[第三批执行器交付说明](reports/executor_batch_3/README.md)。历史设计文档只作为背景，
+当前默认值以运行时配置模块和 CLI 为准。
