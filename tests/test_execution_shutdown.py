@@ -1,5 +1,7 @@
 """Cancellation tests use real threads and release every blocked fake controller."""
 import json
+import subprocess
+import textwrap
 import sys
 import tempfile
 import threading
@@ -184,6 +186,121 @@ class ExecutionShutdownTests(unittest.TestCase):
             runtime.step({'action': 'MoveAhead'}, save_frame=False)
         self.assertEqual(len(calls), 1)
         self.assertTrue(runtime.execution_control.cancelled)
+
+    def test_real_sigint_uses_target_exit_evidence_for_shutdown(self):
+        script = textwrap.dedent(r"""
+            import os, signal, sys, threading, time
+            from types import SimpleNamespace
+            from executor_system import execution_control as control_module
+            control_module.SHUTDOWN_TIMEOUT_SECONDS = 0.08
+            control = control_module.ExecutionControl()
+            entered, release, target_exited = (threading.Event() for _ in range(3))
+            stopped = []
+            runtime = SimpleNamespace(execution_control=control, worker_errors=[],
+                                      stop=lambda: stopped.append(True))
+            coordinator = SimpleNamespace(control=control, condition=threading.Condition())
+            def execute():
+                entered.set()
+                try:
+                    assert release.wait(2), 'test did not release target'
+                finally:
+                    target_exited.set()
+            def interrupt():
+                assert entered.wait(1)
+                time.sleep(0.035)
+                os.kill(os.getpid(), signal.SIGINT)
+                if sys.argv[1] == 'quiescent':
+                    assert control.wait(1)
+                    release.set()
+            signal_thread = threading.Thread(target=interrupt, daemon=True)
+            signal_thread.start()
+            try:
+                try:
+                    control_module.run_workers(runtime, [SimpleNamespace(robot_id='robot1', execute=execute)],
+                                               coordinator, 'signal-stage')
+                except BaseException as exc:
+                    if sys.argv[1] == 'quiescent':
+                        assert isinstance(exc, KeyboardInterrupt), repr(exc)
+                        assert target_exited.is_set(), 'reported quiet before target exited'
+                        assert runtime.execution_quiescent
+                    else:
+                        assert isinstance(exc, control_module.ExecutionShutdownTimeout), repr(exc)
+                        assert isinstance(exc.__cause__, KeyboardInterrupt), repr(exc.__cause__)
+                        assert not runtime.execution_quiescent
+                        assert not runtime.reusable
+                        assert not target_exited.is_set()
+                        control_module.close_runtime(runtime, [])
+                        assert stopped == [], 'stop overlapped an active controller worker'
+                else:
+                    raise AssertionError('real SIGINT did not propagate')
+            finally:
+                release.set()
+                assert target_exited.wait(2), 'target did not exit independently of Thread state'
+                signal_thread.join(2)
+                assert not signal_thread.is_alive()
+        """)
+        for mode in ('blocked', 'quiescent'):
+            with self.subTest(mode=mode):
+                completed = subprocess.run(
+                    [sys.executable, '-c', script, mode],
+                    cwd=str(Path(__file__).resolve().parents[1] / 'scripts'),
+                    capture_output=True, text=True, timeout=5,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+    def test_constructor_cleanup_errors_survive_generated_startup_failure(self):
+        from executor_system import generated_plan_runtime as generated
+        from executor_system import runtime as runtime_module
+        bundle = SimpleNamespace(gcr=[], noop_subtasks=[], task_plan=plan(),
+                                 object_mapping_warnings=[], object_id_bindings=[])
+        for cleanup_mode in ('exception', 'timeout'):
+            with self.subTest(cleanup=cleanup_mode), tempfile.TemporaryDirectory() as directory:
+                release, exited = threading.Event(), threading.Event()
+                cleanup_threads, captured = [], []
+                startup_error = RuntimeError('startup broke')
+                def stop():
+                    cleanup_threads.append(threading.current_thread())
+                    try:
+                        if cleanup_mode == 'exception':
+                            raise RuntimeError('startup cleanup broke')
+                        release.wait(2)
+                    finally:
+                        exited.set()
+                controller = SimpleNamespace(last_event=FakeEvent(), stop=stop)
+                original_record = generated.record_execution_error
+                def record(result, exc, runtime=None):
+                    captured.append(exc)
+                    return original_record(result, exc, runtime)
+                destination = Path(directory) / 'result.json'
+                args = SimpleNamespace(metrics_output=str(destination), movement_mode='step', timeout_seconds=1)
+                try:
+                    with patch.object(generated, '_runtime_inputs', return_value=(
+                        {}, '1', [{'name': 'robot1'}], [], bundle
+                    )), patch.object(runtime_module, 'require_dependencies'), patch.object(
+                        ThorRuntime, 'prepare_output_dirs'
+                    ), patch.object(ThorRuntime, 'print_agent_metadata'), patch.object(
+                        ThorRuntime, 'resolve_show_windows', return_value=False
+                    ), patch.object(ThorRuntime, 'create_controller', return_value=controller), patch.object(
+                        ThorRuntime, 'initialize_scene', side_effect=startup_error
+                    ), patch.object(generated, 'record_execution_error', side_effect=record), patch(
+                        'executor_system.execution_control.CLEANUP_TIMEOUT_SECONDS', 0.02
+                    ):
+                        self.assertEqual(generated.run_runner_mode(args, {}, 'unused', 0, __file__), 1)
+                    result = json.loads(destination.read_text())
+                    self.assertIs(captured[0], startup_error)
+                    self.assertEqual(result['error'], 'startup broke')
+                    self.assertEqual(len(result['cleanup_errors']), 1)
+                    expected = 'RuntimeError' if cleanup_mode == 'exception' else 'ExecutionShutdownTimeout'
+                    self.assertEqual(result['cleanup_errors'][0]['exception_type'], expected)
+                    self.assertEqual(result['cleanup_errors'], startup_error.execution_cleanup_errors)
+                    self.assertIsNotNone(startup_error.__traceback__)
+                finally:
+                    release.set()
+                    self.assertTrue(exited.wait(2), 'cleanup target did not finish')
+                    for thread in cleanup_threads:
+                        thread.join(2)
+                        self.assertFalse(thread.is_alive())
+
 
     def test_main_thread_interrupt_cancels_and_joins_worker(self):
         entered = threading.Event()

@@ -125,7 +125,7 @@ def run_workers(runtime, executors, coordinator, stage_id):
         with coordinator.condition:
             coordinator.condition.notify_all()
 
-    def run(executor):
+    def run(executor, exited):
         try:
             control.check()
             executor.execute()
@@ -135,19 +135,31 @@ def run_workers(runtime, executors, coordinator, stage_id):
                     errors.append((executor.robot_id, exc, exc.__traceback__))
             control.cancel(str(exc))
             wake()
+        finally:
+            # A real SIGINT inside Thread.join can mark CPython's Thread as
+            # stopped before its target returns. Only the target can certify
+            # it will no longer access the controller or execution state.
+            exited.set()
 
-    threads = [threading.Thread(target=run, args=(executor,),
-                                name=f'{stage_id}-{executor.robot_id}', daemon=True)
-               for executor in executors]
+    workers = []
+    for executor in executors:
+        exited = threading.Event()
+        thread = threading.Thread(target=run, args=(executor, exited),
+                                  name=f'{stage_id}-{executor.robot_id}', daemon=True)
+        workers.append((thread, exited))
+    launched_workers = []
     main_error = None
     try:
-        for thread in threads:
+        for thread, exited in workers:
             control.check()
+            # If start itself is interrupted, conservatively require target
+            # exit evidence for every launch that may have reached the OS.
+            launched_workers.append((thread, exited))
             thread.start()
-        while any(thread.is_alive() for thread in threads):
+        while any(not exited.is_set() for _thread, exited in launched_workers):
             control.check()
-            for thread in threads:
-                if thread.is_alive():
+            for thread, exited in launched_workers:
+                if not exited.is_set():
                     thread.join(0.01)
         control.check()
     except BaseException as exc:
@@ -156,21 +168,20 @@ def run_workers(runtime, executors, coordinator, stage_id):
         wake()
     finally:
         shutdown_deadline = time.monotonic() + SHUTDOWN_TIMEOUT_SECONDS
-        for thread in threads:
-            if thread.ident is not None:
-                while thread.is_alive() and time.monotonic() < shutdown_deadline:
-                    try:
-                        thread.join(min(0.05, max(0, shutdown_deadline - time.monotonic())))
-                    except BaseException as exc:
-                        if main_error is None or isinstance(main_error[0], Exception):
-                            main_error = (exc, exc.__traceback__)
-                        control.cancel(str(exc))
-                        wake()
+        for _thread, exited in launched_workers:
+            while not exited.is_set() and time.monotonic() < shutdown_deadline:
+                try:
+                    exited.wait(min(0.05, max(0, shutdown_deadline - time.monotonic())))
+                except BaseException as exc:
+                    if main_error is None or isinstance(main_error[0], Exception):
+                        main_error = (exc, exc.__traceback__)
+                    control.cancel(str(exc))
+                    wake()
         with error_lock:
             accepting_errors = False
             runtime.worker_errors.extend(error_record(exc, phase=stage_id, robot_id=robot)
                                          for robot, exc, _tb in errors)
-        alive = [thread.name for thread in threads if thread.is_alive()]
+        alive = [thread.name for thread, exited in launched_workers if not exited.is_set()]
         runtime.execution_quiescent = not alive
         if alive:
             runtime.reusable = False

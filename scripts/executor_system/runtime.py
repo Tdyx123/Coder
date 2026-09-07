@@ -256,9 +256,15 @@ class ThorRuntime:
             # self.validate_physical_agent_count()
             log("Initializing AI2-THOR scene.")
             self.initialize_scene()
-        except BaseException:
+        except BaseException as exc:
             self.cleanup_errors = []
             close_runtime(self, self.cleanup_errors)
+            # Constructor assignment never returns this runtime to the caller.
+            # Carry cleanup evidence on the original exception without wrapping
+            # or replacing it, so entrypoint error handling can persist both.
+            exc.execution_cleanup_errors = (
+                list(getattr(exc, 'execution_cleanup_errors', [])) + self.cleanup_errors
+            )
             raise
 
     def resolve_physical_agent_count(self) -> int:

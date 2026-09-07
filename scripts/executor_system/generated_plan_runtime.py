@@ -183,6 +183,9 @@ def build_runner_result(status: str, start_time: float) -> Dict[str, Any]:
 
 
 def record_execution_error(result, exc, runtime=None):
+    result.setdefault('cleanup_errors', []).extend(
+        getattr(exc, 'execution_cleanup_errors', [])
+    )
     report = getattr(runtime, 'execution_report', {}) if runtime is not None else {}
     result.update(report)
     cause = exc
