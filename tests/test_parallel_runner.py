@@ -1,11 +1,13 @@
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import threading
 import time
 import unittest
+from concurrent.futures import as_completed as wait_for_futures
 from contextlib import redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
@@ -56,6 +58,7 @@ from executor_system.evaluation import EvaluationContext
 from executor_system.movement import NavigationDeferred
 from executor_system.runtime import PICKUP_OBJECT_CLIP_ERROR, ThorRuntime
 from executor_system.run_results import task_key_for_executable
+from executor_system.process_supervisor import OwnedProcessScope, run_owned_process
 
 
 class FakeEvent:
@@ -90,6 +93,20 @@ class FakeRuntime:
 
     def step(self, _payload, **_kwargs):
         return FakeEvent()
+
+
+def wait_for_process_exit(pid: int, timeout: float = 2.0) -> bool:
+    deadline = time.monotonic() + timeout
+    stat_path = Path("/proc") / str(pid) / "stat"
+    while time.monotonic() < deadline:
+        try:
+            fields = stat_path.read_text(encoding="utf-8").split()
+        except FileNotFoundError:
+            return True
+        if len(fields) > 2 and fields[2] == "Z":
+            return True
+        time.sleep(0.02)
+    return False
 
 
 class PhaseCoordinatorTest(unittest.TestCase):
@@ -680,6 +697,122 @@ class ParallelRunnerCliTest(unittest.TestCase):
             parse_parallel_arguments(["--termination-grace-seconds", "inf"])
         with self.assertRaises(SystemExit):
             parse_generated_arguments(["--timeout-seconds", "0"])
+
+    def test_parent_budget_rejects_finite_values_that_overflow_when_combined(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            script = root / "run" / "plan_to_code" / "executable_plan.py"
+            write_fake_generated_script(script)
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                result_code = parallel_runner_main(
+                    [
+                        str(script),
+                        "--timeout-seconds",
+                        "1e308",
+                        "--startup-grace-seconds",
+                        "1e308",
+                    ]
+                )
+
+        self.assertEqual(result_code, 1)
+        self.assertIn("aggregate parent timeout", output.getvalue())
+
+    def test_interruption_registers_inflight_group_cancels_queue_and_keeps_completed_result(self):
+        """Shutdown must atomically include Popen registration and cancel queued work."""
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            first = root / "first.py"
+            second = root / "second.py"
+            queued = root / "queued.py"
+            metrics_dir = root / "metrics"
+            metrics_dir.mkdir()
+            scope = OwnedProcessScope()
+            completed_results = {}
+            popen_entered = threading.Event()
+            cleanup_requested = threading.Event()
+            queued_started = threading.Event()
+            child_pids = []
+            original_popen = subprocess.Popen
+            original_cleanup = scope.cleanup
+
+            def gated_popen(*args, **kwargs):
+                process = original_popen(*args, **kwargs)
+                child_pids.append(process.pid)
+                popen_entered.set()
+                self.assertTrue(cleanup_requested.wait(2))
+                return process
+
+            def request_cleanup(*args, **kwargs):
+                cleanup_requested.set()
+                return original_cleanup(*args, **kwargs)
+
+            def fake_run_generated_executable(executable_path, *, process_scope, **_kwargs):
+                path = Path(executable_path)
+                if path == first:
+                    return {
+                        "status": "success",
+                        "timed_out": False,
+                        "returncode": 0,
+                        "executed_actions": 0,
+                        "failed_actions": 0,
+                        "robot_failures": [],
+                    }
+                if path == queued:
+                    queued_started.set()
+                    raise AssertionError("queued work started after interruption")
+                outcome = run_owned_process(
+                    [sys.executable, "-c", "import time; time.sleep(30)"],
+                    timeout_seconds=20,
+                    termination_grace_seconds=0.1,
+                    stdout_path=root / "second.stdout.log",
+                    stderr_path=root / "second.stderr.log",
+                    env=os.environ.copy(),
+                    process_scope=process_scope,
+                )
+                return {
+                    "status": "failed",
+                    "timed_out": outcome.timed_out,
+                    "returncode": outcome.returncode,
+                    "executed_actions": 0,
+                    "failed_actions": 0,
+                    "robot_failures": [],
+                }
+
+            def interrupt_after_first(future_to_path):
+                iterator = wait_for_futures(future_to_path)
+                yield next(iterator)
+                self.assertTrue(popen_entered.wait(2))
+                raise KeyboardInterrupt()
+
+            with patch(
+                "executor_system.parallel_runner.run_generated_executable",
+                side_effect=fake_run_generated_executable,
+            ), patch(
+                "executor_system.parallel_runner.as_completed",
+                side_effect=interrupt_after_first,
+            ), patch(
+                "executor_system.process_supervisor.subprocess.Popen",
+                side_effect=gated_popen,
+            ), patch.object(scope, "cleanup", side_effect=request_cleanup):
+                with self.assertRaises(KeyboardInterrupt):
+                    run_executables_with_retries(
+                        [first, second, queued],
+                        max_workers=1,
+                        temp_metrics_dir=metrics_dir,
+                        timeout_seconds=5,
+                        save_all_stdout=False,
+                        termination_grace_seconds=0.1,
+                        process_scope=scope,
+                        completed_results=completed_results,
+                    )
+
+            self.assertIn(first, completed_results)
+            self.assertFalse(queued_started.is_set())
+            self.assertEqual(len(child_pids), 1)
+            self.assertTrue(wait_for_process_exit(child_pids[0]))
 
     def test_run_generated_executable_defaults_to_step_movement_mode(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

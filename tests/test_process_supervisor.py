@@ -6,6 +6,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,7 +15,7 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 
-from executor_system.process_supervisor import run_owned_process
+from executor_system.process_supervisor import OwnedProcessScope, run_owned_process
 
 
 def process_has_not_exited(pid: int) -> bool:
@@ -146,3 +147,53 @@ class ProcessSupervisorTest(unittest.TestCase):
             self.assertFalse(outcome.timed_out)
             self.assertTrue(any(event["signal"] == "SIGKILL" for event in outcome.termination_events))
             self.assertTrue(wait_for_exit(child_pid))
+
+    def test_timeout_does_not_grant_another_leader_reap_window(self):
+        """The post-KILL leader reap uses the original termination deadline."""
+
+        class UnreapedProcess:
+            pid = 43210
+            returncode = None
+
+            def __init__(self):
+                self.wait_timeouts = []
+
+            def wait(self, timeout):
+                self.wait_timeouts.append(timeout)
+                raise subprocess.TimeoutExpired("child", timeout)
+
+            def poll(self):
+                return None
+
+        process = UnreapedProcess()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            started = time.monotonic()
+            with patch(
+                "executor_system.process_supervisor.subprocess.Popen",
+                return_value=process,
+            ), patch(
+                "executor_system.process_supervisor.os.getpgid",
+                return_value=43210,
+            ), patch(
+                "executor_system.process_supervisor.os.killpg",
+            ), patch(
+                "executor_system.process_supervisor._group_has_live_members",
+                return_value=True,
+            ):
+                outcome = run_owned_process(
+                    ["unreaped-child"],
+                    timeout_seconds=0.01,
+                    termination_grace_seconds=0.05,
+                    stdout_path=root / "stdout.log",
+                    stderr_path=root / "stderr.log",
+                    env=os.environ.copy(),
+                    process_scope=OwnedProcessScope(),
+                )
+
+        self.assertEqual(process.wait_timeouts, [0.01])
+        self.assertLess(time.monotonic() - started, 0.085)
+        self.assertTrue(any(
+            event["reason"] == "process-not-reaped"
+            for event in outcome.termination_events
+        ))

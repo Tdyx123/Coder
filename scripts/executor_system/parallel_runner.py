@@ -57,8 +57,9 @@ from executor_system.run_results import (  # noqa: E402
     validate_result,
 )
 from executor_system.process_supervisor import (  # noqa: E402
+    OwnedProcessScope,
+    ProcessStartCancelled,
     ProcessOutcome,
-    cleanup_owned_processes,
     run_owned_process,
 )
 from baseline_converters import pddlrun  # noqa: E402
@@ -79,6 +80,21 @@ def finite_positive_seconds(value: str) -> float:
     if not math.isfinite(seconds) or seconds <= 0:
         raise argparse.ArgumentTypeError("must be a finite positive number")
     return seconds
+
+
+def parent_timeout_seconds(
+    startup_grace_seconds: float,
+    execution_timeout_seconds: float,
+    finalization_grace_seconds: float,
+) -> float:
+    total = (
+        startup_grace_seconds
+        + execution_timeout_seconds
+        + finalization_grace_seconds
+    )
+    if not math.isfinite(total) or total <= 0:
+        raise ValueError("aggregate parent timeout must be a finite positive number")
+    return total
 
 
 def effective_timeout_seconds(
@@ -916,6 +932,7 @@ def run_generated_executable(
     startup_grace_seconds: float = DEFAULT_STARTUP_GRACE_SECONDS,
     finalization_grace_seconds: float = DEFAULT_FINALIZATION_GRACE_SECONDS,
     termination_grace_seconds: float = DEFAULT_TERMINATION_GRACE_SECONDS,
+    process_scope: Optional[OwnedProcessScope] = None,
 ) -> Dict[str, Any]:
     start_time = time.monotonic()
     child_env = os.environ.copy()
@@ -942,8 +959,10 @@ def run_generated_executable(
         "--movement-mode",
         str(movement_mode),
     ]
-    total_timeout_seconds = (
-        startup_grace_seconds + timeout_seconds + finalization_grace_seconds
+    total_timeout_seconds = parent_timeout_seconds(
+        startup_grace_seconds,
+        timeout_seconds,
+        finalization_grace_seconds,
     )
     stdout_path = metrics_output.with_suffix(".stdout.log")
     stderr_path = metrics_output.with_suffix(".stderr.log")
@@ -955,7 +974,23 @@ def run_generated_executable(
             stdout_path=stdout_path,
             stderr_path=stderr_path,
             env=child_env,
+            process_scope=process_scope,
         )
+    except ProcessStartCancelled as exc:
+        result = invalid_runner_result(
+            executable_path,
+            movement_mode=movement_mode,
+            run_time_seconds=time.monotonic() - start_time,
+            returncode=1,
+            identity=identity,
+            error=str(exc),
+        )
+        result.update(
+            status="cancelled",
+            process_status="cancelled",
+            execution_status="cancelled",
+        )
+        return result
     except OSError as exc:
         return invalid_runner_result(
             executable_path,
@@ -1079,6 +1114,8 @@ def run_executable_round(
     startup_grace_seconds: float,
     finalization_grace_seconds: float,
     termination_grace_seconds: float,
+    process_scope: OwnedProcessScope,
+    submitted_futures: Optional[List[Any]] = None,
     completed_results: Optional[Dict[Path, Dict[str, Any]]] = None,
 ) -> Dict[Path, Dict[str, Any]]:
     future_to_path = {}
@@ -1099,8 +1136,11 @@ def run_executable_round(
             startup_grace_seconds=startup_grace_seconds,
             finalization_grace_seconds=finalization_grace_seconds,
             termination_grace_seconds=termination_grace_seconds,
+            process_scope=process_scope,
         )
         future_to_path[future] = executable_path
+        if submitted_futures is not None:
+            submitted_futures.append(future)
 
     round_results: Dict[Path, Dict[str, Any]] = {}
     try:
@@ -1166,6 +1206,7 @@ def run_executables_with_retries(
     finalization_grace_seconds: float = DEFAULT_FINALIZATION_GRACE_SECONDS,
     termination_grace_seconds: float = DEFAULT_TERMINATION_GRACE_SECONDS,
     completed_results: Optional[Dict[Path, Dict[str, Any]]] = None,
+    process_scope: Optional[OwnedProcessScope] = None,
 ) -> tuple[List[Dict[str, Any]], List[str], List[Dict[str, Any]]]:
     resolved_run_id = str(run_id or uuid.uuid4().hex)
     attempts_by_path: Dict[Path, List[Dict[str, Any]]] = {
@@ -1174,6 +1215,8 @@ def run_executables_with_retries(
     final_results_by_path: Dict[Path, Dict[str, Any]] = {}
     pending_paths = list(executable_paths)
     process_cleanup_events: List[Dict[str, Any]] = []
+    scope = process_scope or OwnedProcessScope()
+    submitted_futures = []
 
     executor = ThreadPoolExecutor(max_workers=max_workers)
     try:
@@ -1193,6 +1236,8 @@ def run_executables_with_retries(
                 finalization_grace_seconds=finalization_grace_seconds,
                 termination_grace_seconds=termination_grace_seconds,
                 completed_results=completed_results,
+                process_scope=scope,
+                submitted_futures=submitted_futures,
             )
 
             next_pending_paths: List[Path] = []
@@ -1212,10 +1257,12 @@ def run_executables_with_retries(
                 break
             pending_paths = next_pending_paths
     finally:
-        # This happens before waiting for worker threads so Ctrl-C cannot leave
-        # a child process group alive behind a blocked worker.
+        # Cancel work which has not reached a worker before atomically closing
+        # registration and snapshotting all already-created process groups.
+        for future in submitted_futures:
+            future.cancel()
         process_cleanup_events.extend(
-            cleanup_owned_processes(
+            scope.cleanup(
                 termination_grace_seconds,
                 reason="parallel-runner-interrupted",
             )
@@ -1418,6 +1465,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 1
     if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
         print("ERROR: --timeout-seconds must be a finite positive number")
+        return 1
+    try:
+        parent_timeout_seconds(
+            args.startup_grace_seconds,
+            timeout_seconds,
+            args.finalization_grace_seconds,
+        )
+    except ValueError as exc:
+        print(f"ERROR: {exc}")
         return 1
     if args.parallel_run and (
         args.executable_plans or args.root or args.py_dir or args.base_line

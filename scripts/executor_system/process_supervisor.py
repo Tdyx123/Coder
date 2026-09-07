@@ -24,8 +24,75 @@ class ProcessOutcome:
     wall_time_seconds: float = 0.0
 
 
-_owned_processes: Dict[int, subprocess.Popen] = {}
-_owned_processes_lock = threading.Lock()
+class ProcessStartCancelled(RuntimeError):
+    """Raised when shutdown has closed an owned-process scope."""
+
+
+class OwnedProcessScope:
+    """Own process registration and atomically close it during shutdown."""
+
+    def __init__(self) -> None:
+        self._processes: Dict[int, subprocess.Popen] = {}
+        self._lock = threading.Lock()
+        self._closed = False
+
+    def start(
+        self,
+        command: Sequence[str],
+        *,
+        stdout_file: object,
+        stderr_file: object,
+        env: Optional[Mapping[str, str]],
+    ) -> tuple[subprocess.Popen, int]:
+        # Keep Popen and registration in this lock so shutdown's snapshot
+        # cannot miss a session created concurrently with cancellation.
+        with self._lock:
+            if self._closed:
+                raise ProcessStartCancelled("owned process scope is shutting down")
+            process = subprocess.Popen(
+                list(command),
+                stdout=stdout_file,
+                stderr=stderr_file,
+                env=dict(env) if env is not None else None,
+                start_new_session=True,
+            )
+            pgid = os.getpgid(process.pid)
+            self._processes[pgid] = process
+            return process, pgid
+
+    def unregister(self, pgid: int) -> None:
+        with self._lock:
+            self._processes.pop(pgid, None)
+
+    def cleanup(
+        self,
+        termination_grace_seconds: float,
+        *,
+        reason: str = "parent-interrupted",
+    ) -> List[Dict[str, object]]:
+        # Closing and snapshotting share the registration lock. Workers which
+        # have not entered Popen now fail before they can create a session.
+        with self._lock:
+            self._closed = True
+            pgids = list(self._processes)
+
+        events: List[Dict[str, object]] = []
+        for pgid in pgids:
+            deadline = time.monotonic() + termination_grace_seconds
+            events.extend(
+                terminate_owned_process_group(
+                    pgid,
+                    termination_grace_seconds=termination_grace_seconds,
+                    reason=reason,
+                    deadline=deadline,
+                )
+            )
+            if not _group_has_live_members(pgid):
+                self.unregister(pgid)
+        return events
+
+
+_default_process_scope = OwnedProcessScope()
 
 
 def _group_exists(pgid: int) -> bool:
@@ -100,6 +167,7 @@ def terminate_owned_process_group(
     *,
     termination_grace_seconds: float,
     reason: str,
+    deadline: Optional[float] = None,
 ) -> List[Dict[str, object]]:
     """Stop exactly one previously registered process group within its budget."""
 
@@ -108,14 +176,19 @@ def terminate_owned_process_group(
         return events
 
     started = time.monotonic()
-    term_deadline = started + (termination_grace_seconds * 0.4)
+    cleanup_deadline = deadline if deadline is not None else (
+        started + termination_grace_seconds
+    )
+    term_deadline = min(
+        cleanup_deadline,
+        started + (termination_grace_seconds * 0.4),
+    )
     _signal_group(pgid, signal.SIGTERM, reason=reason, events=events)
     _wait_for_group_exit(pgid, term_deadline)
 
     if _group_has_live_members(pgid):
-        kill_deadline = started + termination_grace_seconds
         _signal_group(pgid, signal.SIGKILL, reason=reason, events=events)
-        if not _wait_for_group_exit(pgid, kill_deadline):
+        if not _wait_for_group_exit(pgid, cleanup_deadline):
             events.append(
                 {
                     "pgid": pgid,
@@ -134,22 +207,10 @@ def cleanup_owned_processes(
 ) -> List[Dict[str, object]]:
     """Best-effort cleanup for only process groups registered by this module."""
 
-    with _owned_processes_lock:
-        pgids = list(_owned_processes)
-
-    events: List[Dict[str, object]] = []
-    for pgid in pgids:
-        events.extend(
-            terminate_owned_process_group(
-                pgid,
-                termination_grace_seconds=termination_grace_seconds,
-                reason=reason,
-            )
-        )
-        if not _group_has_live_members(pgid):
-            with _owned_processes_lock:
-                _owned_processes.pop(pgid, None)
-    return events
+    return _default_process_scope.cleanup(
+        termination_grace_seconds,
+        reason=reason,
+    )
 
 
 def run_owned_process(
@@ -160,52 +221,59 @@ def run_owned_process(
     stdout_path: Path,
     stderr_path: Path,
     env: Optional[Mapping[str, str]],
+    process_scope: Optional[OwnedProcessScope] = None,
 ) -> ProcessOutcome:
     """Run one command in a fresh session and reclaim its entire process group."""
 
     stdout_path.parent.mkdir(parents=True, exist_ok=True)
     stderr_path.parent.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
+    scope = process_scope or _default_process_scope
     with stdout_path.open("wb") as stdout_file, stderr_path.open("wb") as stderr_file:
-        process = subprocess.Popen(
-            list(command),
-            stdout=stdout_file,
-            stderr=stderr_file,
-            env=dict(env) if env is not None else None,
-            start_new_session=True,
+        process, pgid = scope.start(
+            command,
+            stdout_file=stdout_file,
+            stderr_file=stderr_file,
+            env=env,
         )
-        pgid = os.getpgid(process.pid)
-        with _owned_processes_lock:
-            _owned_processes[pgid] = process
 
         timed_out = False
         events: List[Dict[str, object]] = []
         try:
+            cleanup_deadline: Optional[float] = None
             try:
                 process.wait(timeout=timeout_seconds)
             except subprocess.TimeoutExpired:
                 timed_out = True
+                cleanup_deadline = time.monotonic() + termination_grace_seconds
                 events.extend(
                     terminate_owned_process_group(
                         pgid,
                         termination_grace_seconds=termination_grace_seconds,
                         reason="timeout",
+                        deadline=cleanup_deadline,
                     )
                 )
 
             # The group can retain descendants even after Popen itself exits.
-            if _group_has_live_members(pgid):
+            if not timed_out and _group_has_live_members(pgid):
+                cleanup_deadline = time.monotonic() + termination_grace_seconds
                 events.extend(
                     terminate_owned_process_group(
                         pgid,
                         termination_grace_seconds=termination_grace_seconds,
                         reason="process-exited-with-descendants",
+                        deadline=cleanup_deadline,
                     )
                 )
             if process.poll() is None:
-                try:
-                    process.wait(timeout=termination_grace_seconds)
-                except subprocess.TimeoutExpired:
+                remaining = max(0.0, (cleanup_deadline or time.monotonic()) - time.monotonic())
+                if remaining > 0:
+                    try:
+                        process.wait(timeout=remaining)
+                    except subprocess.TimeoutExpired:
+                        pass
+                if process.poll() is None:
                     events.append(
                         {
                             "pgid": pgid,
@@ -216,8 +284,7 @@ def run_owned_process(
                     )
         finally:
             if not _group_has_live_members(pgid):
-                with _owned_processes_lock:
-                    _owned_processes.pop(pgid, None)
+                scope.unregister(pgid)
 
     return ProcessOutcome(
         returncode=process.returncode,
