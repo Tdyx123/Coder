@@ -718,7 +718,8 @@ class Executor:
             raise_if_execution_aborted(self.runtime, exc)
             log(f"Skipping HOT/COLD ground-truth check: {exc}")
 
-    def handle_failure(self, action: Action, exc: BaseException, tick: int, *, finalizing=False) -> bool:
+    def handle_failure(self, action: Action, exc: BaseException, tick: int, *,
+                       finalizing=False, final_snapshot_current=False) -> bool:
         if not finalizing:
             raise_if_execution_aborted(self.runtime, exc)
             self.control.check()
@@ -729,7 +730,13 @@ class Executor:
         ledger_key = f"{self.stage_index}:{self.robot_id}:{self.state.action_cursor}"
         retries = self.state.retries_by_action.get(action_key, 0)
         attempts = retries + 1
-        effects_satisfied = self.effects_satisfied_after_failure(action, refresh=not finalizing)
+        if finalizing and not final_snapshot_current:
+            # A timeout/cancellation may leave only the admission snapshot.
+            # It cannot prove current effects, even if they used to be true.
+            self.last_effects_evidence = []
+            effects_satisfied = None
+        else:
+            effects_satisfied = self.effects_satisfied_after_failure(action, refresh=not finalizing)
         if (
             action.on_failure == FAILURE_SKIP_IF_EFFECT_ALREADY_TRUE
             and action.expected_effects
@@ -826,8 +833,8 @@ class Executor:
             return None
         if refresh:
             self.world_state.refresh([self.state])
-        # Finalization receives the scheduler's post-exit snapshot. It must not
-        # refresh through an already-cancelled stage or issue controller work.
+        # The finalizing caller must first establish snapshot provenance. It
+        # cannot refresh through a cancelled stage or issue controller work.
         self.last_effects_evidence = conditions_evidence(action.expected_effects, self.world_state)
         return conditions_satisfied(self.last_effects_evidence)
 

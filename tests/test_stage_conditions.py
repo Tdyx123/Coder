@@ -229,10 +229,11 @@ class StageConditionsTest(unittest.TestCase):
                     self.assertEqual(report['action_counts']['failed'], 2)
                     self.assertEqual(report['actions'][1]['reason'], 'stage_stopped_before_retry')
 
-    def _run_drained_effect_case(self, effect, *, ordinary=False):
+    def _run_drained_effect_case(self, effect, *, ordinary=False,
+                                 initial_temperature='RoomTemp', final_temperature='Hot'):
         import time
         from executor_system.stage_scheduler import StageScheduler
-        self.runtime.objects = [{'objectId': 'Mug|1', 'objectType': 'Mug', 'temperature': 'RoomTemp'}]
+        self.runtime.objects = [{'objectId': 'Mug|1', 'objectType': 'Mug', 'temperature': initial_temperature}]
         original_receive = StageScheduler._receive_results
         def receive(scheduler):
             if scheduler.inflight and not scheduler.action_records:
@@ -249,7 +250,7 @@ class StageConditionsTest(unittest.TestCase):
             calls.append(robot)
             if robot == 'robot2':
                 with self.runtime.controller_lock:
-                    self.runtime.objects[0]['temperature'] = 'Hot'
+                    self.runtime.objects[0]['temperature'] = final_temperature
                     self.runtime.state_version += 1
             raise RuntimeError(robot + ' completed failure')
         plan = TaskPlan('t', [StagePlan('s', {
@@ -281,6 +282,7 @@ class StageConditionsTest(unittest.TestCase):
                 self.assertEqual(report['action_counts']['attempts'], 2)
                 self.assertEqual(report['actions'][1]['reason'], 'effects_already_satisfied')
                 self.assertTrue(report['actions'][1]['effects'][0]['satisfied'])
+                self.assertTrue(report['stages'][0]['snapshot_is_current'])
                 self.assertEqual(report['actions'][2]['reason'], 'stage_failed')
                 self.assertEqual(self.runtime.action_resource_manager.holders(), {})
                 if not dictionary:
@@ -312,14 +314,48 @@ class StageConditionsTest(unittest.TestCase):
             if scheduler.inflight:
                 raise original
             return receive(scheduler)
+        calls = []
         def effect(world):
+            calls.append(world.version)
             raise ValueError('secondary cleanup callback error')
         with patch.object(StageScheduler, '_receive_results', timeout_after_results):
             with self.assertRaises(PlanExecutionTimeout) as caught:
                 self._run_drained_effect_case(effect, ordinary=True)
         self.assertIs(caught.exception, original)
         self.assertEqual(self.runtime.execution_report['execution_status'], 'timeout')
-        self.assertIn('secondary cleanup callback error', json.dumps(self.runtime.execution_report['errors']) +
-                      json.dumps(self.runtime.execution_report['stages']))
+        self.assertEqual(calls, [])
+        self.assertEqual(self.runtime.execution_report['actions'][1]['reason'], 'effects_unknown')
         self.assertEqual(self.runtime.action_resource_manager.holders(), {})
         self.assertIsNone(self.runtime.stage_scheduler)
+
+    def test_abort_drain_cannot_prove_effects_with_admission_snapshot(self):
+        from executor_system.execution_control import PlanExecutionTimeout, ExecutionCancelled
+        from executor_system.stage_scheduler import StageScheduler
+        for error_type in (PlanExecutionTimeout, ExecutionCancelled):
+            for dictionary in (False, True):
+                with self.subTest(error_type=error_type.__name__, dictionary=dictionary):
+                    self.runtime = FakeRuntime()
+                    original = error_type('abort after returned results')
+                    receive = StageScheduler._receive_results
+                    def abort(scheduler):
+                        if scheduler.inflight:
+                            raise original
+                        return receive(scheduler)
+                    seen = []
+                    effect = ({'name': 'Mug', 'state': 'HOT'} if dictionary else
+                              lambda world: seen.append(world.version) or world.objects_by_id['Mug|1']['temperature'] == 'Hot')
+                    with patch.object(StageScheduler, '_receive_results', abort):
+                        with self.assertRaises(error_type) as caught:
+                            self._run_drained_effect_case(effect, ordinary=True,
+                                initial_temperature='Hot', final_temperature='RoomTemp')
+                    self.assertIs(caught.exception, original)
+                    report = self.runtime.execution_report
+                    self.assertEqual(report['action_counts']['succeeded'], 0)
+                    self.assertEqual(report['action_counts']['failed'], 2)
+                    self.assertEqual(report['actions'][1]['reason'], 'effects_unknown')
+                    self.assertEqual(report['actions'][1]['effects'], [])
+                    self.assertFalse(report['stages'][0]['snapshot_is_current'])
+                    self.assertEqual(self.runtime.state_version, 1)
+                    self.assertEqual(self.runtime.objects[0]['temperature'], 'RoomTemp')
+                    self.assertEqual(seen, [])
+                    self.assertEqual(self.runtime.action_resource_manager.holders(), {})

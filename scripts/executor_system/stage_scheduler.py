@@ -73,6 +73,7 @@ class StageScheduler:
         self.snapshot_store = SnapshotStore()
         self._world_changed = True
         self._errors = []
+        self._final_snapshot_version = None
         self.retry_after = {}
         self.action_records = {}
         self.attempt_counts = {}
@@ -241,7 +242,8 @@ class StageScheduler:
         executor.state.last_action_result = None
         try:
             if finalizing:
-                executor.handle_failure(pending.action, exc, self._tick, finalizing=True)
+                executor.handle_failure(pending.action, exc, self._tick, finalizing=True,
+                                        final_snapshot_current=self._has_current_final_snapshot())
             else:
                 executor.handle_failure(pending.action, exc, self._tick)
         finally:
@@ -425,6 +427,11 @@ class StageScheduler:
                     continue
                 self.condition.wait(timeout=max(0, min(.05, remaining)))
 
+    def _has_current_final_snapshot(self):
+        return (self._final_snapshot_version is not None
+                and self._final_snapshot_version == self.world.version
+                and self.world.version == getattr(self.runtime, 'state_version', None))
+
     def _harvest_completed_results(self):
         """Preserve returned outcomes after quiescence without resuming retries."""
         while True:
@@ -495,6 +502,7 @@ class StageScheduler:
                 run_workers(self.runtime, list(self.executors.values()), self.coordinator,
                             self.stage.stage_id, drive=self._drive)
             self.world.snapshot = self.snapshot_store.capture(self.runtime, self.control)
+            self._final_snapshot_version = self.world.version
             final = None if condition is None else evaluate_condition(condition, self.world)
             self.report['condition']['final'] = final
             if final is False:
@@ -510,6 +518,7 @@ class StageScheduler:
             root = getattr(self.runtime, 'execution_control', None)
             if root is not None and not root.cancelled:
                 self.world.snapshot = self.snapshot_store.capture(self.runtime, root)
+                self._final_snapshot_version = self.world.version
             errors = tuple(self._errors) + (error_record(exc, phase=self.stage.stage_id),)
             tail_reason = 'condition_evaluation_error' if isinstance(exc, ConditionEvaluationError) else 'stage_failed'
             self.outcome = resolve_stage_outcome(self.policy, self.stage,
@@ -558,6 +567,7 @@ class StageScheduler:
                 self.report.update(status=self.outcome.status, continue_task=self.outcome.continue_task,
                     errors=list(self.outcome.errors), world_version=self.world.version)
             self.report['snapshot'] = snapshot_report(self.world.snapshot)
+            self.report['snapshot_is_current'] = self._has_current_final_snapshot()
             self.report['diagnostics'] = self.runtime.scheduler_diagnostics
             self.runtime.stage_scheduler = previous
             if getattr(self.runtime, 'execution_quiescent', True):
