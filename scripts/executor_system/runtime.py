@@ -226,8 +226,8 @@ class ThorRuntime:
     ) -> None:
         # Validate the cleanup target before dependency/controller setup so an
         # invalid caller path can never reach any initialization cleanup.
-        if reachable_refresh_mode != 'full':
-            raise ValueError('event reachable refresh is not implemented yet; use full')
+        if reachable_refresh_mode not in {'full', 'event'}:
+            raise ValueError('reachable refresh mode must be one of: full, event')
         self.reachable_refresh_mode = reachable_refresh_mode
         self.runtime_metrics = RuntimeMetrics()
         self.seed = 0
@@ -2199,7 +2199,9 @@ class ThorRuntime:
             self._navigation_execution_lock = threading.RLock()
             self._navigation_deadline_state = threading.local()
             self._interaction_reposition_state = threading.local()
-        self.movement_config = MovementConfig.resolve(movement_mode, environ)
+        self.movement_config = MovementConfig.resolve(
+            movement_mode, environ,
+            reachable_refresh_mode=getattr(self, 'reachable_refresh_mode', 'full'))
         self.navigation_metrics = NavigationMetrics(self.movement_config.mode)
         self.movement_strategy = create_movement_strategy(
             self,

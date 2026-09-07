@@ -20,6 +20,12 @@ class GridThorRuntime:
             str(obj["objectId"]): dict(obj)
             for obj in objects
         }
+        self.reachable_queries = 0
+        self.query_move_counts = []
+        self.query_agents = []
+        self.query_responses = {}
+        self.held_by_agent = {}
+        self.objects_after_successful_moves = {}
         self.actions = []
         self.position_history = [
             {
@@ -52,7 +58,21 @@ class GridThorRuntime:
             if agent_id != exclude_agent_id
         ]
 
+    def current_objects(self, agent_id=None):
+        return list(self.objects.values())
+
+    def agent_held_objects_for(self, agent_id):
+        return set(self.held_by_agent.get(agent_id, ()))
+
     def refresh_reachable_positions(self, agent_id):
+        self.reachable_queries += 1
+        self.query_move_counts.append(self.successful_move_count)
+        self.query_agents.append(int(agent_id))
+        response = self.query_responses.get(self.reachable_queries)
+        if isinstance(response, Exception):
+            raise response
+        if response is not None:
+            return [dict(position) for position in response]
         return [
             dict(position)
             for position in self.walkable_by_agent[int(agent_id)]
@@ -83,6 +103,9 @@ class GridThorRuntime:
             }
         )
         self.successful_move_count += 1
+        objects = self.objects_after_successful_moves.get(self.successful_move_count)
+        if objects is not None:
+            self.objects = {key: dict(value) for key, value in objects.items()}
         replacement = self.walkable_after_successful_moves.get(
             self.successful_move_count
         )

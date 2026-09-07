@@ -919,6 +919,7 @@ def _run_and_record(executable_path: Path, *, result_store: Optional[RunResultSt
         result = failed_result_for_exception(executable_path, exc, kwargs["movement_mode"], kwargs.get("execution_policy", "legacy"))
         result.update(process_status="failed", execution_status="failed", evaluation_status="incomplete",
                       task_success=None, tc=None, sr=None, ru=None)
+    result["reachable_refresh_mode"] = kwargs.get("reachable_refresh_mode", "full")
     identity = dict(run_id=kwargs["run_id"], task_key=kwargs["task_key"], attempt=kwargs["attempt"])
     # This wrapper also labels failures raised before a child was started.
     for key, value in identity.items():
@@ -940,6 +941,7 @@ def run_executable_round(
     timeout_seconds: float,
     movement_mode: str,
     execution_policy: str = "legacy",
+    reachable_refresh_mode: str = "full",
     save_all_stdout: bool,
     run_id: str,
     startup_grace_seconds: float,
@@ -965,6 +967,7 @@ def run_executable_round(
             timeout_seconds=timeout_seconds,
             movement_mode=movement_mode,
             execution_policy=execution_policy,
+            **({"reachable_refresh_mode": reachable_refresh_mode} if reachable_refresh_mode != "full" else {}),
             save_all_stdout=save_all_stdout,
             run_id=run_id,
             task_key=task_key_for_executable(executable_path),
@@ -1041,6 +1044,7 @@ def run_executables_with_retries(
     timeout_seconds: float,
     movement_mode: str = "step",
     execution_policy: str = "legacy",
+    reachable_refresh_mode: str = "full",
     save_all_stdout: bool,
     run_id: Optional[str] = None,
     startup_grace_seconds: float = DEFAULT_STARTUP_GRACE_SECONDS,
@@ -1073,6 +1077,7 @@ def run_executables_with_retries(
                 timeout_seconds=timeout_seconds,
                 movement_mode=movement_mode,
                 execution_policy=execution_policy,
+                **({"reachable_refresh_mode": reachable_refresh_mode} if reachable_refresh_mode != "full" else {}),
                 save_all_stdout=save_all_stdout,
                 run_id=resolved_run_id,
                 startup_grace_seconds=startup_grace_seconds,
@@ -1144,6 +1149,7 @@ def build_summary(
     timeout_seconds: Optional[float] = None,
     movement_mode: str = "step",
     execution_policy: str = "legacy",
+    reachable_refresh_mode: str = "full",
     timeout_retry_tasks: Optional[Iterable[str]] = None,
     gpu_cleanup_events: Optional[Sequence[Dict[str, Any]]] = None,
     process_cleanup_events: Optional[Sequence[Dict[str, Any]]] = None,
@@ -1199,6 +1205,7 @@ def build_summary(
             "timeout_seconds": resolved_timeout_seconds,
         },
         "movement_mode": str(movement_mode),
+        "reachable_refresh_mode": reachable_refresh_mode,
         "effective_timeout_seconds": resolved_timeout_seconds,
         "execution_policy": ExecutionPolicy(execution_policy).value,
         "timeout_retry_tasks": list(timeout_retry_tasks or []),
@@ -1304,6 +1311,7 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--rebuild-summary", metavar="RUN_DIR",
                         help="Rebuild a summary from completed durable attempts without running tasks.")
     parser.add_argument("--execution-policy", choices=("legacy", "strict"), default="legacy")
+    parser.add_argument("--reachable-refresh-mode", choices=("full", "event"), default="full")
     return parser.parse_args(argv)
 
 
@@ -1382,7 +1390,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         discovery_root = (Path(args.root).expanduser() if args.root
                           else default_baseline_root(args.base_line)).resolve()
     store.summary_metadata = build_summary([], start_time, base_line=args.base_line,
-        discovery_root=discovery_root, timeout_seconds=timeout_seconds, movement_mode=movement_mode, execution_policy=args.execution_policy)
+        discovery_root=discovery_root, timeout_seconds=timeout_seconds, movement_mode=movement_mode, execution_policy=args.execution_policy,
+        reachable_refresh_mode=args.reachable_refresh_mode)
     completed_results: Dict[Path, Dict[str, Any]] = {}
     try:
         store.summary_path = summary_output_path(output_dir, args.base_line)
@@ -1394,6 +1403,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             timeout_seconds=timeout_seconds,
             movement_mode=movement_mode,
             execution_policy=execution_policy,
+            **({"reachable_refresh_mode": args.reachable_refresh_mode} if args.reachable_refresh_mode != "full" else {}),
             save_all_stdout=args.save_all_stdout,
             run_id=run_id,
             result_store=store,
@@ -1405,6 +1415,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         store.summary_metadata = build_summary(results, start_time, base_line=args.base_line,
             discovery_root=discovery_root, timeout_seconds=timeout_seconds, movement_mode=movement_mode,
             execution_policy=execution_policy,
+            **({"reachable_refresh_mode": args.reachable_refresh_mode} if args.reachable_refresh_mode != "full" else {}),
             timeout_retry_tasks=timeout_retry_tasks, process_cleanup_events=process_cleanup_events)
         summary = store.write_summary("completed")
     except (KeyboardInterrupt, SystemExit):

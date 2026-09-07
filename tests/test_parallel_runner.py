@@ -8,7 +8,7 @@ import threading
 import time
 import unittest
 from concurrent.futures import as_completed as wait_for_futures
-from contextlib import redirect_stdout
+from contextlib import redirect_stdout, redirect_stderr
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -586,6 +586,33 @@ class ParallelRunnerCliTest(unittest.TestCase):
             self.assertEqual(parser(['--execution-policy', 'strict']).execution_policy, 'strict')
             with self.assertRaises(SystemExit):
                 parser(['--execution-policy', 'unsafe'])
+
+    def test_reachable_refresh_mode_reaches_child_through_parent_cli(self):
+        for parser in (parse_parallel_arguments, parse_generated_arguments):
+            self.assertEqual(getattr(parser([]), 'reachable_refresh_mode', None), 'full')
+            self.assertEqual(parser(['--reachable-refresh-mode', 'event']).reachable_refresh_mode, 'event')
+            with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                parser(['--reachable-refresh-mode', 'unsafe'])
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            script = root / 'refresh.py'
+            script.write_text("\n".join([
+                'import argparse,json',
+                'p=argparse.ArgumentParser()',
+                "p.add_argument('--runner-mode',action='store_true')",
+                "p.add_argument('--metrics-output')", "p.add_argument('--timeout-seconds')",
+                "p.add_argument('--movement-mode')",
+                "p.add_argument('--reachable-refresh-mode',choices=['full','event'],default='full')",
+                'a=p.parse_args()',
+                "json.dump({'reachable_refresh_mode':a.reachable_refresh_mode},open(a.metrics_output,'w'))",
+            ]))
+            with redirect_stdout(io.StringIO()):
+                code = parallel_runner_main([str(script), '--output-dir', str(root / 'out'),
+                                             '--reachable-refresh-mode', 'event'])
+            self.assertEqual(code, 0)
+            _, summary = load_only_summary(root / 'out')
+            self.assertEqual(summary['reachable_refresh_mode'], 'event')
+            self.assertEqual(summary['results'][0]['reachable_refresh_mode'], 'event')
 
     def test_strict_policy_reaches_child_and_failure_records(self):
         with tempfile.TemporaryDirectory() as directory:

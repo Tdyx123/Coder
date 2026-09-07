@@ -77,6 +77,9 @@ class ControllerClient:
                         metrics.increment('controller_action_failures')
                     runtime._commit_transformation_identities(event, payload, transformation_objects, held_before)
                     runtime._commit_world_event(event, payload)
+                    cache = getattr(runtime, 'reachable_map_cache', None)
+                    if cache is not None:
+                        cache.observe_action(payload)
                 except BaseException as exc:
                     control.cancel(f"world event commit failed: {exc}")
                     root_control = getattr(runtime, "execution_control", None)

@@ -58,12 +58,23 @@ class MovementConfig:
     max_failed_transitions: int = 8
     max_assignment_trials: int = 256
     max_invisible_candidate_replans: int = 1
+    reachable_refresh_mode: str = "full"
+    full_refresh_interval_steps: int = 4
+
+    def __post_init__(self):
+        if self.reachable_refresh_mode not in {"full", "event"}:
+            raise MovementConfigurationError("reachable refresh mode must be one of: full, event")
+        if (type(self.full_refresh_interval_steps) is not int
+                or not 1 <= self.full_refresh_interval_steps <= 4):
+            raise MovementConfigurationError("full refresh interval must be between 1 and 4 successful steps")
 
     @classmethod
     def resolve(
         cls,
         explicit_mode: Optional[str] = None,
         environ: Optional[Mapping[str, str]] = None,
+        *,
+        reachable_refresh_mode: str = "full",
     ) -> "MovementConfig":
         source = os.environ if environ is None else environ
         raw = (
@@ -77,7 +88,7 @@ class MovementConfig:
             raise MovementConfigurationError(
                 "movement mode must be one of: teleport, step"
             ) from exc
-        return cls(mode=mode)
+        return cls(mode=mode, reachable_refresh_mode=reachable_refresh_mode)
 
 
 @dataclass(frozen=True)

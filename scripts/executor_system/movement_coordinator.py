@@ -29,7 +29,8 @@ from multi_robot_avoidance import (
     plan_scenario,
 )
 
-from .runtime_metrics import measured
+from .runtime_metrics import measured, metrics_for
+from .reachable_map import ReachableMapCache, RuntimeWorldSnapshot
 from .execution_control import raise_if_execution_aborted
 from .movement import (
     MovementConfig,
@@ -41,14 +42,6 @@ from .movement import (
     StepNavigationError,
 )
 from .utils import position_inside_aabb_footprint
-
-
-@dataclass(frozen=True)
-class RuntimeWorldSnapshot:
-    version: int
-    positions: Dict[int, GridPoint]
-    thor_positions: Dict[GridPoint, Dict[str, float]]
-    walkable_map: GlobalWalkableMap
 
 
 @dataclass
@@ -83,6 +76,9 @@ class StepMovementCoordinator:
             for agent_id in range(int(runtime.physical_agent_count))
         )
         self.walkable_map = GlobalWalkableMap(robot_ids, config.grid_size_m)
+        self.reachable_map_cache = ReachableMapCache(config, robot_ids)
+        if config.reachable_refresh_mode == "event":
+            runtime.reachable_map_cache = self.reachable_map_cache
         self._stable_thor_positions: Dict[GridPoint, Dict[str, float]] = {}
         for position in getattr(runtime, "global_reachable_positions", ()) or ():
             normalized = dict(position)
@@ -117,8 +113,13 @@ class StepMovementCoordinator:
             )
         return point
 
-    def refresh_world(self) -> RuntimeWorldSnapshot:
+    def refresh_world(self, *, force: bool = False) -> RuntimeWorldSnapshot:
         self._check_deadline()
+        if self.config.reachable_refresh_mode == "event":
+            snapshot = self.reachable_map_cache.refresh(self.runtime, force=force)
+            self.walkable_map = self.reachable_map_cache.walkable_map
+            return snapshot
+        metrics_for(self.runtime).increment("reachable_full_refreshes")
         live_snapshots = {
             str(agent_id): self.runtime.refresh_reachable_positions(agent_id)
             for agent_id in range(int(self.runtime.physical_agent_count))
@@ -515,12 +516,26 @@ class StepMovementCoordinator:
         for index, micro_step in enumerate(plan.micro_steps):
             self._check_deadline()
             agent_id = int(micro_step.robot_id)
+            if self.config.reachable_refresh_mode == "event":
+                observed = self.refresh_world()
+                if observed.version != latest.version:
+                    return _ExecutionBoundary(
+                        kind="map_changed", release_tick=micro_step.tick,
+                        snapshot=observed, reason="navigation topology changed before move")
+                if observed.positions != latest.positions:
+                    return _ExecutionBoundary(
+                        kind="position_deviation", release_tick=micro_step.tick,
+                        snapshot=self.refresh_world(force=True),
+                        reason="agent positions changed before move")
+                latest = observed
             actual_source = self._authoritative_grid_point(
                 agent_id,
                 self.runtime.current_agent_position(agent_id),
                 latest.walkable_map.walkable,
             )
             if actual_source != micro_step.source:
+                if self.config.reachable_refresh_mode == "event":
+                    latest = self.refresh_world(force=True)
                 return _ExecutionBoundary(
                     kind="position_deviation",
                     release_tick=micro_step.tick,
@@ -548,6 +563,8 @@ class StepMovementCoordinator:
                 raise
             except Exception as exc:
                 raise_if_execution_aborted(self.runtime, exc)
+                if self.config.reachable_refresh_mode == "event":
+                    latest = self.refresh_world(force=True)
                 return _ExecutionBoundary(
                     kind="failed_transition",
                     release_tick=micro_step.tick,
@@ -561,6 +578,8 @@ class StepMovementCoordinator:
                     ),
                 )
             if not moved:
+                if self.config.reachable_refresh_mode == "event":
+                    latest = self.refresh_world(force=True)
                 return _ExecutionBoundary(
                     kind="failed_transition",
                     release_tick=micro_step.tick,
@@ -577,13 +596,22 @@ class StepMovementCoordinator:
             self.metrics.increment("micro_steps")
             if agent_id in parking_agent_ids:
                 self.metrics.increment("parking_moves")
+            expected_positions = dict(latest.positions)
+            expected_positions[agent_id] = micro_step.target
+            previous_version = latest.version
+            if self.config.reachable_refresh_mode == "event":
+                self.reachable_map_cache.record_successful_step()
             latest = self.refresh_world()
             actual_target = self._authoritative_grid_point(
                 agent_id,
                 self.runtime.current_agent_position(agent_id),
                 latest.walkable_map.walkable,
             )
-            if actual_target != micro_step.target:
+            if (actual_target != micro_step.target
+                    or (self.config.reachable_refresh_mode == "event"
+                        and latest.positions != expected_positions)):
+                if self.config.reachable_refresh_mode == "event":
+                    latest = self.refresh_world(force=True)
                 return _ExecutionBoundary(
                     kind="position_deviation",
                     release_tick=micro_step.tick + 1,
@@ -591,8 +619,15 @@ class StepMovementCoordinator:
                     reason=(
                         f"agent {agent_id} reached {actual_target}, expected "
                         f"{micro_step.target}"
+                        + (f"; observed agent positions {latest.positions}"
+                           if self.config.reachable_refresh_mode == "event" else "")
                     ),
                 )
+            if (self.config.reachable_refresh_mode == "event"
+                    and latest.version != previous_version):
+                return _ExecutionBoundary(
+                    kind="map_changed", release_tick=micro_step.tick + 1,
+                    snapshot=latest, reason="navigation topology changed after move")
             if not self._plan_remains_walkable(
                 plan,
                 index + 1,
@@ -649,6 +684,8 @@ class StepMovementCoordinator:
                         "candidate": assigned.to_list(),
                     }
                 )
+                if self.config.reachable_refresh_mode == "event":
+                    self.refresh_world(force=True)
                 if not self._has_remaining_candidate(state, assigned):
                     error = NoInteractionPoseError(
                         "NO_INTERACTION_POSE: held-item rotation failed at "
@@ -681,6 +718,8 @@ class StepMovementCoordinator:
                         "candidate": assigned.to_list(),
                     }
                 )
+                if self.config.reachable_refresh_mode == "event":
+                    self.refresh_world(force=True)
                 if not self._has_remaining_candidate(state, assigned):
                     error = NoInteractionPoseError(
                         "NO_INTERACTION_POSE: interaction target is invisible "
@@ -800,8 +839,10 @@ class StepMovementCoordinator:
             )
 
         try:
+            first_refresh = True
             while any(state.result is None for state in active_states.values()):
-                snapshot = self.refresh_world()
+                snapshot = self.refresh_world(force=first_refresh)
+                first_refresh = False
                 planning = self._plan(
                     active_states,
                     snapshot,
@@ -809,7 +850,7 @@ class StepMovementCoordinator:
                     parking_candidates,
                 )
                 if planning.plan is None:
-                    snapshot = self.refresh_world()
+                    snapshot = self.refresh_world(force=True)
                     planning = self._plan(
                         active_states,
                         snapshot,
