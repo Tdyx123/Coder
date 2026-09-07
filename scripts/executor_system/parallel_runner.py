@@ -52,6 +52,7 @@ from executor_system.run_results import (  # noqa: E402
     ActionLedger,
     atomic_write_json,
     normalize_output,
+    task_key_for_executable,
     validate_result,
 )
 from baseline_converters import pddlrun  # noqa: E402
@@ -101,9 +102,6 @@ def action_success_rate(executed_actions: int, failed_actions: int) -> float:
 
 def normalize_result_metrics(result: Dict[str, Any]) -> Dict[str, Any]:
     result.pop("exec_rate", None)
-    if "raw_action_sr" in result:
-        result["action_sr"] = result.get("raw_action_sr")
-        return result
     if "action_sr" not in result:
         executed_actions = int(result.get("executed_actions", 0) or 0)
         failed_actions = int(result.get("failed_actions", 0) or 0)
@@ -202,7 +200,7 @@ class TolerantExecutor(Executor):
         actions: Sequence[Action],
         *,
         stage_id: str,
-        stage_index: int,
+        stage_index: int = 0,
         stats: TolerantRunStats,
         deadline: Optional[float],
         logger: Optional[ExecutionLogger] = None,
@@ -970,7 +968,7 @@ def run_generated_executable(
     child_env = os.environ.copy()
     identity = {
         "run_id": str(run_id or uuid.uuid4().hex),
-        "task_key": str(task_key or executable_path.resolve()),
+        "task_key": task_key_for_executable(executable_path),
         "attempt": int(attempt),
     }
     child_env.update(
@@ -1111,7 +1109,7 @@ def run_executable_round(
             movement_mode=movement_mode,
             save_all_stdout=save_all_stdout,
             run_id=run_id,
-            task_key=str(executable_path.resolve()),
+            task_key=task_key_for_executable(executable_path),
             attempt=round_index + 1,
         )
         future_to_path[future] = executable_path

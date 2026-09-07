@@ -25,6 +25,7 @@ from executor_system.parallel_runner import (
     run_action_plan_tolerant,
     write_result_json,
 )
+from executor_system.run_results import task_key_for_executable
 from executor_system.runtime import ThorRuntime
 from executor_system.task_plan import run_action_plan
 
@@ -182,7 +183,7 @@ def runner_identity(script_file: str, task_index: int) -> Dict[str, Any]:
     return {
         "run_id": os.environ.get("LAMMAP_RUN_ID", uuid.uuid4().hex),
         "task_key": os.environ.get(
-            "LAMMAP_TASK_KEY", f"{Path(script_file).resolve()}:{task_index}"
+            "LAMMAP_TASK_KEY", task_key_for_executable(Path(script_file))
         ),
         "attempt": attempt,
     }

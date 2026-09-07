@@ -9,13 +9,23 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 import threading
+from hashlib import sha256
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Sequence, Union
 
 
 _TERMINAL_STATUSES = frozenset(("succeeded", "failed", "skipped", "cancelled"))
+_TASK_KEY_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+
+
+def task_key_for_executable(executable_path: Path) -> str:
+    """Return the stable, path-safe identity for a generated executable."""
+
+    normalized_path = str(Path(executable_path).expanduser().resolve())
+    return sha256(normalized_path.encode("utf-8")).hexdigest()
 
 
 class ActionLedger:
@@ -165,6 +175,8 @@ def validate_result(
 
     if returncode == 0:
         result["process_status"] = "completed"
+        result["status"] = "success"
+        result["timed_out"] = False
     elif returncode == 124:
         result["process_status"] = "timeout"
         result["execution_status"] = "timeout"
@@ -174,6 +186,8 @@ def validate_result(
         result["tc"] = None
         result["sr"] = None
         result["ru"] = None
+        result["status"] = "timeout"
+        result["timed_out"] = True
     else:
         result["process_status"] = "failed"
         result["execution_status"] = "failed"
@@ -183,6 +197,8 @@ def validate_result(
         result["tc"] = None
         result["sr"] = None
         result["ru"] = None
+        result["status"] = "failed"
+        result["timed_out"] = False
     return result
 
 
@@ -207,6 +223,10 @@ class RunResultStore:
             raise ValueError("attempt task_key does not match record target")
         if checked.get("attempt") != int(attempt):
             raise ValueError("attempt number does not match record target")
+        if not _TASK_KEY_PATTERN.fullmatch(str(task_key)):
+            raise ValueError("task_key must be a SHA-256 executable path digest")
+        if int(attempt) < 1:
+            raise ValueError("attempt must be positive")
         target = self.attempts_dir / f"{task_key}.attempt-{int(attempt)}.json"
         atomic_write_json(target, checked)
         return target

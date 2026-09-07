@@ -2,6 +2,7 @@ import os
 import sys
 import tempfile
 import unittest
+from hashlib import sha256
 from pathlib import Path
 from unittest import mock
 
@@ -12,7 +13,12 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 
-from executor_system.run_results import ActionLedger, RunResultStore, validate_result
+from executor_system.run_results import (
+    ActionLedger,
+    RunResultStore,
+    task_key_for_executable,
+    validate_result,
+)
 
 
 class ActionLedgerContractTest(unittest.TestCase):
@@ -95,6 +101,31 @@ class ResultValidationContractTest(unittest.TestCase):
         self.assertEqual(checked["process_status"], "failed")
         self.assertEqual(checked["execution_status"], "failed")
         self.assertIsNone(checked["task_success"])
+        self.assertEqual(checked["status"], "failed")
+        self.assertFalse(checked["timed_out"])
+
+    def test_timeout_returncode_overrides_child_status_and_marks_retryable_timeout(self):
+        result = {
+            "metrics_schema_version": 2,
+            "evaluation_version": "fixed_goals_v2",
+            "execution_policy": "legacy",
+            "run_id": "run-a",
+            "task_key": "task-a",
+            "attempt": 1,
+            "status": "success",
+            "timed_out": False,
+        }
+        environment = {
+            "LAMMAP_RUN_ID": "run-a",
+            "LAMMAP_TASK_KEY": "task-a",
+            "LAMMAP_ATTEMPT": "1",
+        }
+        with mock.patch.dict(os.environ, environment, clear=False):
+            checked = validate_result(result, returncode=124)
+
+        self.assertEqual(checked["process_status"], "timeout")
+        self.assertEqual(checked["status"], "timeout")
+        self.assertTrue(checked["timed_out"])
 
     def test_legacy_result_keeps_legacy_version_and_parent_identity(self):
         environment = {
@@ -112,15 +143,16 @@ class ResultValidationContractTest(unittest.TestCase):
     def test_store_rebuild_skips_missing_or_invalid_attempt_files(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             store = RunResultStore(Path(temp_dir), "run-a")
+            task_key = sha256(b"/tmp/executable_plan.py").hexdigest()
             store.record_attempt(
-                "task-a",
+                task_key,
                 1,
                 {
                     "metrics_schema_version": 2,
                     "evaluation_version": "fixed_goals_v2",
                     "execution_policy": "legacy",
                     "run_id": "run-a",
-                    "task_key": "task-a",
+                    "task_key": task_key,
                     "attempt": 1,
                     "process_status": "completed",
                     "execution_status": "completed",
@@ -136,6 +168,20 @@ class ResultValidationContractTest(unittest.TestCase):
         self.assertEqual(summary["total_results"], 1)
         self.assertEqual(summary["success_count"], 0)
         self.assertEqual(summary["groups"][0]["valid_evaluation_count"], 1)
+
+    def test_task_keys_hash_resolved_executable_paths_and_store_rejects_unsafe_keys(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            executable = Path(temp_dir) / "nested" / "plan.py"
+            expected = sha256(str(executable.resolve()).encode("utf-8")).hexdigest()
+            self.assertEqual(task_key_for_executable(executable), expected)
+
+            store = RunResultStore(Path(temp_dir) / "results", "run-a")
+            with self.assertRaises(ValueError):
+                store.record_attempt(
+                    "../../escape",
+                    1,
+                    {"run_id": "run-a", "task_key": "../../escape", "attempt": 1},
+                )
 
 
 if __name__ == "__main__":

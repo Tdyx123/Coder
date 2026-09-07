@@ -40,6 +40,7 @@ from executor_system.parallel_runner import (
     run_action_plan_tolerant,
     run_executables_with_retries,
     run_generated_executable,
+    normalize_result_metrics,
 )
 from executor_system.generated_plan_runtime import (
     parse_arguments as parse_generated_arguments,
@@ -54,6 +55,7 @@ from executor_system.executor import PhaseCoordinator
 from executor_system.evaluation import EvaluationContext
 from executor_system.movement import NavigationDeferred
 from executor_system.runtime import PICKUP_OBJECT_CLIP_ERROR, ThorRuntime
+from executor_system.run_results import task_key_for_executable
 
 
 class FakeEvent:
@@ -584,6 +586,42 @@ def load_only_summary(output_dir: Path):
 
 
 class ParallelRunnerCliTest(unittest.TestCase):
+    def test_raw_action_sr_does_not_replace_existing_legacy_action_sr(self):
+        result = normalize_result_metrics({"action_sr": 1.0, "raw_action_sr": 0.5})
+
+        self.assertEqual(result["action_sr"], 1.0)
+        self.assertEqual(result["raw_action_sr"], 0.5)
+
+    def test_parent_nonzero_exit_overrides_matching_v2_child_success_status(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            executable = root / "plan.py"
+            metrics = root / "metrics.json"
+            executable.write_text(
+                "\n".join(
+                    [
+                        "import json, os",
+                        "from pathlib import Path",
+                        "import sys",
+                        "output = sys.argv[sys.argv.index('--metrics-output') + 1]",
+                        "result = {'metrics_schema_version': 2, 'evaluation_version': 'fixed_goals_v2', 'execution_policy': 'legacy', 'run_id': os.environ['LAMMAP_RUN_ID'], 'task_key': os.environ['LAMMAP_TASK_KEY'], 'attempt': int(os.environ['LAMMAP_ATTEMPT']), 'status': 'success', 'timed_out': False, 'task_success': True}",
+                        "Path(output).write_text(json.dumps(result), encoding='utf-8')",
+                        "raise SystemExit(1)",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            result = run_generated_executable(
+                executable,
+                metrics_output=metrics,
+                timeout_seconds=5,
+            )
+
+        self.assertEqual(result["process_status"], "failed")
+        self.assertEqual(result["status"], "failed")
+        self.assertFalse(result["timed_out"])
+
     def test_missing_metrics_is_an_invalid_failed_result_without_action_success_rate(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
@@ -603,6 +641,7 @@ class ParallelRunnerCliTest(unittest.TestCase):
         self.assertEqual(result["process_status"], "failed")
         self.assertEqual(result["evaluation_status"], "incomplete")
         self.assertIsNone(result["action_sr"])
+        self.assertEqual(result["task_key"], task_key_for_executable(executable))
 
     def test_default_timeout_seconds_is_30(self):
         self.assertEqual(DEFAULT_TIMEOUT_SECONDS, 30.0)
