@@ -1,13 +1,12 @@
 """AI2-THOR runtime wrapper, navigation, object operations, and media output."""
 
-import json
 import math
 import os
 import random
 import re
+# Compatibility patch points shared with runtime_artifacts.
 import shutil
 import subprocess
-import tempfile
 import threading
 import time
 from collections import deque
@@ -19,6 +18,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from .plan_types import (PlannedAction)
 from .controller_client import ControllerClient
+from .runtime_artifacts import RuntimeArtifacts
 from .config import (
     AGENT_CLEARANCE_DISTANCE,
     DIRECTIONAL_VIEW_NAMES,
@@ -254,6 +254,7 @@ class ThorRuntime:
         self._stopped = False
         self.controller_lock = threading.RLock()
         self.controller_client = ControllerClient(self)
+        self.artifacts = self._make_artifacts()
         self.state_version = 0
         self._committed_held_object_overrides = {}
         self.stats_lock = threading.Lock()
@@ -296,28 +297,7 @@ class ThorRuntime:
 
     @staticmethod
     def resolve_output_root(output_root: Optional[Path]) -> Path:
-        """Return an owned, absolute media directory for one runtime instance."""
-
-        module_source_root = Path(__file__).resolve().parent
-        if output_root is None:
-            return Path(tempfile.mkdtemp(prefix="lammap-thor-")).resolve()
-
-        container = Path(output_root).expanduser().resolve()
-        # ``prepare_output_dirs`` removes media-shaped children.  Refuse the
-        # module directory and every ancestor of it so a caller cannot turn
-        # that targeted cleanup into source-tree cleanup.
-        if module_source_root == container or module_source_root.is_relative_to(container):
-            raise ValueError(
-                "output_root must be a run-output container, not the runtime "
-                "source directory or one of its ancestors."
-            )
-        if container.exists() and not container.is_dir():
-            raise ValueError("output_root must be a directory")
-        container.mkdir(parents=True, exist_ok=True)
-        # An explicit root is a caller-owned container, which can hold metrics,
-        # prior attempts, or concurrent runtimes.  Only a freshly allocated
-        # child belongs to this runtime and may be cleaned by prepare_output_dirs.
-        return Path(tempfile.mkdtemp(prefix="lammap-runtime-", dir=str(container))).resolve()
+        return RuntimeArtifacts.resolve_output_root(output_root)
 
     def resolve_physical_agent_count(self) -> int:
         expected_count = self.no_robot
@@ -413,21 +393,7 @@ class ThorRuntime:
             print("position:", e.metadata["agent"]["position"])
 
     def write_final_metadata(self) -> Optional[Path]:
-        if not GENERATE_METADATA:
-            return None
-        with self.controller_lock:
-            last_event = (
-                None
-                if self.controller is None
-                else getattr(self.controller, "last_event", None)
-            )
-            metadata = getattr(last_event, "metadata", {}) or {}
-        metadata_path = self.output_root / "metadata.txt"
-        metadata_path.write_text(
-            json.dumps(metadata, indent=2, sort_keys=True, default=str) + "\n",
-            encoding="utf-8",
-        )
-        return metadata_path
+        return self._get_artifacts().write_final_metadata()
 
     def ensure_display(self) -> None:
         if self.cloud_rendering or not self.render_image or os.environ.get("DISPLAY"):
@@ -437,25 +403,23 @@ class ThorRuntime:
             "Automatic Xvfb fallback has been disabled."
         )
 
+    def _make_artifacts(self) -> RuntimeArtifacts:
+        # Resolve providers at use time to preserve legacy runtime module patches.
+        return RuntimeArtifacts(
+            self, cv2_provider=lambda: cv2,
+            frame_converter=lambda event: event_cv2_frame(event),
+            metadata_enabled=lambda: GENERATE_METADATA,
+            logger=lambda message: log(message),
+        )
+
+    def _get_artifacts(self) -> RuntimeArtifacts:
+        artifacts = getattr(self, "artifacts", None)
+        if artifacts is None:
+            artifacts = self.artifacts = self._make_artifacts()
+        return artifacts
+
     def prepare_output_dirs(self) -> None:
-        if not self.render_image:
-            return
-
-        for path in self.output_root.glob("agent_*"):
-            if path.is_dir():
-                shutil.rmtree(path)
-        for view_name in THIRD_PARTY_VIEW_NAMES + DIRECTIONAL_VIEW_NAMES:
-            view_path = self.output_root / view_name
-            if view_path.is_dir():
-                shutil.rmtree(view_path)
-        for video_path in self.output_root.glob("video_*.mp4"):
-            if video_path.is_file():
-                video_path.unlink()
-
-        for i in range(self.physical_agent_count):
-            (self.output_root / f"agent_{i + 1}").mkdir(parents=True, exist_ok=True)
-        for view_name in THIRD_PARTY_VIEW_NAMES:
-            (self.output_root / view_name).mkdir(parents=True, exist_ok=True)
+        return self._get_artifacts().prepare()
 
     def initialize_scene(self) -> None:
         log(
@@ -817,68 +781,17 @@ class ThorRuntime:
         )
 
     def save_frames(self, event) -> None:
-        if not self.render_image:
-            return
-
-        events = list(getattr(event, "events", None) or [event])
-        wrote_frame = False
-        for i, agent_event in enumerate(events[: self.physical_agent_count]):
-            frame = event_cv2_frame(agent_event)
-            if frame is None:
-                continue
-            frame_path = self.output_root / f"agent_{i + 1}" / f"img_{self.frame_counter:05d}.png"
-            if not cv2.imwrite(str(frame_path), frame):
-                log(f"Warning: failed to write frame {frame_path}")
-            else:
-                wrote_frame = True
-            if self.show_windows:
-                cv2.imshow(f"agent{i}", frame)
-
-        third_party_frames = self.event_third_party_camera_frames(event, events)
-        for view_name, view_frame in zip(self.active_third_party_view_names(), third_party_frames):
-            view_bgr = cv2.cvtColor(view_frame, cv2.COLOR_RGB2BGR)
-            frame_path = self.output_root / view_name / f"img_{self.frame_counter:05d}.png"
-            if not cv2.imwrite(str(frame_path), view_bgr):
-                log(f"Warning: failed to write frame {frame_path}")
-            else:
-                wrote_frame = True
-            if self.show_windows:
-                cv2.imshow(view_name.replace("_", " ").title(), view_bgr)
-
-        if self.render_image and not wrote_frame and not self.missing_frame_warning_emitted:
-            metadata = getattr(event, "metadata", {}) or {}
-            action = metadata.get("lastAction") or "<unknown>"
-            log(
-                "Warning: renderImage=1 but AI2-THOR returned no frame "
-                f"for action {action}; no image was saved."
-            )
-            self.missing_frame_warning_emitted = True
-
-        if self.show_windows:
-            cv2.waitKey(25)
-        self.frame_counter += 1
+        return self._get_artifacts().save_frames(event)
 
     def active_third_party_view_names(self) -> List[str]:
-        view_names = getattr(self, "third_party_view_names", None)
-        if view_names:
-            return list(view_names)
-        if getattr(self, "top_view_enabled", False):
-            return [TOP_VIEW_NAME]
-        return []
+        return self._get_artifacts().active_third_party_view_names()
 
     def event_third_party_camera_frames(
         self,
         event: Any,
         events: Sequence[Any],
     ) -> List[Any]:
-        frame_sources = [event]
-        if events:
-            frame_sources.append(events[0])
-        for frame_source in frame_sources:
-            third_party_frames = getattr(frame_source, "third_party_camera_frames", None)
-            if third_party_frames:
-                return list(third_party_frames)
-        return []
+        return self._get_artifacts().event_third_party_camera_frames(event, events)
 
     def agent_event(self, agent_id: int):
         with self.controller_lock:
@@ -3971,41 +3884,8 @@ class ThorRuntime:
         return missing_goals
 
     def generate_video(self) -> None:
-        if not self.render_image:
-            return
-
-        if shutil.which("ffmpeg") is None:
-            log("ffmpeg not found; skipping video generation.")
-            return
-
-        frame_rate = 5
-        view_folders = [self.output_root / view_name for view_name in THIRD_PARTY_VIEW_NAMES]
-        for imgs_folder in sorted(self.output_root.glob("agent_*")) + view_folders:
-            if not imgs_folder.is_dir() or not any(imgs_folder.glob("img_*.png")):
-                continue
-            view = imgs_folder.name
-            command_set = [
-                "ffmpeg",
-                "-y",
-                "-framerate",
-                str(frame_rate),
-                "-i",
-                str(imgs_folder / "img_%05d.png"),
-                "-pix_fmt",
-                "yuv420p",
-                str(self.output_root / f"video_{view}.mp4"),
-            ]
-            result = subprocess.run(
-                command_set,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                text=True,
-                check=False,
-            )
-            if result.returncode != 0:
-                log(f"Warning: ffmpeg failed for {view}: {result.stderr.strip()}")
+        return self._get_artifacts().generate_video()
 
     def stop(self) -> None:
         if self._get_controller_client().stop():
-            if self.show_windows and cv2 is not None:
-                cv2.destroyAllWindows()
+            self._get_artifacts().close_windows()
