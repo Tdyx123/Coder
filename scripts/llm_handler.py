@@ -5,6 +5,7 @@ from typing import Dict, List, Optional, Tuple, Union
 from file_processor import PDDLError
 from llm_client import (
     complete_with_provider,
+    extract_finish_reason,
     extract_response_metadata,
     extract_text,
     extract_usage,
@@ -140,6 +141,7 @@ class LLMHandler:
                     usage=usage,
                     duration_ms=duration_ms,
                     key_index=response_metadata.get("key_index"),
+                    finish_reason=extract_finish_reason(response),
                 )
 
                 return response, text

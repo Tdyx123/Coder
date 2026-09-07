@@ -148,7 +148,12 @@ class ParsingUtils:
             while lines and cls.is_subtask_trailing_line(lines[-1]):
                 lines.pop()
 
-            if len(lines) < 10:
+            # A single action can be complete in only five lines. Overview
+            # entries have no action fields; length is not an integrity check.
+            if not any(re.match(
+                r'^\s*(?:[-*]\s+)?(?:\*\*)?(?:Parameters|Preconditions|Effects)'
+                r'(?:\*\*)?\s*:', line, re.IGNORECASE,
+            ) for line in lines):
                 continue
 
             filtered_subtasks.append('\n'.join(lines))

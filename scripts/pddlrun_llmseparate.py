@@ -24,6 +24,8 @@ except ImportError:
 
 from ai2thor_object_cache import get_ai2_thor_objects_cached
 from llm_client import get_available_models as get_litellm_models
+from llm_client import extract_finish_reason, extract_usage
+from decomposition_validation import build_retry_prompt, validate_decomposition
 from file_processor import FileProcessor, PDDLError
 from llm_handler import LLMError, LLMHandler
 from llm_logger import get_llm_logger
@@ -3141,7 +3143,7 @@ class TaskManager:
         domain_content: str,
         robots: List[dict],
         objects_ai: str,
-    ) -> Dict[str, str]:
+    ) -> Dict[str, Any]:
         """Build the decomposition prompt and run the LLM without writing artifacts."""
         try:
             decompose_prompt = self._rag_or_static_prompt_block(
@@ -3164,17 +3166,20 @@ class TaskManager:
             
             messages = [{"role": "user", "content": prompt}]
             call_config = self.config.llm_call("decompose")
-            _, text = self.llm.query_model(
+            response, text = self.llm.query_model(
                 messages,
                 self.model,
                 max_tokens=call_config.get("max_tokens", 1300),
                 frequency_penalty=call_config.get("frequency_penalty", 0.0),
             )
 
-            return {"prompt": prompt, "text": text}
+            return {"prompt": prompt, "text": text,
+                    "finish_reason": extract_finish_reason(response),
+                    "usage": extract_usage(response),
+                    "max_tokens": call_config.get("max_tokens", 1300)}
             
         except Exception as e:
-            raise PDDLError(f"Error generating decomposed plan: {str(e)}")
+            raise PDDLError(f"Error generating decomposed plan: {str(e)}") from e
 
     def _generate_decomposed_plan(
         self,
@@ -3184,27 +3189,89 @@ class TaskManager:
         objects_ai: str,
         write_artifacts: bool = True,
     ) -> str:
-        """Generate decomposed plan for a task."""
+        """Validate decomposition before allocation, with one content retry."""
+        records: List[Dict[str, Any]] = []
+        messages: List[Dict[str, str]] = []
+        budget = self.config.llm_call("decompose").get("max_tokens", 1300)
         try:
             result = self._run_decompose_generation(task, domain_content, robots, objects_ai)
             prompt = result["prompt"]
-            text = result["text"]
-
-            if not write_artifacts:
-                return text
-
-            decompose_prompt_artifact = self.config.artifact("decompose_prompt", "01_decompose/01_decompose_prompt.txt")
-            decompose_output_artifact = self.config.artifact("decompose_output", "01_decompose/02_decompose_output.txt")
-            self._write_text_artifact(decompose_prompt_artifact, prompt)
-            self._record_artifact("decompose", "prompt", decompose_prompt_artifact)
-            self._write_text_artifact(decompose_output_artifact, text)
-            self._record_artifact("decompose", "output", decompose_output_artifact)
-            self._persist_manifest()
-            
-            return text
-            
+            messages = [{"role": "user", "content": prompt}]
+            required = None
+            for attempt in range(2):
+                if attempt:
+                    response, text = self.llm.query_model(
+                        messages, self.model, max_tokens=budget,
+                        frequency_penalty=self.config.llm_call("decompose").get("frequency_penalty", 0.0),
+                    )
+                    result = {"text": text, "finish_reason": extract_finish_reason(response),
+                              "usage": extract_usage(response), "max_tokens": budget}
+                text = result["text"]
+                validation = validate_decomposition(
+                    text, domain_content=domain_content,
+                    finish_reason=result.get("finish_reason"), usage=result.get("usage"),
+                    max_tokens=budget, required_subtasks=required,
+                )
+                status = validation["status"]
+                if status == "invalid":
+                    status = "retry_pending" if attempt == 0 else "retry_exhausted"
+                record = {"attempt": attempt + 1, "max_tokens": budget,
+                          "finish_reason": result.get("finish_reason"), "usage": result.get("usage"),
+                          "errors": validation["errors"], "status": status,
+                          "required_subtasks": validation["required_subtasks"],
+                          "normalized": validation["normalized_text"] != text}
+                records.append(record)
+                if write_artifacts:
+                    self._write_decompose_attempt(records, messages, text, status)
+                if status == "passed":
+                    if write_artifacts:
+                        output_path = self.config.artifact("decompose_output", "01_decompose/02_decompose_output.txt")
+                        self._write_text_artifact(output_path, validation["normalized_text"])
+                        self._record_artifact("decompose", "output", output_path)
+                        self._persist_manifest()
+                    return validation["normalized_text"]
+                if status in {"parse_failed", "retry_exhausted"}:
+                    details = "; ".join(error["message"] for error in validation["errors"])
+                    raise PDDLError(f"Decomposition {status}: {details}")
+                required = validation["required_subtasks"]
+                if text.strip():
+                    messages.append({"role": "assistant", "content": text})
+                messages.append({"role": "user", "content": build_retry_prompt(validation)})
+                if validation["truncated"]:
+                    budget *= 2
         except Exception as e:
-            raise PDDLError(f"Error generating decomposed plan: {str(e)}")
+            if write_artifacts and (isinstance(e, LLMError) or isinstance(e.__cause__, LLMError)):
+                records.append({"attempt": len(records) + 1, "max_tokens": budget,
+                                "status": "api_failed", "error": str(e)})
+                self._write_decompose_attempt(records, messages, None, "api_failed")
+            if isinstance(e, PDDLError):
+                raise
+            raise PDDLError(f"Error generating decomposed plan: {str(e)}") from e
+
+    def _write_decompose_attempt(
+        self, records: List[Dict[str, Any]], messages: List[Dict[str, str]],
+        text: Optional[str], status: str,
+    ) -> None:
+        """Persist each attempt before another request can fail or be interrupted."""
+        record = records[-1]
+        directory = f"01_decompose/attempts/attempt_{record['attempt']}"
+        messages_path = f"{directory}/messages.json"
+        self._write_json_artifact(messages_path, messages)
+        record["messages"] = messages_path
+        if text is not None:
+            output_path = f"{directory}/output.txt"
+            self._write_text_artifact(output_path, text)
+            record["output"] = output_path
+        if messages:
+            prompt_path = self.config.artifact("decompose_prompt", "01_decompose/01_decompose_prompt.txt")
+            self._write_text_artifact(prompt_path, messages[0]["content"])
+            self._record_artifact("decompose", "prompt", prompt_path)
+        validation = {"status": status, "max_retries": 1, "attempts": copy.deepcopy(records)}
+        validation_path = "01_decompose/validation_manifest.json"
+        self._write_json_artifact(validation_path, validation)
+        self._record_artifact("decompose", "validation", validation_path)
+        self.current_task_manifest["decompose_validation"] = validation
+        self._persist_manifest()
 
     @staticmethod
     def _strip_decomposition_completion_sentence(decomposed_plan: str) -> str:

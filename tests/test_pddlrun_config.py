@@ -58,6 +58,16 @@ from run_config import apply_problem_rag_cli_override
 from run_config import apply_val_feedback_cli_override
 
 
+FRIDGE_DECOMPOSITION = (
+    "#SubTask 1: Open the fridge\n"
+    "OpenObject: Open the fridge.\n"
+    "Parameters: ?robot, ?fridge\n"
+    "Preconditions: None.\n"
+    "Effects: (object-open ?fridge)"
+)
+CABINET_DECOMPOSITION = FRIDGE_DECOMPOSITION.replace("fridge", "cabinet")
+
+
 class FixedDatetime:
     @classmethod
     def now(cls):
@@ -2981,7 +2991,10 @@ class PDDLRunConfigTests(unittest.TestCase):
         self.assertNotIn("is done", subtasks[2])
 
     def test_extract_subtasks_keeps_existing_hash_header_formats(self):
-        body = "\n".join(f"Action detail line {idx}" for idx in range(1, 10))
+        body = (
+            "GoToObject: Approach the object.\nParameters: ?robot, ?object\n"
+            "Preconditions: None.\nEffects: (at ?robot ?object)"
+        )
         decomposed_plan = (
             "#Subtask 1 Put an Egg in the Fridge\n"
             f"{body}\n"
@@ -4142,7 +4155,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
                 captured["prompt"] = messages[-1]["content"]
                 captured["max_tokens"] = max_tokens
-                return {}, "#SubTask 1: Open the fridge"
+                return {}, FRIDGE_DECOMPOSITION
 
             with patch.object(manager.llm, "query_model", side_effect=fake_query_model):
                 manager._generate_decomposed_plan(
@@ -4167,7 +4180,7 @@ class PDDLRunConfigTests(unittest.TestCase):
                 (root / "run" / "01_decompose" / "01_decompose_prompt.txt").read_text(encoding="utf-8"),
             )
             self.assertEqual(
-                "#SubTask 1: Open the fridge",
+                FRIDGE_DECOMPOSITION,
                 (root / "run" / "01_decompose" / "02_decompose_output.txt").read_text(encoding="utf-8"),
             )
             self.assertNotIn("decompose_rag", manager.current_task_manifest)
@@ -4188,7 +4201,7 @@ class PDDLRunConfigTests(unittest.TestCase):
 
             def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
                 captured["prompt"] = messages[-1]["content"]
-                return {}, "#SubTask 1: Open the cabinet"
+                return {}, CABINET_DECOMPOSITION
 
             with patch.object(manager.llm, "query_model", side_effect=fake_query_model):
                 manager._generate_decomposed_plan(
@@ -4220,7 +4233,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
                 captured["prompt"] = messages[-1]["content"]
                 captured["max_tokens"] = max_tokens
-                return {}, "#SubTask 1: Open the fridge"
+                return {}, FRIDGE_DECOMPOSITION
 
             with patch.object(manager.llm, "query_model", side_effect=fake_query_model):
                 result = manager._generate_decomposed_plan(
@@ -4231,7 +4244,7 @@ class PDDLRunConfigTests(unittest.TestCase):
                     write_artifacts=False,
                 )
 
-            self.assertEqual("#SubTask 1: Open the fridge", result)
+            self.assertEqual(FRIDGE_DECOMPOSITION, result)
             self.assertIn("# decompose example", captured["prompt"])
             self.assertEqual(1300, captured["max_tokens"])
             self.assertFalse((root / "run" / "01_decompose" / "01_decompose_prompt.txt").exists())
@@ -4342,7 +4355,7 @@ class PDDLRunConfigTests(unittest.TestCase):
 
             def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
                 captured["prompt"] = messages[-1]["content"]
-                return {}, "#SubTask 1: Open the fridge"
+                return {}, FRIDGE_DECOMPOSITION
 
             with patch.object(manager.llm, "query_model", side_effect=fake_query_model):
                 manager._generate_decomposed_plan(
@@ -4388,7 +4401,7 @@ class PDDLRunConfigTests(unittest.TestCase):
 
             def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
                 captured["prompt"] = messages[-1]["content"]
-                return {}, "#SubTask 1: Open the fridge"
+                return {}, FRIDGE_DECOMPOSITION
 
             with patch.object(manager.llm, "query_model", side_effect=fake_query_model):
                 manager._generate_decomposed_plan(
@@ -4438,7 +4451,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
                 captured["prompt"] = messages[-1]["content"]
                 captured["max_tokens"] = max_tokens
-                return {}, "#SubTask 1: Open the fridge"
+                return {}, FRIDGE_DECOMPOSITION
 
             with patch.object(manager.llm, "query_model", side_effect=fake_query_model):
                 manager._generate_decomposed_plan(

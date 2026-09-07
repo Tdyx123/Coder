@@ -56,6 +56,24 @@ Current defaults in code:
 - prompt allocation set: `pddl_train_task_allocationsep`
 - test set: `final_test`
 
+Decomposition is structurally validated before allocation. Empty output, missing
+subtask bodies/actions, duplicate body IDs, and missing or incomplete action
+fields share at most one content retry. The retry keeps the original prompt and
+previous response and appends combined English repair feedback requesting a
+complete replacement. Only detected truncation doubles the output budget
+(default `1300` to `2600`); network retries remain independent.
+
+Complete short subtasks are retained. Heading differences are normalized locally;
+body IDs are ordered to match the execution layer's contiguous 1-based positions.
+Unrecoverable parsing stops with `parse_failed`, without a model retry. A second
+invalid generation stops with `retry_exhausted`; neither reaches allocation.
+These checks do not enforce the original task's `then` ordering.
+
+Each response and request is saved under `01_decompose/attempts/attempt_N/`.
+`01_decompose/validation_manifest.json` and the run manifest record attempt errors,
+budgets, usage, and observed finish reasons. The accepted, locally normalized
+decomposition remains at `01_decompose/02_decompose_output.txt`.
+
 ### `run_pddlrun_llmseparate_parallel.py`
 
 Parallel wrapper for launching multiple floor plans and tasks.

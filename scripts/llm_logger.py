@@ -81,6 +81,7 @@ def log_llm_call(
     duration_ms: Optional[float] = None,
     error: Optional[str] = None,
     key_index: Optional[int] = None,
+    finish_reason: Optional[str] = None,
 ) -> None:
     log_entry = {
         'timestamp': datetime.now().isoformat(),
@@ -97,6 +98,8 @@ def log_llm_call(
         log_entry['error'] = error
     if key_index is not None:
         log_entry['key_index'] = key_index
+    if finish_reason is not None:
+        log_entry['finish_reason'] = finish_reason
 
     logger = LLMCallLogger()
     logger.log(log_entry)

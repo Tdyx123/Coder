@@ -206,6 +206,12 @@ def _first_choice(response: Any) -> Optional[Any]:
     return choices[0]
 
 
+def extract_finish_reason(response: Any) -> Optional[str]:
+    """Read the actual provider stop reason without inferring it from usage."""
+    reason = _get_value(_first_choice(response), "finish_reason")
+    return reason if isinstance(reason, str) else None
+
+
 def _content_to_text(content: Any) -> str:
     if isinstance(content, list):
         parts = []
