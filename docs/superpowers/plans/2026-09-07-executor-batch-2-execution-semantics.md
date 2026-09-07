@@ -1,6 +1,6 @@
 # 执行系统第二批：调度、失败策略与资源语义修改计划
 
-> **面向执行代理：** 使用 `superpowers:executing-plans` 按任务实施，使用复选框跟踪进度。本文件是修改计划，不代表其中的代码已经实现。
+> **面向执行代理：** 使用 `superpowers:executing-plans` 按任务实施，使用复选框跟踪进度。本计划已完成实施与验收；最终生产 SHA `149637b2`，581 项具名回归与 48 次真实 Unity 运行通过，详见[验收报告](../../../reports/executor_batch_2/README.md)。
 
 **目标：** 使条件等待能够推进、失败策略名实一致、阶段条件实际生效，并让共享物体和设备的复合操作受到资源仲裁。
 
@@ -111,7 +111,7 @@ ExecutionControl.child(*, deadline: Optional[float] = None) -> ExecutionControl
 
 **输入/输出：** 输入 Action、已尝试次数、效果判定；输出 `FailureDecision`，由执行循环应用游标、停止范围及账本更新。
 
-- [ ] 将下面的测试放入 `unittest.TestCase`，导入 `Action`、`ExecutionPolicy`、`resolve_failure`：
+- [x] 将下面的测试放入 `unittest.TestCase`，导入 `Action`、`ExecutionPolicy`、`resolve_failure`：
 
 ```python
 def test_fail_stage_is_explicit_in_strict_mode(self):
@@ -124,11 +124,11 @@ def test_fail_stage_is_explicit_in_strict_mode(self):
     self.assertEqual(legacy.kind, "skip")
 ```
 
-- [ ] 为策略表每行建立参数化 subTest；覆盖重试上限、非 Teleport 不重试、空效果不能证明成功、父取消传到子控制器、阶段取消不影响下一阶段控制器。
-- [ ] 运行 `/home/dwb/.pyenv/bin/pyenv exec python -m unittest tests/test_execution_policy.py`，确认 RED。
-- [ ] 实现纯函数决策表，重试数定义为“初次尝试之后额外尝试的次数”，与 `max_retries` 一致。普通循环和容错循环先共同使用它，不在本任务改变调度。
-- [ ] 移除 `FailureHandler` 中独立决策逻辑，使其委托纯函数；所有结构化日志记录 requested policy 与实际 `FailureDecision.kind`。
-- [ ] 运行新测试及 `test_executor_retry_policy.py`、`test_parallel_runner.py`。现有失败继续测试显式指定 legacy，另加 strict 对照，不删除旧行为断言。
+- [x] 为策略表每行建立参数化 subTest；覆盖重试上限、非 Teleport 不重试、空效果不能证明成功、父取消传到子控制器、阶段取消不影响下一阶段控制器。
+- [x] 运行 `/home/dwb/.pyenv/bin/pyenv exec python -m unittest tests/test_execution_policy.py`，确认 RED。
+- [x] 实现纯函数决策表，重试数定义为“初次尝试之后额外尝试的次数”，与 `max_retries` 一致。普通循环和容错循环先共同使用它，不在本任务改变调度。
+- [x] 移除 `FailureHandler` 中独立决策逻辑，使其委托纯函数；所有结构化日志记录 requested policy 与实际 `FailureDecision.kind`。
+- [x] 运行新测试及 `test_executor_retry_policy.py`、`test_parallel_runner.py`。现有失败继续测试显式指定 legacy，另加 strict 对照，不删除旧行为断言。
 
 **交付：** 失败策略有唯一解释，可先在原调度下独立验收。
 
@@ -138,7 +138,7 @@ def test_fail_stage_is_explicit_in_strict_mode(self):
 
 **输入/输出：** 在 controller 锁内复制同一次 `last_event` 的所有 agent metadata，产出 `WorldSnapshot`。对象状态和持有物以该事件为依据；现有手持覆盖状态只可在对应动作提交完成时同步合并，并记录来源。
 
-- [ ] 测试两个机器人共享状态：B 的持有物变化后，A 的 callback 从新快照可见；同一快照中版本和位置一致；读取异常不会保留旧位置并假装成功；修改返回映射被拒绝。
+- [x] 测试两个机器人共享状态：B 的持有物变化后，A 的 callback 从新快照可见；同一快照中版本和位置一致；读取异常不会保留旧位置并假装成功；修改返回映射被拒绝。
 
 ```python
 def test_snapshot_is_immutable(self):
@@ -150,11 +150,11 @@ def test_snapshot_is_immutable(self):
 
 测试夹具的 `self.runtime` 使用可编程多 agent event；设置完整对象和 agent metadata，不启动 Unity。`self.store`、`self.control` 分别是 `SnapshotStore()` 和 `ExecutionControl()`。
 
-- [ ] 运行 `/home/dwb/.pyenv/bin/pyenv exec python -m unittest tests/test_world_snapshot.py`，确认 RED。
-- [ ] `_step_direct` 成功获得事件后，在同一提交边界更新 `state_version` 和相关持有物记录，再通知协调器；不在持有 controller 锁时获取调度条件锁。使用提交后通知避免锁顺序反转。
-- [ ] 快照读取失败抛出 `SnapshotReadError` 并走第一批基础设施异常路径。字段可选导致的单目标 unknown 与整个快照无法读取分别处理。
-- [ ] 删除 `WorldState.refresh` 的 `except BaseException: continue`，旧 callback 适配到完整快照。最终全局条件不得通过 `refresh([])` 得到空世界。
-- [ ] 运行快照测试及 `test_runtime_object_aliases.py`、`test_action_plan_pre_task.py`、`test_parallel_runner.py`。
+- [x] 运行 `/home/dwb/.pyenv/bin/pyenv exec python -m unittest tests/test_world_snapshot.py`，确认 RED。
+- [x] `_step_direct` 成功获得事件后，在同一提交边界更新 `state_version` 和相关持有物记录，再通知协调器；不在持有 controller 锁时获取调度条件锁。使用提交后通知避免锁顺序反转。
+- [x] 快照读取失败抛出 `SnapshotReadError` 并走第一批基础设施异常路径。字段可选导致的单目标 unknown 与整个快照无法读取分别处理。
+- [x] 删除 `WorldState.refresh` 的 `except BaseException: continue`，旧 callback 适配到完整快照。最终全局条件不得通过 `refresh([])` 得到空世界。
+- [x] 运行快照测试及 `test_runtime_object_aliases.py`、`test_action_plan_pre_task.py`、`test_parallel_runner.py`。
 
 **交付：** 条件和效果检查有一致、可解释的世界状态输入。
 
@@ -164,7 +164,7 @@ def test_snapshot_is_immutable(self):
 
 **输入/输出：** 机器人先提交下一动作；协调器检查条件并发放许可；只将本轮获准的 GoToObject 放入已有联合导航接口。
 
-- [ ] 写两机器人回归：A 等待 B 的动作设置标志，B 的动作不依赖 A；step 与 teleport 均须完成。测试用 Event 和有界 join，不依赖线程启动先后。
+- [x] 写两机器人回归：A 等待 B 的动作设置标志，B 的动作不依赖 A；step 与 teleport 均须完成。测试用 Event 和有界 join，不依赖线程启动先后。
 
 ```python
 def test_waiting_robot_does_not_block_dependency(self):
@@ -184,14 +184,14 @@ def test_waiting_robot_does_not_block_dependency(self):
 
 导入标准库 `threading`、`patch` 和现有计划类型。`self.runtime` 采用现有 `FakeRuntime` 并显式设置 `MovementConfig.resolve("step")`，同样参数化验证 teleport。
 
-- [ ] 增加：一个机器人等待、两个机器人联合导航；晚到就绪请求进入下一波次；某成员失败唤醒同批其他成员；延期请求保留动作游标；全部等待到截止时间能输出依赖诊断。
-- [ ] 运行 `/home/dwb/.pyenv/bin/pyenv exec python -m unittest tests/test_stage_scheduler.py`，确认现有互等回归为 RED。
-- [ ] 用任务主线程驱动协调器：收集 pending → 读取共享快照 → 判定条件 → 资源准入（本任务先使用空资源集合）→ 冻结获准导航成员 → 发放许可 → 接收结果和再次调度。
-- [ ] 就绪选择按 `(-base_priority - wait_rounds * 10 - critical_bonus, robot_id, cursor)` 稳定排序，`critical_bonus=50`。等待年龄直到获准才清零。不要用线程抢锁顺序选择获准者。
-- [ ] 非导航获准动作继续等待同波次导航结束，保持现有交互前导航屏障；等待条件的机器人作为占位参与空间约束，但不能被误标记成已完成并停车。
-- [ ] 联合导航始终先收齐成员请求，再获取导航执行锁。取消时唤醒所有许可和波次等待者，取消后的请求不得进入新波次。
-- [ ] 实现三种同步策略表；给每种策略加入可观察动作开始/结束顺序的断言，不只检查最终成功。
-- [ ] 运行调度测试及 `test_movement_coordinator.py`、`test_navigation_batch_failures.py`、`test_navigation_execution_scope.py`、`test_multi_robot_avoidance.py`。
+- [x] 增加：一个机器人等待、两个机器人联合导航；晚到就绪请求进入下一波次；某成员失败唤醒同批其他成员；延期请求保留动作游标；全部等待到截止时间能输出依赖诊断。
+- [x] 运行 `/home/dwb/.pyenv/bin/pyenv exec python -m unittest tests/test_stage_scheduler.py`，确认现有互等回归为 RED。
+- [x] 用任务主线程驱动协调器：收集 pending → 读取共享快照 → 判定条件 → 资源准入（本任务先使用空资源集合）→ 冻结获准导航成员 → 发放许可 → 接收结果和再次调度。
+- [x] 就绪选择按 `(-base_priority - wait_rounds * 10 - critical_bonus, robot_id, cursor)` 稳定排序，`critical_bonus=50`。等待年龄直到获准才清零。不要用线程抢锁顺序选择获准者。
+- [x] 非导航获准动作继续等待同波次导航结束，保持现有交互前导航屏障；等待条件的机器人作为占位参与空间约束，但不能被误标记成已完成并停车。
+- [x] 联合导航始终先收齐成员请求，再获取导航执行锁。取消时唤醒所有许可和波次等待者，取消后的请求不得进入新波次。
+- [x] 实现三种同步策略表；给每种策略加入可观察动作开始/结束顺序的断言，不只检查最终成功。
+- [x] 运行调度测试及 `test_movement_coordinator.py`、`test_navigation_batch_failures.py`、`test_navigation_execution_scope.py`、`test_multi_robot_avoidance.py`。
 
 **交付：** 条件等待不会阻塞产生条件的动作，联合导航成员集合可确定。
 
@@ -211,7 +211,7 @@ ResourceLease.release() -> None
 
 owner 为第一批动作键。一次申请所有 key：可同时授予才成功，否则一个也不授予，避免持有一半资源等待另一半。资源 key 使用实例 ID 绑定的逻辑身份；切片/破蛋后通过已有 alias 映射保持身份连续。
 
-- [ ] 加入最小租约失败测试，导入 `ActionResourceManager`：
+- [x] 加入最小租约失败测试，导入 `ActionResourceManager`：
 
 ```python
 def test_resource_is_released_before_next_owner_enters(self):
@@ -224,15 +224,15 @@ def test_resource_is_released_before_next_owner_enters(self):
     self.assertIsNotNone(manager.try_acquire("0:robot2:0", ("Microwave|1",)))
 ```
 
-- [ ] 补齐共享微波炉复合动作不交错、两个抓取竞争同一实例、不同实例可并发、反序双资源申请不死锁、失败与取消释放租约、别名变化仍冲突、等待年龄防长期饥饿。
-- [ ] 运行 `/home/dwb/.pyenv/bin/pyenv exec python -m unittest tests/test_action_resource_leases.py`，确认 RED。
-- [ ] 资源需求固定：单对象交互占用对象；Put 占用手持对象和容器；Microwave/Coffee/Cold 占用设备与目标；Toaster 占用面包与烤面包机；Stove 系列占用炉头、对应旋钮、容器/目标；FillWater 占用水源、解析出的 SinkBasin 与目标；PrepareEgg 占用蛋与容器但不改变其现有动作语义。
-- [ ] GoToObject 单独导航不长期占有目标对象；执行实际交互前重新解析并申请对象租约。导航位置资源继续由联合规划器管理，不启用旧位置仲裁器的另一套审批。
-- [ ] 高层辅助动作在许可发放前解析隐式目标：旋钮、SinkBasin、自动腾手的放置容器。将解析结果通过动作执行上下文传给 helper，执行时不得重新选择另一个未获租约的对象。副作用开始前发现绑定失效则释放全部租约并重新排队；已经发生副作用后发现失效则报告动作失败，不自动重播整个复合动作。
-- [ ] 嵌套 helper 复用当前动作 owner 与租约，不重复申请；需要扩展资源必须在任何副作用之前完成。租约的申请/释放只短暂持有资源管理锁，执行期间不持有该互斥锁。
-- [ ] 所有会直接移动或恢复机器人位置的动作进入现有导航执行作用域；遵守“短暂资源审批 → 导航锁 → controller 锁”，不持有调度条件锁等待导航。批次所有成员完成资源准入后才冻结导航成员，避免一成员占锁等另一成员申请。
-- [ ] 持有物归属独立于动作租约：不能因租约释放就允许另一机器人操作对方手持物。没有显式交接动作时返回可解释的 `OBJECT_HELD_BY_OTHER`；不自动传递物体。
-- [ ] 运行资源测试、导航作用域测试、对象别名测试及执行重试测试。
+- [x] 补齐共享微波炉复合动作不交错、两个抓取竞争同一实例、不同实例可并发、反序双资源申请不死锁、失败与取消释放租约、别名变化仍冲突、等待年龄防长期饥饿。
+- [x] 运行 `/home/dwb/.pyenv/bin/pyenv exec python -m unittest tests/test_action_resource_leases.py`，确认 RED。
+- [x] 资源需求固定：单对象交互占用对象；Put 占用手持对象和容器；Microwave/Coffee/Cold 占用设备与目标；Toaster 占用面包与烤面包机；Stove 系列占用炉头、对应旋钮、容器/目标；FillWater 占用水源、解析出的 SinkBasin 与目标；PrepareEgg 占用蛋与容器但不改变其现有动作语义。
+- [x] GoToObject 单独导航不长期占有目标对象；执行实际交互前重新解析并申请对象租约。导航位置资源继续由联合规划器管理，不启用旧位置仲裁器的另一套审批。
+- [x] 高层辅助动作在许可发放前解析隐式目标：旋钮、SinkBasin、自动腾手的放置容器。将解析结果通过动作执行上下文传给 helper，执行时不得重新选择另一个未获租约的对象。副作用开始前发现绑定失效则释放全部租约并重新排队；已经发生副作用后发现失效则报告动作失败，不自动重播整个复合动作。
+- [x] 嵌套 helper 复用当前动作 owner 与租约，不重复申请；需要扩展资源必须在任何副作用之前完成。租约的申请/释放只短暂持有资源管理锁，执行期间不持有该互斥锁。
+- [x] 所有会直接移动或恢复机器人位置的动作进入现有导航执行作用域；遵守“短暂资源审批 → 导航锁 → controller 锁”，不持有调度条件锁等待导航。批次所有成员完成资源准入后才冻结导航成员，避免一成员占锁等另一成员申请。
+- [x] 持有物归属独立于动作租约：不能因租约释放就允许另一机器人操作对方手持物。没有显式交接动作时返回可解释的 `OBJECT_HELD_BY_OTHER`；不自动传递物体。
+- [x] 运行资源测试、导航作用域测试、对象别名测试及执行重试测试。
 
 **交付：** 对象复合动作的互斥覆盖完整生命周期，已有导航避障仍是唯一位置规划来源。
 
@@ -242,7 +242,7 @@ def test_resource_is_released_before_next_owner_enters(self):
 
 **输入/输出：** `Executor` 保留唯一动作循环；`TolerantExecutor` 为指定 legacy 策略和统计适配的兼容子类；两个阶段入口均委托 `StageScheduler.run()`。
 
-- [ ] 添加阶段结束条件测试：初始 false、执行后 true 通过；执行后仍 false 返回失败；初始 true 跳过；全局条件可以读取所有机器人。
+- [x] 添加阶段结束条件测试：初始 false、执行后 true 通过；执行后仍 false 返回失败；初始 true 跳过；全局条件可以读取所有机器人。
 
 ```python
 def test_stage_condition_is_checked_after_execution(self):
@@ -260,13 +260,13 @@ def test_stage_condition_is_checked_after_execution(self):
 
 测试复用现有 `FakeRuntime`，导入计划类型和运行入口；新参数由本任务实现。
 
-- [ ] 覆盖动作前置条件不满足、后置效果失败、callback 抛异常、stage SKIP 继续下一阶段、FAIL_STAGE 阻止下一阶段、FAIL_ROBOT 保留其他机器人执行结果、预任务阶段屏障。
-- [ ] 添加校验测试：缺少 Pickup 参数、动作参数同时给 args 和冲突 objectId、非法策略、负重试数、非有限超时、未知机器人在执行前失败。此处建立小型明确检查，第三批注册表接管同一测试。
-- [ ] 运行 `/home/dwb/.pyenv/bin/pyenv exec python -m unittest tests/test_stage_conditions.py tests/test_plan_contract.py`，确认 RED。
-- [ ] 统一循环顺序：获准 → 检查取消与绑定 → 执行 → 当前效果验证 → 一次终态记账 → 释放租约 → 提交下一动作。延期和重试不生成重复终态。
-- [ ] 分离队列耗尽、机器人失败、阶段条件满足三个概念；不要在 `finally` 把失败机器人强制改为 `FINISHED_STAGE`。未执行尾部动作分别记录 skipped/cancelled/unexecuted 原因。
-- [ ] 删除已被统一循环替代的内部实现，保留旧模块的导出与调用签名；普通 TaskRunner 从 StageOutcome.snapshot 构造兼容 WorldState 并返回，strict 阶段/全局失败抛出含结构化报告的 `PlanExecutionError`，容错包装捕获它并返回同一报告。ConditionEvaluationError 和 PlanExecutionError 均定义于 execution_policy.py。
-- [ ] 运行新测试、`test_action_plan_pre_task.py`、`test_parallel_runner.py`、`test_executor_retry_policy.py`。
+- [x] 覆盖动作前置条件不满足、后置效果失败、callback 抛异常、stage SKIP 继续下一阶段、FAIL_STAGE 阻止下一阶段、FAIL_ROBOT 保留其他机器人执行结果、预任务阶段屏障。
+- [x] 添加校验测试：缺少 Pickup 参数、动作参数同时给 args 和冲突 objectId、非法策略、负重试数、非有限超时、未知机器人在执行前失败。此处建立小型明确检查，第三批注册表接管同一测试。
+- [x] 运行 `/home/dwb/.pyenv/bin/pyenv exec python -m unittest tests/test_stage_conditions.py tests/test_plan_contract.py`，确认 RED。
+- [x] 统一循环顺序：获准 → 检查取消与绑定 → 执行 → 当前效果验证 → 一次终态记账 → 释放租约 → 提交下一动作。延期和重试不生成重复终态。
+- [x] 分离队列耗尽、机器人失败、阶段条件满足三个概念；不要在 `finally` 把失败机器人强制改为 `FINISHED_STAGE`。未执行尾部动作分别记录 skipped/cancelled/unexecuted 原因。
+- [x] 删除已被统一循环替代的内部实现，保留旧模块的导出与调用签名；普通 TaskRunner 从 StageOutcome.snapshot 构造兼容 WorldState 并返回，strict 阶段/全局失败抛出含结构化报告的 `PlanExecutionError`，容错包装捕获它并返回同一报告。ConditionEvaluationError 和 PlanExecutionError 均定义于 execution_policy.py。
+- [x] 运行新测试、`test_action_plan_pre_task.py`、`test_parallel_runner.py`、`test_executor_retry_policy.py`。
 
 **交付：** 两个入口只在接口返回形式与所选策略上有差异，执行行为不再分叉。
 
@@ -276,11 +276,11 @@ def test_stage_condition_is_checked_after_execution(self):
 
 **接口：** 新增 `--execution-policy legacy|strict`，默认 legacy；`run_action_plan_tolerant(..., execution_policy="legacy")` 和 `TaskRunner(..., execution_policy="legacy")` 新增关键字参数。不增加同名环境变量，避免隐式覆盖。
 
-- [ ] CLI 测试验证父进程传递策略、旧生成脚本无参数仍运行、非法策略拒绝、结果记录实际策略及 `scheduler_version=2`。
-- [ ] 运行 `/home/dwb/.pyenv/bin/pyenv exec python -m unittest tests/test_parallel_runner.py tests/test_movement_benchmark.py`，验证新增参数测试先失败再通过。
-- [ ] 基准脚本新增同名策略选项，输出目录区分策略；不把 strict 失败较多直接解释为能力回退，逐项区分停止策略变化和任务目标变化。
-- [ ] 文档给出三个实际例子：legacy 抓取失败后继续；strict FAIL_ROBOT 保留另一个机器人；A 等 B 的条件在 step 模式完成。记录共享资源操作顺序和阶段条件结果。
-- [ ] 每个任务单独审查、提交；批次验证沿用第一批全套测试，加本批新增测试。
+- [x] CLI 测试验证父进程传递策略、旧生成脚本无参数仍运行、非法策略拒绝、结果记录实际策略及 `scheduler_version=2`。
+- [x] 运行 `/home/dwb/.pyenv/bin/pyenv exec python -m unittest tests/test_parallel_runner.py tests/test_movement_benchmark.py`，验证新增参数测试先失败再通过。
+- [x] 基准脚本新增同名策略选项，输出目录区分策略；不把 strict 失败较多直接解释为能力回退，逐项区分停止策略变化和任务目标变化。
+- [x] 文档给出三个实际例子：legacy 抓取失败后继续；strict FAIL_ROBOT 保留另一个机器人；A 等 B 的条件在 step 模式完成。记录共享资源操作顺序和阶段条件结果。
+- [x] 每个任务单独审查、提交；批次验证沿用第一批全套测试，加本批新增测试。
 
 ```bash
 /home/dwb/.pyenv/bin/pyenv exec python -m unittest \
@@ -295,11 +295,11 @@ def test_stage_condition_is_checked_after_execution(self):
 
 ## 批次验收与交接
 
-- [ ] 双模式的跨机器人依赖用例完成；无 deadline 时显式依赖环测试使用测试外层超时并清理，生产默认仍有任务期限。
-- [ ] strict 每个策略与声明一致；legacy 的既有失败继续行为通过；所有基础设施故障在两模式都可见。
-- [ ] 快照不静默陈旧；阶段、全局、前置和后置条件均有真实状态断言。
-- [ ] 同物体/设备租约无交错；别名变化、嵌套 helper、取消和异常均不遗留租约。
-- [ ] 固定 12 样例 × 2 移动模式 × 2 执行策略生成独立真实报告；第一批评分口径保持一致。保存动作结果、等待原因、波次成员和资源拥有者，不只保存汇总成功率。
-- [ ] 交给第三批：本批提交 SHA、两个策略的基准、动作参数检查表、资源需求表、快照接口和全部回归命令。
+- [x] 双模式的跨机器人依赖用例完成；无 deadline 时显式依赖环测试使用测试外层超时并清理，生产默认仍有任务期限。
+- [x] strict 每个策略与声明一致；legacy 的既有失败继续行为通过；所有基础设施故障在两模式都可见。
+- [x] 快照不静默陈旧；阶段、全局、前置和后置条件均有真实状态断言。
+- [x] 同物体/设备租约无交错；别名变化、嵌套 helper、取消和异常均不遗留租约。
+- [x] 固定 12 样例 × 2 移动模式 × 2 执行策略生成独立真实报告；第一批评分口径保持一致。保存动作结果、等待原因、波次成员和资源拥有者，不只保存汇总成功率。
+- [x] 交给第三批：本批提交 SHA、两个策略的基准、动作参数检查表、资源需求表、快照接口和全部回归命令。
 
 **回退：** 以 legacy/strict 显式选择失败策略，不用切回旧线程循环绕过调度错误。确需回退提交时保留第一批评估、取消、进程隔离修正；结果中的 scheduler_version 必须反映实际实现。

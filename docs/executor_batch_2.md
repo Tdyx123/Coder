@@ -91,7 +91,7 @@ scheduler2 仅在 execution_quiescent=true 且没有超时/取消时允许有效
 
 从仓库根目录运行 `bash reports/executor_batch_2/verify.sh`，它明确列出第一批全部集合和第二批新增/受影响集合，不使用 discover。第一批报告不修改。任务审查历史保存在 [reviews](../reports/executor_batch_2/reviews/)，后续修复与最终裁定应一并阅读。
 
-真实 Unity 验收：**pending**，由主代理在最后审查和最终 production SHA 确定后运行。固定 manifest 12 例 × 两策略 × 两移动模式 = 48 次；每个组合独立目录/identity，使用原始目标数和原生成样本，保存 stdout/stderr、源码摘要、child metrics、父进程权威结果及清理事件。可复用命令：
+真实 Unity 验收：**已完成**，生产 SHA `149637b28ffcb49b95ac8d177f0302c043942851`。48 次均正常退出、评估有效、父进程契约及固定目标分母核验通过，完整结果与策略差异见[验收报告](../reports/executor_batch_2/README.md)。固定 manifest 12 例 × 两策略 × 两移动模式 = 48 次；每个组合独立目录/identity，使用原始目标数和原生成样本，保存 stdout/stderr、源码摘要、child metrics、父进程权威结果及清理事件。可复用命令：
 
 ```bash
 /home/dwb/.pyenv/bin/pyenv exec python reports/executor_batch_2/run_real_validation.py \

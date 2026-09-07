@@ -1,0 +1,517 @@
+s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: first execution failed
+Tick 1: robot1 failed Teleport: robot1 timed out waiting for Teleport.
+Tick 1: robot1 completed WaitUntil.
+s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: first execution failed
+Tick 1: robot1 failed Teleport: Could not find AI2-THOR object matching 'Mug|1'
+Tick 1: robot1 completed WaitUntil.
+s started with 1 robot queue(s).
+Tick 1: robot1 failed Teleport: Could not find AI2-THOR object matching 'Mug|1'
+Tick 1: robot1 failed Teleport: Could not find AI2-THOR object matching 'Mug|1'
+Tick 1: robot1 completed WaitUntil.
+s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: first execution failed
+Tick 1: robot1 failed Teleport: robot1 timed out waiting for Teleport.
+s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: first execution failed
+Tick 1: robot1 failed Teleport: Could not find AI2-THOR object matching 'Mug|1'
+s started with 1 robot queue(s).
+Tick 1: robot1 failed Teleport: Could not find AI2-THOR object matching 'Mug|1'
+Tick 1: robot1 failed Teleport: Could not find AI2-THOR object matching 'Mug|1'
+.s started with 3 robot queue(s).
+Tick 0: robot2 completed GoToObject.
+Tick 1: robot3 completed GoToObject.
+Tick 2: robot1 completed Wait.
+....Tick 0: robot3 completed WaitUntil.
+Tick 1: robot1 completed WaitUntil.
+Tick 2: robot2 completed WaitUntil.
+.s started with 2 robot queue(s).
+Tick 0: robot2 completed Wait.
+Tick 1: robot1 completed Wait.
+s started with 2 robot queue(s).
+Tick 0: robot2 completed Wait.
+Tick 1: robot1 completed Wait.
+.cycle started with 2 robot queue(s).
+.idle started with 1 robot queue(s).
+.s started with 2 robot queue(s).
+Tick 0: robot2 completed Wait.
+Tick 1: robot2 completed GoToObject.
+Tick 2: robot1 completed GoToObject.
+.s started with 2 robot queue(s).
+Tick 0: robot1 failed GoToObject: selected failed
+Tick 2: robot2 completed GoToObject.
+..Tick 0: robot1 failed Wait: action rejected
+.s started with 2 robot queue(s).
+Tick 0: robot1 failed GoToObject: request construction failed
+Tick 1: robot2 failed GoToObject: action wave 1 was aborted by navigation agent 0: request construction failed
+.s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: transient failure
+Tick 1: robot1 completed Teleport.
+s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: transient failure
+Tick 1: robot1 completed Teleport.
+s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: transient failure
+Tick 1: robot1 completed Teleport.
+s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: transient failure
+Tick 1: robot1 completed Teleport.
+s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: transient failure
+Tick 1: robot1 completed Teleport.
+s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: transient failure
+Tick 1: robot1 completed Teleport.
+s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: transient failure
+Tick 1: robot1 completed Teleport.
+s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: transient failure
+Tick 1: robot1 completed Teleport.
+..s started with 2 robot queue(s).
+Tick 0: robot1 completed Wait.
+Tick 1: robot1 completed Wait.
+Tick 2: robot2 completed Wait.
+s started with 2 robot queue(s).
+Tick 0: robot1 completed Wait.
+Tick 1: robot2 completed Wait.
+Tick 2: robot1 completed Wait.
+s started with 2 robot queue(s).
+Tick 0: robot1 completed Wait.
+Tick 1: robot1 completed Wait.
+Tick 2: robot2 completed Wait.
+.s started with 1 robot queue(s).
+Tick 0: robot1 failed Wait: robot1 timed out waiting for Wait.
+Tick 0: robot1 completed Wait.
+.Tick 0: robot2 completed Wait.
+Tick 1: robot2 completed Wait.
+Tick 2: robot2 completed Wait.
+Tick 3: robot2 completed Wait.
+Tick 4: robot1 completed Wait.
+.s started with 2 robot queue(s).
+Tick 0: robot2 completed Wait.
+Tick 1: robot1 completed Wait.
+s started with 2 robot queue(s).
+Tick 0: robot2 completed Wait.
+Tick 1: robot1 completed Wait.
+.s started with 2 robot queue(s).
+Tick 0: robot1 completed Wait.
+Tick 1: robot2 completed Wait.
+.s started with 2 robot queue(s).
+Tick 0: robot1 failed Wait: robot1 completed failure
+Tick 0: robot2 failed Wait: robot2 completed failure
+s started with 2 robot queue(s).
+Tick 0: robot1 failed Wait: robot1 completed failure
+Tick 0: robot2 failed Wait: robot2 completed failure
+s started with 2 robot queue(s).
+Tick 0: robot1 failed Wait: robot1 completed failure
+Tick 0: robot2 failed Wait: robot2 completed failure
+s started with 2 robot queue(s).
+Tick 0: robot1 failed Wait: robot1 completed failure
+Tick 0: robot2 failed Wait: robot2 completed failure
+.s started with 1 robot queue(s).
+.s started with 1 robot queue(s).
+.s started with 1 robot queue(s).
+Tick 0: robot1 failed Wait: robot1 timed out waiting for Wait.
+.s started with 2 robot queue(s).
+Tick 0: robot1 failed Wait: robot1 completed failure
+Tick 0: robot2 failed Wait: robot2 completed failure
+.s started with 2 robot queue(s).
+Tick 0: robot1 failed Wait: robot1 completed failure
+.s started with 2 robot queue(s).
+Tick 0: robot1 failed Wait: robot1 completed failure
+Tick 0: robot2 completed Wait.
+s started with 2 robot queue(s).
+Tick 0: robot1 failed Wait: robot1 completed failure
+Tick 0: robot2 completed Wait.
+.s started with 1 robot queue(s).
+Tick 0: robot1 failed Wait: expected_effects_not_satisfied
+next started with 1 robot queue(s).
+Tick 0: robot2 completed Wait.
+.s started with 2 robot queue(s).
+Tick 0: robot1 failed Wait: expected_effects_not_satisfied
+Tick 1: robot2 completed Wait.
+Tick 2: robot2 completed Wait.
+.s started with 1 robot queue(s).
+Tick 0: robot1 failed Wait: expected_effects_not_satisfied
+.s started with 1 robot queue(s).
+Tick 0: robot1 completed Wait.
+s started with 1 robot queue(s).
+Tick 0: robot1 completed Wait.
+.s started with 1 robot queue(s).
+Tick 0: robot1 completed Wait.
+.s started with 1 robot queue(s).
+Tick 0: robot1 completed Wait.
+.s started with 1 robot queue(s).
+.s started with 1 robot queue(s).
+Tick 0: robot1 completed Wait.
+next started with 1 robot queue(s).
+Tick 0: robot2 completed Wait.
+.s started with 1 robot queue(s).
+Tick 0: robot1 completed Wait.
+Tick 1: robot1 completed Wait.
+s started with 1 robot queue(s).
+Tick 0: robot1 completed Wait.
+Tick 1: robot1 completed Wait.
+s started with 1 robot queue(s).
+Tick 0: robot1 completed Wait.
+Tick 1: robot1 completed Wait.
+s started with 1 robot queue(s).
+Tick 0: robot1 completed Wait.
+Tick 1: robot1 completed Wait.
+.s started with 1 robot queue(s).
+Tick 0: robot1 completed Wait.
+.s started with 1 robot queue(s).
+Tick 0: robot1 completed Wait.
+.s started with 2 robot queue(s).
+Tick 0: robot1 failed Wait: robot1 original failure
+Tick 0: robot2 failed Wait: robot2 original failure
+.s started with 2 robot queue(s).
+Tick 0: robot1 failed Wait: robot1 failure
+Tick 0: robot2 failed Teleport: robot2 failure
+s started with 2 robot queue(s).
+Tick 0: robot1 failed Wait: robot1 failure
+.s started with 1 robot queue(s).
+Tick 0: robot1 completed Wait.
+.s started with 1 robot queue(s).
+Tick 0: robot1 completed Wait.
+.s started with 1 robot queue(s).
+Tick 0: robot1 completed Wait.
+.Tick 0: robot1 failed Wait: expected_effects_not_satisfied
+.s started with 1 robot queue(s).
+Tick 0: robot1 completed WaitUntil.
+Tick 1: robot1 completed WaitUntil.
+Tick 0: robot1 completed WaitUntil.
+Tick 1: robot1 completed WaitUntil.
+.first started with 2 robot queue(s).
+Tick 0: robot2 completed Wait.
+Tick 1: robot2 completed Wait.
+Tick 2: robot1 completed Wait.
+second started with 1 robot queue(s).
+Tick 0: robot1 completed Wait.
+.s started with 1 robot queue(s).
+.s started with 1 robot queue(s).
+Tick 0: robot1 failed Wait: expected_effects_not_satisfied
+..BreakObject Egg -> Egg Egg|+00.00|+00.90|+01.00
+Operated object name: EggCracked
+Operated object name: Egg
+.BreakObject Vase -> Vase Vase|+00.00|+00.90|+01.00
+.BreakObject Window -> Window Window|+00.00|+01.50|+01.00
+BreakObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+BreakObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+BreakObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+BreakObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+BreakObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+BreakObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+.BreakObject Window -> Window Window|+00.00|+01.50|+01.00
+Operated object name: Window
+.CloseObject Cabinet -> Cabinet Cabinet|+00.00|+01.00|+00.00
+Operated object name: Cabinet
+.CloseObject Cabinet -> Cabinet Cabinet|+00.00|+01.00|+00.00
+Operated object name: Cabinet
+.DirtyObject Plate -> Plate Plate|+00.00|+01.00|+00.00
+Operated object name: Plate
+.DirtyObject Plate -> Plate Plate|+00.00|+01.00|+00.00
+Operated object name: Plate
+.EmptyLiquidFromObject Mug -> Mug Mug|+00.00|+01.00|+00.00
+Operated object name: Mug
+.EmptyLiquidFromObject Mug -> Mug Mug|+00.00|+01.00|+00.00
+Operated object name: Mug
+...........RotateLeft was blocked by a held item for agent 0; trying equivalent RotateRight rotation.
+.Tick 1: robot1 completed GoToObject.
+..CloseObject Blinds -> Blinds Blinds|-00.40|+02.16|-01.92
+Operated object name: Blinds
+.Tick 0: robot1 failed MoveAhead: MoveAhead failed
+..OpenObject Cabinet -> Cabinet Cabinet|-00.40|+02.16|-01.92
+OpenObject openness: Cabinet|-00.40|+02.16|-01.92 openness=1.0
+Operated object name: Cabinet
+.OpenObject Blinds -> Blinds Blinds|-00.40|+02.16|-01.92
+OpenObject openness: Blinds|-00.40|+02.16|-01.92 openness=1.0
+Operated object name: Blinds
+..PickupObject name: Apple
+PickupObject Apple -> Apple Apple|+00.00|+00.90|+01.00
+Operated object name: Apple
+.PickupObject name: Apple
+PickupObject Apple -> Apple Apple|+00.00|+00.90|+01.00
+PickupObject still clipped after moving agent 0 back by 0.25; trying another distance.
+PickupObject clip backoff teleport failed for agent 0 by 0.5: teleport blocked
+Operated object name: Apple
+.PickupObject name: Apple
+PickupObject Apple -> Apple Apple|+00.00|+00.90|+01.00
+.PickupObject name: Apple
+PickupObject Apple -> Apple Apple|+00.00|+00.90|+01.00
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+.PickupObject name: Apple
+PickupObject Apple -> Apple Apple|+00.00|+00.90|+01.00
+Operated object name: Apple
+.PutObject names: Apple, Table
+Operated object name: Table
+.PutObject names: Apple, Table
+PutObject Table -> Table Table|+01.00|+00.80|+00.00
+Operated object name: Table
+.PutObject names: Apple, Table
+PutObject Table -> Table Table|+01.00|+00.80|+00.00
+Operated object name: Table
+.SliceObject Tomato -> Tomato Tomato|+00.00|+00.90|+01.00
+SliceObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+SliceObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+SliceObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+SliceObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+SliceObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+SliceObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+WARNING: Could not find a current object for alias 'Tomato'.
+Operated object name: Tomato
+....ToggleObjectOff DeskLamp -> DeskLamp DeskLamp|+00.00|+01.00|+00.00
+Operated object name: DeskLamp
+.ToggleObjectOff DeskLamp -> DeskLamp DeskLamp|+00.00|+01.00|+00.00
+Operated object name: DeskLamp
+.ToggleObjectOn DeskLamp -> DeskLamp DeskLamp|+00.00|+01.00|+00.00
+Operated object name: DeskLamp
+.ToggleObjectOn DeskLamp -> DeskLamp DeskLamp|+00.00|+01.00|+00.00
+Operated object name: DeskLamp
+.......Preparing output directories.
+Creating AI2-THOR controller.
+Initializing AI2-THOR scene.
+{"action_sr": null, "attempt": 1, "cleanup_errors": [{"exception_type": "RuntimeError", "message": "startup cleanup broke", "phase": "cleanup", "robot_id": null, "traceback": "Traceback (most recent call last):\n  File \"/tmp/coder-executor-batch-2/scripts/executor_system/execution_control.py\", line 265, in close\n    runtime.stop()\n  File \"/tmp/coder-executor-batch-2/scripts/executor_system/runtime.py\", line 4097, in stop\n    controller.stop()\n  File \"/tmp/coder-executor-batch-2/tests/test_execution_shutdown.py\", line 265, in stop\n    raise RuntimeError('startup cleanup broke')\nRuntimeError: startup cleanup broke\n"}], "error": "startup broke", "evaluation_status": "incomplete", "evaluation_version": "fixed_goals_v2", "executed_actions": 0, "execution_policy": "legacy", "execution_status": "failed", "failed_actions": 0, "failure_action_ratio": 0.0, "gcr": null, "metrics_schema_version": 2, "movement_mode": "step", "navigation_metrics": {}, "original_goal_count": null, "phase_durations_seconds": {"cleanup": 1.8528662621974945e-06, "evaluation": 0.0, "execution": 0.0, "startup": 0.002149251289665699}, "process_status": "failed", "robot_failures": [], "ru": null, "run_id": "9ab3ff807c7e43289151ff399df9f037", "run_time_seconds": 0.0021545314230024815, "satisfied_goal_count": null, "sr": null, "status": "failed", "task_key": "a76833c645e4251b5836ed71426d329a34290aec55e2d38955357dc411e70de3", "task_success": null, "tc": null, "timed_out": false, "timeout_message": "", "worker_errors": []}
+Preparing output directories.
+Creating AI2-THOR controller.
+Initializing AI2-THOR scene.
+...{"action_sr": null, "attempt": 1, "cleanup_errors": [{"exception_type": "ExecutionShutdownTimeout", "message": "controller cleanup exceeded timeout", "phase": "cleanup", "robot_id": null, "traceback": "executor_system.execution_control.ExecutionShutdownTimeout: controller cleanup exceeded timeout\n"}], "error": "startup broke", "evaluation_status": "incomplete", "evaluation_version": "fixed_goals_v2", "executed_actions": 0, "execution_policy": "legacy", "execution_status": "failed", "failed_actions": 0, "failure_action_ratio": 0.0, "gcr": null, "metrics_schema_version": 2, "movement_mode": "step", "navigation_metrics": {}, "original_goal_count": null, "phase_durations_seconds": {"cleanup": 6.60773366689682e-07, "evaluation": 0.0, "execution": 0.0, "startup": 0.02154031116515398}, "process_status": "failed", "robot_failures": [], "ru": null, "run_id": "5873ac29ca5a4375b467189719641a98", "run_time_seconds": 0.021542225033044815, "satisfied_goal_count": null, "sr": null, "status": "failed", "task_key": "a76833c645e4251b5836ed71426d329a34290aec55e2d38955357dc411e70de3", "task_success": null, "tc": null, "timed_out": false, "timeout_message": "", "worker_errors": []}
+stage started with 1 robot queue(s).
+.{"action_counts": {"attempts": 0, "cancelled": 0, "failed": 0, "planned": 2, "skipped": 0, "started": 0, "succeeded": 0, "unexecuted": 2}, "action_sr": null, "actions": [{"action_key": "0:robot1:0", "action_type": "Done", "attempts": 0, "cursor": 0, "reason": "failed", "requested_failure_policy": "FAIL_STAGE", "robot_id": "robot1", "stage_id": "stage", "status": "unexecuted"}, {"action_key": "0:robot1:1", "action_type": "Done", "attempts": 0, "cursor": 1, "reason": "failed", "requested_failure_policy": "FAIL_STAGE", "robot_id": "robot1", "stage_id": "stage", "status": "unexecuted"}], "attempt": 1, "cleanup_errors": [{"exception_type": "RuntimeError", "message": "stop broke", "phase": "cleanup", "robot_id": null, "traceback": "Traceback (most recent call last):\n  File \"/tmp/coder-executor-batch-2/scripts/executor_system/execution_control.py\", line 265, in close\n    runtime.stop()\n  File \"/tmp/coder-executor-batch-2/tests/test_execution_shutdown.py\", line 409, in <lambda>\n    runtime.stop = lambda: (_ for _ in ()).throw(RuntimeError('stop broke'))\n  File \"/tmp/coder-executor-batch-2/tests/test_execution_shutdown.py\", line 409, in <genexpr>\n    runtime.stop = lambda: (_ for _ in ()).throw(RuntimeError('stop broke'))\nRuntimeError: stop broke\n"}], "error": "worker broke", "errors": [{"exception_type": "RuntimeError", "message": "worker broke", "phase": "task", "robot_id": null, "traceback": "Traceback (most recent call last):\n  File \"/tmp/coder-executor-batch-2/scripts/executor_system/action_plan.py\", line 1237, in execute\n    world_state = runner.execute_stage(stage)\n  File \"/tmp/coder-executor-batch-2/scripts/executor_system/action_plan.py\", line 1148, in execute_stage\n    self.outcome = self.scheduler.run()\n  File \"/tmp/coder-executor-batch-2/scripts/executor_system/stage_scheduler.py\", line 496, in run\n    run_workers(self.runtime, list(self.executors.values()), self.coordinator,\n  File \"/tmp/coder-executor-batch-2/scripts/executor_system/execution_control.py\", line 253, in run_workers\n    raise primary[1].with_traceback(primary[2])\n  File \"/tmp/coder-executor-batch-2/scripts/executor_system/execution_control.py\", line 183, in run\n    executor.execute()\n  File \"/home/dwb/.pyenv/versions/miniconda3-3.9-25.9.1-3/lib/python3.9/unittest/mock.py\", line 1092, in __call__\n    return self._mock_call(*args, **kwargs)\n  File \"/home/dwb/.pyenv/versions/miniconda3-3.9-25.9.1-3/lib/python3.9/unittest/mock.py\", line 1096, in _mock_call\n    return self._execute_mock_call(*args, **kwargs)\n  File \"/home/dwb/.pyenv/versions/miniconda3-3.9-25.9.1-3/lib/python3.9/unittest/mock.py\", line 1151, in _execute_mock_call\n    raise effect\nRuntimeError: worker broke\n"}], "evaluation_status": "incomplete", "evaluation_version": "fixed_goals_v2", "executed_actions": 0, "execution_policy": "legacy", "execution_quiescent": true, "execution_status": "failed", "failed_actions": 0, "failure_action_ratio": 0.0, "final_snapshot": {"held_object_sources": {"robot1": {}, "robot2": {}}, "held_objects": {"robot1": [], "robot2": []}, "objects_by_id": {}, "robot_positions": {"robot1": {"x": 0.0, "y": 0.0, "z": 0.0}, "robot2": {"x": 1.0, "y": 0.0, "z": 0.0}}, "robot_rotations": {"robot1": 0.0, "robot2": 0.0}, "version": 0}, "gcr": null, "global_condition_satisfied": null, "ignored_failure_count": 0, "metrics_schema_version": 2, "movement_mode": "step", "navigation_metrics": {}, "original_goal_count": 0, "phase_durations_seconds": {"cleanup": 0.00042825890704989433, "evaluation": 0.0, "execution": 0.0013849269598722458, "startup": 0.0002704821527004242}, "process_status": "failed", "raw_action_sr": null, "robot_failures": [], "ru": null, "run_id": "80cf86e921224f7bb04b46dc387ae680", "run_time_seconds": 0.0020859423093497753, "satisfied_goal_count": null, "scheduler_version": 2, "sr": null, "stages": [{"actions": [{"action_key": "0:robot1:0", "action_type": "Done", "attempts": 0, "cursor": 0, "reason": "failed", "requested_failure_policy": "FAIL_STAGE", "robot_id": "robot1", "stage_id": "stage", "status": "unexecuted"}, {"action_key": "0:robot1:1", "action_type": "Done", "attempts": 0, "cursor": 1, "reason": "failed", "requested_failure_policy": "FAIL_STAGE", "robot_id": "robot1", "stage_id": "stage", "status": "unexecuted"}], "attempts": [], "condition": {"final": null, "initial": null}, "continue_task": false, "diagnostics": {"resource_holders": {}, "robots": {"robot1": {"action": "Done", "cursor": 0, "reason": null, "status": "READY", "wait_rounds": 0}}, "stage_id": "stage", "world_version": 0}, "errors": [{"exception_type": "RuntimeError", "message": "worker broke", "phase": "stage", "robot_id": null, "traceback": "Traceback (most recent call last):\n  File \"/tmp/coder-executor-batch-2/scripts/executor_system/stage_scheduler.py\", line 496, in run\n    run_workers(self.runtime, list(self.executors.values()), self.coordinator,\n  File \"/tmp/coder-executor-batch-2/scripts/executor_system/execution_control.py\", line 253, in run_workers\n    raise primary[1].with_traceback(primary[2])\n  File \"/tmp/coder-executor-batch-2/scripts/executor_system/execution_control.py\", line 183, in run\n    executor.execute()\n  File \"/home/dwb/.pyenv/versions/miniconda3-3.9-25.9.1-3/lib/python3.9/unittest/mock.py\", line 1092, in __call__\n    return self._mock_call(*args, **kwargs)\n  File \"/home/dwb/.pyenv/versions/miniconda3-3.9-25.9.1-3/lib/python3.9/unittest/mock.py\", line 1096, in _mock_call\n    return self._execute_mock_call(*args, **kwargs)\n  File \"/home/dwb/.pyenv/versions/miniconda3-3.9-25.9.1-3/lib/python3.9/unittest/mock.py\", line 1151, in _execute_mock_call\n    raise effect\nRuntimeError: worker broke\n"}], "resources": [], "snapshot": {"held_object_sources": {"robot1": {}, "robot2": {}}, "held_objects": {"robot1": [], "robot2": []}, "objects_by_id": {}, "robot_positions": {"robot1": {"x": 0.0, "y": 0.0, "z": 0.0}, "robot2": {"x": 1.0, "y": 0.0, "z": 0.0}}, "robot_rotations": {"robot1": 0.0, "robot2": 0.0}, "version": 0}, "snapshot_is_current": false, "stage_id": "stage", "stage_index": 0, "status": "failed", "waits": [], "waves": [], "world_version": 0}], "status": "failed", "task_id": "shutdown", "task_key": "a76833c645e4251b5836ed71426d329a34290aec55e2d38955357dc411e70de3", "task_success": null, "tc": null, "timed_out": false, "timeout_message": "", "worker_errors": [{"exception_type": "RuntimeError", "message": "worker broke", "phase": "stage", "robot_id": "robot1", "traceback": "Traceback (most recent call last):\n  File \"/tmp/coder-executor-batch-2/scripts/executor_system/execution_control.py\", line 183, in run\n    executor.execute()\n  File \"/home/dwb/.pyenv/versions/miniconda3-3.9-25.9.1-3/lib/python3.9/unittest/mock.py\", line 1092, in __call__\n    return self._mock_call(*args, **kwargs)\n  File \"/home/dwb/.pyenv/versions/miniconda3-3.9-25.9.1-3/lib/python3.9/unittest/mock.py\", line 1096, in _mock_call\n    return self._execute_mock_call(*args, **kwargs)\n  File \"/home/dwb/.pyenv/versions/miniconda3-3.9-25.9.1-3/lib/python3.9/unittest/mock.py\", line 1151, in _execute_mock_call\n    raise effect\nRuntimeError: worker broke\n"}]}
+stage started with 1 robot queue(s).
+.{"action_counts": {"attempts": 1, "cancelled": 1, "failed": 0, "planned": 2, "skipped": 0, "started": 1, "succeeded": 0, "unexecuted": 1}, "action_sr": null, "actions": [{"action_key": "0:robot1:0", "action_type": "Done", "attempts": 1, "cursor": 0, "reason": "failed", "requested_failure_policy": "FAIL_STAGE", "robot_id": "robot1", "stage_id": "stage", "status": "cancelled"}, {"action_key": "0:robot1:1", "action_type": "Done", "attempts": 0, "cursor": 1, "reason": "failed", "requested_failure_policy": "FAIL_STAGE", "robot_id": "robot1", "stage_id": "stage", "status": "unexecuted"}], "attempt": 1, "cleanup_errors": [], "error": "workers did not stop: stage-robot1", "errors": [{"exception_type": "ExecutionShutdownTimeout", "message": "workers did not stop: stage-robot1", "phase": "task", "robot_id": null, "traceback": "Traceback (most recent call last):\n  File \"/tmp/coder-executor-batch-2/scripts/executor_system/execution_control.py\", line 212, in run_workers\n    drive()\n  File \"/tmp/coder-executor-batch-2/scripts/executor_system/stage_scheduler.py\", line 389, in _drive\n    self.control.check()\n  File \"/tmp/coder-executor-batch-2/scripts/executor_system/execution_control.py\", line 88, in check\n    self._parent.check()\n  File \"/tmp/coder-executor-batch-2/scripts/executor_system/execution_control.py\", line 92, in check\n    raise error(self._reason)\nexecutor_system.execution_control.PlanExecutionTimeout: task-plan execution exceeded timeout\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/tmp/coder-executor-batch-2/scripts/executor_system/action_plan.py\", line 1237, in execute\n    world_state = runner.execute_stage(stage)\n  File \"/tmp/coder-executor-batch-2/scripts/executor_system/action_plan.py\", line 1148, in execute_stage\n    self.outcome = self.scheduler.run()\n  File \"/tmp/coder-executor-batch-2/scripts/executor_system/stage_scheduler.py\", line 496, in run\n    run_workers(self.runtime, list(self.executors.values()), self.coordinator,\n  File \"/tmp/coder-executor-batch-2/scripts/executor_system/execution_control.py\", line 244, in run_workers\n    raise error from main_error[0]\nexecutor_system.execution_control.ExecutionShutdownTimeout: workers did not stop: stage-robot1\n"}], "evaluation_status": "incomplete", "evaluation_version": "fixed_goals_v2", "executed_actions": 1, "execution_policy": "legacy", "execution_quiescent": false, "execution_status": "timeout", "failed_actions": 0, "failure_action_ratio": 0.0, "final_snapshot": {"held_object_sources": {"robot1": {}, "robot2": {}}, "held_objects": {"robot1": [], "robot2": []}, "objects_by_id": {}, "robot_positions": {"robot1": {"x": 0.0, "y": 0.0, "z": 0.0}, "robot2": {"x": 1.0, "y": 0.0, "z": 0.0}}, "robot_rotations": {"robot1": 0.0, "robot2": 0.0}, "version": 0}, "gcr": null, "global_condition_satisfied": null, "ignored_failure_count": 0, "metrics_schema_version": 2, "movement_mode": "step", "navigation_metrics": {}, "original_goal_count": 0, "phase_durations_seconds": {"cleanup": 2.340506762266159e-05, "evaluation": 0.0, "execution": 0.08196067996323109, "startup": 0.00025735702365636826}, "process_status": "timeout", "raw_action_sr": null, "robot_failures": [], "ru": null, "run_id": "2cbec2df87c5420d96a1d4fd7e9f5aa4", "run_time_seconds": 0.08224567864090204, "satisfied_goal_count": null, "scheduler_version": 2, "sr": null, "stages": [{"actions": [{"action_key": "0:robot1:0", "action_type": "Done", "attempts": 1, "cursor": 0, "reason": "failed", "requested_failure_policy": "FAIL_STAGE", "robot_id": "robot1", "stage_id": "stage", "status": "cancelled"}, {"action_key": "0:robot1:1", "action_type": "Done", "attempts": 0, "cursor": 1, "reason": "failed", "requested_failure_policy": "FAIL_STAGE", "robot_id": "robot1", "stage_id": "stage", "status": "unexecuted"}], "attempts": [], "condition": {"final": null, "initial": null}, "continue_task": false, "diagnostics": {"resource_holders": {}, "robots": {"robot1": {"action": "Done", "cursor": 0, "reason": null, "status": "EXECUTING", "wait_rounds": 0}}, "stage_id": "stage", "world_version": 0}, "errors": [{"exception_type": "ExecutionShutdownTimeout", "message": "workers did not stop: stage-robot1", "phase": "stage", "robot_id": null, "traceback": "Traceback (most recent call last):\n  File \"/tmp/coder-executor-batch-2/scripts/executor_system/execution_control.py\", line 212, in run_workers\n    drive()\n  File \"/tmp/coder-executor-batch-2/scripts/executor_system/stage_scheduler.py\", line 389, in _drive\n    self.control.check()\n  File \"/tmp/coder-executor-batch-2/scripts/executor_system/execution_control.py\", line 88, in check\n    self._parent.check()\n  File \"/tmp/coder-executor-batch-2/scripts/executor_system/execution_control.py\", line 92, in check\n    raise error(self._reason)\nexecutor_system.execution_control.PlanExecutionTimeout: task-plan execution exceeded timeout\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/tmp/coder-executor-batch-2/scripts/executor_system/stage_scheduler.py\", line 496, in run\n    run_workers(self.runtime, list(self.executors.values()), self.coordinator,\n  File \"/tmp/coder-executor-batch-2/scripts/executor_system/execution_control.py\", line 244, in run_workers\n    raise error from main_error[0]\nexecutor_system.execution_control.ExecutionShutdownTimeout: workers did not stop: stage-robot1\n"}], "resources": [{"action_key": "0:robot1:0", "event": "acquired", "keys": [], "world_version": 0}], "snapshot": {"held_object_sources": {"robot1": {}, "robot2": {}}, "held_objects": {"robot1": [], "robot2": []}, "objects_by_id": {}, "robot_positions": {"robot1": {"x": 0.0, "y": 0.0, "z": 0.0}, "robot2": {"x": 1.0, "y": 0.0, "z": 0.0}}, "robot_rotations": {"robot1": 0.0, "robot2": 0.0}, "version": 0}, "snapshot_is_current": false, "stage_id": "stage", "stage_index": 0, "status": "failed", "waits": [], "waves": [{"action_keys": ["0:robot1:0"], "navigation_agent_ids": [], "robots": ["robot1"], "wave_id": 1}], "world_version": 0}], "status": "timeout", "task_id": "shutdown", "task_key": "a76833c645e4251b5836ed71426d329a34290aec55e2d38955357dc411e70de3", "task_success": null, "tc": null, "timed_out": true, "timeout_message": "", "worker_errors": []}
+stage started with 1 robot queue(s).
+stage started with 1 robot queue(s).
+.stage started with 1 robot queue(s).
+Tick 0: robot1 completed Done.
+Tick 1: robot1 completed Done.
+.stage started with 1 robot queue(s).
+Tick 0: robot1 completed Done.
+Tick 1: robot1 completed Done.
+stage started with 1 robot queue(s).
+Tick 0: robot1 completed Done.
+Tick 1: robot1 completed Done.
+stage started with 1 robot queue(s).
+Tick 0: robot1 completed Done.
+Tick 1: robot1 completed Done.
+stage started with 1 robot queue(s).
+Tick 0: robot1 completed Done.
+Tick 1: robot1 completed Done.
+....stage started with 1 robot queue(s).
+stage started with 1 robot queue(s).
+stage started with 1 robot queue(s).
+stage started with 1 robot queue(s).
+stage started with 1 robot queue(s).
+stage started with 1 robot queue(s).
+..stage started with 1 robot queue(s).
+.Phase 1 started with 1 robot queue(s).
+Tick 0: robot1 completed OpenObject.
+Tick 1: robot1 completed CloseObject.
+.Phase 1 started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: teleport failed
+Tick 1: robot1 failed Teleport: teleport failed
+Tick 2: robot1 completed CloseObject.
+.Phase 1 started with 2 robot queue(s).
+Tick 0: robot1 failed OpenObject: open failed
+Tick 1: robot2 completed PickupObject.
+Tick 2: robot1 completed CloseObject.
+Tick 3: robot2 completed PutObject.
+.Phase 1 started with 2 robot queue(s).
+Tick 0: robot1 failed OpenObject: open failed
+Tick 1: robot2 completed PickupObject.
+.Phase 1 started with 1 robot queue(s).
+Tick 0: robot1 failed OpenObject: open failed
+.Phase 1 started with 1 robot queue(s).
+Tick 0: robot1 failed Wait: robot1 timed out waiting for Wait.
+Tick 0: robot1 completed CloseObject.
+............usage: python -m unittest [-h] [--root ROOT] [--parallel-run PARALLEL_RUN]
+                          [--base-line {LaMMA-P,SMART-LLM,Scale-Plan,KGLAMP,COT}]
+                          [--py-dir PY_DIR] [--max-workers MAX_WORKERS]
+                          [--timeout-seconds TIMEOUT_SECONDS]
+                          [--startup-grace-seconds STARTUP_GRACE_SECONDS]
+                          [--finalization-grace-seconds FINALIZATION_GRACE_SECONDS]
+                          [--termination-grace-seconds TERMINATION_GRACE_SECONDS]
+                          [--movement-mode {teleport,step}]
+                          [--output-dir OUTPUT_DIR] [--save-all-stdout]
+                          [--rebuild-summary RUN_DIR]
+                          [--execution-policy {legacy,strict}]
+                          [executable_plans ...]
+python -m unittest: error: argument --execution-policy: invalid choice: 'unsafe' (choose from 'legacy', 'strict')
+usage: python -m unittest [-h] [--runner-mode]
+                          [--metrics-output METRICS_OUTPUT]
+                          [--timeout-seconds TIMEOUT_SECONDS]
+                          [--movement-mode {teleport,step}]
+                          [--execution-policy {legacy,strict}]
+python -m unittest: error: argument --execution-policy: invalid choice: 'unsafe' (choose from 'legacy', 'strict')
+....usage: python -m unittest [-h] [--runner-mode]
+                          [--metrics-output METRICS_OUTPUT]
+                          [--timeout-seconds TIMEOUT_SECONDS]
+                          [--movement-mode {teleport,step}]
+                          [--execution-policy {legacy,strict}]
+python -m unittest: error: argument --movement-mode: invalid choice: 'warp' (choose from 'teleport', 'step')
+.........................usage: python -m unittest [-h] [--root ROOT] [--parallel-run PARALLEL_RUN]
+                          [--base-line {LaMMA-P,SMART-LLM,Scale-Plan,KGLAMP,COT}]
+                          [--py-dir PY_DIR] [--max-workers MAX_WORKERS]
+                          [--timeout-seconds TIMEOUT_SECONDS]
+                          [--startup-grace-seconds STARTUP_GRACE_SECONDS]
+                          [--finalization-grace-seconds FINALIZATION_GRACE_SECONDS]
+                          [--termination-grace-seconds TERMINATION_GRACE_SECONDS]
+                          [--movement-mode {teleport,step}]
+                          [--output-dir OUTPUT_DIR] [--save-all-stdout]
+                          [--rebuild-summary RUN_DIR]
+                          [--execution-policy {legacy,strict}]
+                          [executable_plans ...]
+python -m unittest: error: argument --startup-grace-seconds: must be a finite positive number
+usage: python -m unittest [-h] [--root ROOT] [--parallel-run PARALLEL_RUN]
+                          [--base-line {LaMMA-P,SMART-LLM,Scale-Plan,KGLAMP,COT}]
+                          [--py-dir PY_DIR] [--max-workers MAX_WORKERS]
+                          [--timeout-seconds TIMEOUT_SECONDS]
+                          [--startup-grace-seconds STARTUP_GRACE_SECONDS]
+                          [--finalization-grace-seconds FINALIZATION_GRACE_SECONDS]
+                          [--termination-grace-seconds TERMINATION_GRACE_SECONDS]
+                          [--movement-mode {teleport,step}]
+                          [--output-dir OUTPUT_DIR] [--save-all-stdout]
+                          [--rebuild-summary RUN_DIR]
+                          [--execution-policy {legacy,strict}]
+                          [executable_plans ...]
+python -m unittest: error: argument --finalization-grace-seconds: must be a finite positive number
+usage: python -m unittest [-h] [--root ROOT] [--parallel-run PARALLEL_RUN]
+                          [--base-line {LaMMA-P,SMART-LLM,Scale-Plan,KGLAMP,COT}]
+                          [--py-dir PY_DIR] [--max-workers MAX_WORKERS]
+                          [--timeout-seconds TIMEOUT_SECONDS]
+                          [--startup-grace-seconds STARTUP_GRACE_SECONDS]
+                          [--finalization-grace-seconds FINALIZATION_GRACE_SECONDS]
+                          [--termination-grace-seconds TERMINATION_GRACE_SECONDS]
+                          [--movement-mode {teleport,step}]
+                          [--output-dir OUTPUT_DIR] [--save-all-stdout]
+                          [--rebuild-summary RUN_DIR]
+                          [--execution-policy {legacy,strict}]
+                          [executable_plans ...]
+python -m unittest: error: argument --termination-grace-seconds: must be a finite positive number
+usage: python -m unittest [-h] [--runner-mode]
+                          [--metrics-output METRICS_OUTPUT]
+                          [--timeout-seconds TIMEOUT_SECONDS]
+                          [--movement-mode {teleport,step}]
+                          [--execution-policy {legacy,strict}]
+python -m unittest: error: argument --timeout-seconds: must be a finite positive number
+................usage: python -m unittest [-h] [--root ROOT] [--parallel-run PARALLEL_RUN]
+                          [--base-line {LaMMA-P,SMART-LLM,Scale-Plan,KGLAMP,COT}]
+                          [--py-dir PY_DIR] [--max-workers MAX_WORKERS]
+                          [--timeout-seconds TIMEOUT_SECONDS]
+                          [--startup-grace-seconds STARTUP_GRACE_SECONDS]
+                          [--finalization-grace-seconds FINALIZATION_GRACE_SECONDS]
+                          [--termination-grace-seconds TERMINATION_GRACE_SECONDS]
+                          [--movement-mode {teleport,step}]
+                          [--output-dir OUTPUT_DIR] [--save-all-stdout]
+                          [--rebuild-summary RUN_DIR]
+                          [--execution-policy {legacy,strict}]
+                          [executable_plans ...]
+python -m unittest: error: unrecognized arguments: --write-individual-results
+.success: /tmp/tmpqc6y5a32/baselines/SMART-LLM/logs/2/first/plan_to_code/executable_plan.py
+success: /tmp/tmpqc6y5a32/baselines/SMART-LLM/logs/2/second/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpqc6y5a32/runner_results/SMART-LLM_0908_01.json
+failed: /tmp/tmp0w_et2p9/failed/plan_to_code/executable_plan.py
+success: /tmp/tmp0w_et2p9/success/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmp0w_et2p9/runner_results/0908_01.json
+failed: /tmp/tmp9tzsm4k7/failed/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmp9tzsm4k7/runner_results/0908_01.json
+success: /tmp/tmpbzd7xrj_/first.py
+success: /tmp/tmp_7yb4xjz/baselines/KGLAMP/logs/intermediate_runs/unit_set/task/run/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmp_7yb4xjz/runner_results/KGLAMP_0908_01.json
+success: /tmp/tmpk188h48o/baselines/KGLAMP/logs/intermediate_runs/unit_set/first/plan_to_code/executable_plan.py
+success: /tmp/tmpk188h48o/baselines/KGLAMP/logs/intermediate_runs/unit_set/second/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpk188h48o/runner_results/KGLAMP_0908_01.json
+success: /tmp/tmpvenvg7iw/baselines/LaMMA-P/logs/intermediate_runs/test_set/task/run/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpvenvg7iw/runner_results/LaMMA-P_0908_01.json
+timeout: /tmp/tmp8nae93sl/slow/plan_to_code/executable_plan.py
+success: /tmp/tmp8nae93sl/fast/plan_to_code/executable_plan.py
+success: /tmp/tmp8nae93sl/slow/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmp8nae93sl/runner_results/0908_01.json
+success: /tmp/tmp49q6kzw9/logs/intermediate_runs/selected/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmp49q6kzw9/runner_results/0908_01.json
+success: /tmp/tmp7mzip2m4/run/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmp7mzip2m4/runner_results/0908_01.json
+success: /tmp/tmp_4kxlvzu/generated/direct.py
+Summary saved to: /tmp/tmp_4kxlvzu/runner_results/0908_01.json
+success: /tmp/tmpqrt201lk/generated/first.py
+success: /tmp/tmpqrt201lk/generated/second.py
+Summary saved to: /tmp/tmpqrt201lk/runner_results/0908_01.json
+success: /tmp/tmpa2ise45i/plan_to_code/executable_plan.py
+success: /tmp/tmpbyfcm8el/run/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpbyfcm8el/runner_results/0908_01.json
+success: /tmp/tmp2m1sf6p9/run/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmp2m1sf6p9/runner_results/0908_01.json
+success: /tmp/tmpigx4chos/a/plan_to_code/executable_plan.py
+success: /tmp/tmpigx4chos/b/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpigx4chos/runner_results/0908_01.json
+success: /tmp/tmp0lzt1p3r/run/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmp0lzt1p3r/runner_results/0908_01.json
+success: /tmp/tmperk79iqx/baselines/Scale-Plan/logs/intermediate_runs/unit_set/task/run/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmperk79iqx/runner_results/Scale-Plan_0908_01.json
+success: /tmp/tmptcz6lmnt/baselines/Scale-Plan/logs/intermediate_runs/unit_set/first/plan_to_code/executable_plan.py
+success: /tmp/tmptcz6lmnt/baselines/Scale-Plan/logs/intermediate_runs/unit_set/second/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmptcz6lmnt/runner_results/Scale-Plan_0908_01.json
+success: /tmp/tmp7w36e4o3/baselines/SMART-LLM/logs/2/task/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmp7w36e4o3/runner_results/SMART-LLM_0908_01.json
+success: /tmp/tmpt8iol095/run/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpt8iol095/runner_results/0908_01.json
+success: /tmp/tmpz5j92763/run/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpz5j92763/runner_results/1231_02.json
+success: /tmp/tmpx86r4j_m/fast/plan_to_code/executable_plan.py
+timeout: /tmp/tmpx86r4j_m/slow/plan_to_code/executable_plan.py
+timeout: /tmp/tmpx86r4j_m/slow/plan_to_code/executable_plan.py
+timeout: /tmp/tmpx86r4j_m/slow/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpx86r4j_m/runner_results/0908_01.json
+timeout: /tmp/tmpad8s17v2/slow/plan_to_code/executable_plan.py
+timeout: /tmp/tmpad8s17v2/slow/plan_to_code/executable_plan.py
+timeout: /tmp/tmpad8s17v2/slow/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmpad8s17v2/runner_results/0908_01.json
+success: /tmp/tmp8u6kff4f/fast/plan_to_code/executable_plan.py
+timeout: /tmp/tmp8u6kff4f/slow/plan_to_code/executable_plan.py
+success: /tmp/tmp8u6kff4f/slow/plan_to_code/executable_plan.py
+Summary saved to: /tmp/tmp8u6kff4f/runner_results/0908_01.json
+Going to Apple Apple|+01.00|+00.90|+00.00 at reachable position {'x': 0.75, 'y': 0.0, 'z': 0.0}.
+Reached: Apple
+.Going to Apple Apple|+01.10|+00.90|+00.00 at reachable position {'x': 1.25, 'y': 0.0, 'z': 0.0}.
+Reached: Apple
+.....Phase 1 started with 1 robot queue(s).
+Tick 0: robot1 failed OpenObject: action failed
+.Phase 1 started with 1 robot queue(s).
+Tick 0: robot1 completed Wait.
+.Phase 1 started with 1 robot queue(s).
+Tick 0: robot1 completed Wait.
+.Phase 1 started with 1 robot queue(s).
+Tick 0: robot1 completed Wait.
+.Phase 1 started with 1 robot queue(s).
+Tick 1: robot1 completed GoToObject.
+.named-stage started with 1 robot queue(s).
+Tick 0: robot1 completed OpenObject.
+.Phase 1 started with 1 robot queue(s).
+Tick 0: robot1 failed PickupObject: InvalidOperationException: Picking up object would cause it to collide and clip into something!
+Tick 1: robot1 completed PutObject.
+.Phase 1 started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: teleport failed
+Tick 1: robot1 failed Teleport: teleport failed
+Tick 2: robot1 completed CloseObject.
+.Phase 1 started with 2 robot queue(s).
+Tick 0: robot1 failed OpenObject: open failed
+Tick 1: robot2 completed PickupObject.
+Tick 2: robot1 completed CloseObject.
+Tick 3: robot2 completed PutObject.
+.Phase 1 started with 1 robot queue(s).
+Tick 0: robot1 failed TeleportObjectToHand: teleport failed
+Tick 1: robot1 completed PickupObject.
+.Phase 1 started with 1 robot queue(s).
+Tick 0: robot1 failed OpenObject: open failed
+.
+----------------------------------------------------------------------
+Ran 195 tests in 11.543s
+
+OK

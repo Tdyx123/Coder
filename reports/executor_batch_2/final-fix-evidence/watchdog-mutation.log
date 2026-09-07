@@ -1,0 +1,22 @@
+test_no_deadline_dependency_cycle_external_watchdog_cleans_workers (tests.test_stage_scheduler.StageSchedulerTest) ...
+======================================================================
+FAIL: test_no_deadline_dependency_cycle_external_watchdog_cleans_workers (tests.test_stage_scheduler.StageSchedulerTest) (mode='step')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/coder-executor-batch-2/tests/test_stage_scheduler.py", line 154, in test_no_deadline_dependency_cycle_external_watchdog_cleans_workers
+    self.assertFalse(task.is_alive(), 'external cancellation did not stop cycle')
+AssertionError: True is not false : external cancellation did not stop cycle
+
+======================================================================
+FAIL: test_no_deadline_dependency_cycle_external_watchdog_cleans_workers (tests.test_stage_scheduler.StageSchedulerTest) (mode='teleport')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/coder-executor-batch-2/tests/test_stage_scheduler.py", line 154, in test_no_deadline_dependency_cycle_external_watchdog_cleans_workers
+    self.assertFalse(task.is_alive(), 'external cancellation did not stop cycle')
+AssertionError: True is not false : external cancellation did not stop cycle
+
+----------------------------------------------------------------------
+Ran 1 test in 2.009s
+
+FAILED (failures=2)
+Expected watchdog-cancellation mutation failures: 2; threads left after failure cleanup: 0

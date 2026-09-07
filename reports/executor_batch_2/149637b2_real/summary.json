@@ -1,0 +1,77 @@
+{
+  "code_sha": "149637b28ffcb49b95ac8d177f0302c043942851",
+  "groups": [
+    {
+      "execution_policy": "legacy",
+      "movement_mode": "teleport",
+      "scheduler_version": 2,
+      "evaluation_version": "fixed_goals_v2",
+      "runs": 12,
+      "exit0": 12,
+      "execution_status": {
+        "completed": 9,
+        "partial": 3
+      },
+      "evaluation_status": {
+        "valid": 12
+      },
+      "gcr_mean": 0.6875,
+      "sr_successes": 0,
+      "expected_stage_cancel_records": 0
+    },
+    {
+      "execution_policy": "legacy",
+      "movement_mode": "step",
+      "scheduler_version": 2,
+      "evaluation_version": "fixed_goals_v2",
+      "runs": 12,
+      "exit0": 12,
+      "execution_status": {
+        "completed": 9,
+        "partial": 3
+      },
+      "evaluation_status": {
+        "valid": 12
+      },
+      "gcr_mean": 0.6875,
+      "sr_successes": 0,
+      "expected_stage_cancel_records": 0
+    },
+    {
+      "execution_policy": "strict",
+      "movement_mode": "teleport",
+      "scheduler_version": 2,
+      "evaluation_version": "fixed_goals_v2",
+      "runs": 12,
+      "exit0": 12,
+      "execution_status": {
+        "completed": 9,
+        "failed": 3
+      },
+      "evaluation_status": {
+        "valid": 12
+      },
+      "gcr_mean": 0.6388888888888888,
+      "sr_successes": 0,
+      "expected_stage_cancel_records": 3
+    },
+    {
+      "execution_policy": "strict",
+      "movement_mode": "step",
+      "scheduler_version": 2,
+      "evaluation_version": "fixed_goals_v2",
+      "runs": 12,
+      "exit0": 12,
+      "execution_status": {
+        "completed": 8,
+        "failed": 4
+      },
+      "evaluation_status": {
+        "valid": 12
+      },
+      "gcr_mean": 0.6111111111111112,
+      "sr_successes": 0,
+      "expected_stage_cancel_records": 4
+    }
+  ]
+}

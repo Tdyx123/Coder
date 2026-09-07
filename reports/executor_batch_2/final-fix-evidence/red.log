@@ -1,0 +1,289 @@
+s started with 1 robot queue(s).
+Tick 0: robot1 completed Wait.
+s started with 1 robot queue(s).
+Tick 0: robot1 completed Wait.
+s started with 1 robot queue(s).
+Tick 0: robot1 completed Wait.
+s started with 1 robot queue(s).
+Tick 0: robot1 completed Wait.
+first started with 2 robot queue(s).
+Tick 0: robot2 completed Wait.
+Tick 1: robot2 completed Wait.
+Fs started with 1 robot queue(s).
+Tick 0: robot1 completed WaitUntil.
+Tick 1: robot1 completed WaitUntil.
+Tick 0: robot1 completed WaitUntil.
+Tick 1: robot1 completed WaitUntil.
+s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: transient failure
+Tick 1: robot1 failed Teleport: robot1 timed out waiting for Teleport.
+s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: transient failure
+Tick 1: robot1 failed Teleport: RESOURCE_TIMEOUT: resources held by ('peer',)
+s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: transient failure
+Tick 1: robot1 completed Teleport.
+s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: transient failure
+Tick 1: robot1 completed Teleport.
+s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: transient failure
+Tick 1: robot1 failed Teleport: robot1 timed out waiting for Teleport.
+s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: transient failure
+Tick 1: robot1 failed Teleport: RESOURCE_TIMEOUT: resources held by ('peer',)
+s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: transient failure
+Tick 1: robot1 completed Teleport.
+s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: transient failure
+Tick 1: robot1 completed Teleport.
+s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: first execution failed
+Tick 1: robot1 failed Teleport: robot1 timed out waiting for Teleport.
+Tick 1: robot1 completed WaitUntil.
+s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: first execution failed
+Tick 1: robot1 failed Teleport: Could not find AI2-THOR object matching 'Mug|1'
+Tick 1: robot1 completed WaitUntil.
+s started with 1 robot queue(s).
+Tick 1: robot1 failed Teleport: Could not find AI2-THOR object matching 'Mug|1'
+Tick 1: robot1 failed Teleport: Could not find AI2-THOR object matching 'Mug|1'
+Tick 1: robot1 completed WaitUntil.
+s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: first execution failed
+Tick 1: robot1 failed Teleport: robot1 timed out waiting for Teleport.
+s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: first execution failed
+Tick 1: robot1 failed Teleport: Could not find AI2-THOR object matching 'Mug|1'
+s started with 1 robot queue(s).
+Tick 1: robot1 failed Teleport: Could not find AI2-THOR object matching 'Mug|1'
+Tick 1: robot1 failed Teleport: Could not find AI2-THOR object matching 'Mug|1'
+.
+======================================================================
+FAIL: test_legacy_tick_callbacks_observe_completed_queue_progress (tests.test_stage_conditions.StageConditionsTest) (entry='ordinary', commits=0)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/coder-executor-batch-2/tests/test_stage_conditions.py", line 43, in test_legacy_tick_callbacks_observe_completed_queue_progress
+    self.assertEqual(report['execution_status'], 'completed')
+AssertionError: 'timeout' != 'completed'
+- timeout
++ completed
+
+
+======================================================================
+FAIL: test_legacy_tick_callbacks_observe_completed_queue_progress (tests.test_stage_conditions.StageConditionsTest) (entry='ordinary', commits=3)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/coder-executor-batch-2/tests/test_stage_conditions.py", line 43, in test_legacy_tick_callbacks_observe_completed_queue_progress
+    self.assertEqual(report['execution_status'], 'completed')
+AssertionError: 'timeout' != 'completed'
+- timeout
++ completed
+
+
+======================================================================
+FAIL: test_legacy_tick_callbacks_observe_completed_queue_progress (tests.test_stage_conditions.StageConditionsTest) (entry='tolerant', commits=0)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/coder-executor-batch-2/tests/test_stage_conditions.py", line 43, in test_legacy_tick_callbacks_observe_completed_queue_progress
+    self.assertEqual(report['execution_status'], 'completed')
+AssertionError: 'timeout' != 'completed'
+- timeout
++ completed
+
+
+======================================================================
+FAIL: test_legacy_tick_callbacks_observe_completed_queue_progress (tests.test_stage_conditions.StageConditionsTest) (entry='tolerant', commits=3)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/coder-executor-batch-2/tests/test_stage_conditions.py", line 43, in test_legacy_tick_callbacks_observe_completed_queue_progress
+    self.assertEqual(report['execution_status'], 'completed')
+AssertionError: 'timeout' != 'completed'
+- timeout
++ completed
+
+
+======================================================================
+FAIL: test_tick_is_shared_by_robots_and_resets_at_stage_boundary (tests.test_stage_conditions.StageConditionsTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/coder-executor-batch-2/tests/test_stage_conditions.py", line 62, in test_tick_is_shared_by_robots_and_resets_at_stage_boundary
+    self.assertEqual(report['execution_status'], 'completed')
+AssertionError: 'timeout' != 'completed'
+- timeout
++ completed
+
+
+======================================================================
+FAIL: test_standalone_world_returns_confirmed_tick (tests.test_stage_conditions.StageConditionsTest) (entry='stage')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/coder-executor-batch-2/tests/test_stage_conditions.py", line 75, in test_standalone_world_returns_confirmed_tick
+    self.assertEqual(world.tick, 2)
+AssertionError: 0 != 2
+
+======================================================================
+FAIL: test_standalone_world_returns_confirmed_tick (tests.test_stage_conditions.StageConditionsTest) (entry='executor')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/coder-executor-batch-2/tests/test_stage_conditions.py", line 75, in test_standalone_world_returns_confirmed_tick
+    self.assertEqual(world.tick, 2)
+AssertionError: 0 != 2
+
+======================================================================
+FAIL: test_retry_preserves_one_idle_pass_before_wait_timeout (tests.test_stage_scheduler.StageSchedulerTest) (policy='legacy', failure='RETRY', wait_kind='condition')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/coder-executor-batch-2/tests/test_stage_scheduler.py", line 53, in test_retry_preserves_one_idle_pass_before_wait_timeout
+    self.assertEqual(report['execution_status'], 'completed')
+AssertionError: 'partial' != 'completed'
+- partial
++ completed
+
+
+======================================================================
+FAIL: test_retry_preserves_one_idle_pass_before_wait_timeout (tests.test_stage_scheduler.StageSchedulerTest) (policy='legacy', failure='RETRY', wait_kind='resource')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/coder-executor-batch-2/tests/test_stage_scheduler.py", line 53, in test_retry_preserves_one_idle_pass_before_wait_timeout
+    self.assertEqual(report['execution_status'], 'completed')
+AssertionError: 'partial' != 'completed'
+- partial
++ completed
+
+
+======================================================================
+FAIL: test_retry_preserves_one_idle_pass_before_wait_timeout (tests.test_stage_scheduler.StageSchedulerTest) (policy='legacy', failure='WAIT_AND_RETRY', wait_kind='condition')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/coder-executor-batch-2/tests/test_stage_scheduler.py", line 56, in test_retry_preserves_one_idle_pass_before_wait_timeout
+    self.assertEqual(wait_ticks_before_pass, [0])
+AssertionError: Lists differ: [1] != [0]
+
+First differing element 0:
+1
+0
+
+- [1]
++ [0]
+
+======================================================================
+FAIL: test_retry_preserves_one_idle_pass_before_wait_timeout (tests.test_stage_scheduler.StageSchedulerTest) (policy='legacy', failure='WAIT_AND_RETRY', wait_kind='resource')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/coder-executor-batch-2/tests/test_stage_scheduler.py", line 56, in test_retry_preserves_one_idle_pass_before_wait_timeout
+    self.assertEqual(wait_ticks_before_pass, [0])
+AssertionError: Lists differ: [1] != [0]
+
+First differing element 0:
+1
+0
+
+- [1]
++ [0]
+
+======================================================================
+FAIL: test_retry_preserves_one_idle_pass_before_wait_timeout (tests.test_stage_scheduler.StageSchedulerTest) (policy='strict', failure='RETRY', wait_kind='condition')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/coder-executor-batch-2/tests/test_stage_scheduler.py", line 53, in test_retry_preserves_one_idle_pass_before_wait_timeout
+    self.assertEqual(report['execution_status'], 'completed')
+AssertionError: 'failed' != 'completed'
+- failed
++ completed
+
+
+======================================================================
+FAIL: test_retry_preserves_one_idle_pass_before_wait_timeout (tests.test_stage_scheduler.StageSchedulerTest) (policy='strict', failure='RETRY', wait_kind='resource')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/coder-executor-batch-2/tests/test_stage_scheduler.py", line 53, in test_retry_preserves_one_idle_pass_before_wait_timeout
+    self.assertEqual(report['execution_status'], 'completed')
+AssertionError: 'failed' != 'completed'
+- failed
++ completed
+
+
+======================================================================
+FAIL: test_retry_preserves_one_idle_pass_before_wait_timeout (tests.test_stage_scheduler.StageSchedulerTest) (policy='strict', failure='WAIT_AND_RETRY', wait_kind='condition')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/coder-executor-batch-2/tests/test_stage_scheduler.py", line 56, in test_retry_preserves_one_idle_pass_before_wait_timeout
+    self.assertEqual(wait_ticks_before_pass, [0])
+AssertionError: Lists differ: [1] != [0]
+
+First differing element 0:
+1
+0
+
+- [1]
++ [0]
+
+======================================================================
+FAIL: test_retry_preserves_one_idle_pass_before_wait_timeout (tests.test_stage_scheduler.StageSchedulerTest) (policy='strict', failure='WAIT_AND_RETRY', wait_kind='resource')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/coder-executor-batch-2/tests/test_stage_scheduler.py", line 56, in test_retry_preserves_one_idle_pass_before_wait_timeout
+    self.assertEqual(wait_ticks_before_pass, [0])
+AssertionError: Lists differ: [1] != [0]
+
+First differing element 0:
+1
+0
+
+- [1]
++ [0]
+
+======================================================================
+FAIL: test_admission_failure_after_attempt_keeps_reports_consistent (tests.test_stage_scheduler.StageSchedulerTest) (policy='legacy', next_failure='condition_timeout')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/coder-executor-batch-2/tests/test_stage_scheduler.py", line 95, in test_admission_failure_after_attempt_keeps_reports_consistent
+    self.assertEqual(final['attempts'], expected_attempts)
+AssertionError: 1 != 2
+
+======================================================================
+FAIL: test_admission_failure_after_attempt_keeps_reports_consistent (tests.test_stage_scheduler.StageSchedulerTest) (policy='legacy', next_failure='missing_resource')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/coder-executor-batch-2/tests/test_stage_scheduler.py", line 95, in test_admission_failure_after_attempt_keeps_reports_consistent
+    self.assertEqual(final['attempts'], expected_attempts)
+AssertionError: 1 != 2
+
+======================================================================
+FAIL: test_admission_failure_after_attempt_keeps_reports_consistent (tests.test_stage_scheduler.StageSchedulerTest) (policy='legacy', next_failure='deferred_missing_resource')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/coder-executor-batch-2/tests/test_stage_scheduler.py", line 95, in test_admission_failure_after_attempt_keeps_reports_consistent
+    self.assertEqual(final['attempts'], expected_attempts)
+AssertionError: 1 != 3
+
+======================================================================
+FAIL: test_admission_failure_after_attempt_keeps_reports_consistent (tests.test_stage_scheduler.StageSchedulerTest) (policy='strict', next_failure='condition_timeout')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/coder-executor-batch-2/tests/test_stage_scheduler.py", line 95, in test_admission_failure_after_attempt_keeps_reports_consistent
+    self.assertEqual(final['attempts'], expected_attempts)
+AssertionError: 1 != 2
+
+======================================================================
+FAIL: test_admission_failure_after_attempt_keeps_reports_consistent (tests.test_stage_scheduler.StageSchedulerTest) (policy='strict', next_failure='missing_resource')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/coder-executor-batch-2/tests/test_stage_scheduler.py", line 95, in test_admission_failure_after_attempt_keeps_reports_consistent
+    self.assertEqual(final['attempts'], expected_attempts)
+AssertionError: 1 != 2
+
+======================================================================
+FAIL: test_admission_failure_after_attempt_keeps_reports_consistent (tests.test_stage_scheduler.StageSchedulerTest) (policy='strict', next_failure='deferred_missing_resource')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/coder-executor-batch-2/tests/test_stage_scheduler.py", line 95, in test_admission_failure_after_attempt_keeps_reports_consistent
+    self.assertEqual(final['attempts'], expected_attempts)
+AssertionError: 1 != 3
+
+----------------------------------------------------------------------
+Ran 6 tests in 2.258s
+
+FAILED (failures=21)

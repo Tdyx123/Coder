@@ -1,0 +1,73 @@
+s started with 1 robot queue(s).
+Tick 0: robot1 completed Wait.
+Tick 1: robot1 completed Wait.
+s started with 1 robot queue(s).
+Tick 0: robot1 completed Wait.
+Tick 1: robot1 completed Wait.
+s started with 1 robot queue(s).
+Tick 0: robot1 completed Wait.
+Tick 1: robot1 completed Wait.
+s started with 1 robot queue(s).
+Tick 0: robot1 completed Wait.
+Tick 1: robot1 completed Wait.
+.first started with 2 robot queue(s).
+Tick 0: robot2 completed Wait.
+Tick 1: robot2 completed Wait.
+Tick 2: robot1 completed Wait.
+second started with 1 robot queue(s).
+Tick 0: robot1 completed Wait.
+.s started with 1 robot queue(s).
+Tick 0: robot1 completed WaitUntil.
+Tick 1: robot1 completed WaitUntil.
+Tick 0: robot1 completed WaitUntil.
+Tick 1: robot1 completed WaitUntil.
+.s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: transient failure
+Tick 1: robot1 completed Teleport.
+s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: transient failure
+Tick 1: robot1 completed Teleport.
+s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: transient failure
+Tick 1: robot1 completed Teleport.
+s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: transient failure
+Tick 1: robot1 completed Teleport.
+s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: transient failure
+Tick 1: robot1 completed Teleport.
+s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: transient failure
+Tick 1: robot1 completed Teleport.
+s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: transient failure
+Tick 1: robot1 completed Teleport.
+s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: transient failure
+Tick 1: robot1 completed Teleport.
+.s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: first execution failed
+Tick 1: robot1 failed Teleport: robot1 timed out waiting for Teleport.
+Tick 1: robot1 completed WaitUntil.
+s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: first execution failed
+Tick 1: robot1 failed Teleport: Could not find AI2-THOR object matching 'Mug|1'
+Tick 1: robot1 completed WaitUntil.
+s started with 1 robot queue(s).
+Tick 1: robot1 failed Teleport: Could not find AI2-THOR object matching 'Mug|1'
+Tick 1: robot1 failed Teleport: Could not find AI2-THOR object matching 'Mug|1'
+Tick 1: robot1 completed WaitUntil.
+s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: first execution failed
+Tick 1: robot1 failed Teleport: robot1 timed out waiting for Teleport.
+s started with 1 robot queue(s).
+Tick 0: robot1 failed Teleport: first execution failed
+Tick 1: robot1 failed Teleport: Could not find AI2-THOR object matching 'Mug|1'
+s started with 1 robot queue(s).
+Tick 1: robot1 failed Teleport: Could not find AI2-THOR object matching 'Mug|1'
+Tick 1: robot1 failed Teleport: Could not find AI2-THOR object matching 'Mug|1'
+..
+----------------------------------------------------------------------
+Ran 6 tests in 1.265s
+
+OK
