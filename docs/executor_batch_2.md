@@ -37,7 +37,9 @@ strict 的 stage_failure_policy=FAIL_STAGE 停止任务；SKIP 允许继续下�
 
 wait_until、阶段/全局 callback 接收完整 WorldState；callback 异常保留 ConditionEvaluationError 原因，不等价于 false。expected_preconditions/effects 接受 callable 或 `{name, states/state, contains}` 目标字典，始终检查当前快照；unknown 前置条件等待，unknown 效果失败，历史 HOT/COLD 证据不能替代当前状态要求。任务超时、取消、controller 不可用与未捕获工作线程错误仍是任务级终止。
 
-BARRIER_AT_STAGE_END 允许机器人独立推进；BARRIER_EACH_STEP 只等待当前已发放动作完成；EVENT_CONDITION 在状态、资源或截止时间事件后重查。等待条件的机器人不参加导航波次，但仍是物理障碍。无可运行/执行中动作时由协调器最多每 50 ms 提交一次 Pass，推进条件时间；timeout_ticks 从当前动作首次等待起累计。真实依赖环最终由截止时间中止并保存等待条件、资源持有者和全机器人快照。
+`WorldState.tick` 是本阶段所有机器人已由协调器确认的高层动作终态数：成功、最终失败、资源冲突 SKIP 各增加一次；重试、延期、idle Pass、未执行尾项和整阶段初始条件满足的 skip 不增加。每阶段从 0 开始，多机器人共享此进展；它不复刻旧私有线程计数及竞争顺序。协调器 callback 读取当前已确认进展，worker 的动作及效果 callback 读取准入时采样的 tick（不含当前动作）；失败复核 callback 在协调器上读取当前进展。阶段返回值及全局 callback 保留最后执行阶段的 tick。`WorldState.version` 独立记录真实底层提交，单个高层动作可产生多次提交。
+
+BARRIER_AT_STAGE_END 允许机器人独立推进；BARRIER_EACH_STEP 只等待当前已发放动作完成；EVENT_CONDITION 在状态、资源或截止时间事件后重查。等待条件的机器人不参加导航波次，但仍是物理障碍。无可运行/执行中动作时由协调器最多每 50 ms 提交一次 Pass，推进条件时间；timeout_ticks 只累计当前动作等待期间已完成的 idle Pass，重试次数、重试墙钟延迟和准入等待年龄独立计数，动作终态后清零。有期限的真实依赖环由截止时间中止；无期限库调用由外部 watchdog 取消根控制器并有界等待工作线程退出，保存等待条件、资源持有者和全机器人快照。
 
 ## 资源需求与快照接口
 
@@ -69,6 +71,8 @@ process_status 表示进程是否完成；execution_status 表示计划执行与
 scheduler2 仅在 execution_quiescent=true 且没有超时/取消时允许有效目标评估，包括普通策略/条件导致的 failed。没有静止证明时不提交 Done 或最终评估。父进程非零退出/超时继续覆盖子成功声明并清空最终评分。validator 保留 fixed denominator、GCR、TC、SR/RU 一致性检查；scheduler2 允许未准入的 skipped/cancelled 终态，要求 succeeded+failed <= started <= planned、attempts >= started、全部终态+unexecuted=planned。历史 scheduler1 保留 terminal <= started 的约束。
 
 报告包含 actions、stages、attempts、waits、waves、resources、errors、final_snapshot。resources 的 acquired 记录含 keys/action_key，released 按 action_key 对应原申请；actions 保留终态原因及实际 failure decision。benchmark 将 execution_failure 与 goal_failure 分开标记，但诊断时仍需同时阅读执行状态与目标评分：strict 更早停止导致更多失败，不能直接解释成模型或导航能力回退。
+
+动作实际获准和准入失败（条件/资源等待超时、资源解析错误）均计一次 attempt；总账、逐动作终态及每次结果记录使用同一累计计数，延期后再次准入也累计。整阶段初始满足或首次资源冲突 SKIP 不伪造 attempt；计划动作数及目标评分分母保持原定义。
 
 ## 三个可复现语义例子
 

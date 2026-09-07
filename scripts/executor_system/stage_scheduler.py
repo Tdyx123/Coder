@@ -158,14 +158,11 @@ class StageScheduler:
                                       failure_error_code='resource_conflict')
                 self.executors[pending.robot_id].state.last_action_result = result
                 self.logger.result(self._tick, result)
+                self._record_attempt(pending)
                 ledger = getattr(self.runtime, 'action_ledger', None)
                 if ledger is not None:
-                    ledger.record_started(key)
-                    ledger.record_attempt()
                     ledger.record_terminal(key, 'failed')
-                self.attempt_counts[key] = self.attempt_counts.get(key, 0) + 1
                 if self.stats is not None:
-                    self.stats.record_started()
                     self.stats.record_failure(self.stage.stage_id, pending.robot_id, pending.action,
                         pending.cursor, RuntimeError(reason),
                         decision=FailureDecision('fail_stage', 'resource_conflict', 0))
@@ -197,12 +194,7 @@ class StageScheduler:
         except Exception as exc:
             raise_if_execution_aborted(self.runtime, exc)
             self._release_resources(pending)
-            ledger = getattr(self.runtime, 'action_ledger', None)
-            if ledger is not None:
-                ledger.record_started(key)
-                ledger.record_attempt()
-            if self.stats is not None:
-                self.stats.record_started()
+            self._record_attempt(pending)
             self._record_failure(self.executors[pending.robot_id], pending, exc)
             self._set_pending(self.executors[pending.robot_id])
         return False
@@ -220,6 +212,7 @@ class StageScheduler:
     def _observe_result(self, pending, result):
         if result is None:
             return
+        result.attempts = self.attempt_counts.get(self._ledger_key(pending), result.attempts)
         record = {'action_key': self._ledger_key(pending), 'stage_id': self.stage.stage_id,
                   'robot_id': pending.robot_id, 'cursor': pending.cursor,
                   'action_type': pending.action.action_type, 'status': result.status.lower(),
@@ -230,15 +223,17 @@ class StageScheduler:
                   'world_version': self.world.version,
                   'preconditions': self.precondition_evidence.get(self._ledger_key(pending), []),
                   'effects': getattr(self.executors[pending.robot_id], 'last_effects_evidence', [])}
-        record['attempts'] = self.attempt_counts.get(self._ledger_key(pending), result.attempts)
         if record['status'] == 'success':
             record['status'] = 'succeeded'
         self.report['attempts'].append(dict(record))
         if result.failure_decision not in ('retry', 'wait_retry'):
+            if self._ledger_key(pending) not in self.action_records:
+                self.world.tick += 1
             self.action_records[self._ledger_key(pending)] = record
 
     def _record_failure(self, executor, pending, exc, *, finalizing=False):
         executor.world_state.snapshot = self.world.snapshot
+        executor.world_state.tick = self.world.tick
         executor.state.last_action_result = None
         try:
             if finalizing:
@@ -299,6 +294,17 @@ class StageScheduler:
     def _ledger_key(self, pending):
         return f'{self.stage_index}:{pending.robot_id}:{pending.cursor}'
 
+    def _record_attempt(self, pending):
+        """Count worker admissions and failed admissions in every report alike."""
+        key = self._ledger_key(pending)
+        self.attempt_counts[key] = self.attempt_counts.get(key, 0) + 1
+        if self.stats is not None:
+            self.stats.record_started()
+        ledger = getattr(self.runtime, 'action_ledger', None)
+        if ledger is not None:
+            ledger.record_started(key)
+            ledger.record_attempt()
+
     def _select_ready(self):
         # Admission rounds continue while peers make progress. Waiting age is
         # independent of timeout_ticks, which count completed idle Passes only.
@@ -318,12 +324,7 @@ class StageScheduler:
                 self.admissions[robot] = RobotAdmission('WAITING_CONDITION', pending,
                                                        'precondition_or_wait_until_not_satisfied')
                 if pending.action.timeout_ticks is not None and state.wait_ticks >= pending.action.timeout_ticks:
-                    ledger = getattr(self.runtime, 'action_ledger', None)
-                    if ledger is not None:
-                        ledger.record_started(self._ledger_key(pending))
-                        ledger.record_attempt()
-                    if self.stats is not None:
-                        self.stats.record_started()
+                    self._record_attempt(pending)
                     self._record_failure(self.executors[robot], pending, RuntimeError(
                         f'{robot} timed out waiting for {pending.action.action_type}.'))
                     self._set_pending(self.executors[robot])
@@ -357,15 +358,8 @@ class StageScheduler:
             self.executors[robot].state.status = ROBOT_EXECUTING
             self.admissions[robot] = RobotAdmission('EXECUTING', pending)
             self.inflight.add(robot)
-            key = self._ledger_key(pending)
-            self.attempt_counts[key] = self.attempt_counts.get(key, 0) + 1
-            if self.stats is not None:
-                self.stats.record_started()
-            ledger = getattr(self.runtime, 'action_ledger', None)
-            if ledger is not None:
-                ledger.record_started(self._ledger_key(pending))
-                ledger.record_attempt()
-            self.mailboxes[robot].put((pending, wave, self.world.snapshot))
+            self._record_attempt(pending)
+            self.mailboxes[robot].put((pending, wave, self.world.snapshot, self.world.tick))
         return True
 
     def _diagnose(self):

@@ -11,6 +11,70 @@ from tests.snapshot_fakes import FakeRuntime
 
 
 class StageConditionsTest(unittest.TestCase):
+    def test_legacy_tick_callbacks_observe_completed_queue_progress(self):
+        from executor_system.action_plan import AI2ThorAdapter
+        from executor_system.execution_control import PlanExecutionTimeout
+        for entry in ('ordinary', 'tolerant'):
+            for commits in (0, 3):
+                with self.subTest(entry=entry, commits=commits):
+                    runtime = FakeRuntime()
+                    observed = []
+                    def execute(adapter, robot, action, **kwargs):
+                        world = kwargs['world_state']
+                        observed.append((world.tick, world.version))
+                        for _ in range(commits):
+                            runtime.step({'action': 'Pass'})
+                    plan = TaskPlan('ticks', [StagePlan('s', {'robot1': [
+                        Action('Wait'),
+                        Action('Wait', wait_until=lambda w: w.tick >= 1,
+                               expected_preconditions=(lambda w: w.tick == 1,),
+                               expected_effects=(lambda w: w.tick == 1,)),
+                    ]}, lambda w: w.tick >= 2)],
+                        global_success_condition=lambda w: w.tick == 2)
+                    with patch.object(AI2ThorAdapter, 'execute', execute):
+                        if entry == 'ordinary':
+                            try:
+                                TaskRunner(runtime).execute(plan, timeout_seconds=.2)
+                            except PlanExecutionTimeout:
+                                pass  # Assert the saved execution result below.
+                        else:
+                            run_action_plan_tolerant(runtime, plan, timeout_seconds=.2)
+                    report = runtime.execution_report
+                    self.assertEqual(report['execution_status'], 'completed')
+                    self.assertEqual(observed, [(0, 0), (1, commits)])
+                    self.assertTrue(report['global_condition_satisfied'])
+
+    def test_tick_is_shared_by_robots_and_resets_at_stage_boundary(self):
+        from executor_system.action_plan import AI2ThorAdapter
+        observed = []
+        def execute(adapter, robot, action, **kwargs):
+            observed.append((action.action_id, kwargs['world_state'].tick))
+        plan = TaskPlan('shared-tick', [
+            StagePlan('first', {
+                'robot1': [Action('Wait', action_id='peer', wait_until=lambda w: w.tick >= 2)],
+                'robot2': [Action('Wait', action_id='a'), Action('Wait', action_id='b')],
+            }, lambda w: w.tick >= 3),
+            StagePlan('second', {'robot1': [Action('Wait', action_id='reset',
+                wait_until=lambda w: w.tick == 0)]}, lambda w: w.tick >= 1),
+        ], global_success_condition=lambda w: w.tick == 1)
+        with patch.object(AI2ThorAdapter, 'execute', execute):
+            report = run_action_plan_tolerant(self.runtime, plan, timeout_seconds=.3)
+        self.assertEqual(report['execution_status'], 'completed')
+        self.assertEqual(observed, [('a', 0), ('b', 1), ('peer', 2), ('reset', 0)])
+
+    def test_standalone_world_returns_confirmed_tick(self):
+        from executor_system.action_plan import StageRunner
+        for entry in ('stage', 'executor'):
+            with self.subTest(entry=entry):
+                runtime = FakeRuntime()
+                actions = [Action('WaitUntil'), Action('WaitUntil')]
+                if entry == 'stage':
+                    world = StageRunner(runtime).execute_stage(StagePlan('s', {'robot1': actions}))
+                else:
+                    world = Executor(runtime, 'robot1', actions).execute()
+                self.assertEqual(world.tick, 2)
+                self.assertEqual(world.version, 0)
+
     def setUp(self):
         self.runtime = FakeRuntime()
 

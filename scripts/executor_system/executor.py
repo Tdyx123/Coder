@@ -149,6 +149,7 @@ class PhaseCoordinator:
             outcome = scheduler.run()
             for item in executors.values():
                 item.world_state.snapshot = outcome.snapshot
+                item.world_state.tick = scheduler.world.tick
             if outcome.status == 'failed' and executor.execution_policy is ExecutionPolicy.STRICT:
                 raise PlanExecutionError({'execution_status': 'failed', 'stages': [scheduler.report],
                     'actions': scheduler.report['actions'], 'errors': list(outcome.errors)})
@@ -600,6 +601,7 @@ class Executor:
         try:
             outcome = scheduler.run()
             self.world_state.snapshot = outcome.snapshot
+            self.world_state.tick = scheduler.world.tick
             if outcome.status == 'failed' and self.execution_policy is ExecutionPolicy.STRICT:
                 raise PlanExecutionError({'execution_status': 'failed', 'stages': [scheduler.report],
                                           'actions': scheduler.report['actions']})
@@ -633,9 +635,10 @@ class Executor:
                 with scheduler.condition:
                     scheduler.condition.notify_all()
                 continue
-            pending, wave, snapshot = job
+            pending, wave, snapshot, progress_tick = job
             self.control.check()
             executor.world_state.snapshot = snapshot
+            executor.world_state.tick = progress_tick
             agent_id = self.runtime.physical_agent_id(executor.robot_id)
             event, error = None, None
             self.last_effects_evidence = []
@@ -789,7 +792,6 @@ class Executor:
 
         if decision.kind in {"retry", "wait_retry"}:
             self.state.retries_by_action[action_key] = decision.retry_number
-            self.state.wait_ticks += 1
             self.state.status = ROBOT_ACTION_FAILED
             self.state.last_action_result = result
             self.logger.result(tick, result)

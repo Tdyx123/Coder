@@ -319,6 +319,14 @@ class ResourceRequest:
 
 
 class WorldState:
+    """Frozen world facts plus scheduler-confirmed high-level progress.
+
+    ``tick`` counts observed terminal action outcomes across robots in this
+    stage (success, final failure, or conflict skip), starting at zero per stage.
+    Retries, deferrals, idle Passes and unexecuted tails/whole-stage skips do not
+    advance it. Worker callbacks sample it at admission; scheduler callbacks
+    see current confirmed progress. It is independent of snapshot ``version``.
+    """
     def __init__(self, runtime_obj: Optional["ThorRuntime"]) -> None:
         self.runtime = runtime_obj
         self.tick = 0
@@ -1139,6 +1147,7 @@ class StageRunner:
         )
         self.outcome = self.scheduler.run()
         self.world_state.snapshot = self.outcome.snapshot
+        self.world_state.tick = self.scheduler.world.tick
         return self.world_state
 
     def ready_items(

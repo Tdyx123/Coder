@@ -14,6 +14,176 @@ from tests.snapshot_fakes import FakeRuntime
 
 
 class StageSchedulerTest(unittest.TestCase):
+    def test_retry_preserves_one_idle_pass_before_wait_timeout(self):
+        from executor_system.action_resources import manager_for
+        for policy in ('legacy', 'strict'):
+            for failure in ('RETRY', 'WAIT_AND_RETRY'):
+                for wait_kind in ('condition', 'resource'):
+                    with self.subTest(policy=policy, failure=failure, wait_kind=wait_kind):
+                        runtime = FakeRuntime()
+                        runtime.objects = [{'objectId': 'Mug|1', 'objectType': 'Mug'}]
+                        calls, passes, blockers, wait_ticks_before_pass, progress_ticks = [], [], [], [], []
+                        ready = threading.Event()
+                        ready.set()
+                        def condition(world):
+                            if wait_kind == 'resource' and calls and not passes and not blockers:
+                                blockers.append(manager_for(runtime).try_acquire('peer', ('Mug|1',)))
+                            return wait_kind == 'resource' or ready.is_set()
+                        original_step = runtime.step
+                        def step(payload, **kwargs):
+                            wait_ticks_before_pass.append(runtime.stage_scheduler.executors['robot1'].state.wait_ticks)
+                            passes.append(payload['action'])
+                            ready.set()
+                            for lease in blockers:
+                                lease.release()
+                            return original_step(payload, **kwargs)
+                        runtime.step = step
+                        def execute(adapter, robot, action, **kwargs):
+                            calls.append(len(passes))
+                            progress_ticks.append(kwargs['world_state'].tick)
+                            if len(calls) == 1:
+                                ready.clear()
+                                raise RuntimeError('transient failure')
+                        action = Action('Teleport', {'object_resources': ['Mug|1']},
+                            wait_until=condition, on_failure=failure, max_retries=1, timeout_ticks=1)
+                        try:
+                            with patch.object(AI2ThorAdapter, 'execute', execute):
+                                report = run_action_plan_tolerant(runtime, TaskPlan('retry', [
+                                    StagePlan('s', {'robot1': [action]})]),
+                                    timeout_seconds=.5, execution_policy=policy)
+                            self.assertEqual(report['execution_status'], 'completed')
+                            self.assertEqual(calls, [0, 1])
+                            self.assertEqual(passes, ['Pass'])
+                            self.assertEqual(wait_ticks_before_pass, [0])
+                            self.assertEqual(progress_ticks, [0, 0])
+                            self.assertEqual(report['action_counts']['attempts'], 2)
+                            self.assertEqual(report['actions'][0]['attempts'], 2)
+                        finally:
+                            for lease in blockers:
+                                if lease is not None:
+                                    lease.release()
+
+    def test_admission_failure_after_attempt_keeps_reports_consistent(self):
+        from executor_system.action_resources import ResourceBindingDeferred
+        for policy in ('legacy', 'strict'):
+            for next_failure in ('condition_timeout', 'missing_resource', 'deferred_missing_resource'):
+                with self.subTest(policy=policy, next_failure=next_failure):
+                    runtime = FakeRuntime()
+                    runtime.objects = [{'objectId': 'Mug|1', 'objectType': 'Mug'}]
+                    calls = []
+                    def execute(adapter, robot, action, **kwargs):
+                        if action.action_type == 'WaitUntil':
+                            return
+                        calls.append(action.action_type)
+                        if next_failure != 'condition_timeout':
+                            runtime.objects = []
+                        if next_failure == 'deferred_missing_resource':
+                            raise ResourceBindingDeferred('target disappeared before submission')
+                        raise RuntimeError('first execution failed')
+                    action = Action('Teleport', {'object_resources': ['Mug|1']},
+                        wait_until=lambda w: next_failure != 'condition_timeout' or not calls,
+                        timeout_ticks=1, on_failure='RETRY', max_retries=1)
+                    # A deferred attempt consumes no retry allowance. Its first
+                    # admission failure is retried once, then fails admission again.
+                    expected_attempts = 3 if next_failure == 'deferred_missing_resource' else 2
+                    with patch.object(AI2ThorAdapter, 'execute', execute):
+                        report = run_action_plan_tolerant(runtime, TaskPlan('attempts', [
+                            StagePlan('s', {'robot1': [action, Action('WaitUntil')]})]),
+                            timeout_seconds=.5, execution_policy=policy)
+                    final = report['actions'][0]
+                    attempts = [r for r in report['stages'][0]['attempts']
+                                if r['action_key'] == final['action_key']]
+                    self.assertEqual(calls, ['Teleport'])
+                    self.assertEqual(final['attempts'], expected_attempts)
+                    self.assertEqual(attempts[-1]['attempts'], expected_attempts)
+                    self.assertEqual([r['attempts'] for r in attempts if r['status'] != 'deferred'],
+                                     [2, 3] if next_failure == 'deferred_missing_resource' else [1, 2])
+                    self.assertEqual(report['action_counts']['attempts'],
+                                     expected_attempts + (policy == 'legacy'))
+                    self.assertEqual(report['action_counts']['planned'], 2)
+                    self.assertEqual(report['actions'][1]['attempts'], int(policy == 'legacy'))
+                    self.assertEqual(runtime.action_resource_manager.holders(), {})
+
+    def test_no_deadline_dependency_cycle_external_watchdog_cleans_workers(self):
+        from executor_system.execution_control import install_control, ExecutionCancelled
+        from executor_system.stage_scheduler import StageScheduler
+        for mode in ('step', 'teleport'):
+            with self.subTest(mode=mode):
+                runtime = FakeRuntime()
+                runtime.movement_config = MovementConfig.resolve(mode)
+                root = install_control(runtime, None)
+                first_pass, finish_watchdog = threading.Event(), threading.Event()
+                completed = {robot: threading.Event() for robot in ('robot1', 'robot2')}
+                stage = StagePlan('cycle', {
+                    'robot1': [Action('Wait', wait_until=lambda w: completed['robot2'].is_set())],
+                    'robot2': [Action('Wait', wait_until=lambda w: completed['robot1'].is_set())],
+                })
+                scheduler = StageScheduler(runtime, stage, control=root.child(), policy='legacy')
+                workers, errors, executed = [], [], []
+                for executor in scheduler.executors.values():
+                    original_execute = executor.execute
+                    def capture_worker(original_execute=original_execute):
+                        workers.append(threading.current_thread())
+                        return original_execute()
+                    executor.execute = capture_worker
+                original_step = runtime.step
+                def step(payload, **kwargs):
+                    event = original_step(payload, **kwargs)
+                    first_pass.set()
+                    return event
+                runtime.step = step
+                def execute(adapter, robot, action, **kwargs):
+                    executed.append(robot)
+                    completed[robot].set()
+                def run():
+                    try:
+                        scheduler.run()
+                    except BaseException as exc:
+                        errors.append(exc)
+                def watchdog():
+                    first_pass.wait(.5)
+                    if not finish_watchdog.is_set():
+                        root.cancel('external dependency watchdog')
+                task = threading.Thread(target=run, daemon=True)
+                watcher = threading.Thread(target=watchdog, daemon=True)
+                try:
+                    with patch.object(AI2ThorAdapter, 'execute', execute):
+                        task.start()
+                        watcher.start()
+                        task.join(1)
+                        self.assertFalse(task.is_alive(), 'external cancellation did not stop cycle')
+                        self.assertTrue(first_pass.is_set())
+                        self.assertIsNone(root.deadline)
+                        self.assertIsNone(scheduler.control.deadline)
+                        self.assertEqual(len(errors), 1)
+                        self.assertIsInstance(errors[0], ExecutionCancelled)
+                        self.assertEqual(executed, [])
+                        self.assertEqual(scheduler.world.tick, 0)
+                        self.assertTrue(runtime.execution_quiescent)
+                        self.assertEqual(len(workers), 2)
+                        self.assertTrue(all(not worker.is_alive() for worker in workers))
+                        self.assertEqual(runtime.action_resource_manager.holders(), {})
+                        robots = scheduler.report['diagnostics']['robots']
+                        self.assertEqual(set(robots), {'robot1', 'robot2'})
+                        self.assertTrue(all(r['status'] == 'WAITING_CONDITION' and r['cursor'] == 0
+                                            for r in robots.values()))
+                        self.assertTrue(all(r['attempts'] == 0 for r in scheduler.report['actions']))
+                finally:
+                    finish_watchdog.set()
+                    first_pass.set()
+                    root.cancel('test cleanup')
+                    scheduler.control.cancel('test cleanup')
+                    with scheduler.condition:
+                        scheduler.condition.notify_all()
+                    for mailbox in scheduler.mailboxes.values():
+                        mailbox.put(None)
+                    deadline = time.monotonic() + 1
+                    for thread in (task, watcher, *workers):
+                        if thread.ident is not None:
+                            thread.join(max(0, deadline - time.monotonic()))
+                    self.assertFalse(any(t.is_alive() for t in (task, watcher, *workers)),
+                                     'test cleanup left a thread running')
+
     def run_bounded(self, runtime, plan, execute, timeout=0.35):
         result, errors = [], []
         def run():
