@@ -41,6 +41,7 @@ from .movement import (
     NavigationResult,
 )
 from .utils import log
+from .execution_control import ensure_control, raise_if_execution_aborted
 
 
 GOTO_CANDIDATE_WAIT_SECONDS = 0.1
@@ -87,7 +88,8 @@ class PhaseCoordinator:
         self.completed_agent_ids: Set[int] = set(self.all_agent_ids - self.active_agent_ids)
         self.failed_agent_errors: Dict[int, BaseException] = {}
         self.relocating_agent_ids: Set[int] = set()
-        self.deadline = deadline
+        self.control = ensure_control(runtime, deadline)
+        self.deadline = self.control.deadline
         self.timeout_error_factory = timeout_error_factory
         movement_config = getattr(runtime, "movement_config", None)
         movement_mode = getattr(movement_config, "mode", None)
@@ -407,12 +409,7 @@ class PhaseCoordinator:
         return min(GOTO_CANDIDATE_WAIT_SECONDS, remaining)
 
     def _raise_if_deadline_expired(self) -> None:
-        if self.deadline is None or time.monotonic() < self.deadline:
-            return
-        message = "GoToObject candidate wait exceeded timeout."
-        if self.timeout_error_factory is not None:
-            raise self.timeout_error_factory(message)
-        raise TimeoutError(message)
+        self.control.check()
 
     def _raise_if_failed_locked(self) -> None:
         if not self.failed_agent_errors:
@@ -454,6 +451,7 @@ class Executor:
         self.agent_phase_done = set()
         self.phase_coordinator = phase_coordinator
         self.stage_index = int(stage_index)
+        self.control = phase_coordinator.control if phase_coordinator else ensure_control(runtime)
 
     def start(self) -> None:
         """Compatibility hook for the removed central worker."""
@@ -479,6 +477,7 @@ class Executor:
         try:
             return self._execute_queue()
         except BaseException as exc:
+            self.control.cancel(str(exc))
             if self.phase_coordinator is not None:
                 self.phase_coordinator.mark_agent_failed(agent_id, exc)
             raise
@@ -489,6 +488,7 @@ class Executor:
 
         tick = 0
         while not self.state.finished():
+            self.control.check()
             action = self.state.next_action()
             if action is None:
                 break
@@ -507,11 +507,13 @@ class Executor:
                 self.state.status = ROBOT_EXECUTING
                 action_wave = self.before_action(action)
                 event = self.execute_action(action, action_wave=action_wave)
+                self.control.check()
                 self.record_temperature_goal_progress()
             except NavigationDeferred:
                 tick += 1
                 continue
             except BaseException as exc:
+                raise_if_execution_aborted(self.runtime, exc)
                 if self.phase_coordinator is not None and action_wave is not None:
                     self.phase_coordinator.abort_action_wave(
                         action_wave,
@@ -549,6 +551,7 @@ class Executor:
             return
 
         while True:
+            self.control.check()
             self.world_state.refresh([self.state])
             if action.wait_until(self.world_state):
                 return
@@ -612,9 +615,12 @@ class Executor:
                 getattr(self.runtime, "evaluation_context", None),
             )
         except Exception as exc:
+            raise_if_execution_aborted(self.runtime, exc)
             log(f"Skipping HOT/COLD ground-truth check: {exc}")
 
     def handle_failure(self, action: Action, exc: BaseException, tick: int) -> bool:
+        raise_if_execution_aborted(self.runtime, exc)
+        self.control.check()
         action_key = action.stable_id(self.robot_id, self.state.action_cursor)
         retries = self.state.retries_by_action.get(action_key, 0)
 

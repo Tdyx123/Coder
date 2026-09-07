@@ -34,6 +34,7 @@ from .config import (
     SceneObjectFootprint,
 )
 from .evaluation import EvaluationContext, GoalSpec
+from .execution_control import (ensure_control, ExecutionShutdownTimeout, raise_if_execution_aborted, close_runtime)
 from .dependencies import CloudRendering, Controller, cv2, require_dependencies
 from .goals import (
     format_goal,
@@ -255,8 +256,9 @@ class ThorRuntime:
             # self.validate_physical_agent_count()
             log("Initializing AI2-THOR scene.")
             self.initialize_scene()
-        except Exception:
-            self.stop()
+        except BaseException:
+            self.cleanup_errors = []
+            close_runtime(self, self.cleanup_errors)
             raise
 
     def resolve_physical_agent_count(self) -> int:
@@ -571,7 +573,8 @@ class ThorRuntime:
                     check_success=False,
                     save_frame=save_frame,
                 )
-            except BaseException:
+            except BaseException as exc:
+                raise_if_execution_aborted(self, exc)
                 if retry_on_failure and attempts <= max_retries:
                     self.log_retry(payload, attempts, max_retries)
                     continue
@@ -613,8 +616,15 @@ class ThorRuntime:
             action = payload.get("action")
             if action:
                 self.navigation_metrics.record_action(str(action))
-        with self.controller_lock: 
-            event = self.controller.step(dict(payload))
+        control = ensure_control(self)
+        control.check()
+        with self.controller_lock:
+            control.check()
+            try:
+                event = self.controller.step(dict(payload))
+            except BaseException as exc:
+                control.cancel(str(exc))
+                raise
             if check_success:
                 self.assert_success(event, payload)
             if save_frame:
@@ -922,7 +932,8 @@ class ThorRuntime:
             return None
         try:
             candidates = list(objects) if objects is not None else self.current_objects(agent_id)
-        except Exception:
+        except Exception as exc:
+            raise_if_execution_aborted(self, exc)
             return None
         for obj in candidates:
             if str(obj.get("objectId") or "") == object_id_text:
@@ -1074,7 +1085,8 @@ class ThorRuntime:
         if candidates is None:
             try:
                 candidates = self.current_objects(agent_id)
-            except Exception:
+            except Exception as exc:
+                raise_if_execution_aborted(self, exc)
                 candidates = []
 
         if transform is None:
@@ -1873,7 +1885,8 @@ class ThorRuntime:
                 agent_id=agent_id,
                 block_other_agents=False,
             )
-        except RuntimeError:
+        except RuntimeError as exc:
+            raise_if_execution_aborted(self, exc)
             return False
         return True
 
@@ -1923,7 +1936,8 @@ class ThorRuntime:
                 agent_id=agent_id,
                 block_other_agents=True,
             )
-        except RuntimeError:
+        except RuntimeError as exc:
+            raise_if_execution_aborted(self, exc)
             if not self.static_grid_path_exists(
                 start_position,
                 target_position,
@@ -2004,7 +2018,8 @@ class ThorRuntime:
                 agent_id=agent_id,
                 block_other_agents=True,
             )
-        except RuntimeError:
+        except RuntimeError as exc:
+            raise_if_execution_aborted(self, exc)
             if self.static_grid_path_exists(
                 start_position,
                 target_position,
@@ -2054,6 +2069,7 @@ class ThorRuntime:
                     check_success=True,
                 )
             except RuntimeError as exc:
+                raise_if_execution_aborted(self, exc)
                 if not self.held_item_rotation_failure(exc):
                     raise
                 opposite_action = (
@@ -2099,7 +2115,8 @@ class ThorRuntime:
             return None
         try:
             blocker = self.find_object(match.group("object_name"), agent_id=agent_id)
-        except RuntimeError:
+        except RuntimeError as exc:
+            raise_if_execution_aborted(self, exc)
             return None
         if not blocker.get("openable") or not blocker.get("isOpen"):
             return None
@@ -2210,7 +2227,8 @@ class ThorRuntime:
                             priority_agent_id,
                             priority_target_position,
                         )
-                    except RuntimeError:
+                    except RuntimeError as exc:
+                        raise_if_execution_aborted(self, exc)
                         remaining_blockers = {blocker_agent_id}
                 else:
                     remaining_blockers = self.target_position_blockers(
@@ -2363,7 +2381,8 @@ class ThorRuntime:
                     to_agent_id,
                     target_position,
                 )
-        except RuntimeError:
+        except RuntimeError as exc:
+            raise_if_execution_aborted(self, exc)
             pass
         self.move_to_position_direct(
             to_agent_id,
@@ -2548,6 +2567,7 @@ class ThorRuntime:
                     restrict_to_candidate_positions=restrict_to_candidate_positions,
                 )
             except RuntimeError as exc:
+                raise_if_execution_aborted(self, exc)
                 raise RuntimeError(f"{exc} Last teleport error: {last_error}") from exc
 
             event = self.try_teleport_to_position_direct(
@@ -2602,6 +2622,7 @@ class ThorRuntime:
                     restrict_to_candidate_positions=restrict_to_candidate_positions,
                 )
             except RuntimeError as exc:
+                raise_if_execution_aborted(self, exc)
                 raise RuntimeError(
                     "Could not teleport and face agent "
                     f"{agent_id} toward {face_target}: no candidate succeeded. "
@@ -2616,6 +2637,7 @@ class ThorRuntime:
                     max_retries=max_retries,
                 )
             except Exception as exc:
+                raise_if_execution_aborted(self, exc)
                 last_error = f"Teleport failed at {selected_position}: {exc}"
                 excluded_keys.add(selected_key)
                 log(
@@ -2646,6 +2668,7 @@ class ThorRuntime:
             try:
                 self.face_position_direct(agent_id, face_target)
             except Exception as exc:
+                raise_if_execution_aborted(self, exc)
                 last_error = f"Rotate failed at {selected_position}: {exc}"
                 excluded_keys.add(selected_key)
                 log(
@@ -2736,6 +2759,7 @@ class ThorRuntime:
                     allow_hand_preparation=False,
                 )
             except RuntimeError as exc:
+                raise_if_execution_aborted(self, exc)
                 log(
                     "Could not return directly to pickup target "
                     f"{target_object_id}: {exc}; returning to prior position."
@@ -2779,6 +2803,7 @@ class ThorRuntime:
                 )
                 event = self.put_held_object_in_receptacle(agent_id, receptacle)
             except RuntimeError as exc:
+                raise_if_execution_aborted(self, exc)
                 last_error = str(exc)
                 log(
                     f"Could not place held object {held_object} into "
@@ -2895,6 +2920,7 @@ class ThorRuntime:
         *,
         environ: Optional[Mapping[str, str]] = None,
     ) -> None:
+        ensure_control(self)
         if not hasattr(self, "_navigation_action_scope_state"):
             self._navigation_action_scope_state = threading.local()
             # Initialize before workers start: a controller-step lock alone cannot
@@ -2912,35 +2938,24 @@ class ThorRuntime:
 
     @contextmanager
     def action_deadline_scope(self, deadline=None, timeout_error_factory=None):
-        state = self._navigation_deadline_state
-        previous = getattr(state, "context", (None, None))
-        if previous[0] is not None and (deadline is None or previous[0] <= deadline):
-            state.context = previous
-        else:
-            state.context = (deadline, timeout_error_factory)
-        try:
-            yield
-        finally:
-            state.context = previous
+        # Deadlines tighten the shared task control and cannot be removed by
+        # leaving a helper scope. Cancellation is monotonic across robots.
+        control = ensure_control(self, deadline)
+        control.check()
+        yield
 
     def check_navigation_deadline(self) -> None:
-        deadline, factory = getattr(self._navigation_deadline_state, "context", (None, None))
-        if deadline is not None and time.monotonic() >= deadline:
-            raise (factory or TimeoutError)("Task plan deadline reached during navigation.")
+        ensure_control(self).check()
 
     @contextmanager
     def navigation_execution_scope(self):
-        """Lock order: navigation -> controller; never acquire while holding a wave condition."""
-        self.check_navigation_deadline()
-        deadline, factory = getattr(self._navigation_deadline_state, "context", (None, None))
-        if deadline is None:
-            self._navigation_execution_lock.acquire()
-        elif not self._navigation_execution_lock.acquire(
-            timeout=max(0.0, deadline - time.monotonic())
-        ):
-            raise (factory or TimeoutError)("Task plan deadline reached waiting for navigation.")
+        """Lock order: navigation -> controller; wave collection stays outside."""
+        control = ensure_control(self)
+        control.check()
+        while not self._navigation_execution_lock.acquire(timeout=0.05):
+            control.check()
         try:
-            self.check_navigation_deadline()
+            control.check()
             yield
         finally:
             self._navigation_execution_lock.release()
@@ -2964,6 +2979,7 @@ class ThorRuntime:
         phase_coordinator: Optional[Any] = None,
         action_wave: Optional[ActionWave] = None,
     ) -> NavigationRequest:
+        self.check_navigation_deadline()
         agent_id = self.physical_agent_id(robot)
         self.refresh_reachable_positions(agent_id)
         destination = self.find_object(
@@ -3002,6 +3018,7 @@ class ThorRuntime:
                 include_agent_positions=False,
             )[:TELEPORT_CANDIDATE_LIMIT]
         except RuntimeError as exc:
+            raise_if_execution_aborted(self, exc)
             raise NoInteractionPoseError(
                 "NO_INTERACTION_POSE: no reachable candidate for agent "
                 f"{agent_id} target {interaction_target!r}"
@@ -3087,7 +3104,8 @@ class ThorRuntime:
             self.record_operated_object_name(result.destination)
         except NavigationDeferred:
             raise
-        except Exception:
+        except Exception as exc:
+            raise_if_execution_aborted(self, exc)
             self.navigation_metrics.record_request_failed()
             raise
         self.navigation_metrics.record_request_succeeded()
@@ -3227,6 +3245,7 @@ class ThorRuntime:
             try:
                 self.teleport_to_position_direct(agent_id, target_position)
             except Exception as exc:
+                raise_if_execution_aborted(self, exc)
                 log(
                     "PickupObject clip backoff teleport failed for agent "
                     f"{agent_id} by {distance}: {exc}"
@@ -3240,6 +3259,7 @@ class ThorRuntime:
                     retry_on_failure=False,
                 )
             except Exception as exc:
+                raise_if_execution_aborted(self, exc)
                 if not is_pickup_object_clip_error(exc):
                     raise
                 log(
@@ -3271,7 +3291,8 @@ class ThorRuntime:
         if horizon is None:
             try:
                 metadata = self.agent_event(agent_id).metadata
-            except Exception:
+            except Exception as exc:
+                raise_if_execution_aborted(self, exc)
                 return None
             agent = metadata.get("agent", {}) if isinstance(metadata, dict) else {}
             horizon = agent.get("cameraHorizon")
@@ -3301,6 +3322,7 @@ class ThorRuntime:
                 retry_on_failure=False,
             )
         except Exception as exc:
+            raise_if_execution_aborted(self, exc)
             log(
                 f"{action_name} visibility look adjustment failed for agent "
                 f"{agent_id}: {exc}"
@@ -3352,6 +3374,7 @@ class ThorRuntime:
                         retry_on_failure=False,
                     )
                 except Exception as exc:
+                    raise_if_execution_aborted(self, exc)
                     if action == "PickupObject" and is_pickup_object_clip_error(exc):
                         retry_event = self.retry_pickup_after_clip_error(
                             agent_id,
@@ -3454,6 +3477,7 @@ class ThorRuntime:
                 except TimeoutError:
                     raise
                 except Exception as exc:
+                    raise_if_execution_aborted(self, exc)
                     log(
                         "SliceObject interaction reposition failed for agent "
                         f"{agent_id}: {exc}"
@@ -3469,6 +3493,7 @@ class ThorRuntime:
                         retry_on_failure=False,
                     )
                 except Exception as exc:
+                    raise_if_execution_aborted(self, exc)
                     if is_object_action_target_visibility_error(exc):
                         return initial_event
                     raise
@@ -3582,6 +3607,7 @@ class ThorRuntime:
                 retry_on_failure=False,
             )
         except Exception as exc:
+            raise_if_execution_aborted(self, exc)
             if action == "PickupObject" and is_pickup_object_clip_error(exc):
                 retry_event = self.retry_pickup_after_clip_error(agent_id, payload, None)
             elif (
@@ -3759,6 +3785,8 @@ class ThorRuntime:
         return context.evaluate_goal(self, goal_spec)["status"] == "satisfied"
 
     def evaluate(self, goals: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+        if not getattr(self, "execution_quiescent", True):
+            raise ExecutionShutdownTimeout("cannot evaluate a runtime with active workers")
         context = getattr(self, "evaluation_context", None)
         if context is None:
             context = EvaluationContext.from_goals(goals)
@@ -3817,6 +3845,8 @@ class ThorRuntime:
                 log(f"Warning: ffmpeg failed for {view}: {result.stderr.strip()}")
 
     def stop(self) -> None:
+        if not getattr(self, "execution_quiescent", True):
+            raise ExecutionShutdownTimeout("cannot stop a controller with active workers")
         if self.show_windows and cv2 is not None:
             cv2.destroyAllWindows()
         with self.controller_lock:

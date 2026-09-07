@@ -84,8 +84,10 @@ def failure_ignored_for_ratio(action: Action, exc: BaseException) -> bool:
     )
 
 
-class PlanExecutionTimeout(TimeoutError):
-    """Raised when the cooperative task-plan deadline is reached."""
+from .execution_control import (
+    PlanExecutionTimeout, ExecutionCancelled, install_control, run_workers,
+    raise_if_execution_aborted,
+)
 
 
 def write_result_json(path: Path, result: Dict[str, Any]) -> None:
@@ -229,7 +231,7 @@ class TolerantExecutor(Executor):
             return
 
         while True:
-            _check_deadline(self.deadline)
+            self.control.check()
             self.world_state.refresh([self.state])
             if action.wait_until(self.world_state):
                 return
@@ -252,7 +254,7 @@ class TolerantExecutor(Executor):
         tick = 0
         try:
             while not self.state.finished():
-                _check_deadline(self.deadline)
+                self.control.check()
                 action = self.state.next_action()
                 if action is None:
                     break
@@ -268,35 +270,19 @@ class TolerantExecutor(Executor):
                 action_wave = None
                 try:
                     self.wait_for_condition(action)
-                    _check_deadline(self.deadline)
+                    self.control.check()
                     action_wave = self.before_action(action)
                     event = self.execute_action(action, action_wave=action_wave)
+                    self.control.check()
                     self.record_temperature_goal_progress()
                 except NavigationDeferred:
                     self.stats.record_deferred()
                     tick += 1
                     continue
-                except PlanExecutionTimeout as exc:
-                    if self.phase_coordinator is not None and action_wave is not None:
-                        self.phase_coordinator.abort_action_wave(
-                            action_wave,
-                            self.runtime.physical_agent_id(self.robot_id),
-                            exc,
-                        )
-                    self.stats.record_failure(
-                        self.state.current_stage_id,
-                        self.robot_id,
-                        action,
-                        action_index,
-                        exc,
-                    )
-                    self.stats.action_ledger.record_terminal(
-                        ledger_key,
-                        "failed",
-                        ignored_for_legacy=failure_ignored_for_ratio(action, exc),
-                    )
+                except (PlanExecutionTimeout, ExecutionCancelled):
                     raise
                 except Exception as exc:
+                    raise_if_execution_aborted(self.runtime, exc)
                     if self.phase_coordinator is not None and action_wave is not None:
                         self.phase_coordinator.abort_action_wave(
                             action_wave,
@@ -336,6 +322,8 @@ class TolerantExecutor(Executor):
         tick: int,
         ledger_key: Optional[str] = None,
     ) -> bool:
+        raise_if_execution_aborted(self.runtime, exc)
+        self.control.check()
         action_key = action.stable_id(self.robot_id, self.state.action_cursor)
         retries = self.state.retries_by_action.get(action_key, 0)
 
@@ -441,43 +429,7 @@ class TolerantStageRunner:
             for robot_id, actions in stage.robot_action_queues.items()
         ]
 
-        timeout_errors: List[BaseException] = []
-        timeout_lock = threading.Lock()
-
-        def run_executor(executor: TolerantExecutor) -> None:
-            try:
-                executor.execute()
-            except PlanExecutionTimeout as exc:
-                with timeout_lock:
-                    timeout_errors.append(exc)
-
-        threads = [
-            threading.Thread(
-                target=run_executor,
-                args=(executor,),
-                name=f"{stage.stage_id}-{executor.robot_id}",
-                daemon=True,
-            )
-            for executor in executors
-        ]
-        for thread in threads:
-            thread.start()
-
-        for thread in threads:
-            if self.deadline is None:
-                thread.join()
-                continue
-            remaining = max(0.0, self.deadline - time.monotonic())
-            thread.join(timeout=remaining)
-
-        alive_threads = [thread.name for thread in threads if thread.is_alive()]
-        if alive_threads:
-            raise PlanExecutionTimeout(
-                "task-plan execution exceeded timeout with active robot threads: "
-                + ", ".join(alive_threads)
-            )
-        if timeout_errors:
-            raise PlanExecutionTimeout(str(timeout_errors[0]))
+        run_workers(self.runtime, executors, phase_coordinator, stage.stage_id)
 
         self.world_state.refresh([executor.state for executor in executors])
         return self.world_state
@@ -492,6 +444,7 @@ def run_action_plan_tolerant(
 ) -> Dict[str, Any]:
     """Run a task plan without letting one robot failure fail the whole plan."""
 
+    control = install_control(runtime_obj, timeout_seconds)
     plan = PlanLoader().load(raw_plan)
     planned_keys = [
         f"{stage_index}:{robot_id}:{cursor}"
@@ -500,17 +453,14 @@ def run_action_plan_tolerant(
         for cursor, _action in enumerate(actions)
     ]
     stats = TolerantRunStats(action_ledger=ActionLedger(planned_keys))
-    deadline = (
-        stats.start_time + float(timeout_seconds)
-        if timeout_seconds is not None and float(timeout_seconds) > 0
-        else None
-    )
+    runtime_obj.action_ledger = stats.action_ledger
+    deadline = control.deadline
     PlanValidator(runtime_obj).validate(plan)
     logger = logger or ExecutionLogger()
 
     try:
         for stage_index, stage in enumerate(plan.stages):
-            _check_deadline(deadline)
+            control.check()
             runner = TolerantStageRunner(
                 runtime_obj,
                 stats=stats,
@@ -526,7 +476,11 @@ def run_action_plan_tolerant(
                 raise RuntimeError(f"Global success condition failed for {plan.task_id}.")
     except PlanExecutionTimeout as exc:
         stats.record_timeout(str(exc))
-    return stats.to_dict()
+    finally:
+        runtime_obj.execution_report = stats.to_dict()
+        runtime_obj.action_metrics = {key: runtime_obj.execution_report[key] for key in
+                                     ('action_counts', 'raw_action_sr', 'ignored_failure_count')}
+    return runtime_obj.execution_report
 
 
 def default_baseline_root(base_line: str) -> Path:

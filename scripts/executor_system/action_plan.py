@@ -1085,8 +1085,6 @@ class StageRunner:
 
         from .executor import Executor, PhaseCoordinator
 
-        errors: List[Tuple[str, BaseException]] = []
-        errors_lock = threading.Lock()
         active_agent_ids = {
             self.runtime.physical_agent_id(robot_id)
             for robot_id in stage.robot_action_queues
@@ -1105,32 +1103,10 @@ class StageRunner:
             for robot_id, actions in stage.robot_action_queues.items()
         ]
 
-        def run_executor(executor: "Executor") -> None:
-            try:
-                executor.execute()
-            except BaseException as exc:
-                with errors_lock:
-                    errors.append((executor.robot_id, exc))
-
-        threads = [
-            threading.Thread(
-                target=run_executor,
-                args=(executor,),
-                name=f"{stage.stage_id}-{executor.robot_id}",
-            )
-            for executor in executors
-        ]
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join()
-
+        from .execution_control import run_workers
+        run_workers(self.runtime, executors, phase_coordinator, stage.stage_id)
         states = [executor.state for executor in executors]
         self.world_state.refresh(states)
-
-        if errors:
-            details = "; ".join(f"{robot_id}: {exc}" for robot_id, exc in errors)
-            raise RuntimeError(f"{stage.stage_id} failed: {details}")
 
         if stage.stage_success_condition is not None:
             self.world_state.refresh(states)
@@ -1184,7 +1160,11 @@ class TaskRunner:
     def execute(
         self,
         raw_plan: Union[MultiStageActionPlan, Dict[str, Any]],
+        *,
+        timeout_seconds: Optional[float] = None,
     ) -> WorldState:
+        from .execution_control import install_control
+        control = install_control(self.runtime, timeout_seconds)
         plan = self.loader.load(raw_plan)
         self.validator.validate(plan)
         from .run_results import ActionLedger
@@ -1199,6 +1179,7 @@ class TaskRunner:
         world_state = WorldState(self.runtime)
         try:
             for stage_index, stage in enumerate(plan.stages):
+                control.check()
                 executor = StageRunner(
                     self.runtime,
                     logger=self.logger,

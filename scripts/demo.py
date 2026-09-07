@@ -8,6 +8,7 @@ import json
 import re
 import sys
 import types
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Sequence
 
@@ -26,6 +27,10 @@ from executor_system import dependencies as _dependencies
 from executor_system import runtime as _runtime_module
 from executor_system.config import CLOUD_RENDERING, RENDER_IMAGE
 from executor_system.evaluation import EvaluationContext
+from executor_system.generated_plan_runtime import (
+    build_runner_result, record_execution_error, finalize_runner_result, runner_identity,
+    close_standalone_runtime,
+)
 from executor_system.pddlrun_adapter import build_task_plan_from_pddlrun_paths
 from executor_system.runtime import ThorRuntime
 from executor_system.task_plan import run_action_plan
@@ -163,6 +168,8 @@ def main() -> int:
     runtime.evaluation_context = EvaluationContext.from_goals(ground_truth)
     runtime.register_object_id_bindings(bundle.object_id_bindings)
     _context.runtime = runtime
+    start_time = time.monotonic()
+    failure_result = None
     try:
         run_action_plan(bundle.task_plan)
         runtime.step({"action": "Done"}, check_success=False)
@@ -191,10 +198,21 @@ def main() -> int:
         runtime.generate_video()
         runtime.write_final_metadata()
         return 0
+    except BaseException as exc:
+        failure_result = build_runner_result('failed', start_time)
+        failure_result.update(runner_identity(__file__, TASK_INDEX))
+        record_execution_error(failure_result, exc, runtime)
+        raise
     finally:
-        runtime.stop()
-        runtime = None
-        _context.runtime = None
+        try:
+            if failure_result is not None:
+                finalize_runner_result(runtime, failure_result, start_time,
+                                       Path(__file__).with_name('parallel_run_result.json'))
+            else:
+                close_standalone_runtime(runtime, start_time, __file__, TASK_INDEX)
+        finally:
+            runtime = None
+            _context.runtime = None
 
 
 class _Demo2Facade(types.ModuleType):

@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from executor_system.action_plan import Action
 from executor_system.executor import Executor, PhaseCoordinator
 from executor_system.parallel_runner import PlanExecutionTimeout
+from executor_system.execution_control import install_control
 from executor_system.runtime import ThorRuntime
 from tests.movement_fakes import GridThorRuntime
 
@@ -213,7 +214,11 @@ class NavigationExecutionScopeTests(unittest.TestCase):
             release_slice.set()
             self.finish_workers([thread])
         self.assertEqual(errors, [])
-        # Both the expired action context and the recursion marker must be gone.
+        # Scope exit cannot revive a cancelled task. A new task may reuse the
+        # controller only after all workers have stopped.
+        with self.assertRaises(PlanExecutionTimeout):
+            self.recover(runtime, 1)
+        install_control(runtime, None)
         self.assertIsNotNone(self.recover(runtime, 1))
         self.assertEqual(grid.positions[1], position(0.5, 1))
 
@@ -281,6 +286,9 @@ class NavigationExecutionScopeTests(unittest.TestCase):
         self.assertEqual(grid.successful_move_count, 1)
         self.assertEqual(grid.positions[0], position(0.25))
         runtime.move_to_adjacent_position_direct = original_move
+        with self.assertRaises(PlanExecutionTimeout):
+            self.recover(runtime, 1)
+        install_control(runtime, None)
         errors = []
         thread = self.start_worker(lambda: self.recover(runtime, 1), errors)
         self.finish_workers([thread])

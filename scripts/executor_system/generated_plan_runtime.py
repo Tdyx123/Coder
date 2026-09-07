@@ -18,6 +18,10 @@ from executor_system import demo_state as _demo_state
 from executor_system.action_plan import TaskPlan
 from executor_system.config import CLOUD_RENDERING, RENDER_IMAGE
 from executor_system.evaluation import EvaluationContext
+from executor_system.execution_control import (
+    ExecutionCancelled, ExecutionShutdownTimeout, PlanExecutionTimeout,
+    close_runtime, error_record,
+)
 from executor_system.movement import MovementConfig
 from executor_system.parallel_runner import (
     TolerantRunStats,
@@ -169,7 +173,78 @@ def build_runner_result(status: str, start_time: float) -> Dict[str, Any]:
         "execution_status": "failed",
         "evaluation_status": "incomplete",
         "task_success": None,
+        "original_goal_count": None,
+        "satisfied_goal_count": None,
+        "worker_errors": [],
+        "cleanup_errors": [],
+        "phase_durations_seconds": {name: 0.0 for name in
+                                    ("startup", "execution", "evaluation", "cleanup")},
     }
+
+
+def record_execution_error(result, exc, runtime=None):
+    report = getattr(runtime, 'execution_report', {}) if runtime is not None else {}
+    result.update(report)
+    cause = exc
+    timed_out = bool(report.get('timed_out'))
+    while cause is not None:
+        timed_out = timed_out or isinstance(cause, PlanExecutionTimeout)
+        cause = cause.__cause__
+    status = 'timeout' if timed_out else ('cancelled' if isinstance(exc, (ExecutionCancelled, KeyboardInterrupt, SystemExit)) else 'failed')
+    result.update(status=status, process_status=status, execution_status=status,
+                  evaluation_status='incomplete', task_success=None,
+                  error=str(exc), timed_out=timed_out, action_sr=None)
+    for key in ('gcr', 'tc', 'sr', 'ru', 'satisfied_goal_count'):
+        result[key] = None
+    return 124 if timed_out else 1
+
+
+def finalize_runner_result(runtime, result, start_time, metrics_path):
+    cleanup_start = time.monotonic()
+    try:
+        if runtime is not None:
+            result['worker_errors'] = list(getattr(runtime, 'worker_errors', []))
+            result.update(getattr(runtime, 'action_metrics', {}))
+            context = getattr(runtime, 'evaluation_context', None)
+            if context is not None:
+                result['original_goal_count'] = len(context.goals)
+            try:
+                result['movement_mode'] = runtime.movement_config.mode.value
+                result['navigation_metrics'] = runtime.navigation_metrics.to_dict()
+            except Exception as exc:
+                result['cleanup_errors'].append(error_record(exc, phase='cleanup'))
+            close_runtime(runtime, result['cleanup_errors'])
+    finally:
+        _context.runtime = None
+        result['phase_durations_seconds']['cleanup'] = time.monotonic() - cleanup_start
+        result['run_time_seconds'] = time.monotonic() - start_time
+        write_result_json(metrics_path, result)
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+
+
+def close_standalone_runtime(runtime, start_time, script_file, task_index):
+    cleanup_start = time.monotonic()
+    errors = []
+    try:
+        close_runtime(runtime, errors)
+    finally:
+        _context.runtime = None
+    if errors:
+        # Ordinary entrypoints must also leave an artifact when closing fails.
+        result = build_runner_result('failed', start_time)
+        result.update(runner_identity(script_file, task_index))
+        failure = RuntimeError(errors[0]['message'])
+        record_execution_error(result, failure, runtime)
+        result.update(getattr(runtime, 'action_metrics', {}))
+        result['worker_errors'] = list(getattr(runtime, 'worker_errors', []))
+        result['cleanup_errors'] = errors
+        result['phase_durations_seconds']['cleanup'] = time.monotonic() - cleanup_start
+        result['run_time_seconds'] = time.monotonic() - start_time
+        context = getattr(runtime, 'evaluation_context', None)
+        if context is not None:
+            result['original_goal_count'] = len(context.goals)
+        write_result_json(runner_metrics_path('', script_file), result)
+        raise failure
 
 
 def runner_identity(script_file: str, task_index: int) -> Dict[str, Any]:
@@ -208,7 +283,12 @@ def run_standalone(
     task_file: str,
     task_index: int,
     movement_mode: Optional[str] = None,
+    timeout_seconds: Optional[float] = None,
+    script_file: Optional[str] = None,
 ) -> int:
+    start_time = time.monotonic()
+    failure_result = None
+    script_file = script_file or __file__
     task_record, floor_no, robots, ground_truth, bundle = _runtime_inputs(
         bundle_data,
         task_file,
@@ -234,9 +314,11 @@ def run_standalone(
     _context.runtime = runtime
     try:
         if bundle.task_plan.stages:
-            run_action_plan(bundle.task_plan)
+            run_action_plan(bundle.task_plan, timeout_seconds=effective_timeout_seconds(
+                runtime.movement_config.mode.value, timeout_seconds))
         elif not bundle.noop_subtasks:
-            run_action_plan(bundle.task_plan)
+            run_action_plan(bundle.task_plan, timeout_seconds=effective_timeout_seconds(
+                runtime.movement_config.mode.value, timeout_seconds))
         runtime.step({"action": "Done"}, check_success=False)
 
         metrics = runtime.evaluate(ground_truth)
@@ -263,9 +345,17 @@ def run_standalone(
         runtime.generate_video()
         runtime.write_final_metadata()
         return 0
+    except BaseException as exc:
+        failure_result = build_runner_result('failed', start_time)
+        failure_result.update(runner_identity(script_file, task_index))
+        record_execution_error(failure_result, exc, runtime)
+        raise
     finally:
-        runtime.stop()
-        _context.runtime = None
+        if failure_result is not None:
+            finalize_runner_result(runtime, failure_result, start_time,
+                                   runner_metrics_path('', script_file))
+        else:
+            close_standalone_runtime(runtime, start_time, script_file, task_index)
 
 
 def run_runner_mode(
@@ -281,6 +371,9 @@ def run_runner_mode(
     result.update(runner_identity(script_file, task_index))
     return_code = 1
     runtime = None
+    interrupt = None
+    phase = "startup"
+    phase_start = start_time
 
     try:
         resolved_movement = MovementConfig.resolve(args.movement_mode)
@@ -309,6 +402,8 @@ def run_runner_mode(
         result["navigation_metrics"] = runtime.navigation_metrics.to_dict()
         runtime.register_object_id_bindings(bundle.object_id_bindings)
         _context.runtime = runtime
+        result['phase_durations_seconds'][phase] = time.monotonic() - phase_start
+        phase, phase_start = 'execution', time.monotonic()
 
         if bundle.task_plan.stages or not bundle.noop_subtasks:
             execution_report = run_action_plan_tolerant(
@@ -322,10 +417,15 @@ def run_runner_mode(
         else:
             execution_report = TolerantRunStats().to_dict()
         result.update(execution_report)
+        if execution_report.get('timed_out'):
+            raise PlanExecutionTimeout(execution_report.get('timeout_message', 'execution timed out'))
+        result['phase_durations_seconds'][phase] = time.monotonic() - phase_start
+        phase, phase_start = 'evaluation', time.monotonic()
         try:
             runtime.step({"action": "Done"}, check_success=False, save_frame=False)
         except RuntimeError as exc:
             result["done_error"] = str(exc)
+            raise
 
         metrics = runtime.evaluate(ground_truth)
         no_trans_gt = int(task_record.get("trans", 0) or 0)
@@ -374,27 +474,16 @@ def run_runner_mode(
             }
         )
         return_code = 124 if result.get("timed_out") else 0
-    except Exception as exc:
-        result.update(
-            {
-                "status": "failed",
-                "process_status": "failed",
-                "execution_status": "failed",
-                "evaluation_status": "incomplete",
-                "task_success": None,
-                "error": str(exc),
-            }
-        )
-        return_code = 1
+    except BaseException as exc:
+        return_code = record_execution_error(result, exc, runtime)
+        if not isinstance(exc, Exception):
+            interrupt = (exc, exc.__traceback__)
     finally:
-        if runtime is not None:
-            result["movement_mode"] = runtime.movement_config.mode.value
-            result["navigation_metrics"] = runtime.navigation_metrics.to_dict()
-            runtime.stop()
-        _context.runtime = None
-        result["run_time_seconds"] = time.monotonic() - start_time
-        write_result_json(metrics_path, result)
-        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+        result['phase_durations_seconds'][phase] = time.monotonic() - phase_start
+        finalize_runner_result(runtime, result, start_time, metrics_path)
+
+    if interrupt is not None:
+        raise interrupt[0].with_traceback(interrupt[1])
 
     return return_code
 
@@ -414,4 +503,6 @@ def main(
         task_file,
         task_index,
         movement_mode=args.movement_mode,
+        timeout_seconds=args.timeout_seconds,
+        script_file=script_file,
     )

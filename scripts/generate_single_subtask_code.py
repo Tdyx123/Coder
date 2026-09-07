@@ -1066,7 +1066,12 @@ from executor_system import demo_state as _demo_state
 from executor_system.action_plan import TaskPlan
 from executor_system.config import CLOUD_RENDERING, RENDER_IMAGE
 from executor_system.evaluation import EvaluationContext
-from executor_system.parallel_runner import run_action_plan_tolerant, write_result_json
+from executor_system.parallel_runner import run_action_plan_tolerant, write_result_json, effective_timeout_seconds
+from executor_system.execution_control import PlanExecutionTimeout
+from executor_system.generated_plan_runtime import (
+    build_runner_result as shared_build_runner_result, record_execution_error,
+    finalize_runner_result, runner_identity, close_standalone_runtime,
+)
 from executor_system.runtime import ThorRuntime
 from executor_system.task_plan import run_action_plan
 
@@ -1195,8 +1200,8 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--timeout-seconds",
         type=float,
-        default=DEFAULT_RUNNER_TIMEOUT_SECONDS,
-        help="Runner-mode total timeout in seconds.",
+        default=None,
+        help="Execution budget; defaults to 120s for step and 30s for teleport.",
     )
     return parser.parse_args(argv)
 
@@ -1208,23 +1213,12 @@ def runner_metrics_path(raw_path: str) -> Path:
 
 
 def build_runner_result(status: str, start_time: float) -> Dict[str, Any]:
-    return {{
-        "status": status,
-        "timed_out": False,
-        "timeout_message": "",
-        "run_time_seconds": time.monotonic() - start_time,
-        "gcr": None,
-        "tc": None,
-        "sr": None,
-        "ru": None,
-        "executed_actions": 0,
-        "failed_actions": 0,
-        "failure_action_ratio": 0.0,
-        "robot_failures": [],
-    }}
+    result = shared_build_runner_result(status, start_time)
+    result.update(runner_identity(__file__, TASK_INDEX))
+    return result
 
 
-def run_standalone() -> int:
+def run_standalone(timeout_seconds=None) -> int:
     global floor_no, ground_truth, robots, runtime
 
     task_record = load_task_record(TASK_FILE, TASK_INDEX)
@@ -1243,8 +1237,13 @@ def run_standalone() -> int:
     runtime.evaluation_context = EvaluationContext.from_goals(ground_truth)
     runtime.register_object_id_bindings(bundle.object_id_bindings)
     _context.runtime = runtime
+    start_time = time.monotonic()
+    failure_result = None
     try:
-        run_action_plan(bundle.task_plan)
+        if timeout_seconds is None:
+            run_action_plan(bundle.task_plan)
+        else:
+            run_action_plan(bundle.task_plan, timeout_seconds=timeout_seconds)
         runtime.step({{"action": "Done"}}, check_success=False)
 
         metrics = runtime.evaluate(ground_truth)
@@ -1271,10 +1270,19 @@ def run_standalone() -> int:
         runtime.generate_video()
         runtime.write_final_metadata()
         return 0
+    except BaseException as exc:
+        failure_result = build_runner_result('failed', start_time)
+        record_execution_error(failure_result, exc, runtime)
+        raise
     finally:
-        runtime.stop()
-        runtime = None
-        _context.runtime = None
+        try:
+            if failure_result is not None:
+                finalize_runner_result(runtime, failure_result, start_time, runner_metrics_path(''))
+            else:
+                close_standalone_runtime(runtime, start_time, __file__, TASK_INDEX)
+        finally:
+            runtime = None
+            _context.runtime = None
 
 
 def run_runner_mode(args: argparse.Namespace) -> int:
@@ -1284,6 +1292,8 @@ def run_runner_mode(args: argparse.Namespace) -> int:
     metrics_path = runner_metrics_path(args.metrics_output)
     result = build_runner_result("failed", start_time)
     return_code = 1
+    interrupt = None
+    phase, phase_start = 'startup', start_time
 
     try:
         task_record = load_task_record(TASK_FILE, TASK_INDEX)
@@ -1301,16 +1311,26 @@ def run_runner_mode(args: argparse.Namespace) -> int:
         runtime.register_object_id_bindings(bundle.object_id_bindings)
         _context.runtime = runtime
 
+        result['phase_durations_seconds'][phase] = time.monotonic() - phase_start
+        phase, phase_start = 'execution', time.monotonic()
         execution_report = run_action_plan_tolerant(
             runtime,
             bundle.task_plan,
-            timeout_seconds=args.timeout_seconds,
+            timeout_seconds=effective_timeout_seconds(
+                getattr(getattr(runtime, 'movement_config', None), 'mode', 'step'),
+                args.timeout_seconds,
+            ),
         )
         result.update(execution_report)
+        if execution_report.get('timed_out'):
+            raise PlanExecutionTimeout(execution_report.get('timeout_message', 'execution timed out'))
+        result['phase_durations_seconds'][phase] = time.monotonic() - phase_start
+        phase, phase_start = 'evaluation', time.monotonic()
         try:
             runtime.step({{"action": "Done"}}, check_success=False, save_frame=False)
         except RuntimeError as exc:
             result["done_error"] = str(exc)
+            raise
 
         metrics = runtime.evaluate(ground_truth)
         no_trans_gt = int(task_record.get("trans", 0) or 0)
@@ -1323,7 +1343,9 @@ def run_runner_mode(args: argparse.Namespace) -> int:
         )
         result.update(
             {{
-                "status": "timeout" if execution_report.get("timed_out") else "success",
+                "status": "success",
+                "process_status": "completed",
+                "execution_status": "partial" if execution_report.get('action_counts', {{}}).get('failed', 0) else "completed",
                 "gcr": metrics["gcr"],
                 "tc": metrics["tc"],
                 "sr": (
@@ -1344,31 +1366,26 @@ def run_runner_mode(args: argparse.Namespace) -> int:
             }}
         )
         return_code = 124 if result.get("timed_out") else 0
-    except Exception as exc:
-        result.update(
-            {{
-                "status": "failed",
-                "error": str(exc),
-            }}
-        )
-        return_code = 1
+    except BaseException as exc:
+        return_code = record_execution_error(result, exc, runtime)
+        if not isinstance(exc, Exception):
+            interrupt = (exc, exc.__traceback__)
     finally:
-        if runtime is not None:
-            runtime.stop()
+        result['phase_durations_seconds'][phase] = time.monotonic() - phase_start
+        try:
+            finalize_runner_result(runtime, result, start_time, metrics_path)
+        finally:
             runtime = None
-        _context.runtime = None
-        result["run_time_seconds"] = time.monotonic() - start_time
-        write_result_json(metrics_path, result)
-        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
 
+    if interrupt is not None:
+        raise interrupt[0].with_traceback(interrupt[1])
     return return_code
-
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_arguments(argv)
     if args.runner_mode:
         return run_runner_mode(args)
-    return run_standalone()
+    return run_standalone(timeout_seconds=args.timeout_seconds)
 
 
 if __name__ == "__main__":

@@ -38,7 +38,7 @@ def run_phase(
         return
 
     plan = TaskPlanParser(str(phase_name)).parse([(str(phase_name), assignments)])
-    TaskRunner(get_runtime()).execute(plan)
+    run_action_plan(plan)
 
 
 def plan_action(action_type: str, *args: Any, **kwargs: Any) -> Action:
@@ -164,5 +164,13 @@ class TaskPlanParser:
         return record_action
 
 
-def run_action_plan(plan: TaskPlan) -> None:
-    TaskRunner(get_runtime()).execute(plan)
+_DEFAULT_TIMEOUT = object()
+
+
+def run_action_plan(plan: TaskPlan, *, timeout_seconds=_DEFAULT_TIMEOUT) -> None:
+    runtime = get_runtime()
+    if timeout_seconds is _DEFAULT_TIMEOUT:
+        from .movement import MovementConfig, MovementMode
+        mode = getattr(runtime, 'movement_config', None) or MovementConfig.resolve(None)
+        timeout_seconds = 30.0 if mode.mode == MovementMode.TELEPORT else 120.0
+    TaskRunner(runtime).execute(plan, timeout_seconds=timeout_seconds)

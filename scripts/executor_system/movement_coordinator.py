@@ -29,6 +29,7 @@ from multi_robot_avoidance import (
     plan_scenario,
 )
 
+from .execution_control import raise_if_execution_aborted
 from .movement import (
     MovementConfig,
     NavigationBatchResult,
@@ -544,6 +545,7 @@ class StepMovementCoordinator:
             except TimeoutError:
                 raise
             except Exception as exc:
+                raise_if_execution_aborted(self.runtime, exc)
                 return _ExecutionBoundary(
                     kind="failed_transition",
                     release_tick=micro_step.tick,
@@ -627,6 +629,7 @@ class StepMovementCoordinator:
             except TimeoutError:
                 raise
             except Exception as exc:
+                raise_if_execution_aborted(self.runtime, exc)
                 held_item_failure = getattr(
                     self.runtime,
                     "held_item_rotation_failure",
