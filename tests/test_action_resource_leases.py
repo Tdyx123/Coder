@@ -644,3 +644,50 @@ class AdmissionPublicationRaceTest(unittest.TestCase):
                              check_success=False, save_frame=False)
         self.assertEqual(manager.blockers(('EggCracked|1',)), ('a',))
         lease.release()
+
+    def test_snapshot_selection_uses_requesting_agent_visibility_and_distance(self):
+        from executor_system.world_snapshot import SnapshotStore
+        from executor_system.action_resources import snapshot_resource_view
+        runtime = self.runtime([])
+        for agent_id, event in enumerate(runtime.controller.last_event.events):
+            event.metadata['objects'] = [
+                obj('Mug|1', visible=agent_id == 0, distance=.5 if agent_id == 0 else 5,
+                    isDirty=agent_id == 1),
+                obj('Mug|2', visible=agent_id == 1, distance=.5 if agent_id == 1 else 5,
+                    isDirty=agent_id == 1),
+            ]
+        # The active agent is robot2; robot1 must retain its own selection
+        # evidence while consuming robot2's authoritative current world facts.
+        snapshot = SnapshotStore().capture(runtime, runtime.execution_control)
+        action = Action('PickupObject', {'args': ('Mug',)})
+        first = resolve_action_resources(runtime, snapshot, 'robot1', action)
+        second = resolve_action_resources(runtime, snapshot, 'robot2', action)
+        self.assertEqual(first.bindings['Mug'], 'Mug|1')
+        self.assertEqual(second.bindings['Mug'], 'Mug|2')
+        view = snapshot_resource_view(runtime, snapshot)
+        self.assertTrue(view.find_object('Mug|1', agent_id=0)['isDirty'])
+        with self.assertRaises(TypeError):
+            snapshot.resource_metadata['agent_object_selection'][0]['Mug|1']['visible'] = False
+        runtime.controller.last_event.events[0].metadata['objects'][0]['visible'] = False
+        runtime.controller.last_event.events[0].metadata['objects'][1]['visible'] = True
+        unchanged = resolve_action_resources(runtime, snapshot, 'robot1', action)
+        self.assertEqual(unchanged.bindings['Mug'], 'Mug|1')
+
+    def test_snapshot_auto_hand_container_uses_requesting_agent_perspective(self):
+        from executor_system.world_snapshot import SnapshotStore
+        runtime = self.runtime([])
+        for agent_id, event in enumerate(runtime.controller.last_event.events):
+            event.metadata['objects'] = [
+                obj('Mug|target'), obj('Mug|held'),
+                obj('CounterTop|1', visible=agent_id == 0, distance=.5 if agent_id == 0 else 5,
+                    position={'x': 0, 'y': 1, 'z': 0}),
+                obj('CounterTop|2', visible=agent_id == 1, distance=.5 if agent_id == 1 else 5,
+                    position={'x': 5, 'y': 1, 'z': 0}),
+            ]
+        runtime.controller.last_event.events[0].metadata['inventoryObjects'] = [{'objectId': 'Mug|held'}]
+        snapshot = SnapshotStore().capture(runtime, runtime.execution_control)
+        resources = resolve_action_resources(runtime, snapshot, 'robot1',
+                                             Action('PickupObject', {'args': ('Mug|target',)}))
+        self.assertEqual(resources.bindings['@hand_receptacle'], 'CounterTop|1')
+        self.assertIn('CounterTop|1', resources.keys)
+        self.assertNotIn('CounterTop|2', resources.keys)

@@ -72,6 +72,7 @@ class SnapshotStore:
         version = runtime.state_version
         metadata = [agent_event.metadata for agent_event in events]
         positions, rotations, inventories, sources, objects = {}, {}, {}, {}, {}
+        agent_object_selection = {}
         committed = getattr(runtime, "_committed_held_object_overrides", {})
         for agent_id, agent_metadata in enumerate(metadata):
             agent = agent_metadata["agent"]
@@ -91,6 +92,12 @@ class SnapshotStore:
                     evidence[object_id] = source
             inventories[agent_id] = frozenset(held)
             sources[agent_id] = evidence
+            agent_object_selection[agent_id] = {
+                str(obj['objectId']): {
+                    'visible': obj.get('visible', False),
+                    'distance': obj.get('distance'),
+                } for obj in object_list
+            }
             for obj in object_list:
                 objects.setdefault(str(obj["objectId"]), obj)
         # The active agent's metadata is the authoritative view for duplicate
@@ -106,7 +113,7 @@ class SnapshotStore:
                 robot_map[name] = agent_id
         if any(agent_id not in positions for agent_id in robot_map.values()):
             raise ValueError("robot mapping refers to an absent physical agent")
-        resource_metadata = {}
+        resource_metadata = {'agent_object_selection': agent_object_selection}
         for lock_name, attribute, key in (
             ('object_alias_lock', 'object_alias_bindings', 'aliases'),
             ('operated_object_names_lock', 'operated_object_names', 'operated_names'),

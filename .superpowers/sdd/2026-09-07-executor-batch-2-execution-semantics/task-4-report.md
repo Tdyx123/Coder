@@ -159,3 +159,41 @@ git diff --check
 ```
 
 均退出 0、无输出。未运行 discover、未启动子代理。此前保守导航恢复候选的已批准性能取舍不变。本轮没有修改失败策略、执行主循环或 Task 5/6 的契约。
+
+## Round 2 选择视角回归修复（基线 3e59d841）
+
+落实 fix1 复审新增 P2：detached view 原先忽略 `agent_id`，使 robot1 的目标与腾手容器使用当前活动 robot2 的 visible/distance 排序。
+
+`SnapshotStore` 现在在同一次 controller_lock 保护的捕获中，将每个物理 agent 的 `objectId → visible/distance` 保存到冻结的 `resource_metadata.agent_object_selection`。独立资源视图按调用的 agent_id 叠加这两项选择证据；对象状态、位置和其他事实仍取自同一快照的 authoritative objects_by_id。新对象若尚不在请求机器人的观察元数据中，选择证据为不可见/未知距离，不借用其他机器人的视角。没有恢复 live controller 读取。
+
+新增两个定向回归同时验证：活动 agent 与请求 agent 不同；robot1/robot2 各自选择自己可见且附近的 Mug；自动腾手选择 robot1 附近的 CounterTop；世界事实仍来自活动 event；每-agent 证据不可变；捕获后的 live visibility 改变不影响已捕获选择。
+
+### RED → GREEN
+
+```bash
+/home/dwb/.pyenv/bin/pyenv exec python -m unittest tests.test_action_resource_leases.AdmissionPublicationRaceTest.test_snapshot_selection_uses_requesting_agent_visibility_and_distance tests.test_action_resource_leases.AdmissionPublicationRaceTest.test_snapshot_auto_hand_container_uses_requesting_agent_perspective
+```
+
+RED 退出 1：`'Mug|2' != 'Mug|1'`、`'CounterTop|2' != 'CounterTop|1'`；`Ran 2 tests in 0.006s; FAILED (failures=2)`。
+
+修改后相同命令退出 0：`Ran 2 tests in 0.005s; OK`。
+
+### 最终验证
+
+```bash
+/home/dwb/.pyenv/bin/pyenv exec python -m unittest tests/test_action_resource_leases.py tests/test_world_snapshot.py tests/test_runtime_object_aliases.py tests/test_parallel_runner.py
+```
+
+四个具名 suite 仅运行一次，退出 0；完整输出 `/tmp/task4-round2-green-suites.log`：
+
+```text
+Ran 143 tests in 3.733s
+OK
+```
+
+```bash
+/home/dwb/.pyenv/bin/pyenv exec python -m py_compile scripts/executor_system/action_resources.py scripts/executor_system/world_snapshot.py tests/test_action_resource_leases.py
+git diff --check
+```
+
+均退出 0、无输出。未启动代理、未扩大测试范围、未运行 discover。原共享世界快照、原子身份发布与租约生命周期保持不变。

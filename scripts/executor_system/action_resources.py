@@ -75,7 +75,18 @@ def snapshot_resource_view(runtime, snapshot):
     view = ThorRuntime.__new__(ThorRuntime)
     view.robot_agent_map = dict(runtime.robot_agent_map)
     view.physical_agent_count = runtime.physical_agent_count
-    view.current_objects = lambda agent_id=None: list(snapshot.objects_by_id.values())
+    def current_objects(agent_id=None):
+        evidence = snapshot.resource_metadata.get('agent_object_selection', {}).get(agent_id)
+        if evidence is None:
+            return list(snapshot.objects_by_id.values())
+        # World facts remain authoritative from this captured event. Only the
+        # requesting agent's visibility/distance are used for target ranking.
+        # A newly published object absent from its view has unknown distance and
+        # is not treated as visible merely because another robot can see it.
+        return [dict(obj, **evidence.get(object_id, {'visible': False, 'distance': None}))
+                for object_id, obj in snapshot.objects_by_id.items()]
+
+    view.current_objects = current_objects
     view.operated_object_names = set(snapshot.resource_metadata.get('operated_names', ()))
     identities = snapshot.resource_metadata.get('identities', {})
     view.action_resource_manager = ActionResourceManager()
