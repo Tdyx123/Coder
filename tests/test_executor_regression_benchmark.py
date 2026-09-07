@@ -11,6 +11,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 import benchmark_executor_regression as benchmark
+import execute_plan
 
 
 def clean_metadata():
@@ -108,6 +109,33 @@ class BenchmarkTests(unittest.TestCase):
             report = json.loads((output / 'report.json').read_text())
             self.assertEqual(len(report['results']), 2)
             self.assertEqual(report['raw_counts']['timeouts'], 1)
+
+    def test_benchmark_identity_uses_verifiable_compatibility_candidate(self):
+        bundle = {'task_plan': {'task_id': 'fixture', 'stages': []}, 'gcr': []}
+        with tempfile.TemporaryDirectory() as folder:
+            command_dir = Path(folder)
+            preferred = command_dir / 'plan_to_code' / 'executable_plan.py'
+            preferred.parent.mkdir()
+            preferred.write_text(
+                "from executor_system.generated_plan_runtime import main as run_generated_plan\n"
+                f"BUNDLE_DATA = {bundle!r}\nTASK_FILE = 'task.jsonl'\nTASK_INDEX = 0\n"
+                "if __name__ == '__main__':\n    raise SystemExit(0)\n",
+                encoding='utf-8',
+            )
+            fallback = command_dir / 'executable_plan.py'
+            fallback.write_text(
+                "from executor_system.generated_plan_runtime import main as run_generated_plan\n"
+                f"BUNDLE_DATA = {bundle!r}\nTASK_FILE = 'task.jsonl'\nTASK_INDEX = 0\n"
+                "if __name__ == '__main__':\n"
+                "    raise SystemExit(run_generated_plan(BUNDLE_DATA, TASK_FILE, TASK_INDEX, __file__))\n",
+                encoding='utf-8',
+            )
+
+            selected, rejected = execute_plan.find_generated_runtime(command_dir)
+
+            self.assertEqual(selected, fallback)
+            self.assertEqual(len(rejected), 1)
+            self.assertEqual(benchmark.plan_hash(selected), benchmark.content_hash(bundle))
 
     def test_event_without_full_and_missing_execution_timing_fail(self):
         for rows in ([record(refresh='event')], [record(), record(refresh='event', phase_durations_seconds={})]):

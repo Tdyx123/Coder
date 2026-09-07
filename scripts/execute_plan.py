@@ -83,13 +83,85 @@ def _legacy_context_errors(values: Dict[str, Any]) -> Tuple[str, ...]:
     return tuple(missing)
 
 
-def _imports_shared_runtime(tree: ast.AST) -> bool:
-    return any(
-        isinstance(node, ast.ImportFrom)
-        and node.module == GENERATED_RUNTIME_IMPORT
-        and any(alias.name == "main" for alias in node.names)
-        for node in ast.walk(tree)
+def _shared_runtime_aliases(tree: ast.Module) -> Tuple[str, ...]:
+    aliases = []
+    for node in tree.body:
+        if not isinstance(node, ast.ImportFrom) or node.module != GENERATED_RUNTIME_IMPORT:
+            continue
+        aliases.extend(alias.asname or alias.name for alias in node.names if alias.name == "main")
+    return tuple(aliases)
+
+
+def _is_main_guard(node: ast.AST) -> bool:
+    if not isinstance(node, ast.If) or not isinstance(node.test, ast.Compare):
+        return False
+    comparison = node.test
+    if len(comparison.ops) != 1 or not isinstance(comparison.ops[0], ast.Eq):
+        return False
+    if len(comparison.comparators) != 1:
+        return False
+    values = (comparison.left, comparison.comparators[0])
+    return any(isinstance(value, ast.Name) and value.id == "__name__" for value in values) and any(
+        isinstance(value, ast.Constant) and value.value == "__main__" for value in values
     )
+
+
+def _is_shared_runtime_call(node: ast.AST, aliases: Sequence[str]) -> bool:
+    if not isinstance(node, ast.Call) or node.keywords:
+        return False
+    if not isinstance(node.func, ast.Name) or node.func.id not in aliases:
+        return False
+    expected = ("BUNDLE_DATA", "TASK_FILE", "TASK_INDEX", "__file__")
+    return len(node.args) == len(expected) and all(
+        isinstance(argument, ast.Name) and argument.id == name
+        for argument, name in zip(node.args, expected)
+    )
+
+
+def _walk_executable_nodes(node: ast.AST):
+    """Walk a guarded execution path without entering deferred definitions."""
+    yield node
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+        return
+    for child in ast.iter_child_nodes(node):
+        yield from _walk_executable_nodes(child)
+
+
+def _exits_with_shared_runtime(tree: ast.Module, aliases: Sequence[str]) -> bool:
+    for guard in (node for node in tree.body if _is_main_guard(node)):
+        for node in _walk_executable_nodes(guard):
+            if isinstance(node, ast.Raise):
+                exit_call = node.exc
+                expected_exit = "raise"
+            elif isinstance(node, ast.Expr):
+                exit_call = node.value
+                expected_exit = "call"
+            else:
+                continue
+            if not isinstance(exit_call, ast.Call) or len(exit_call.args) != 1:
+                continue
+            is_system_exit = (
+                expected_exit == "raise"
+                and isinstance(exit_call.func, ast.Name)
+                and exit_call.func.id == "SystemExit"
+            )
+            is_builtin_exit = (
+                expected_exit == "call"
+                and isinstance(exit_call.func, ast.Name)
+                and exit_call.func.id == "exit"
+            )
+            is_sys_exit = (
+                expected_exit == "call"
+                and isinstance(exit_call.func, ast.Attribute)
+                and isinstance(exit_call.func.value, ast.Name)
+                and exit_call.func.value.id == "sys"
+                and exit_call.func.attr == "exit"
+            )
+            if (is_system_exit or is_builtin_exit or is_sys_exit) and _is_shared_runtime_call(
+                exit_call.args[0], aliases
+            ):
+                return True
+    return False
 
 
 def verify_generated_runtime(path: Path) -> Optional[str]:
@@ -100,8 +172,11 @@ def verify_generated_runtime(path: Path) -> Optional[str]:
         compile(source, str(path), "exec")
     except (OSError, SyntaxError) as exc:
         return f"cannot read or compile it: {exc}"
-    if not _imports_shared_runtime(tree):
+    aliases = _shared_runtime_aliases(tree)
+    if not aliases:
         return f"it does not import {GENERATED_RUNTIME_IMPORT}.main"
+    if not _exits_with_shared_runtime(tree, aliases):
+        return "it does not invoke the imported shared runtime main from the __main__ exit path"
 
     values: Dict[str, Any] = {}
     for node in tree.body:
@@ -161,6 +236,32 @@ def find_generated_runtime(command_dir: Path) -> Tuple[Optional[Path], Tuple[str
     return None, tuple(rejected)
 
 
+def _rewrite_legacy_robot_placeholders(source: str, robots: Sequence[Any]) -> str:
+    """Replace the three historical top-level robot placeholders structurally."""
+    try:
+        tree = ast.parse(source, filename="code_plan.py")
+    except SyntaxError as exc:
+        raise ExecutePlanError(f"legacy code_plan.py does not compile: {exc}") from exc
+    replacements = []
+    placeholders = ([], ["robot1"], ["Robot2"])
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+            continue
+        if not isinstance(node.targets[0], ast.Name) or node.targets[0].id != "robots":
+            continue
+        try:
+            value = ast.literal_eval(node.value)
+        except (ValueError, SyntaxError):
+            continue
+        if value in placeholders:
+            replacements.append((node.lineno - 1, node.end_lineno))
+    lines = source.splitlines(keepends=True)
+    for start, end in reversed(replacements):
+        newline = "\n" if lines[end - 1].endswith("\n") else ""
+        lines[start:end] = [f"robots = {list(robots)!r}{newline}"]
+    return "".join(lines)
+
+
 def compile_aithor_exec_file(command_dir: Path) -> Path:
     """Build the historical concatenated entry point only from recorded context."""
     log_file = command_dir / "log.txt"
@@ -183,7 +284,9 @@ def compile_aithor_exec_file(command_dir: Path) -> Path:
     imports = (REPO_ROOT / "data" / "aithor_connect" / "imports_aux_fn.py").read_text(encoding="utf-8")
     connector = (REPO_ROOT / "data" / "aithor_connect" / "aithor_connect.py").read_text(encoding="utf-8")
     termination = (REPO_ROOT / "data" / "aithor_connect" / "end_thread.py").read_text(encoding="utf-8")
-    allocated_plan = code_plan.read_text(encoding="utf-8")
+    allocated_plan = _rewrite_legacy_robot_placeholders(
+        code_plan.read_text(encoding="utf-8"), values["robots"]
+    )
     breaks = append_trans_ctr(allocated_plan)
     context = "\n".join(
         (
