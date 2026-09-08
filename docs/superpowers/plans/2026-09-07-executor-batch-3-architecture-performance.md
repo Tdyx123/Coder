@@ -176,7 +176,7 @@ RuntimeMetrics.snapshot() -> Dict[str, Any]
 RuntimeMetrics.measure(category: str) -> ContextManager[None]
 ```
 
-- [ ] 写计时和有界存储测试，导入 RuntimeMetrics：
+- [x] 写计时和有界存储测试，导入 RuntimeMetrics：
 
 ```python
 def test_metrics_keep_counts_without_unbounded_samples(self):
@@ -189,12 +189,12 @@ def test_metrics_keep_counts_without_unbounded_samples(self):
     self.assertNotIn("samples", snapshot["controller"])
 ```
 
-- [ ] 增加 FakeClock 测试，分别覆盖锁等待、controller 调用、导航规划、可达点查询、动作恢复和产物输出计时。运行 `/home/dwb/.pyenv/bin/pyenv exec python -m unittest tests/test_runtime_metrics.py tests/test_executor_regression_benchmark.py`，观察 RED。
-- [ ] 每类计时只保存 count/total/max；单任务不保存无界样本。P50/P95 从基准的逐任务、逐次重复记录计算。GetReachablePositions 计入 controller 总时间，也作为其子类单列，禁止把重叠计时相加声称总耗时。
-- [ ] 记录代码 SHA、Python/AI2-THOR 版本、平台、GPU 标识、场景、机器人数量、种子、计划内容哈希、manifest 哈希、三个协议版本和所有有效运行参数；不保存 API key 或完整环境变量。
-- [ ] 基准脚本实现 `--manifest`、`--output-dir`、`--repetitions`（默认 5）、`--movement-modes`、`--execution-policies`、`--reachable-refresh-modes`、`--max-workers`（默认 1）、`--check`。重复编号从 1 开始，每次运行一个新仿真实例。
-- [ ] 保留每个 `(case, mode, policy, refresh_mode, repetition)` 结果，平均值不覆盖单次失败。不同评估/调度版本不能自动聚合，原始缺失/超时数量必须展示。
-- [ ] 使用固定 manifest 路径，不重新挑选更容易的样例。样例缺失时列出缺失项并返回非零，不缩小分母。
+- [x] 增加 FakeClock 测试，分别覆盖锁等待、controller 调用、导航规划、可达点查询、动作恢复和产物输出计时。运行 `/home/dwb/.pyenv/bin/pyenv exec python -m unittest tests/test_runtime_metrics.py tests/test_executor_regression_benchmark.py`，观察 RED。
+- [x] 每类计时只保存 count/total/max；单任务不保存无界样本。P50/P95 从基准的逐任务、逐次重复记录计算。GetReachablePositions 计入 controller 总时间，也作为其子类单列，禁止把重叠计时相加声称总耗时。
+- [x] 记录代码 SHA、Python/AI2-THOR 版本、平台、GPU 标识、场景、机器人数量、种子、计划内容哈希、manifest 哈希、三个协议版本和所有有效运行参数；不保存 API key 或完整环境变量。
+- [x] 基准脚本实现 `--manifest`、`--output-dir`、`--repetitions`（默认 5）、`--movement-modes`、`--execution-policies`、`--reachable-refresh-modes`、`--max-workers`（默认 1）、`--check`。重复编号从 1 开始，每次运行一个新仿真实例。
+- [x] 保留每个 `(case, mode, policy, refresh_mode, repetition)` 结果，平均值不覆盖单次失败。不同评估/调度版本不能自动聚合，原始缺失/超时数量必须展示。
+- [x] 使用固定 manifest 路径，不重新挑选更容易的样例。样例缺失时列出缺失项并返回非零，不缩小分母。
 - [x] 先保存完整刷新下的功能和耗时基准，再开始下一任务；没有真实环境时先完成 fake 基准，真实验收状态明确保持未完成。
 
 **交付：** 性能问题能归因到调用和等待成本，后续优化有固定对照。
@@ -275,11 +275,11 @@ def test_event_refresh_reuses_unchanged_map(self):
   --max-workers 1 --check
 ```
 
-- [ ] step 对照共 12 样例 × 2 策略 × 2 刷新模式 × 5 次，共 240 次；teleport 回归 24 次。不同策略分别比较，不合并 strict 与 legacy 的均值。
-- [ ] 硬正确性门槛：新增碰撞为零、step 导航 Teleport 为零、无租约泄漏、无等待死锁、取消和结果协议测试全部通过。稳定 fake 场景必须逐动作等价。
-- [ ] 真实 event/full 对照每种策略分别满足：有效评估数量不减少、超时数量不增加、平均 GCR 不降低、导航完成率不降低。出现差异必须定位到具体样例与重复编号，不以总均值掩盖单个新增确定性失败。
-- [ ] 性能门槛：event 的执行时间中位数及 P95 均不得高于 full 的 1.05 倍；若未满足则 `--check` 非零，文档记录 event 尚未通过性能验收，默认仍是 full。
-- [ ] 单任务验证通过后，可在同一固定工作负载对 `max_workers=1/2/4` 分别测量吞吐、峰值内存和 GPU 使用。仅输出数据与建议，不自动改变默认并发数。
-- [ ] 最终交付实现提交、动作登记表、模块边界、三批全部测试记录、真实基准文件及未完成验证项。真实仿真不可用时不能将批次标记为已完成真实验收。
+- [x] step 对照共 12 样例 × 2 策略 × 2 刷新模式 × 5 次，共 240 次；teleport 回归 24 次。不同策略分别比较，不合并 strict 与 legacy 的均值。两项均完成，但 `--check` 都因下列验收问题返回非零。
+- [ ] 硬正确性门槛：新增碰撞为零、step 导航 Teleport 为零、无租约泄漏、无等待死锁、取消和结果协议测试全部通过。稳定 fake 场景必须逐动作等价。单元与 fake 验证已通过，但最终真实报告不足以建立外部碰撞、租约、死锁和取消检查，因此保持未知。
+- [ ] 真实 event/full 对照每种策略分别满足：有效评估数量不减少、超时数量不增加、平均 GCR 不降低、导航完成率不降低。已执行但未通过：legacy case-06 repetition-05 出现配对 GCR 下降，导致 legacy event 平均 GCR 低于 full；首次轨迹分歧原因未被现有证据确定。
+- [ ] 性能门槛：event 的执行时间中位数及 P95 均不得高于 full 的 1.05 倍；若未满足则 `--check` 非零，文档记录 event 尚未通过性能验收，默认仍是 full。已执行但未通过：legacy 与 strict 的 P50 均失败，strict 的 P95 也失败。
+- [ ] 单任务验证通过后，可在同一固定工作负载对 `max_workers=1/2/4` 分别测量吞吐、峰值内存和 GPU 使用。仅输出数据与建议，不自动改变默认并发数。本批未运行这些可选并发测量。
+- [x] 最终交付实现提交、动作登记表、模块边界、三批全部测试记录、真实基准文件及未完成验证项。真实仿真已执行并明确记录为验收失败，不标记为通过。
 
 **回退：** 性能问题通过 `--reachable-refresh-mode full` 回到兼容刷新；结构问题按服务提取提交回退。三批评分、取消、资源与策略契约不随性能开关回退，历史报告始终保留。

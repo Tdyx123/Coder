@@ -16,6 +16,10 @@ tracked files, not of their decompressed payloads.
 | `event-smoke-b3aa308f/report.json` | Readable corrected smoke; correctness matched, performance gate failed | `eeec70a9fc93379a92b825e042137770eb66dbef63ed5fd6acc26587f9be86bf` |
 | `old-navigation-replay/full-report.json.xz` | Five-run old batch 2 case 06 diagnostic | `f2bfcd81c6bf270a8cc08cfdf655d8c2740e5b4451b23a43dbd9436f4edbd2db` |
 | `old-navigation-replay/report.json` | Readable old-code diagnostic | `34f174435ee0bfb9c358108c9893a3d32d50ba40d577f08f56bfe6d44827ebde` |
+| `final-step-939be0ba/full-report.json.xz` | Lossless final 240-run step comparison; check failed | `f0a0da1de9836a02910134b71ef8bbcdda2413c94acd5268401a2be7f534c3f0` |
+| `final-step-939be0ba/report.json` | Readable step evidence with all 240 per-run summaries | `1b76e37d0b6be32396ebb04371b65a7bf909818270ef80c9da0e1a97284398b7` |
+| `final-teleport-939be0ba/full-report.json.xz` | Lossless final 24-run teleport regression; check failed | `5ebb175d416afd6a7e05b95e423e8109479e462dcc19c24c1f932b6675348331` |
+| `final-teleport-939be0ba/report.json` | Readable teleport evidence with all 24 per-run summaries | `e714c7adb4698a03deea797b5ff719506be4f1d69b87eeab508cc6250d21e831` |
 
 To verify a lossless archive against the original payload hash recorded inside its
 adjacent `report.json`:
@@ -34,4 +38,6 @@ PY
 ```
 
 The `old-navigation-replay` files are diagnostic only. The two smoke directories are
-24-run checks rather than the pending 240+24 final acceptance workload.
+24-run checks. The final step and teleport workloads are complete, and both have
+`check_passed=false`; their presence is evidence of completed execution, not passed
+real acceptance.

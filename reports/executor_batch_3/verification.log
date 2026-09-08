@@ -1,23 +1,34 @@
-Executor batch 3 implementation verification
+Executor batch 3 final implementation verification
 Date: 2026-09-08 Asia/Shanghai
+Code under test: 939be0ba48b9b9d058cc64eb036f9639ddda3ff0
+Working tree recorded by verification: clean
 Python: /home/dwb/.pyenv/bin/pyenv exec python (3.9.25)
 
 Command: bash reports/executor_batch_3/verify.sh
 Exit: 0
-Batch 1 suite: 583 tests, OK
-Batch 2 suite: 588 tests, OK
-Batch 3 focused suite: 310 tests, OK (7.950s)
+Batch 1 verify.sh group: 462 tests, OK (15.243s)
+Batch 2 verify.sh group: 588 tests, OK (20.007s)
+Batch 3 focused group: 320 tests, OK (9.135s)
 
-Command: /home/dwb/.pyenv/bin/pyenv exec python -m unittest tests/test_execute_plan_compatibility.py
-Exit: 0
-Result: 6 tests, OK (1.333s)
+These groups overlap and must not be summed as a unique-test count. The earlier
+583-test batch-1 figure retained in task-6-report.md came from a different historical
+command set; 462 is the count emitted by the current batch-1 verify.sh in this final
+run. The exact 119,029-byte output is preserved as
+development/verification-939be0ba.log.xz.
 
-Command: /home/dwb/.pyenv/bin/pyenv exec python -m py_compile scripts/execute_plan.py scripts/executor_system/__init__.py tests/test_execute_plan_compatibility.py
-Exit: 0
+Explicit compile-all verification at the same code head passed.
 
-Curated evidence decompression/hash check: all four archives match the
-original_report_sha256 recorded in their adjacent report.json files.
+Final real workloads at the same clean code head:
 
-Real acceptance remains incomplete. The 120-run full baseline failed its corrected
-gate, the corrected 24-run smoke failed the event performance gate, and the final 240
-step plus 24 teleport runs are pending.
+- step full/event comparison: 240/240 results, 220 valid, 20 case-03 mass-invalid,
+  zero timeouts/missing/unstarted; --check exit 1.
+- teleport full regression: 24/24 results, 22 valid, 2 case-03 mass-invalid, zero
+  timeouts/missing/unstarted; --check exit 1.
+- all 264 child results record code_sha=939be0ba48b9b9d058cc64eb036f9639ddda3ff0
+  and code_dirty=false.
+
+Real acceptance failed. Step failures beyond the known baseline-invalid case are the
+legacy case-06 repetition-05 paired GCR loss, legacy aggregate mean-GCR loss, both
+policies' event P50 gates, and strict event P95. Full remains the default. Optional
+max_workers=1/2/4 measurements were not run, and external collision/lease/deadlock
+checks remain unknown.
