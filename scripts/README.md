@@ -166,6 +166,11 @@ Behavior worth knowing:
 - `--floor-plan` restricts conversion to one floor, e.g. `6` or `FloorPlan6`
 - it writes summary files to `--output-dir`
 - it writes `plan_to_code/executable_plan.py` into each original log folder
+- PDDLRun invalidates the previous executable before regeneration and publishes
+  a validated replacement atomically; failure to invalidate is reported as
+  `cleanup_error`
+- PDDLRun zero-action plans require current verified no-op evidence; nonempty
+  plans pass executor structure checks, including with `--no-validate-code`
 - generated `plan_to_code/executable_plan.py` can also be called with
   `--runner-mode` for no-render metric collection
 

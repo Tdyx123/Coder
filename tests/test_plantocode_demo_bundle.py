@@ -456,7 +456,7 @@ def write_scale_plan_fixture(root: Path) -> Path:
 
 
 class PlanToCodeDemoBundleTest(unittest.TestCase):
-    def test_plantocode_generates_loadable_bundles_without_plan_validation(self):
+    def test_plantocode_rejects_unverified_empty_bundles_but_keeps_nonempty_compatibility(self):
         cases = [
             ("empty", "; cost = 0\n", None, 0),
             ("stale_audit", "; cost = 0\n", '[{"subtask_id": 99, "verified": true}]', 0),
@@ -503,8 +503,12 @@ class PlanToCodeDemoBundleTest(unittest.TestCase):
                         "--logs-dir", str(root / "logs"),
                         "--output-dir", str(root / "summary"),
                     ])
-                self.assertEqual(result_code, 0, stdout.getvalue())
                 executable = task_run_dir / "plan_to_code/executable_plan.py"
+                if not action_count:
+                    self.assertEqual(result_code, 1, stdout.getvalue())
+                    self.assertFalse(executable.exists())
+                    continue
+                self.assertEqual(result_code, 0, stdout.getvalue())
                 bundle = build_hardcoded_bundle(load_bundle_data_from_executable(executable))
                 self.assertEqual(bundle.noop_subtasks, [])
                 self.assertEqual(bundle.no_trans, action_count)

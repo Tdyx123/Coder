@@ -229,6 +229,19 @@ is filled from the recorded robot identity or scene cache where possible;
 unresolved or invalid required metadata fails generation. Failed validation removes any previous
 generated `executable_plan.py` for that task; dry runs do not write or remove files.
 
+PDDLRun removes the previous `executable_plan.py` when regeneration starts,
+before reading task inputs. It publishes the replacement atomically after
+validation, so failed regeneration does not leave the old executable available
+for batch discovery. Failure to remove the old entry aborts generation and is
+reported as `cleanup_error`.
+
+Nonempty PDDLRun plans also pass the executor's structural validation. Zero-action
+plans require verified no-op evidence reconstructed from the current planning
+artifacts and complete subtask coverage; saved `verified=true` flags alone are
+not sufficient. Accepted no-op bundles retain their proofs and run goal evaluation
+without scheduling plan actions. Nonempty plans retain the existing allocation
+compatibility rules. These checks remain enabled with `--no-validate-code`.
+
 `plan_to_code_summary.json` includes `mass_failed_generations` and
 `skill_failed_generations` (task counts). `plan_to_code_results.json` records
 `failure_reason` and `validation_error` with the failing stage, robot, and

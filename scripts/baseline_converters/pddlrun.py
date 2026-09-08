@@ -7,9 +7,11 @@ import argparse
 import ast
 import copy
 import json
+import os
 import py_compile
 import re
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,6 +25,7 @@ for path in (SCRIPTS_DIR, REPO_ROOT):
         sys.path.append(path_str)
 
 from executor_system.action_plan import Action, StagePlan, TaskPlan
+from executor_system.plan_validator import PlanValidator
 from executor_system.pddlrun_adapter import (
     PddlRunAdapterError,
     PddlRunPlanBundle,
@@ -458,7 +461,7 @@ def build_bundle_for_run(
     plan_files = resolve_manifest_plan_files(run_inputs.task_run_dir)
     plan_folder = run_inputs.task_run_dir / "08_planner" / "outputs"
 
-    return build_task_plan_from_pddlrun_paths(
+    inputs = dict(
         task=str(run_inputs.task_record.get("task") or run_inputs.task_context.get("task") or ""),
         robots=robots,
         allocate_file=run_inputs.task_run_dir / "02_allocate" / "02_allocate_output.txt",
@@ -466,8 +469,20 @@ def build_bundle_for_run(
         plan_files=plan_files,
         object_names=object_names,
         task_id=f"FloorPlan{normalize_floor_plan(floor_plan)}_task_{run_inputs.task_index}",
-        validate_plan=False,
     )
+    bundle = build_task_plan_from_pddlrun_paths(**inputs, validate_plan=False)
+    if not bundle.task_plan.stages:
+        # Empty output requires current no-op evidence and complete subtask
+        # coverage. Keep the historical allocation policy for nonempty plans.
+        bundle = build_task_plan_from_pddlrun_paths(**inputs, validate_plan=True)
+    if bundle.task_plan.stages:
+        try:
+            PlanValidator().validate_structure(bundle.task_plan)
+        except (RuntimeError, ValueError, TypeError) as exc:
+            raise PlanToCodeError(f"Invalid generated plan structure: {exc}") from exc
+    elif not bundle.noop_subtasks:
+        raise PlanToCodeError("Zero-action plan has no verified no-op subtasks.")
+    return bundle
 
 
 def literalize(value: Any) -> Any:
@@ -723,8 +738,8 @@ def render_demo_executable(run_inputs: RunInputs, bundle: PddlRunPlanBundle) -> 
     )
 
 
-def compile_python(path: Path) -> None:
-    py_compile.compile(str(path), doraise=True)
+def compile_python(path: Path, *, cfile: Optional[Path] = None) -> None:
+    py_compile.compile(str(path), cfile=str(cfile) if cfile is not None else None, doraise=True)
 
 
 def process_task_run(
@@ -738,8 +753,19 @@ def process_task_run(
         "success": False,
         "failure_reason": None,
     }
+    output_dir = task_run_dir / "plan_to_code"
+    executable_path = output_dir / "executable_plan.py"
+    entry_invalidated = False
+    temporary_path: Optional[Path] = None
+    cache_path: Optional[Path] = None
 
     try:
+        try:
+            executable_path.unlink(missing_ok=True)
+        except OSError as exc:
+            result["cleanup_error"] = str(exc)
+            raise
+        entry_invalidated = True
         run_inputs = load_run_inputs(task_run_dir)
         bundle = build_bundle_for_run(run_inputs)
         validate_generation_plan(
@@ -751,13 +777,19 @@ def process_task_run(
         executable_plan = render_demo_executable(run_inputs, bundle)
 
         compile(executable_plan, "executable_plan.py", "exec")
-        output_dir = task_run_dir / "plan_to_code"
         output_dir.mkdir(parents=True, exist_ok=True)
-        executable_path = output_dir / "executable_plan.py"
-        executable_path.write_text(executable_plan, encoding="utf-8")
+        fd, raw_temporary_path = tempfile.mkstemp(
+            prefix=".executable_plan-", suffix=".tmp", dir=str(output_dir),
+        )
+        temporary_path = Path(raw_temporary_path)
+        os.close(fd)
+        temporary_path.write_text(executable_plan, encoding="utf-8")
 
         if validate_code:
-            compile_python(executable_path)
+            cache_path = temporary_path.with_suffix(".pyc")
+            compile_python(temporary_path, cfile=cache_path)
+
+        os.replace(temporary_path, executable_path)
 
         result.update(
             {
@@ -778,8 +810,9 @@ def process_task_run(
         )
         return result
     except GenerationValidationError as exc:
-        result.update(generation_failure_result(exc, task_run_dir / "plan_to_code/executable_plan.py"))
-        result["generation_time"] = time.time() - start_time
+        # This function owns all output cleanup, including failures unrelated
+        # to capability validation and exceptions that continue propagating.
+        result.update(generation_failure_result(exc, executable_path, dry_run=True))
         return result
     except (PlanToCodeError, PddlRunAdapterError, OSError, SyntaxError, py_compile.PyCompileError) as exc:
         result.update(
@@ -789,6 +822,21 @@ def process_task_run(
             }
         )
         return result
+    finally:
+        cleanup_paths = [temporary_path, cache_path]
+        if entry_invalidated and not result["success"]:
+            cleanup_paths.append(executable_path)
+        for path in cleanup_paths:
+            if path is None:
+                continue
+            try:
+                path.unlink(missing_ok=True)
+            except OSError as exc:
+                message = f"Could not remove {path}: {exc}"
+                previous = result.get("cleanup_error")
+                result["cleanup_error"] = f"{previous}; {message}" if previous else message
+                print(f"WARNING: {message}", file=sys.stderr)
+        result["generation_time"] = time.time() - start_time
 
 
 def write_summary(processed_results: List[Dict[str, Any]], output_dir: Path) -> None:
@@ -940,7 +988,7 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "--validate-code",
         action="store_true",
         default=True,
-        help="Compile generated executable_plan.py files after writing them (default: True).",
+        help="Compile generated Python before publishing executable_plan.py (default: True).",
     )
     parser.add_argument(
         "--no-validate-code",

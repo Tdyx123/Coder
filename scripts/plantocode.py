@@ -68,7 +68,7 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "--validate-code",
         action="store_true",
         default=True,
-        help="Compile generated executable_plan.py files after writing them (default: True).",
+        help="Compile generated Python before publishing executable_plan.py (default: True).",
     )
     parser.add_argument(
         "--no-validate-code",

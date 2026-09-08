@@ -580,6 +580,19 @@ def load_only_summary(output_dir: Path):
 
 
 class ParallelRunnerCliTest(unittest.TestCase):
+    def test_script_path_help_starts_successfully(self):
+        result = subprocess.run(
+            [sys.executable, str(SCRIPTS_DIR / "executor_system" / "parallel_runner.py"), "--help"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("usage:", result.stdout)
+        self.assertIn("--parallel-run", result.stdout)
+
     def test_execution_policy_cli_defaults_and_rejection(self):
         for parser in (parse_parallel_arguments, parse_generated_arguments):
             self.assertEqual(getattr(parser([]), 'execution_policy', None), 'legacy')

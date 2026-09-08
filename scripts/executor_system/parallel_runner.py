@@ -124,7 +124,7 @@ def failure_ignored_for_ratio(action: Action, exc: BaseException) -> bool:
     )
 
 
-from .execution_control import (
+from executor_system.execution_control import (
     PlanExecutionTimeout, ExecutionCancelled, install_control, run_workers,
     raise_if_execution_aborted,
 )
@@ -277,7 +277,7 @@ class TolerantStageRunner(StageRunner):
 
     def __init__(self, runtime_obj, *, stats, deadline, stage_index, logger=None,
                  execution_policy=ExecutionPolicy.LEGACY, control=None):
-        from .execution_control import ensure_control
+        from executor_system.execution_control import ensure_control
         super().__init__(runtime_obj, logger=logger, stage_index=stage_index,
                          execution_policy=execution_policy,
                          control=control or ensure_control(runtime_obj, deadline))
@@ -288,7 +288,7 @@ class TolerantStageRunner(StageRunner):
 def run_action_plan_tolerant(runtime_obj, raw_plan, *, timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
                              logger=None, execution_policy=ExecutionPolicy.LEGACY):
     """Return the same report as TaskRunner, preserving infrastructure errors."""
-    from .execution_policy import PlanExecutionError
+    from executor_system.execution_policy import PlanExecutionError
     try:
         TaskRunner(runtime_obj, logger=logger, execution_policy=execution_policy).execute(
             raw_plan, timeout_seconds=timeout_seconds)
