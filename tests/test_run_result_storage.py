@@ -29,6 +29,39 @@ def complete_result(run_id, task_key, attempt=1, **changes):
 
 
 class RunResultStorageTest(unittest.TestCase):
+    def test_record_does_not_read_or_rewrite_summary(self):
+        with tempfile.TemporaryDirectory() as temp:
+            store = RunResultStore(Path(temp), 'test')
+            store.summary_path = Path(temp) / 'summary.json'
+            atomic_write_json(store.summary_path, {'run_status': 'in_progress'})
+            key = task_key_for_executable(Path('a.py'))
+            with mock.patch.object(store, 'rebuild_summary', side_effect=AssertionError('full scan')):
+                result = store.record_attempt(key, 1, complete_result('test', key))
+            self.assertTrue(result.exists())
+            self.assertEqual(json.loads(store.summary_path.read_text()), {'run_status': 'in_progress'})
+
+    def test_distinct_attempts_validate_in_parallel_and_duplicate_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            store = RunResultStore(Path(temp), 'test')
+            keys = [task_key_for_executable(Path(name)) for name in ('a.py', 'b.py')]
+            barrier = threading.Barrier(2)
+            original = store._checked_attempt
+            def check(*args):
+                barrier.wait(timeout=2)
+                return original(*args)
+            with mock.patch.object(store, '_checked_attempt', side_effect=check):
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    paths = list(pool.map(lambda key: store.record_attempt(key, 1, complete_result('test', key)), keys))
+            self.assertTrue(all(path.exists() for path in paths))
+            def duplicate(_):
+                try:
+                    store.record_attempt(keys[0], 2, complete_result('test', keys[0], 2))
+                    return True
+                except FileExistsError:
+                    return False
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                self.assertEqual(sum(pool.map(duplicate, range(4))), 1)
+
     def test_timeout_bytes_are_json_serializable(self):
         result = {'stderr': normalize_output(b'timeout\xff')}
         self.assertIsInstance(json.dumps(result, ensure_ascii=False), str)
@@ -174,7 +207,7 @@ class RunResultStorageTest(unittest.TestCase):
                 self.assertTrue(first_recorded.wait(3))
                 snapshot = json.loads(next(output.glob('*.json')).read_text())
                 self.assertEqual(snapshot['run_status'], 'in_progress')
-                self.assertGreaterEqual(snapshot['total_results'], 1)
+                self.assertTrue(list(output.glob('runs/*/*/attempt_*/result.json')))
                 raise KeyboardInterrupt()
                 yield
             with mock.patch.object(RunResultStore, 'record_attempt', new=record), mock.patch.object(
@@ -255,9 +288,10 @@ class RunResultStorageTest(unittest.TestCase):
             store = RunResultStore(root, uuid.uuid4().hex)
             store.summary_path = parallel_runner.summary_output_path(root)
             key = task_key_for_executable(root / 'plan.py')
-            with mock.patch.object(store, 'write_summary', side_effect=OSError('summary disk failure')):
+            store.record_attempt(key, 1, complete_result(store.run_id, key))
+            with mock.patch('executor_system.run_results.atomic_write_json', side_effect=OSError('summary disk failure')):
                 with self.assertRaises(OSError):
-                    store.record_attempt(key, 1, complete_result(store.run_id, key))
+                    store.write_summary('completed')
             self.assertEqual(store.rebuild_summary()['total_results'], 1)
             self.assertEqual(json.loads(store.summary_path.read_text())['run_status'], 'in_progress')
 

@@ -338,6 +338,8 @@ class RunResultStore:
         self.summary_path: Optional[Path] = None
         self.summary_metadata: Dict[str, Any] = {}
         self._lock = threading.RLock()
+        self._attempt_locks = {}
+        self.progress = None
 
     def attempt_dir(self, task_key: str, attempt: int) -> Path:
         if not _TASK_KEY_PATTERN.fullmatch(str(task_key)):
@@ -372,8 +374,10 @@ class RunResultStore:
         return checked
 
     def record_attempt(self, task_key: str, attempt: int, result: Mapping[str, Any]) -> Path:
+        directory = self.attempt_dir(task_key, attempt)
         with self._lock:
-            directory = self.attempt_dir(task_key, attempt)
+            attempt_lock = self._attempt_locks.setdefault((task_key, attempt), threading.Lock())
+        with attempt_lock:
             normalized = dict(result)
             for stream in ("stdout", "stderr"):
                 if stream in normalized:
@@ -400,8 +404,6 @@ class RunResultStore:
                     checked[f"{stream}_path"] = str(log)
             checked["storage_status"] = "completed"
             atomic_write_json(target, checked)
-            if self.summary_path is not None:
-                self.write_summary("in_progress")
             return target
 
     def write_summary(self, run_status: str, **extra: Any) -> Dict[str, Any]:
@@ -471,3 +473,84 @@ class RunResultStore:
                 groups=groups, result_groups=groups, results=results, interrupted_attempts=interrupted,
                 timeout_retry_tasks=[r.get("executable_path", r["task_key"]) for r in results
                                      if r["timed_out_attempt_count"]])
+
+
+class RunProgress:
+    """Small scheduler-owned state; publication never touches durable results."""
+
+    def __init__(self, path, **metadata):
+        self.path = Path(path) if path else None
+        self._lock = threading.Lock()
+        self._publish_lock = threading.Lock()
+        self._stop = threading.Event()
+        self._thread = None
+        self._active = set()
+        self._retry = set()
+        self._terminal = set()
+        self._state = dict(protocol_version=1, phase="running", attempts_started=0,
+            attempts_persisted=0, success_count=0, failure_count=0, timeout_count=0,
+            valid_evaluation_count=0, task_success_count=0, storage_error=None, **metadata)
+
+    def started(self, key):
+        with self._lock:
+            self._active.add(key)
+            self._retry.discard(key)
+            self._state["attempts_started"] += 1
+
+    def finished(self, key, result, *, retry):
+        with self._lock:
+            self._active.discard(key)
+            self._state["attempts_persisted"] += 1
+            if retry:
+                self._retry.add(key)
+            elif key not in self._terminal:
+                self._terminal.add(key)
+                self._retry.discard(key)
+                status = result.get("process_status")
+                counter = {"completed": "success_count", "timeout": "timeout_count"}.get(status, "failure_count")
+                self._state[counter] += 1
+                if result.get("evaluation_status") == "valid":
+                    self._state["valid_evaluation_count"] += 1
+                    self._state["task_success_count"] += int(result.get("task_success") is True)
+
+    def storage_failed(self, key, error):
+        with self._lock:
+            self._active.discard(key)
+            self._state["storage_error"] = str(error)
+
+    def publish(self):
+        if self.path is None:
+            return
+        # Serialize publishers so an older heartbeat cannot overwrite a phase change.
+        with self._publish_lock:
+            from datetime import datetime, timezone
+            with self._lock:
+                snapshot = dict(self._state, running_tasks=len(self._active),
+                    completed_tasks=len(self._terminal), pending_retry_tasks=len(self._retry),
+                    updated_at=datetime.now(timezone.utc).isoformat())
+            try:
+                atomic_write_json(self.path, snapshot)
+            except (OSError, ValueError) as exc:
+                # Progress is a replaceable view, not evidence of task completion.
+                with self._lock:
+                    self._state["progress_error"] = str(exc)
+
+    def phase(self, value, **extra):
+        with self._lock:
+            self._state.update(phase=value, **extra)
+        self.publish()
+
+    def start(self):
+        self.publish()
+        if self.path is not None:
+            self._thread = threading.Thread(target=self._heartbeat, name="run-progress", daemon=True)
+            self._thread.start()
+
+    def _heartbeat(self):
+        while not self._stop.wait(1):
+            self.publish()
+
+    def close(self):
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join()

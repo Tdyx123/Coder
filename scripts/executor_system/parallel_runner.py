@@ -7,6 +7,7 @@ import argparse
 import json
 import math
 import os
+import signal
 import subprocess
 import sys
 import threading
@@ -58,6 +59,7 @@ from executor_system.runtime import is_pickup_object_clip_error  # noqa: E402
 from executor_system.run_results import (  # noqa: E402
     ActionLedger,
     RunResultStore,
+    RunProgress,
     ResultStorageError,
     atomic_write_json,
     normalize_output,
@@ -913,6 +915,9 @@ def run_generated_executable(
 
 def _run_and_record(executable_path: Path, *, result_store: Optional[RunResultStore], **kwargs) -> Dict[str, Any]:
     """Persist inside the worker, independently of as_completed/parent interrupts."""
+    progress = result_store.progress if result_store is not None else None
+    if progress is not None:
+        progress.started(kwargs["task_key"])
     try:
         result = run_generated_executable(executable_path, **kwargs)
     except Exception as exc:
@@ -928,7 +933,12 @@ def _run_and_record(executable_path: Path, *, result_store: Optional[RunResultSt
         try:
             result_store.record_attempt(identity["task_key"], identity["attempt"], result)
         except Exception as exc:
+            if progress is not None:
+                progress.storage_failed(identity["task_key"], exc)
             raise ResultStorageError(f"could not persist attempt for {executable_path}: {exc}") from exc
+        if progress is not None:
+            progress.finished(identity["task_key"], result,
+                retry=bool(result.get("timed_out")) and identity["attempt"] <= MAX_TIMEOUT_RETRIES)
     return result
 
 
@@ -1308,6 +1318,7 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="Keep stdout in every result instead of only results with robot_failures.",
     )
+    parser.add_argument("--progress-file", help="Atomic lightweight progress JSON for batch observers.")
     parser.add_argument("--rebuild-summary", metavar="RUN_DIR",
                         help="Rebuild a summary from completed durable attempts without running tasks.")
     parser.add_argument("--execution-policy", choices=("legacy", "strict"), default="legacy")
@@ -1393,9 +1404,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         discovery_root=discovery_root, timeout_seconds=timeout_seconds, movement_mode=movement_mode, execution_policy=args.execution_policy,
         reachable_refresh_mode=args.reachable_refresh_mode)
     completed_results: Dict[Path, Dict[str, Any]] = {}
+    progress = RunProgress(args.progress_file, run_id=run_id, planned_tasks=len(executable_paths),
+        movement_mode=movement_mode, effective_timeout_seconds=timeout_seconds)
+    store.progress = progress
+    previous_sigterm = None
+    if threading.current_thread() is threading.main_thread():
+        def interrupt_for_sigterm(signum, _frame):
+            # Let the existing interruption path stop owned child sessions and save evidence.
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            raise SystemExit(128 + signum)
+        previous_sigterm = signal.signal(signal.SIGTERM, interrupt_for_sigterm)
     try:
         store.summary_path = summary_output_path(output_dir, args.base_line)
-        store.write_summary("in_progress")
+        progress.phase("running", summary_path=str(store.summary_path))
+        progress.start()
         results, timeout_retry_tasks, process_cleanup_events = run_executables_with_retries(
             executable_paths,
             max_workers=args.max_workers,
@@ -1412,25 +1434,36 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             termination_grace_seconds=args.termination_grace_seconds,
             completed_results=completed_results,
         )
+        progress.phase("finalizing")
         store.summary_metadata = build_summary(results, start_time, base_line=args.base_line,
             discovery_root=discovery_root, timeout_seconds=timeout_seconds, movement_mode=movement_mode,
             execution_policy=execution_policy,
             **({"reachable_refresh_mode": args.reachable_refresh_mode} if args.reachable_refresh_mode != "full" else {}),
             timeout_retry_tasks=timeout_retry_tasks, process_cleanup_events=process_cleanup_events)
         summary = store.write_summary("completed")
+        progress.phase("completed")
     except (KeyboardInterrupt, SystemExit):
+        progress.phase("finalizing")
         try:
             store.write_summary("interrupted")
         except (OSError, ValueError) as exc:
+            progress.phase("interrupted", storage_error=str(exc))
             print(f"ERROR: could not save interrupted summary: {exc}")
+        progress.phase("interrupted")
         raise
-    except (OSError, ValueError, ResultStorageError) as exc:
+    except Exception as exc:
+        progress.phase("finalizing", storage_error=str(exc))
         print(f"ERROR: result storage failed: {exc}")
         try:
             store.write_summary("failed", storage_error=str(exc))
         except (OSError, ValueError) as summary_exc:
             print(f"ERROR: could not save failure summary: {summary_exc}")
+        progress.phase("failed", storage_error=str(exc))
         return 1
+    finally:
+        progress.close()
+        if previous_sigterm is not None:
+            signal.signal(signal.SIGTERM, previous_sigterm)
     print(f"Summary saved to: {store.summary_path}")
     return 0 if summary["failure_count"] == 0 and summary["timeout_count"] == 0 else 1
 
