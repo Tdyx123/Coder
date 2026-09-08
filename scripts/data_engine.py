@@ -1310,6 +1310,34 @@ def _select_stove_container(food: str, skill_sets: Dict[str, Any]) -> Optional[s
     return None
 
 
+def _moved_objects_for_subtask(
+    subtask: Dict[str, Any],
+    skill_sets: Optional[Dict[str, Any]] = None,
+) -> Set[str]:
+    """Objects whose previous placement is no longer guaranteed by this skill."""
+    moved = set(_required_pickupable_objects_for_subtask(subtask))
+    objects = subtask.get("objects", [])
+    if subtask.get("skill") == "CookEgg" and len(objects) >= 2:
+        moved.add(objects[1])
+    elif subtask.get("skill") == "CookByStoveBurner" and objects:
+        food = objects[0]
+        if skill_sets is not None:
+            # The planner chooses the container; any compatible candidate may move.
+            moved.update(
+                container
+                for container in skill_sets.get("stove_burner_placeable_objects", [])
+                if _can_place_with_skill(food, container, "PutIn", skill_sets)
+            )
+        else:
+            moved.update(
+                container
+                for container in PLACEMENT_RESTRICTIONS.get(food, ())
+                if container in PUT_IN_RECEPTACLES
+                and "StoveBurner" in PLACEMENT_RESTRICTIONS.get(container, ())
+            )
+    return moved
+
+
 def _put_object_pairs_for_subtask(
     subtask: Dict[str, Any],
     skill_sets: Dict[str, Any],
@@ -1585,10 +1613,15 @@ class DataEngine:
             return []
         return config.final_state_builder(objs)
 
-    def get_task_final_state(self, subtasks: List[Dict]) -> List[Dict]:
+    def get_task_final_state(
+        self,
+        subtasks: List[Dict],
+        skill_sets: Optional[Dict[str, Any]] = None,
+    ) -> List[Dict]:
         contains_by_name: Dict[str, List[str]] = {}
         states_by_name: Dict[str, List[str]] = {}
         names: List[str] = []
+        invalidated_names: Set[str] = set()
         cold_object_fridges = {
             subtask["objects"][1]
             for subtask in subtasks
@@ -1597,6 +1630,12 @@ class DataEngine:
         }
 
         for subtask in subtasks:
+            moved_objects = _moved_objects_for_subtask(subtask, skill_sets)
+            for name, contained_objects in contains_by_name.items():
+                remaining = [obj for obj in contained_objects if obj not in moved_objects]
+                if remaining != contained_objects:
+                    contains_by_name[name] = remaining
+                    invalidated_names.add(name)
             partial_states = self.get_subtask_final_state(subtask)
             for ps in partial_states:
                 name = ps["name"]
@@ -1635,7 +1674,7 @@ class DataEngine:
             }
             for name in names
             if (
-                name not in cold_object_fridges
+                (name not in cold_object_fridges and name not in invalidated_names)
                 or contains_by_name.get(name)
                 or states_by_name.get(name)
             )
@@ -1972,6 +2011,7 @@ put sink on saltshaker, then put ladle on sinkbasin
         bad_subtask_rules = load_bad_subtask_rules()
         no_valid_position_rules = load_no_valid_position_rules()
         floor_objects = _load_floor_objects_for_pre_task_actions(foor_plan)
+        skill_sets = _build_object_skill_sets(foor_plan)
 
         for _ in range(count):
             task_found = False
@@ -2001,7 +2041,7 @@ put sink on saltshaker, then put ladle on sinkbasin
                     if not task_nl:
                         continue
                     
-                    object_states = self.get_task_final_state(subtasks)
+                    object_states = self.get_task_final_state(subtasks, skill_sets=skill_sets)
                     pre_task_actions = _build_pre_task_actions_for_subtasks(
                         subtasks,
                         floor_objects,

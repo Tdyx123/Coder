@@ -26,6 +26,7 @@
     (sliced ?object - object)
     (hot ?object - object)
     (cold ?object - object)
+    (object-open ?object - object)
     (filled-with-water ?object - object)
     (filled-with-coffee ?object - object)
     (cooked ?object - object)

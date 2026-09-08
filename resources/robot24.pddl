@@ -25,6 +25,7 @@
     (switch-on ?object - object)
     (sliced ?object - object)
     (hot ?object - object)
+    (object-open ?object - object)
     (filled-with-water ?object - object)
     (cookable-by-stove_burner ?object - object)
     (cookable-by-microwave ?object - object)

@@ -26,6 +26,7 @@
     (broken ?object - object)
     (sliced ?object - object)
     (hot ?object - object)
+    (object-open ?object - object)
     (filled-with-water ?object - object)
     (filled-with-coffee ?object - object)
     (cookable-by-stove_burner ?object - object)

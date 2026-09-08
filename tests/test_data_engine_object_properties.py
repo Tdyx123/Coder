@@ -284,7 +284,9 @@ class DataEngineObjectPropertiesTests(unittest.TestCase):
         with patch("data_engine._load_floor_objects_for_pre_task_actions", return_value=floor_objects):
             engine.create_tasks(1, 1, 0)
 
-        output_path = Path(tmp_dir.name) / "data" / "final_test_new_0610_0" / "FloorPlan1.jsonl"
+        output_paths = list((Path(tmp_dir.name) / "data").glob("final_test_new_*_0/FloorPlan1.jsonl"))
+        self.assertEqual(len(output_paths), 1)
+        output_path = output_paths[0]
         record = json.loads(output_path.read_text(encoding="utf-8").strip())
 
         self.assertEqual(
@@ -1067,6 +1069,119 @@ class DataEngineObjectPropertiesTests(unittest.TestCase):
             ),
             [{"name": "Bread", "contains": [], "states": ["HOT", "COOKED", "SLICED"]}],
         )
+
+    def test_task_final_state_cooking_invalidates_implicit_container_location(self):
+        engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
+        subtasks = [
+            {"skill": "PutOn", "objects": ["Pan", "StoveBurner"]},
+            {"skill": "CookByStoveBurner", "objects": ["Potato", "StoveBurner"]},
+        ]
+        original = json.loads(json.dumps(subtasks))
+        self.assertEqual(
+            engine.get_task_final_state(subtasks),
+            [{"name": "Potato", "contains": [], "states": ["COOKED"]}],
+        )
+        self.assertEqual(subtasks, original)
+
+    def test_create_tasks_uses_scene_containers_for_final_state(self):
+        engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
+        subtasks = [
+            {"skill": "PutOn", "objects": ["Pan", "CounterTop"]},
+            {"skill": "PutOn", "objects": ["Pot", "CounterTop"]},
+            {"skill": "CookByStoveBurner", "objects": ["Potato", "StoveBurner"]},
+        ]
+        engine.create_singe_task = lambda *_args, **_kwargs: (subtasks, ["robot1"] * 3, [{"name": "robot1"}])
+        engine.check_and_tran2nl = lambda _subtasks: "put down the pans, then cook the potato"
+        skill_sets = data_engine._build_object_skill_sets(1, self._skill_fixture_path())
+        skill_sets["stove_burner_placeable_objects"] = ["Pot"]
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            old_cwd = os.getcwd()
+            try:
+                os.chdir(tmp_dir)
+                with patch("data_engine._build_object_skill_sets", return_value=skill_sets), patch(
+                    "data_engine._load_floor_objects_for_pre_task_actions", return_value=[]
+                ):
+                    engine.create_tasks(1, 1, 0)
+                paths = list(Path("data").glob("final_test_new_*_0/FloorPlan1.jsonl"))
+                self.assertEqual(len(paths), 1)
+                record = json.loads(paths[0].read_text(encoding="utf-8"))
+            finally:
+                os.chdir(old_cwd)
+        self.assertEqual(record["subtasks"], subtasks)
+        self.assertEqual(record["object_states"], [
+            {"name": "CounterTop", "contains": ["Pan"], "states": []},
+            {"name": "Potato", "contains": [], "states": ["COOKED"]},
+        ])
+
+    def test_task_final_state_later_placement_restores_container_location(self):
+        engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
+        self.assertEqual(
+            engine.get_task_final_state([
+                {"skill": "PutOn", "objects": ["Pan", "StoveBurner"]},
+                {"skill": "CookByStoveBurner", "objects": ["Potato", "StoveBurner"]},
+                {"skill": "PutOn", "objects": ["Pan", "StoveBurner"]},
+            ]),
+            [
+                {"name": "StoveBurner", "contains": ["Pan"], "states": []},
+                {"name": "Potato", "contains": [], "states": ["COOKED"]},
+            ],
+        )
+
+    def test_task_final_state_movement_preserves_other_contents_and_states(self):
+        engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
+        self.assertEqual(
+            engine.get_task_final_state([
+                {"skill": "Open", "objects": ["Cabinet"]},
+                {"skill": "PutOn", "objects": ["Mug", "Cabinet"]},
+                {"skill": "PutOn", "objects": ["Book", "Cabinet"]},
+                {"skill": "FillWater", "objects": ["Mug", "Sink"]},
+            ]),
+            [
+                {"name": "Cabinet", "contains": ["Book"], "states": ["OPENED"]},
+                {"name": "Mug", "contains": [], "states": ["FILLEDWITHWATER"]},
+            ],
+        )
+
+    def test_task_final_state_cooking_uses_all_scene_compatible_containers(self):
+        engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
+        skill_sets = data_engine._build_object_skill_sets(1, self._skill_fixture_path())
+        subtasks = [
+            {"skill": "PutOn", "objects": ["Pan", "CounterTop"]},
+            {"skill": "PutOn", "objects": ["Pot", "CounterTop"]},
+            {"skill": "PutOn", "objects": ["Bowl", "CounterTop"]},
+            {"skill": "CookByStoveBurner", "objects": ["Potato", "StoveBurner"]},
+        ]
+        for context in (None, skill_sets):
+            with self.subTest(scene_context=context is not None):
+                self.assertEqual(
+                    engine.get_task_final_state(subtasks, skill_sets=context),
+                    [
+                        {"name": "CounterTop", "contains": ["Bowl"], "states": []},
+                        {"name": "Potato", "contains": [], "states": ["COOKED"]},
+                    ],
+                )
+        skill_sets["stove_burner_placeable_objects"] = ["Pot"]
+        self.assertEqual(
+            engine.get_task_final_state(subtasks, skill_sets=skill_sets)[0]["contains"],
+            ["Pan", "Bowl"],
+        )
+
+    def test_task_final_state_cook_egg_moves_its_explicit_container(self):
+        engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
+        states = engine.get_task_final_state([
+            {"skill": "PutOn", "objects": ["Pan", "CounterTop"]},
+            {"skill": "PutOn", "objects": ["Pot", "CounterTop"]},
+            {"skill": "CookEgg", "objects": ["Egg", "Pan"]},
+        ])
+        self.assertEqual(states[0], {"name": "CounterTop", "contains": ["Pot"], "states": []})
+
+    def test_task_final_state_unrelated_skill_preserves_location(self):
+        engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
+        states = engine.get_task_final_state([
+            {"skill": "PutOn", "objects": ["Pan", "StoveBurner"]},
+            {"skill": "Wash", "objects": ["Mug"]},
+        ])
+        self.assertEqual(states[0], {"name": "StoveBurner", "contains": ["Pan"], "states": []})
 
     def test_task_final_state_accumulates_contains_and_keeps_empty_states(self):
         engine = data_engine.DataEngine.__new__(data_engine.DataEngine)
