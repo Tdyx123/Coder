@@ -72,7 +72,7 @@ class RunProgressTest(unittest.TestCase):
             self.assertEqual(value['completed_tasks'], 1)
             self.assertEqual(value['running_tasks'], 0)
             self.assertEqual(value['attempts_persisted'], 1)
-            self.assertEqual(value['effective_timeout_seconds'], 120)
+            self.assertEqual(value['effective_timeout_seconds'], 60)
             self.assertEqual(len(calls), 1)
             summary = json.loads(Path(value['summary_path']).read_text())
             self.assertEqual(summary['run_id'], value['run_id'])

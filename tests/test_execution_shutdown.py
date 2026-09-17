@@ -49,7 +49,7 @@ class ExecutionShutdownTests(unittest.TestCase):
     def test_ordinary_entry_budget_and_explicit_unbounded_library_call(self):
         from executor_system import task_plan
         from executor_system.movement import MovementConfig
-        for mode, budget in (('step', 120), ('teleport', 30)):
+        for mode, budget in (('step', 60), ('teleport', 30)):
             runtime = FakeRuntime()
             runtime.movement_config = MovementConfig.resolve(mode)
             with patch.object(task_plan, 'get_runtime', return_value=runtime):

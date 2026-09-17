@@ -163,6 +163,20 @@ Behavior worth knowing:
 - `--parallel-run` accepts a `parallel_runs/...` directory or its `summary.json`
 - COT follows the floor-summary references in its top-level `summary.json`; source
   tasks whose status is not `success` are reported as skipped and do not produce code
+- After applying `--floor-plan` and `--limit`, if any selected COT task has
+  `02_plan/04_parallel_plan.txt`, the entire selected batch uses each task's own
+  parallel text plan. Missing or invalid text plans fail that task without JSON
+  fallback; other tasks continue and the batch exits nonzero on failures.
+  When no selected task has the text file, conversion uses `01_final_plan.json`.
+  Text stages execute in order, with robot chains running concurrently within
+  each stage and each robot's actions running sequentially. All chains finish
+  before the next stage starts. Existing source and generation validation apply.
+  Result rows record `plan_mode` (`parallel` or `json`) and `plan_source`.
+- COT plans use real catalog robot IDs (e.g. `robot16`, `robot6`) from the dataset's
+  `robot list`; skills and capacities come from `resources/robots.py`. Context
+  `source_id` and local symbols are not used for identity. COT bundles set
+  `robot_id_mode: "real"` and bind physical agents by team order; older bundles
+  keep local robot names by default.
 - `--floor-plan` restricts conversion to one floor, e.g. `6` or `FloorPlan6`
 - it writes summary files to `--output-dir`
 - it writes `plan_to_code/executable_plan.py` into each original log folder

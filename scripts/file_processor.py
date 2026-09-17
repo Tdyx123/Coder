@@ -265,7 +265,7 @@ class FileProcessor:
                 _, fixed_subtask = llm.query_model(
                     messages,
                     model,
-                    max_tokens=call_config.get("max_tokens", 1400),
+                    max_completion_tokens=call_config.get("max_completion_tokens", 1400),
                     frequency_penalty=call_config.get("frequency_penalty", 0.4),
                 )
 

@@ -1,0 +1,62 @@
+[
+  {
+    "task_id": "FloorPlan1_task_0",
+    "executable_path": "/home/dwb/thor/Coder/logs/intermediate_runs/final_test_new_0819_1___1/break_the_cup,_then_put_it_in_the_cabinet,_cook_the_egg_in_the_pot,_and_slice_th/20260908_005/plan_to_code/executable_plan.py",
+    "sha256": "833dac9f225c81205ba12b64f0acf1b311ba91fd3095560f2b1bee716f009284",
+    "category": "navigation_failed"
+  },
+  {
+    "task_id": "FloorPlan1_task_29",
+    "executable_path": "/home/dwb/thor/Coder/logs/intermediate_runs/final_test_new_0819_1___1/cook_the_potato_on_the_stoveburner,_slice_the_lettuce,_wash_the_bowl,_and_open_t/20260908_005/plan_to_code/executable_plan.py",
+    "sha256": "75e1d86f573269d1cb44c64a934318f77bb148d019057bf5975657b274b0437a",
+    "category": "navigation_failed"
+  },
+  {
+    "task_id": "FloorPlan1_task_26",
+    "executable_path": "/home/dwb/thor/Coder/logs/intermediate_runs/final_test_new_0819_1___1/cool_the_bread_in_the_fridge,_then_switch_on_the_microwave_and_microwave_the_bre/20260908_005/plan_to_code/executable_plan.py",
+    "sha256": "d853cdbb6105e346943b7892086e2179a6a283c0dea6bb1100d75a096587577e",
+    "category": "navigation_failed"
+  },
+  {
+    "task_id": "FloorPlan2_task_8",
+    "executable_path": "/home/dwb/thor/Coder/logs/intermediate_runs/final_test_new_0819_1___2/open_the_drawer,_then_prepare_the_egg_in_the_pan,_and_put_it_on_the_plate/20260908_005/plan_to_code/executable_plan.py",
+    "sha256": "2fe6d032e0e19552405b825a528ca8fc5503c558b789c7ab19e3cefa4d38b214",
+    "category": "other_visibility"
+  },
+  {
+    "task_id": "FloorPlan2_task_27",
+    "executable_path": "/home/dwb/thor/Coder/logs/intermediate_runs/final_test_new_0819_1___2/put_tomato_on_garbagecan,_then_slice_the_tomato,_cool_it_in_the_fridge,_and_open/20260908_005/plan_to_code/executable_plan.py",
+    "sha256": "53b48353f6867e293307b57372b4fbc67e30b4472a6e241fef96d79b00a712d0",
+    "category": "other_visibility"
+  },
+  {
+    "task_id": "FloorPlan2_task_7",
+    "executable_path": "/home/dwb/thor/Coder/logs/intermediate_runs/final_test_new_0819_1___2/toast_the_bread_in_the_toaster,_heat_the_kettle_on_the_stoveburner,_heat_the_pan/20260908_005/plan_to_code/executable_plan.py",
+    "sha256": "082fac492d4e56e89a2886878d123a9fd80c06f6566ae51ff13cba62da7b0783",
+    "category": "other_visibility"
+  },
+  {
+    "task_id": "FloorPlan401_task_1",
+    "executable_path": "/home/dwb/thor/Coder/logs/intermediate_runs/final_test_new_0819_1___401/wash_the_cloth,_then_put_toiletpaper_on_garbagecan_and_open_the_showercurtain/20260908_005/plan_to_code/executable_plan.py",
+    "sha256": "70092f0746cd841a8af591dddcf1fdf8576deef894a37da04d9cc7a67fd2aa1b",
+    "category": "other_visibility"
+  },
+  {
+    "task_id": "FloorPlan1_task_8",
+    "executable_path": "/home/dwb/thor/Coder/logs/intermediate_runs/final_test_new_0819_1___1/break_the_window,_then_open_the_cabinet_and_put_the_vase_on_it/20260908_005/plan_to_code/executable_plan.py",
+    "sha256": "00c873432f3cff1224f89cc39eecf9ae6eadc824febc71ff97f37565b4c7af51",
+    "category": "control"
+  },
+  {
+    "task_id": "FloorPlan1_task_3",
+    "executable_path": "/home/dwb/thor/Coder/logs/intermediate_runs/final_test_new_0819_1___1/cool_the_tomato_in_the_fridge,_then_open_the_drawer_and_put_the_creditcard_on_it/20260908_005/plan_to_code/executable_plan.py",
+    "sha256": "d9820066eec887d6992fc71a01a6004e9d842a68d29dfe4be03726d900f351fc",
+    "category": "control"
+  },
+  {
+    "task_id": "FloorPlan1_task_4",
+    "executable_path": "/home/dwb/thor/Coder/logs/intermediate_runs/final_test_new_0819_1___1/heat_the_pot_on_the_stoveburner,_open_the_cabinet,_and_heat_the_kettle_on_the_st/20260908_005/plan_to_code/executable_plan.py",
+    "sha256": "ee4f74cf589aeb132fb9505505c612ce7699c438fff818a79a2ca4a5b329a4e6",
+    "category": "control"
+  }
+]

@@ -159,7 +159,7 @@ def _sections(text: str, known_actions: set) -> List[Dict[str, Any]]:
 
 def validate_decomposition(
     text: str, *, domain_content: str = "", finish_reason: Optional[str] = None,
-    usage: Optional[Dict[str, Any]] = None, max_tokens: Optional[int] = None,
+    usage: Optional[Dict[str, Any]] = None, max_completion_tokens: Optional[int] = None,
     required_subtasks: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Return generation defects separately from loss in the execution parser."""
@@ -242,7 +242,7 @@ def validate_decomposition(
                     error("INCOMPLETE_EXPRESSION", f"{location}, field {field}, contains an incomplete expression: {value[:240]}. Replace it with a complete expression; do not merely append closing characters.", subtask_id=sid, action_index=index, field=field)
 
     tokens = (usage or {}).get("completion_tokens")
-    at_cap = isinstance(tokens, (int, float)) and isinstance(max_tokens, (int, float)) and tokens >= max_tokens
+    at_cap = isinstance(tokens, (int, float)) and isinstance(max_completion_tokens, (int, float)) and tokens >= max_completion_tokens
     tail_bad = False
     if bodies:
         last = bodies[-1]
@@ -253,7 +253,7 @@ def validate_decomposition(
     coverage_bad = any(e["code"] == "MISSING_SUBTASK_BODY" for e in errors)
     truncated = finish_reason == "length" or (at_cap and (tail_bad or coverage_bad))
     if truncated:
-        evidence = "finish_reason=length" if finish_reason == "length" else f"completion_tokens={tokens} reaches max_tokens={max_tokens}, and action bodies are incomplete"
+        evidence = "finish_reason=length" if finish_reason == "length" else f"completion_tokens={tokens} reaches max_completion_tokens={max_completion_tokens}, and action bodies are incomplete"
         error("TRUNCATED_OUTPUT", f"{evidence}. Regenerate the complete decomposition from the beginning. Shorten explanations, but preserve every required subtask and action field.")
 
     # Normalize only identified headings. Never manufacture action content.

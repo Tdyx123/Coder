@@ -61,7 +61,7 @@ class LLMClientTests(unittest.TestCase):
             model="deepseek-chat",
             prompt="hello",
             provider=provider or self.provider,
-            max_tokens=16,
+            max_completion_tokens=16,
             temperature=0.1,
         )
 
@@ -122,7 +122,7 @@ class LLMClientTests(unittest.TestCase):
                 model="qwen3.5-test",
                 prompt="hello",
                 provider=self.provider,
-                max_tokens=16,
+                max_completion_tokens=16,
                 temperature=0.1,
                 top_p=0.95,
                 top_k=20,
@@ -151,7 +151,7 @@ class LLMClientTests(unittest.TestCase):
                 model="Qwen3.7-Max",
                 prompt="hello",
                 provider=self.provider,
-                max_tokens=16,
+                max_completion_tokens=16,
                 temperature=0.1,
                 extra_body={"request_id": "abc", "enable_thinking": True},
             )
@@ -175,7 +175,7 @@ class LLMClientTests(unittest.TestCase):
                 model="DeepSeek-V4-Pro",
                 prompt="hello",
                 provider=self.provider,
-                max_tokens=16,
+                max_completion_tokens=16,
                 temperature=0.1,
                 extra_body={"request_id": "abc", "thinking": {"type": "enabled"}},
             )
@@ -197,7 +197,7 @@ class LLMClientTests(unittest.TestCase):
                 model="DeepSeek-V4-Flash",
                 prompt="hello",
                 provider=self.provider,
-                max_tokens=16,
+                max_completion_tokens=16,
                 temperature=0.1,
                 extra_body={"request_id": "abc", "thinking": {"type": "enabled"}},
             )
@@ -219,7 +219,7 @@ class LLMClientTests(unittest.TestCase):
                 model="MiMo-V2.5",
                 prompt="hello",
                 provider=self.provider,
-                max_tokens=16,
+                max_completion_tokens=16,
                 temperature=0.1,
                 extra_body={"request_id": "abc", "thinking": {"type": "enabled"}},
             )
@@ -247,7 +247,7 @@ class LLMClientTests(unittest.TestCase):
                 model="MiMo-V2.5",
                 prompt="hello",
                 provider=self.provider,
-                max_tokens=16,
+                max_completion_tokens=16,
                 temperature=0.1,
                 extra_body={
                     "request_id": "abc",
@@ -282,13 +282,13 @@ class LLMClientTests(unittest.TestCase):
                 model="Kimi-K2.6",
                 prompt="hello",
                 provider=self.provider,
-                max_tokens=16,
+                max_completion_tokens=16,
                 temperature=0.1,
                 extra_body={"request_id": "abc", "thinking": {"type": "enabled"}},
             )
 
-        self.assertEqual(seen_kwargs[0]["max_tokens"], 16)
-        self.assertNotIn("max_completion_tokens", seen_kwargs[0])
+        self.assertEqual(seen_kwargs[0]["max_completion_tokens"], 16)
+        self.assertNotIn("max_tokens", seen_kwargs[0])
         self.assertEqual(
             seen_kwargs[0]["extra_body"],
             {"request_id": "abc", "thinking": {"type": "disabled"}},
@@ -306,7 +306,7 @@ class LLMClientTests(unittest.TestCase):
                 model="deepseek-chat",
                 prompt="hello",
                 provider=self.provider,
-                max_tokens=16,
+                max_completion_tokens=16,
                 temperature=0.1,
             )
 
@@ -352,7 +352,7 @@ class LLMClientTests(unittest.TestCase):
                 model="Qwen3.5-9B_merged",
                 prompt="hello",
                 provider=provider,
-                max_tokens=16,
+                max_completion_tokens=16,
                 temperature=0.1,
             )
 
@@ -433,12 +433,36 @@ class LLMClientTests(unittest.TestCase):
                 model="gpt5-mini",
                 prompt="hello",
                 provider=self.provider,
-                max_tokens=16,
+                max_completion_tokens=16,
                 temperature=0.1,
                 frequency_penalty=None,
             )
 
         self.assertNotIn("frequency_penalty", seen_kwargs[0])
+
+    def test_llm_handler_sends_completion_token_budget_for_all_models(self):
+        class DummyConfig:
+            def get(self, section, key, default=None):
+                return default
+
+        handler = llm_handler.LLMHandler(config=DummyConfig())
+        models = (
+            "deepseek-chat", "deepseek-v4-flash", "deepseek-v4-pro",
+            "gpt-5-mini", "qwen3.5-test", "qwen3.7-max", "qwen3.7-plus",
+            "mimo-v2.5", "Kimi-K2.6", "other-model",
+        )
+        for model in models:
+            for options, expected in (({}, 4000), ({"max_completion_tokens": 1300}, 1300)):
+                with self.subTest(model=model, options=options):
+                    with patch.object(handler, "_get_provider_for_model", return_value=(self.provider, "deepseek")), \
+                            patch.object(llm_client, "completion", return_value=self._stream_response("ok")) as fake_completion, \
+                            patch.object(llm_handler, "log_llm_call"):
+                        _, text = handler.query_model("hello", model, **options)
+
+                    self.assertEqual(text, "ok")
+                    request = fake_completion.call_args.kwargs
+                    self.assertNotIn("max_tokens", request)
+                    self.assertEqual(request["max_completion_tokens"], expected)
 
     def test_llm_handler_applies_qwen35_request_params(self):
         class DummyConfig:

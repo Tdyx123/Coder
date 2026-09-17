@@ -33,6 +33,11 @@ def robot_name(robot: RobotRef) -> str:
 
 
 def robot_agent_id(robot: RobotRef) -> int:
+    if isinstance(robot, dict) and "agent_id" in robot:
+        agent_id = robot["agent_id"]
+        if type(agent_id) is not int or agent_id < 0:
+            raise RuntimeError(f"Invalid explicit robot agent_id: {agent_id!r}")
+        return agent_id
     name = robot_name(robot)
     match = re.search(r"(\d+)$", name)
     if not match:

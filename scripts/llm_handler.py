@@ -18,7 +18,7 @@ from llm_logger import log_llm_call
 from run_config import DEFAULT_RUN_CONFIG, RunConfig, load_run_config
 
 
-DEFAULT_MAX_TOKENS = 8000
+DEFAULT_MAX_COMPLETION_TOKENS = 4000
 DEFAULT_TEMPERATURE = DEFAULT_RUN_CONFIG["llm"]["default_temperature"]
 DEFAULT_RETRY_DELAY = DEFAULT_RUN_CONFIG["llm"]["default_retry_delay"]
 MAX_RETRIES = DEFAULT_RUN_CONFIG["llm"]["max_retries"]
@@ -55,15 +55,15 @@ class LLMHandler:
         self,
         prompt: Union[str, List[Dict]],
         model: str,
-        max_tokens: Optional[int] = None,
+        max_completion_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         stop: Optional[List[str]] = None,
         logprobs: Optional[int] = 1,
         frequency_penalty: float = 0,
     ) -> Tuple[dict, str]:
         """Query the configured language model."""
-        if max_tokens is None:
-            max_tokens = DEFAULT_MAX_TOKENS
+        if max_completion_tokens is None:
+            max_completion_tokens = DEFAULT_MAX_COMPLETION_TOKENS
         if temperature is None:
             temperature = float(self.config.get("llm", "default_temperature", DEFAULT_TEMPERATURE))
 
@@ -104,7 +104,7 @@ class LLMHandler:
                     model=model,
                     prompt=prompt,
                     provider=provider_config,
-                    max_tokens=max_tokens,
+                    max_completion_tokens=max_completion_tokens,
                     temperature=temperature,
                     stop=stop,
                     frequency_penalty=effective_frequency_penalty,
@@ -121,7 +121,7 @@ class LLMHandler:
                 usage = extract_usage(response)
 
                 log_params = {
-                    "max_tokens": max_tokens,
+                    "max_completion_tokens": max_completion_tokens,
                     "temperature": temperature,
                 }
                 if effective_frequency_penalty is not None:

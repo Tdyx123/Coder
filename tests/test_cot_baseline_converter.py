@@ -56,7 +56,7 @@ def write_dataset(repo_root: Path, task_count: int = 1) -> Path:
         records.append(
             {
                 "task": "fill the mug with water" if index == 0 else "failed task",
-                "robot list": [1, 6],
+                "robot list": [1, 9],
                 "object_states": [
                     {"name": "Mug", "contains": [], "states": ["FILLED"]}
                 ],
@@ -80,12 +80,10 @@ def write_success_run(parallel_run: Path) -> tuple[Path, dict]:
     robots = [
         {
             "symbol": "robot1",
-            "source_id": 1,
             "skills": ["GoToObject", "OpenObject", "FillWater"],
         },
         {
             "symbol": "robot2",
-            "source_id": 6,
             "skills": ["GoToObject", "PickupObject", "CleanObject"],
         },
     ]
@@ -123,17 +121,17 @@ def write_success_run(parallel_run: Path) -> tuple[Path, dict]:
                 },
                 {
                     "action": "GoToObject",
-                    "arguments": ["robot2", "mug"],
+                    "arguments": ["robot9", "mug"],
                     "reasoning_step": 2,
                 },
                 {
                     "action": "PickupObject",
-                    "arguments": ["robot2", "mug", "countertop"],
+                    "arguments": ["robot9", "mug", "countertop"],
                     "reasoning_step": 2,
                 },
                 {
                     "action": "CleanObject",
-                    "arguments": ["robot2", "mug", "sinkbasin"],
+                    "arguments": ["robot9", "mug", "sinkbasin"],
                     "reasoning_step": 2,
                 },
                 {
@@ -272,10 +270,10 @@ class CotBaselineConverterTests(unittest.TestCase):
             )
             queues = [stage["robot_action_queues"] for stage in bundle["task_plan"]["stages"]]
             self.assertEqual(list(queues[0]), ["robot1"])
-            self.assertEqual(list(queues[1]), ["robot2"])
+            self.assertEqual(list(queues[1]), ["robot9"])
             self.assertEqual(list(queues[2]), ["robot1"])
             self.assertEqual(
-                queues[1]["robot2"][-1]["parameters"]["args"],
+                queues[1]["robot9"][-1]["parameters"]["args"],
                 ["Mug"],
             )
             self.assertEqual(
@@ -384,7 +382,7 @@ class CotBaselineConverterTests(unittest.TestCase):
             self.assertEqual(results[0]["status"], "failed")
             self.assertIn("Unsupported COT action", results[0]["error"])
 
-    def test_malformed_robot_skills_is_aggregated_as_a_task_error(self):
+    def test_context_skills_do_not_override_catalog_skills(self):
         cot = load_cot_module()
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo_root = Path(tmp_dir)
@@ -400,7 +398,7 @@ class CotBaselineConverterTests(unittest.TestCase):
 
             result_code = cot.main(["--root", str(baseline_root)])
 
-            self.assertEqual(result_code, 1)
+            self.assertEqual(result_code, 0)
             results = json.loads(
                 (
                     baseline_root
@@ -408,8 +406,7 @@ class CotBaselineConverterTests(unittest.TestCase):
                     / "plan_to_code_results.json"
                 ).read_text(encoding="utf-8")
             )
-            self.assertEqual(results[0]["status"], "failed")
-            self.assertIn("skills", results[0]["error"])
+            self.assertEqual(results[0]["status"], "success")
 
     def test_dry_run_with_limit_does_not_write_code_or_summaries(self):
         cot = load_cot_module()

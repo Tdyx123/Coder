@@ -23,8 +23,8 @@ import generate_single_subtask_code as generator
 
 
 class FinalReliabilityFixesTest(unittest.TestCase):
-    def test_disappeared_history_requires_one_instance(self):
-        for hot_id, cold_id, success in [('Mug|1', 'Mug|2', False),
+    def test_disappeared_history_scores_each_state_independently(self):
+        for hot_id, cold_id, success in [('Mug|1', 'Mug|2', True),
                                           ('Mug|1', 'mug|1', True),
                                           (None, 'Mug|2', False),
                                           ('Mug|1', None, False),
@@ -39,7 +39,8 @@ class FinalReliabilityFixesTest(unittest.TestCase):
     def test_disappeared_bound_alias_rejects_another_or_unknown_instance(self):
         for observed_id, success in [('Mug|1', True), ('Mug|2', False), (None, False)]:
             with self.subTest(observed_id=observed_id):
-                context = EvaluationContext.from_goals([{'name': 'Mug_1', 'states': ['HOT']}])
+                context = EvaluationContext.from_goals([{'name': 'Mug_1', 'states': ['HOT']}],
+                    object_id_bindings=[{'object': 'Mug_1', 'object_id': 'Mug|1'}])
                 context.record_observation('Mug_1', 'HOT', observed_id)
                 result = context.evaluate(FakeRuntime([], {'Mug_1': 'Mug|1'}))
                 self.assertEqual(result['task_success'], success)
@@ -61,7 +62,7 @@ class FinalReliabilityFixesTest(unittest.TestCase):
         record_satisfied_temperature_goal_states(runtime, context)
         result = context.evaluate(runtime)
         self.assertTrue(result['task_success'])
-        self.assertEqual(result['goal_results'][0]['candidates'][1]['status'], 'satisfied')
+        self.assertEqual(result['subgoal_results'][0]['candidates'][1]['status'], 'satisfied')
 
     def test_parent_timeout_preserves_v2_diagnostics_in_durable_summary(self):
         with tempfile.TemporaryDirectory() as directory:

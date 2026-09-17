@@ -1239,7 +1239,7 @@ def run_standalone(timeout_seconds=None) -> int:
         robots, floor_no, CLOUD_RENDERING, RENDER_IMAGE,
         output_root=runtime_output_root(None, identity),
     )
-    runtime.evaluation_context = EvaluationContext.from_goals(ground_truth)
+    runtime.evaluation_context = EvaluationContext.from_goals(ground_truth, object_id_bindings=bundle.object_id_bindings)
     runtime.register_object_id_bindings(bundle.object_id_bindings)
     _context.runtime = runtime
     start_time = time.monotonic()
@@ -1318,7 +1318,7 @@ def run_runner_mode(args: argparse.Namespace) -> int:
             robots, floor_no, CLOUD_RENDERING, False,
             output_root=runtime_output_root(metrics_path, result),
         )
-        runtime.evaluation_context = EvaluationContext.from_goals(ground_truth)
+        runtime.evaluation_context = EvaluationContext.from_goals(ground_truth, object_id_bindings=bundle.object_id_bindings)
         runtime.register_object_id_bindings(bundle.object_id_bindings)
         _context.runtime = runtime
 
@@ -1372,6 +1372,8 @@ def run_runner_mode(args: argparse.Namespace) -> int:
                 "evaluation_version": metrics["evaluation_version"],
                 "evaluation_status": metrics["evaluation_status"],
                 "original_goal_count": metrics["original_goal_count"],
+                "atomic_goal_count": metrics["atomic_goal_count"],
+                "subgoal_results": metrics["subgoal_results"],
                 "satisfied_goal_count": metrics["satisfied_goal_count"],
                 "goal_results": metrics["goal_results"],
                 "task_success": (

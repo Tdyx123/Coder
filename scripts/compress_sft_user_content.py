@@ -16,7 +16,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 DEFAULT_DATASET_DIR = Path("/data/dwb/datasets/0819_deepseek")
 DEFAULT_TOKENIZER_PATH = Path("/data/dwb/models/Qwen3-8B/tokenizer.json")
-DEFAULT_MAX_TOKENS = 1280
+DEFAULT_MAX_COMPLETION_TOKENS = 1280
 STAGE_INPUTS: Tuple[Tuple[str, str], ...] = (
     ("decompose", "01_decompose.jsonl"),
     ("allocate", "02_allocate.jsonl"),
@@ -473,23 +473,23 @@ def compress_record(
     record: Mapping[str, Any],
     stage: str,
     tokenizer: Any,
-    max_tokens: int,
+    max_completion_tokens: int,
 ) -> Tuple[Dict[str, Any], int]:
     if not isinstance(record, Mapping):
         raise CompressionError("JSONL record must be an object")
     if stage not in COMPRESSORS:
         raise CompressionError(f"unknown compression stage: {stage}")
-    if max_tokens <= 0:
-        raise CompressionError("max_tokens must be positive")
+    if max_completion_tokens <= 0:
+        raise CompressionError("max_completion_tokens must be positive")
 
     user_index = _user_message_index(record)
     compressed_record = copy.deepcopy(dict(record))
     original_content = compressed_record["messages"][user_index]["content"]
     compressed_content = COMPRESSORS[stage](original_content)
     token_count = count_tokens(tokenizer, compressed_content)
-    if token_count > max_tokens:
+    if token_count > max_completion_tokens:
         raise CompressionError(
-            f"compressed user content has {token_count} tokens and exceeds {max_tokens} tokens",
+            f"compressed user content has {token_count} tokens and exceeds {max_completion_tokens} tokens",
             token_count=token_count,
         )
     compressed_record["messages"][user_index]["content"] = compressed_content
@@ -504,7 +504,7 @@ def _temporary_path(path: Path) -> Path:
     return path.with_name(f".{path.name}.tmp")
 
 
-def _validate_output(path: Path, tokenizer: Any, max_tokens: int, expected_count: int) -> int:
+def _validate_output(path: Path, tokenizer: Any, max_completion_tokens: int, expected_count: int) -> int:
     count = 0
     maximum = 0
     with path.open("r", encoding="utf-8") as handle:
@@ -517,9 +517,9 @@ def _validate_output(path: Path, tokenizer: Any, max_tokens: int, expected_count
                 raise CompressionError(f"output JSON error on line {line_number}: {exc}") from exc
             user_index = _user_message_index(record)
             token_count = count_tokens(tokenizer, record["messages"][user_index]["content"])
-            if token_count > max_tokens:
+            if token_count > max_completion_tokens:
                 raise CompressionError(
-                    f"output line {line_number} has {token_count} tokens; limit is {max_tokens}",
+                    f"output line {line_number} has {token_count} tokens; limit is {max_completion_tokens}",
                     token_count=token_count,
                 )
             count += 1
@@ -534,7 +534,7 @@ def process_file(
     output_path: Path,
     stage: str,
     tokenizer: Any,
-    max_tokens: int,
+    max_completion_tokens: int,
     overwrite: bool = False,
 ) -> Dict[str, Any]:
     input_path = Path(input_path)
@@ -553,7 +553,7 @@ def process_file(
     input_count = 0
     output_count = 0
     rejected_count = 0
-    observed_max_tokens = 0
+    observed_max_completion_tokens = 0
 
     try:
         with input_path.open("r", encoding="utf-8") as source, output_temp.open(
@@ -569,7 +569,7 @@ def process_file(
                         record,
                         stage=stage,
                         tokenizer=tokenizer,
-                        max_tokens=max_tokens,
+                        max_completion_tokens=max_completion_tokens,
                     )
                 except (json.JSONDecodeError, CompressionError, TypeError, ValueError) as exc:
                     rejected_count += 1
@@ -591,12 +591,12 @@ def process_file(
 
                 output.write(json.dumps(compressed, ensure_ascii=False) + "\n")
                 output_count += 1
-                observed_max_tokens = max(observed_max_tokens, token_count)
+                observed_max_completion_tokens = max(observed_max_completion_tokens, token_count)
 
-        validated_max_tokens = _validate_output(
+        validated_max_completion_tokens = _validate_output(
             output_temp,
             tokenizer=tokenizer,
-            max_tokens=max_tokens,
+            max_completion_tokens=max_completion_tokens,
             expected_count=output_count,
         )
         if input_count != output_count + rejected_count:
@@ -621,7 +621,7 @@ def process_file(
         "input_count": input_count,
         "output_count": output_count,
         "rejected_count": rejected_count,
-        "max_tokens": max(observed_max_tokens, validated_max_tokens),
+        "max_completion_tokens": max(observed_max_completion_tokens, validated_max_completion_tokens),
     }
 
 
@@ -631,7 +631,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument("--dataset-dir", default=str(DEFAULT_DATASET_DIR))
     parser.add_argument("--tokenizer-path", default=str(DEFAULT_TOKENIZER_PATH))
-    parser.add_argument("--max-tokens", type=int, default=DEFAULT_MAX_TOKENS)
+    parser.add_argument("--max-tokens", dest="max_completion_tokens", type=int, default=DEFAULT_MAX_COMPLETION_TOKENS)
     parser.add_argument(
         "--overwrite",
         action="store_true",
@@ -640,13 +640,13 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _output_path(input_path: Path, max_tokens: int) -> Path:
-    return input_path.with_name(f"{input_path.stem}_{max_tokens}.jsonl")
+def _output_path(input_path: Path, max_completion_tokens: int) -> Path:
+    return input_path.with_name(f"{input_path.stem}_{max_completion_tokens}.jsonl")
 
 
 def run(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
-    if args.max_tokens <= 0:
+    if args.max_completion_tokens <= 0:
         raise ValueError("--max-tokens must be positive")
 
     dataset_dir = Path(args.dataset_dir).expanduser().resolve()
@@ -658,7 +658,7 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
         (
             stage,
             dataset_dir / filename,
-            _output_path(dataset_dir / filename, args.max_tokens),
+            _output_path(dataset_dir / filename, args.max_completion_tokens),
         )
         for stage, filename in STAGE_INPUTS
     ]
@@ -675,7 +675,7 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
             output_path=output_path,
             stage=stage,
             tokenizer=tokenizer,
-            max_tokens=args.max_tokens,
+            max_completion_tokens=args.max_completion_tokens,
             overwrite=args.overwrite,
         )
         summaries.append(summary)

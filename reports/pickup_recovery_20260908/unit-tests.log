@@ -1,0 +1,399 @@
+PickupObject interaction reposition starting for agent 0 on Tomato|0 from {'x': 0.0, 'y': 0.0, 'z': 0}
+PickupObject interaction reposition starting for agent 1 on Tomato|1 from {'x': 0.0, 'y': 0.0, 'z': 1}
+Reached: Tomato|1
+PickupObject interaction reposition reached for agent 1 on Tomato|1 at {'x': 0.5, 'y': 0.0, 'z': 1}
+PickupObject interaction reposition final action for agent 1 on Tomato|1: succeeded
+.PickupObject interaction reposition starting for agent 0 on Tomato|0 from {'x': -0.5, 'y': 0.0, 'z': 0.0}
+Reached: Tomato|0
+PickupObject interaction reposition reached for agent 0 on Tomato|0 at {'x': 0.5, 'y': 0.0, 'z': 0.0}
+PickupObject interaction reposition final action for agent 0 on Tomato|0: succeeded
+PickupObject interaction reposition starting for agent 1 on Tomato|1 from {'x': 0.0, 'y': 0.0, 'z': -0.5}
+Reached: Tomato|1
+PickupObject interaction reposition reached for agent 1 on Tomato|1 at {'x': 0.0, 'y': 0.0, 'z': 0.5}
+PickupObject interaction reposition final action for agent 1 on Tomato|1: succeeded
+.Reached: Tomato|0
+PickupObject interaction reposition starting for agent 1 on Tomato|1 from {'x': 0.0, 'y': 0.0, 'z': 1}
+Reached: Tomato|1
+PickupObject interaction reposition reached for agent 1 on Tomato|1 at {'x': 0.5, 'y': 0.0, 'z': 1}
+PickupObject interaction reposition final action for agent 1 on Tomato|1: succeeded
+.PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.0, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition reached for agent 0 on Apple|0 at {'x': 0.25, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition failed for agent 0 on Apple|0: Target object not found within the specified visibility
+PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.25, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition reached for agent 0 on Apple|0 at {'x': 0.25, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition failed for agent 0 on Apple|0: Target object not found within the specified visibility
+..PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+.PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.0, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition failed for agent 0 on Apple|0: no alternate pose
+PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.0, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition failed for agent 0 on Apple|0: no alternate pose
+.PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.0, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition reached for agent 0 on Apple|0 at {'x': 0.25, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition final action for agent 0 on Apple|0: succeeded
+Operated object name: Apple
+PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.0, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition reached for agent 0 on Apple|0 at {'x': 0.25, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition failed for agent 0 on Apple|0: Target object not found within the specified visibility
+PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.0, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition reached for agent 0 on Apple|0 at {'x': 0.25, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition failed for agent 0 on Apple|0: Picking up object would cause it to collide and clip into something!
+.PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.0, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition failed for agent 0 on Apple|0: no candidate away from current pose
+.PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.0, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition reached for agent 0 on Apple|0 at {'x': 0.25, 'y': 0.9, 'z': 0.0}
+PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.0, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition reached for agent 0 on Apple|0 at {'x': 0.25, 'y': 0.9, 'z': 0.0}
+.PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+Operated object name: Apple
+.PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.0, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition reached for agent 0 on Apple|0 at {'x': 0.25, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition final action for agent 0 on Apple|0: succeeded
+Operated object name: Apple
+.PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+..PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.0, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition failed for agent 0 on Apple|0: no alternate pose
+.PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.0, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition reached for agent 0 on Apple|0 at {'x': 0.25, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition failed for agent 0 on Apple|0: Target object not found within the specified visibility
+.PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.0, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition reached for agent 0 on Apple|0 at {'x': 0.25, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition final action for agent 0 on Apple|0: succeeded
+Operated object name: Apple
+.PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+.PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject still clipped after moving agent 0 back by 0.25; trying another distance.
+PickupObject still clipped after moving agent 0 back by 0.5; trying another distance.
+PickupObject still clipped after moving agent 0 back by 0.75; trying another distance.
+.PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+.PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+.PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.0, 'y': 0.9, 'z': 0.0}
+PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.0, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition reached for agent 0 on Apple|0 at {'x': 0.25, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition final action for agent 0 on Apple|0: succeeded
+Operated object name: Apple
+.PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.0, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition reached for agent 0 on Apple|0 at {'x': 0.25, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition final action for agent 0 on Apple|0: succeeded
+Operated object name: Apple
+PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.0, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition reached for agent 0 on Apple|0 at {'x': 0.25, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition final action for agent 0 on Apple|0: succeeded
+Operated object name: Apple
+..BreakObject Egg -> Egg Egg|+00.00|+00.90|+01.00
+Operated object name: EggCracked
+Operated object name: Egg
+.BreakObject Vase -> Vase Vase|+00.00|+00.90|+01.00
+.BreakObject Window -> Window Window|+00.00|+01.50|+01.00
+BreakObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+BreakObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+BreakObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+BreakObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+BreakObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+BreakObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+.BreakObject Window -> Window Window|+00.00|+01.50|+01.00
+Operated object name: Window
+.CloseObject Cabinet -> Cabinet Cabinet|+00.00|+01.00|+00.00
+Operated object name: Cabinet
+.CloseObject Cabinet -> Cabinet Cabinet|+00.00|+01.00|+00.00
+Operated object name: Cabinet
+.DirtyObject Plate -> Plate Plate|+00.00|+01.00|+00.00
+Operated object name: Plate
+.DirtyObject Plate -> Plate Plate|+00.00|+01.00|+00.00
+Operated object name: Plate
+.EmptyLiquidFromObject Mug -> Mug Mug|+00.00|+01.00|+00.00
+Operated object name: Mug
+.EmptyLiquidFromObject Mug -> Mug Mug|+00.00|+01.00|+00.00
+Operated object name: Mug
+...........RotateLeft was blocked by a held item for agent 0; trying equivalent RotateRight rotation.
+.Tick 1: robot1 completed GoToObject.
+..CloseObject Blinds -> Blinds Blinds|-00.40|+02.16|-01.92
+Operated object name: Blinds
+.Tick 0: robot1 failed MoveAhead: MoveAhead failed
+..OpenObject Cabinet -> Cabinet Cabinet|-00.40|+02.16|-01.92
+OpenObject openness: Cabinet|-00.40|+02.16|-01.92 openness=1.0
+Operated object name: Cabinet
+.OpenObject Blinds -> Blinds Blinds|-00.40|+02.16|-01.92
+OpenObject openness: Blinds|-00.40|+02.16|-01.92 openness=1.0
+Operated object name: Blinds
+.Operated object name: Drawer
+.PickupObject name: Apple
+PickupObject Apple -> Apple Apple|+00.00|+00.90|+01.00
+Operated object name: Apple
+.PickupObject name: Apple
+PickupObject Apple -> Apple Apple|+00.00|+00.90|+01.00
+PickupObject still clipped after moving agent 0 back by 0.25; trying another distance.
+PickupObject clip backoff teleport failed for agent 0 by 0.5: teleport blocked
+Operated object name: Apple
+.PickupObject name: Apple
+PickupObject Apple -> Apple Apple|+00.00|+00.90|+01.00
+.PickupObject name: Apple
+PickupObject Apple -> Apple Apple|+00.00|+00.90|+01.00
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+.PickupObject name: Apple
+PickupObject Apple -> Apple Apple|+00.00|+00.90|+01.00
+Operated object name: Apple
+.PutObject names: Apple, Table
+Operated object name: Table
+.PutObject names: Apple, Table
+PutObject Table -> Table Table|+01.00|+00.80|+00.00
+Operated object name: Table
+.PutObject names: Apple, Table
+PutObject Table -> Table Table|+01.00|+00.80|+00.00
+Operated object name: Table
+.....ToggleObjectOff DeskLamp -> DeskLamp DeskLamp|+00.00|+01.00|+00.00
+Operated object name: DeskLamp
+.ToggleObjectOff DeskLamp -> DeskLamp DeskLamp|+00.00|+01.00|+00.00
+Operated object name: DeskLamp
+.ToggleObjectOn DeskLamp -> DeskLamp DeskLamp|+00.00|+01.00|+00.00
+Operated object name: DeskLamp
+.ToggleObjectOn DeskLamp -> DeskLamp DeskLamp|+00.00|+01.00|+00.00
+Operated object name: DeskLamp
+......SliceObject interaction reposition starting for agent 0 on Tomato|0 from {'x': 0.0, 'y': 0.0, 'z': 0}
+Reached: Tomato|0
+SliceObject interaction reposition reached for agent 0 on Tomato|0 at {'x': 0.5, 'y': 0.0, 'z': 0}
+SliceObject interaction reposition final action for agent 0 on Tomato|0: succeeded
+SliceObject interaction reposition starting for agent 1 on Tomato|1 from {'x': 0.0, 'y': 0.0, 'z': 1}
+Reached: Tomato|1
+SliceObject interaction reposition reached for agent 1 on Tomato|1 at {'x': 0.5, 'y': 0.0, 'z': 1}
+SliceObject interaction reposition final action for agent 1 on Tomato|1: succeeded
+.SliceObject interaction reposition starting for agent 0 on Tomato|0 from {'x': 0.0, 'y': 0.0, 'z': 0}
+SliceObject interaction reposition starting for agent 1 on Tomato|1 from {'x': 0.0, 'y': 0.0, 'z': 1}
+Reached: Tomato|1
+SliceObject interaction reposition reached for agent 1 on Tomato|1 at {'x': 0.5, 'y': 0.0, 'z': 1}
+SliceObject interaction reposition final action for agent 1 on Tomato|1: succeeded
+.SliceObject interaction reposition starting for agent 0 on Tomato|0 from {'x': 0.0, 'y': 0.0, 'z': 0}
+Reached: Tomato|0
+SliceObject interaction reposition reached for agent 0 on Tomato|0 at {'x': 0.5, 'y': 0.0, 'z': 0}
+SliceObject interaction reposition final action for agent 0 on Tomato|0: succeeded
+.SliceObject interaction reposition starting for agent 0 on Tomato|0 from {'x': -0.5, 'y': 0.0, 'z': 0.0}
+Reached: Tomato|0
+SliceObject interaction reposition reached for agent 0 on Tomato|0 at {'x': 0.5, 'y': 0.0, 'z': 0.0}
+SliceObject interaction reposition final action for agent 0 on Tomato|0: succeeded
+SliceObject interaction reposition starting for agent 1 on Tomato|1 from {'x': 0.0, 'y': 0.0, 'z': -0.5}
+Reached: Tomato|1
+SliceObject interaction reposition reached for agent 1 on Tomato|1 at {'x': 0.0, 'y': 0.0, 'z': 0.5}
+SliceObject interaction reposition final action for agent 1 on Tomato|1: succeeded
+.SliceObject interaction reposition starting for agent 0 on Tomato|0 from {'x': 0.0, 'y': 0.0, 'z': 0}
+SliceObject interaction reposition failed for agent 0 on Tomato|0: injected failure
+SliceObject interaction reposition starting for agent 1 on Tomato|1 from {'x': 0.0, 'y': 0.0, 'z': 1}
+Reached: Tomato|1
+SliceObject interaction reposition reached for agent 1 on Tomato|1 at {'x': 0.5, 'y': 0.0, 'z': 1}
+SliceObject interaction reposition final action for agent 1 on Tomato|1: succeeded
+SliceObject interaction reposition starting for agent 0 on Tomato|0 from {'x': 0.0, 'y': 0.0, 'z': 0}
+Reached: Tomato|0
+SliceObject interaction reposition reached for agent 0 on Tomato|0 at {'x': 0.5, 'y': 0.0, 'z': 0}
+SliceObject interaction reposition starting for agent 1 on Tomato|1 from {'x': 0.0, 'y': 0.0, 'z': 1}
+Reached: Tomato|1
+SliceObject interaction reposition reached for agent 1 on Tomato|1 at {'x': 0.5, 'y': 0.0, 'z': 1}
+SliceObject interaction reposition final action for agent 1 on Tomato|1: succeeded
+.Reached: Tomato|0
+SliceObject interaction reposition starting for agent 1 on Tomato|1 from {'x': 0.0, 'y': 0.0, 'z': 1}
+Reached: Tomato|1
+SliceObject interaction reposition reached for agent 1 on Tomato|1 at {'x': 0.5, 'y': 0.0, 'z': 1}
+SliceObject interaction reposition final action for agent 1 on Tomato|1: succeeded
+.........................................................Tick 0: robot1 failed GoToObject: failed transition budget 0 exhausted
+Reached: Target|1
+Tick 2: robot2 completed GoToObject.
+.........................Reached: Apple|1
+Reached: Apple|1
+...........Going to CounterTop CounterTop|1 at reachable position {'x': 0.75, 'y': 0.0, 'z': 0.0}.
+.Going to CounterTop CounterTop|1 at reachable position {'x': 0.75, 'y': 0.0, 'z': 0.0}.
+.Going to Apple Apple|second at reachable position {'x': 1.25, 'y': 0.0, 'z': 0.0}.
+...............Tick 0: robot1 completed GoToObject.
+...Tick 0: robot1 completed PickupObject.
+Tick 1: robot2 completed PickupObject.
+Tick 2: robot1 completed PickupObject.
+Tick 3: robot1 completed PickupObject.
+Tick 4: robot1 completed PickupObject.
+Tick 5: robot1 completed PickupObject.
+Tick 6: robot1 completed PickupObject.
+Tick 7: robot1 completed PickupObject.
+Tick 8: robot1 completed PickupObject.
+...Could not place held object Mug|2 into CounterTop|1: cannot place
+..............Tick 0: robot1 completed PickupObject.
+Tick 0: robot2 failed PickupObject: resources held by ('0:robot1:0',)
+.Tick 0: robot2 completed PickupObject.
+Tick 1: robot1 completed PickupObject.
+.Tick 0: robot1 completed RunMicrowave.
+Tick 1: robot2 completed RunMicrowave.
+Tick 0: robot1 failed RunMicrowave: device rejected
+Tick 1: robot2 completed RunMicrowave.
+....Preparing output directories.
+Creating AI2-THOR controller.
+Initializing AI2-THOR scene.
+{"action_sr": null, "atomic_goal_count": null, "attempt": 1, "cleanup_errors": [{"exception_type": "RuntimeError", "message": "startup cleanup broke", "phase": "cleanup", "robot_id": null, "traceback": "Traceback (most recent call last):\n  File \"/home/dwb/thor/Coder/scripts/executor_system/execution_control.py\", line 269, in close\n    runtime.stop()\n  File \"/home/dwb/thor/Coder/scripts/executor_system/runtime.py\", line 2593, in stop\n    if self._get_controller_client().stop():\n  File \"/home/dwb/thor/Coder/scripts/executor_system/controller_client.py\", line 183, in stop\n    controller.stop()\n  File \"/home/dwb/thor/Coder/tests/test_execution_shutdown.py\", line 265, in stop\n    raise RuntimeError('startup cleanup broke')\nRuntimeError: startup cleanup broke\n"}], "error": "startup broke", "evaluation_status": "incomplete", "evaluation_version": "atomic_goals_v3", "executed_actions": 0, "execution_policy": "legacy", "execution_status": "failed", "failed_actions": 0, "failure_action_ratio": 0.0, "gcr": null, "metrics_schema_version": 2, "movement_mode": "step", "navigation_metrics": {}, "original_goal_count": null, "phase_durations_seconds": {"cleanup": 5.499459803104401e-07, "evaluation": 0.0, "execution": 0.0, "startup": 0.07690053433179855}, "process_status": "failed", "reachable_refresh_mode": "full", "reproducibility": {"ai2thor_version": "5.0.0", "code_dirty": true, "code_root": "/home/dwb/thor/Coder", "code_sha": "3d7e306e2d1f437a312b048e2882b25361537990", "config": {"execution_policy": "legacy", "movement_mode": "step", "reachable_refresh_mode": "full", "robot_count": 1, "runner_mode": true, "scene": "FloorPlan1", "seed": 0, "timeout_seconds": 1.0}, "executable_sha256": "25b9790a39948d74bfe492d4917ad13128451beea4cdd89a6d6690ceb5a01cef", "gpu": null, "plan_content_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a", "platform": "Linux-6.8.0-124-generic-x86_64-with-glibc2.35", "python_version": "3.9.25", "task_record_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"}, "robot_failures": [], "ru": null, "run_id": "4212d975b96749288fcfcc9dc4adb692", "run_time_seconds": 0.0769105632789433, "satisfied_goal_count": null, "scheduler_version": 2, "sr": null, "status": "failed", "subgoal_results": [], "task_key": "f93457dbfa15215aff5f1fa22d5ea305a9b47f600335e46aabd28af7a86eb90a", "task_success": null, "tc": null, "timed_out": false, "timeout_message": "", "worker_errors": []}
+Preparing output directories.
+Creating AI2-THOR controller.
+Initializing AI2-THOR scene.
+...{"action_sr": null, "atomic_goal_count": null, "attempt": 1, "cleanup_errors": [{"exception_type": "ExecutionShutdownTimeout", "message": "controller cleanup exceeded timeout", "phase": "cleanup", "robot_id": null, "traceback": "executor_system.execution_control.ExecutionShutdownTimeout: controller cleanup exceeded timeout\n"}], "error": "startup broke", "evaluation_status": "incomplete", "evaluation_version": "atomic_goals_v3", "executed_actions": 0, "execution_policy": "legacy", "execution_status": "failed", "failed_actions": 0, "failure_action_ratio": 0.0, "gcr": null, "metrics_schema_version": 2, "movement_mode": "step", "navigation_metrics": {}, "original_goal_count": null, "phase_durations_seconds": {"cleanup": 6.118789315223694e-07, "evaluation": 0.0, "execution": 0.0, "startup": 0.08334232587367296}, "process_status": "failed", "reachable_refresh_mode": "full", "reproducibility": {"ai2thor_version": "5.0.0", "code_dirty": true, "code_root": "/home/dwb/thor/Coder", "code_sha": "3d7e306e2d1f437a312b048e2882b25361537990", "config": {"execution_policy": "legacy", "movement_mode": "step", "reachable_refresh_mode": "full", "robot_count": 1, "runner_mode": true, "scene": "FloorPlan1", "seed": 0, "timeout_seconds": 1.0}, "executable_sha256": "25b9790a39948d74bfe492d4917ad13128451beea4cdd89a6d6690ceb5a01cef", "gpu": null, "plan_content_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a", "platform": "Linux-6.8.0-124-generic-x86_64-with-glibc2.35", "python_version": "3.9.25", "task_record_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"}, "robot_failures": [], "ru": null, "run_id": "759905f51be54ca4890e94769ba73cf8", "run_time_seconds": 0.0833541490137577, "satisfied_goal_count": null, "scheduler_version": 2, "sr": null, "status": "failed", "subgoal_results": [], "task_key": "f93457dbfa15215aff5f1fa22d5ea305a9b47f600335e46aabd28af7a86eb90a", "task_success": null, "tc": null, "timed_out": false, "timeout_message": "", "worker_errors": []}
+stage started with 1 robot queue(s).
+{"action_counts": {"attempts": 0, "cancelled": 0, "failed": 0, "planned": 2, "skipped": 0, "started": 0, "succeeded": 0, "unexecuted": 2}, "action_sr": null, "actions": [{"action_key": "0:robot1:0", "action_type": "Done", "attempts": 0, "cursor": 0, "reason": "failed", "requested_failure_policy": "FAIL_STAGE", "robot_id": "robot1", "stage_id": "stage", "status": "unexecuted"}, {"action_key": "0:robot1:1", "action_type": "Done", "attempts": 0, "cursor": 1, "reason": "failed", "requested_failure_policy": "FAIL_STAGE", "robot_id": "robot1", "stage_id": "stage", "status": "unexecuted"}], "atomic_goal_count": 0, "attempt": 1, "cleanup_errors": [{"exception_type": "RuntimeError", "message": "stop broke", "phase": "cleanup", "robot_id": null, "traceback": "Traceback (most recent call last):\n  File \"/home/dwb/thor/Coder/scripts/executor_system/execution_control.py\", line 269, in close\n    runtime.stop()\n  File \"/home/dwb/thor/Coder/tests/test_execution_shutdown.py\", line 409, in <lambda>\n    runtime.stop = lambda: (_ for _ in ()).throw(RuntimeError('stop broke'))\n  File \"/home/dwb/thor/Coder/tests/test_execution_shutdown.py\", line 409, in <genexpr>\n    runtime.stop = lambda: (_ for _ in ()).throw(RuntimeError('stop broke'))\nRuntimeError: stop broke\n"}], "error": "worker broke", "errors": [{"exception_type": "RuntimeError", "message": "worker broke", "phase": "task", "robot_id": null, "traceback": "Traceback (most recent call last):\n  File \"/home/dwb/thor/Coder/scripts/executor_system/action_plan.py\", line 667, in execute\n    world_state = runner.execute_stage(stage)\n  File \"/home/dwb/thor/Coder/scripts/executor_system/action_plan.py\", line 578, in execute_stage\n    self.outcome = self.scheduler.run()\n  File \"/home/dwb/thor/Coder/scripts/executor_system/stage_scheduler.py\", line 500, in run\n    run_workers(self.runtime, list(self.executors.values()), self.coordinator,\n  File \"/home/dwb/thor/Coder/scripts/executor_system/execution_control.py\", line 255, in run_workers\n    raise primary[1].with_traceback(primary[2])\n  File \"/home/dwb/thor/Coder/scripts/executor_system/execution_control.py\", line 185, in run\n    executor.execute()\n  File \"/home/dwb/.pyenv/versions/miniconda3-3.9-25.9.1-3/lib/python3.9/unittest/mock.py\", line 1092, in __call__\n    return self._mock_call(*args, **kwargs)\n  File \"/home/dwb/.pyenv/versions/miniconda3-3.9-25.9.1-3/lib/python3.9/unittest/mock.py\", line 1096, in _mock_call\n    return self._execute_mock_call(*args, **kwargs)\n  File \"/home/dwb/.pyenv/versions/miniconda3-3.9-25.9.1-3/lib/python3.9/unittest/mock.py\", line 1151, in _execute_mock_call\n    raise effect\nRuntimeError: worker broke\n"}], "evaluation_status": "incomplete", "evaluation_version": "atomic_goals_v3", "executed_actions": 0, "execution_policy": "legacy", "execution_quiescent": true, "execution_status": "failed", "failed_actions": 0, "failure_action_ratio": 0.0, "final_snapshot": {"held_object_sources": {"robot1": {}, "robot2": {}}, "held_objects": {"robot1": [], "robot2": []}, "objects_by_id": {}, "robot_positions": {"robot1": {"x": 0.0, "y": 0.0, "z": 0.0}, "robot2": {"x": 1.0, "y": 0.0, "z": 0.0}}, "robot_rotations": {"robot1": 0.0, "robot2": 0.0}, "version": 0}, "gcr": null, "global_condition_satisfied": null, "ignored_failure_count": 0, "metrics_schema_version": 2, "movement_mode": "step", "navigation_metrics": {}, "original_goal_count": 0, "phase_durations_seconds": {"cleanup": 0.0006050583906471729, "evaluation": 0.0, "execution": 0.004262872040271759, "startup": 0.06370053626596928}, "process_status": "failed", "raw_action_sr": null, "reachable_refresh_mode": "full", "reproducibility": {"ai2thor_version": "5.0.0", "code_dirty": true, "code_root": "/home/dwb/thor/Coder", "code_sha": "3d7e306e2d1f437a312b048e2882b25361537990", "config": {"cloud_rendering": null, "controller": null, "execution_policy": "legacy", "movement": {"expanded_candidate_limit": 30, "full_refresh_interval_steps": 4, "grid_size_m": 0.25, "grid_snap_tolerance_m": 0.125001, "hard_clearance_m": 0.35, "initial_candidate_limit": 10, "max_assignment_trials": 256, "max_failed_transitions": 8, "max_invisible_candidate_replans": 1, "max_replans": 8, "mode": "step", "reachable_refresh_mode": "full"}, "movement_mode": "step", "reachable_refresh_mode": "full", "render_image": false, "robot_count": 2, "runner_mode": true, "runtime_constants": {"AGENT_CLEARANCE_DISTANCE": 0.35, "GENERATE_METADATA": false, "INTERACTION_MAX_PASS_STEPS": 30, "NAVIGATION_CHUNK_STEPS": 4, "NAVIGATION_GRID_SIZE": 0.25, "OBJECT_FOOTPRINT_CLEARANCE": 0.05, "OPEN_OBJECT_FOOTPRINT_CLEARANCE": 0.2, "TELEPORT_CANDIDATE_LIMIT": 10}, "scene": "FloorPlanunknown", "seed": 0, "show_windows": false, "timeout_seconds": 1.0}, "executable_sha256": "25b9790a39948d74bfe492d4917ad13128451beea4cdd89a6d6690ceb5a01cef", "gpu": null, "plan_content_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a", "platform": "Linux-6.8.0-124-generic-x86_64-with-glibc2.35", "python_version": "3.9.25", "task_record_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"}, "robot_failures": [], "ru": null, "run_id": "e1879aee020c433988d3e57b3c9833bd", "run_time_seconds": 0.0685749682597816, "runtime_metrics": {"counters": {}, "timing_semantics": "overlapping; reachable_query is included in controller; do not sum categories"}, "satisfied_goal_count": null, "scheduler_version": 2, "sr": null, "stages": [{"actions": [{"action_key": "0:robot1:0", "action_type": "Done", "attempts": 0, "cursor": 0, "reason": "failed", "requested_failure_policy": "FAIL_STAGE", "robot_id": "robot1", "stage_id": "stage", "status": "unexecuted"}, {"action_key": "0:robot1:1", "action_type": "Done", "attempts": 0, "cursor": 1, "reason": "failed", "requested_failure_policy": "FAIL_STAGE", "robot_id": "robot1", "stage_id": "stage", "status": "unexecuted"}], "attempts": [], "condition": {"final": null, "initial": null}, "continue_task": false, "diagnostics": {"resource_holders": {}, "robots": {"robot1": {"action": "Done", "cursor": 0, "reason": null, "status": "READY", "wait_rounds": 0}}, "stage_id": "stage", "world_version": 0}, "errors": [{"exception_type": "RuntimeError", "message": "worker broke", "phase": "stage", "robot_id": null, "traceback": "Traceback (most recent call last):\n  File \"/home/dwb/thor/Coder/scripts/executor_system/stage_scheduler.py\", line 500, in run\n    run_workers(self.runtime, list(self.executors.values()), self.coordinator,\n  File \"/home/dwb/thor/Coder/scripts/executor_system/execution_control.py\", line 255, in run_workers\n    raise primary[1].with_traceback(primary[2])\n  File \"/home/dwb/thor/Coder/scripts/executor_system/execution_control.py\", line 185, in run\n    executor.execute()\n  File \"/home/dwb/.pyenv/versions/miniconda3-3.9-25.9.1-3/lib/python3.9/unittest/mock.py\", line 1092, in __call__\n    return self._mock_call(*args, **kwargs)\n  File \"/home/dwb/.pyenv/versions/miniconda3-3.9-25.9.1-3/lib/python3.9/unittest/mock.py\", line 1096, in _mock_call\n    return self._execute_mock_call(*args, **kwargs)\n  File \"/home/dwb/.pyenv/versions/miniconda3-3.9-25.9.1-3/lib/python3.9/unittest/mock.py\", line 1151, in _execute_mock_call\n    raise effect\nRuntimeError: worker broke\n"}], "resources": [], "snapshot": {"held_object_sources": {"robot1": {}, "robot2": {}}, "held_objects": {"robot1": [], "robot2": []}, "objects_by_id": {}, "robot_positions": {"robot1": {"x": 0.0, "y": 0.0, "z": 0.0}, "robot2": {"x": 1.0, "y": 0.0, "z": 0.0}}, "robot_rotations": {"robot1": 0.0, "robot2": 0.0}, "version": 0}, "snapshot_is_current": false, "stage_id": "stage", "stage_index": 0, "status": "failed", "waits": [], "waves": [], "world_version": 0}], "status": "failed", "subgoal_results": [], "task_id": "shutdown", "task_key": "f93457dbfa15215aff5f1fa22d5ea305a9b47f600335e46aabd28af7a86eb90a", "task_success": null, "tc": null, "timed_out": false, "timeout_message": "", "worker_errors": [{"exception_type": "RuntimeError", "message": "worker broke", "phase": "stage", "robot_id": "robot1", "traceback": "Traceback (most recent call last):\n  File \"/home/dwb/thor/Coder/scripts/executor_system/execution_control.py\", line 185, in run\n    executor.execute()\n  File \"/home/dwb/.pyenv/versions/miniconda3-3.9-25.9.1-3/lib/python3.9/unittest/mock.py\", line 1092, in __call__\n    return self._mock_call(*args, **kwargs)\n  File \"/home/dwb/.pyenv/versions/miniconda3-3.9-25.9.1-3/lib/python3.9/unittest/mock.py\", line 1096, in _mock_call\n    return self._execute_mock_call(*args, **kwargs)\n  File \"/home/dwb/.pyenv/versions/miniconda3-3.9-25.9.1-3/lib/python3.9/unittest/mock.py\", line 1151, in _execute_mock_call\n    raise effect\nRuntimeError: worker broke\n"}]}.
+stage started with 1 robot queue(s).
+.{"action_counts": {"attempts": 1, "cancelled": 1, "failed": 0, "planned": 2, "skipped": 0, "started": 1, "succeeded": 0, "unexecuted": 1}, "action_sr": null, "actions": [{"action_key": "0:robot1:0", "action_type": "Done", "attempts": 1, "cursor": 0, "reason": "failed", "requested_failure_policy": "FAIL_STAGE", "robot_id": "robot1", "stage_id": "stage", "status": "cancelled"}, {"action_key": "0:robot1:1", "action_type": "Done", "attempts": 0, "cursor": 1, "reason": "failed", "requested_failure_policy": "FAIL_STAGE", "robot_id": "robot1", "stage_id": "stage", "status": "unexecuted"}], "atomic_goal_count": 0, "attempt": 1, "cleanup_errors": [], "error": "workers did not stop: stage-robot1", "errors": [{"exception_type": "ExecutionShutdownTimeout", "message": "workers did not stop: stage-robot1", "phase": "task", "robot_id": null, "traceback": "Traceback (most recent call last):\n  File \"/home/dwb/thor/Coder/scripts/executor_system/execution_control.py\", line 214, in run_workers\n    drive()\n  File \"/home/dwb/thor/Coder/scripts/executor_system/stage_scheduler.py\", line 393, in _drive\n    self.control.check()\n  File \"/home/dwb/thor/Coder/scripts/executor_system/execution_control.py\", line 88, in check\n    self._parent.check()\n  File \"/home/dwb/thor/Coder/scripts/executor_system/execution_control.py\", line 92, in check\n    raise error(self._reason)\nexecutor_system.execution_control.PlanExecutionTimeout: task-plan execution exceeded timeout\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/home/dwb/thor/Coder/scripts/executor_system/action_plan.py\", line 667, in execute\n    world_state = runner.execute_stage(stage)\n  File \"/home/dwb/thor/Coder/scripts/executor_system/action_plan.py\", line 578, in execute_stage\n    self.outcome = self.scheduler.run()\n  File \"/home/dwb/thor/Coder/scripts/executor_system/stage_scheduler.py\", line 500, in run\n    run_workers(self.runtime, list(self.executors.values()), self.coordinator,\n  File \"/home/dwb/thor/Coder/scripts/executor_system/execution_control.py\", line 246, in run_workers\n    raise error from main_error[0]\nexecutor_system.execution_control.ExecutionShutdownTimeout: workers did not stop: stage-robot1\n"}], "evaluation_status": "incomplete", "evaluation_version": "atomic_goals_v3", "executed_actions": 1, "execution_policy": "legacy", "execution_quiescent": false, "execution_status": "timeout", "failed_actions": 0, "failure_action_ratio": 0.0, "final_snapshot": {"held_object_sources": {"robot1": {}, "robot2": {}}, "held_objects": {"robot1": [], "robot2": []}, "objects_by_id": {}, "robot_positions": {"robot1": {"x": 0.0, "y": 0.0, "z": 0.0}, "robot2": {"x": 1.0, "y": 0.0, "z": 0.0}}, "robot_rotations": {"robot1": 0.0, "robot2": 0.0}, "version": 0}, "gcr": null, "global_condition_satisfied": null, "ignored_failure_count": 0, "metrics_schema_version": 2, "movement_mode": "step", "navigation_metrics": {}, "original_goal_count": 0, "phase_durations_seconds": {"cleanup": 0.0002003200352191925, "evaluation": 0.0, "execution": 0.08384286612272263, "startup": 0.061513910070061684}, "process_status": "timeout", "raw_action_sr": null, "reachable_refresh_mode": "full", "reproducibility": {"ai2thor_version": "5.0.0", "code_dirty": true, "code_root": "/home/dwb/thor/Coder", "code_sha": "3d7e306e2d1f437a312b048e2882b25361537990", "config": {"cloud_rendering": null, "controller": null, "execution_policy": "legacy", "movement": {"expanded_candidate_limit": 30, "full_refresh_interval_steps": 4, "grid_size_m": 0.25, "grid_snap_tolerance_m": 0.125001, "hard_clearance_m": 0.35, "initial_candidate_limit": 10, "max_assignment_trials": 256, "max_failed_transitions": 8, "max_invisible_candidate_replans": 1, "max_replans": 8, "mode": "step", "reachable_refresh_mode": "full"}, "movement_mode": "step", "reachable_refresh_mode": "full", "render_image": false, "robot_count": 2, "runner_mode": true, "runtime_constants": {"AGENT_CLEARANCE_DISTANCE": 0.35, "GENERATE_METADATA": false, "INTERACTION_MAX_PASS_STEPS": 30, "NAVIGATION_CHUNK_STEPS": 4, "NAVIGATION_GRID_SIZE": 0.25, "OBJECT_FOOTPRINT_CLEARANCE": 0.05, "OPEN_OBJECT_FOOTPRINT_CLEARANCE": 0.2, "TELEPORT_CANDIDATE_LIMIT": 10}, "scene": "FloorPlanunknown", "seed": 0, "show_windows": false, "timeout_seconds": 0.03}, "executable_sha256": "25b9790a39948d74bfe492d4917ad13128451beea4cdd89a6d6690ceb5a01cef", "gpu": null, "plan_content_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a", "platform": "Linux-6.8.0-124-generic-x86_64-with-glibc2.35", "python_version": "3.9.25", "task_record_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"}, "robot_failures": [], "ru": null, "run_id": "26a94c476cd448ebaa62e3f51813cc64", "run_time_seconds": 0.1455673952586949, "runtime_metrics": {"counters": {}, "timing_semantics": "overlapping; reachable_query is included in controller; do not sum categories"}, "satisfied_goal_count": null, "scheduler_version": 2, "sr": null, "stages": [{"actions": [{"action_key": "0:robot1:0", "action_type": "Done", "attempts": 1, "cursor": 0, "reason": "failed", "requested_failure_policy": "FAIL_STAGE", "robot_id": "robot1", "stage_id": "stage", "status": "cancelled"}, {"action_key": "0:robot1:1", "action_type": "Done", "attempts": 0, "cursor": 1, "reason": "failed", "requested_failure_policy": "FAIL_STAGE", "robot_id": "robot1", "stage_id": "stage", "status": "unexecuted"}], "attempts": [], "condition": {"final": null, "initial": null}, "continue_task": false, "diagnostics": {"resource_holders": {}, "robots": {"robot1": {"action": "Done", "cursor": 0, "reason": null, "status": "EXECUTING", "wait_rounds": 0}}, "stage_id": "stage", "world_version": 0}, "errors": [{"exception_type": "ExecutionShutdownTimeout", "message": "workers did not stop: stage-robot1", "phase": "stage", "robot_id": null, "traceback": "Traceback (most recent call last):\n  File \"/home/dwb/thor/Coder/scripts/executor_system/execution_control.py\", line 214, in run_workers\n    drive()\n  File \"/home/dwb/thor/Coder/scripts/executor_system/stage_scheduler.py\", line 393, in _drive\n    self.control.check()\n  File \"/home/dwb/thor/Coder/scripts/executor_system/execution_control.py\", line 88, in check\n    self._parent.check()\n  File \"/home/dwb/thor/Coder/scripts/executor_system/execution_control.py\", line 92, in check\n    raise error(self._reason)\nexecutor_system.execution_control.PlanExecutionTimeout: task-plan execution exceeded timeout\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/home/dwb/thor/Coder/scripts/executor_system/stage_scheduler.py\", line 500, in run\n    run_workers(self.runtime, list(self.executors.values()), self.coordinator,\n  File \"/home/dwb/thor/Coder/scripts/executor_system/execution_control.py\", line 246, in run_workers\n    raise error from main_error[0]\nexecutor_system.execution_control.ExecutionShutdownTimeout: workers did not stop: stage-robot1\n"}], "resources": [{"action_key": "0:robot1:0", "event": "acquired", "keys": [], "world_version": 0}], "snapshot": {"held_object_sources": {"robot1": {}, "robot2": {}}, "held_objects": {"robot1": [], "robot2": []}, "objects_by_id": {}, "robot_positions": {"robot1": {"x": 0.0, "y": 0.0, "z": 0.0}, "robot2": {"x": 1.0, "y": 0.0, "z": 0.0}}, "robot_rotations": {"robot1": 0.0, "robot2": 0.0}, "version": 0}, "snapshot_is_current": false, "stage_id": "stage", "stage_index": 0, "status": "failed", "waits": [], "waves": [{"action_keys": ["0:robot1:0"], "navigation_agent_ids": [], "robots": ["robot1"], "wave_id": 1}], "world_version": 0}], "status": "timeout", "subgoal_results": [], "task_id": "shutdown", "task_key": "f93457dbfa15215aff5f1fa22d5ea305a9b47f600335e46aabd28af7a86eb90a", "task_success": null, "tc": null, "timed_out": true, "timeout_message": "", "worker_errors": []}
+stage started with 1 robot queue(s).
+stage started with 1 robot queue(s).
+.stage started with 1 robot queue(s).
+Tick 0: robot1 completed Done.
+Tick 1: robot1 completed Done.
+.stage started with 1 robot queue(s).
+Tick 0: robot1 completed Done.
+Tick 1: robot1 completed Done.
+stage started with 1 robot queue(s).
+Tick 0: robot1 completed Done.
+Tick 1: robot1 completed Done.
+stage started with 1 robot queue(s).
+Tick 0: robot1 completed Done.
+Tick 1: robot1 completed Done.
+stage started with 1 robot queue(s).
+Tick 0: robot1 completed Done.
+Tick 1: robot1 completed Done.
+....stage started with 1 robot queue(s).
+stage started with 1 robot queue(s).
+stage started with 1 robot queue(s).
+stage started with 1 robot queue(s).
+stage started with 1 robot queue(s).
+stage started with 1 robot queue(s).
+..stage started with 1 robot queue(s).
+.........
+----------------------------------------------------------------------
+Ran 237 tests in 6.020s
+
+OK

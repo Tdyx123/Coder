@@ -1,0 +1,541 @@
+[
+  {
+    "task_id": "FloorPlan1_task_0",
+    "category": "navigation_failed",
+    "baseline": {
+      "pickup_succeeded": 1,
+      "pickup_total": 3,
+      "pickup_visibility_failed": 2,
+      "downstream_succeeded": 4,
+      "downstream_total": 9,
+      "all_actions_succeeded": 5,
+      "all_actions_total": 15,
+      "seconds": 52.77953932294622,
+      "timed_out": false,
+      "execution_status": "partial",
+      "process_status": "completed",
+      "pickup_reposition_successes": 0,
+      "navigation_teleports": 0
+    },
+    "updated": {
+      "pickup_succeeded": 1,
+      "pickup_total": 3,
+      "pickup_visibility_failed": 2,
+      "downstream_succeeded": 4,
+      "downstream_total": 9,
+      "all_actions_succeeded": 5,
+      "all_actions_total": 15,
+      "seconds": 82.09871702594683,
+      "timed_out": false,
+      "execution_status": "partial",
+      "process_status": "completed",
+      "pickup_reposition_successes": 0,
+      "navigation_teleports": 0
+    },
+    "pickup_transitions": [
+      {
+        "action_key": "0:robot2:3",
+        "before": "failed",
+        "after": "failed",
+        "before_error": "PickupObject failed for agent 1 on Egg|-02.04|+00.81|+01.24: NullReferenceException: Target object not found within the specified visibility.. trace:   at UnityStandardAssets.Characters.FirstPerson.BaseFPSAgentController.getInteractableSimObjectFromId (System.String objectId, System.Boolean forceAction) [0x0007a] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at UnityStandardAssets.Characters.FirstPerson.PhysicsRemoteFPSAgentController.PickupObject (System.String objectId, System.Boolean forceAction, System.Boolean manualInteract) [0x00000] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at (wrapper managed-to-native) System.Reflection.MonoMethod.InternalInvoke(System.Reflection.MonoMethod,object,object[],System.Exception&)\n  at System.Reflection.MonoMethod.Invoke (System.Object obj, System.Reflection.BindingFlags invokeAttr, System.Reflection.Binder binder, System.Object[] parameters, System.Globalization.CultureInfo culture) [0x00032] in <695d1cc93cca45069c528c15c9fdd749>:0 ",
+        "after_error": "PickupObject failed for agent 1 on Egg|-02.04|+00.81|+01.24: NullReferenceException: Target object not found within the specified visibility.. trace:   at UnityStandardAssets.Characters.FirstPerson.BaseFPSAgentController.getInteractableSimObjectFromId (System.String objectId, System.Boolean forceAction) [0x0007a] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at UnityStandardAssets.Characters.FirstPerson.PhysicsRemoteFPSAgentController.PickupObject (System.String objectId, System.Boolean forceAction, System.Boolean manualInteract) [0x00000] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at (wrapper managed-to-native) System.Reflection.MonoMethod.InternalInvoke(System.Reflection.MonoMethod,object,object[],System.Exception&)\n  at System.Reflection.MonoMethod.Invoke (System.Object obj, System.Reflection.BindingFlags invokeAttr, System.Reflection.Binder binder, System.Object[] parameters, System.Globalization.CultureInfo culture) [0x00032] in <695d1cc93cca45069c528c15c9fdd749>:0 ; PickupObject interaction reposition failed for agent 1 on Egg|-02.04|+00.81|+01.24: NO_INTERACTION_POSE: interaction target is invisible from every candidate for agent 1 target 'Egg|-02.04|+00.81|+01.24'"
+      },
+      {
+        "action_key": "0:robot2:5",
+        "before": "succeeded",
+        "after": "succeeded",
+        "before_error": "",
+        "after_error": ""
+      },
+      {
+        "action_key": "0:robot2:12",
+        "before": "failed",
+        "after": "failed",
+        "before_error": "PickupObject failed for agent 1 on Knife|-01.70|+00.79|-00.22: NullReferenceException: Target object not found within the specified visibility.. trace:   at UnityStandardAssets.Characters.FirstPerson.BaseFPSAgentController.getInteractableSimObjectFromId (System.String objectId, System.Boolean forceAction) [0x0007a] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at UnityStandardAssets.Characters.FirstPerson.PhysicsRemoteFPSAgentController.PickupObject (System.String objectId, System.Boolean forceAction, System.Boolean manualInteract) [0x00000] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at (wrapper managed-to-native) System.Reflection.MonoMethod.InternalInvoke(System.Reflection.MonoMethod,object,object[],System.Exception&)\n  at System.Reflection.MonoMethod.Invoke (System.Object obj, System.Reflection.BindingFlags invokeAttr, System.Reflection.Binder binder, System.Object[] parameters, System.Globalization.CultureInfo culture) [0x00032] in <695d1cc93cca45069c528c15c9fdd749>:0 ",
+        "after_error": "PickupObject failed for agent 1 on Knife|-01.70|+00.79|-00.22: NullReferenceException: Target object not found within the specified visibility.. trace:   at UnityStandardAssets.Characters.FirstPerson.BaseFPSAgentController.getInteractableSimObjectFromId (System.String objectId, System.Boolean forceAction) [0x0007a] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at UnityStandardAssets.Characters.FirstPerson.PhysicsRemoteFPSAgentController.PickupObject (System.String objectId, System.Boolean forceAction, System.Boolean manualInteract) [0x00000] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at (wrapper managed-to-native) System.Reflection.MonoMethod.InternalInvoke(System.Reflection.MonoMethod,object,object[],System.Exception&)\n  at System.Reflection.MonoMethod.Invoke (System.Object obj, System.Reflection.BindingFlags invokeAttr, System.Reflection.Binder binder, System.Object[] parameters, System.Globalization.CultureInfo culture) [0x00032] in <695d1cc93cca45069c528c15c9fdd749>:0 ; PickupObject interaction reposition failed for agent 1 on Knife|-01.70|+00.79|-00.22: NO_INTERACTION_POSE: interaction target is invisible from every candidate for agent 1 target 'Knife|-01.70|+00.79|-00.22'"
+      }
+    ],
+    "action_changes": []
+  },
+  {
+    "task_id": "FloorPlan1_task_29",
+    "category": "navigation_failed",
+    "baseline": {
+      "pickup_succeeded": 1,
+      "pickup_total": 2,
+      "pickup_visibility_failed": 1,
+      "downstream_succeeded": 2,
+      "downstream_total": 2,
+      "all_actions_succeeded": 7,
+      "all_actions_total": 10,
+      "seconds": 26.186626740265638,
+      "timed_out": false,
+      "execution_status": "partial",
+      "process_status": "completed",
+      "pickup_reposition_successes": 0,
+      "navigation_teleports": 0
+    },
+    "updated": {
+      "pickup_succeeded": 1,
+      "pickup_total": 2,
+      "pickup_visibility_failed": 1,
+      "downstream_succeeded": 2,
+      "downstream_total": 2,
+      "all_actions_succeeded": 7,
+      "all_actions_total": 10,
+      "seconds": 50.829290120862424,
+      "timed_out": false,
+      "execution_status": "partial",
+      "process_status": "completed",
+      "pickup_reposition_successes": 0,
+      "navigation_teleports": 0
+    },
+    "pickup_transitions": [
+      {
+        "action_key": "0:robot1:1",
+        "before": "failed",
+        "after": "failed",
+        "before_error": "PickupObject failed for agent 0 on Knife|-01.70|+00.79|-00.22: NullReferenceException: Target object not found within the specified visibility.. trace:   at UnityStandardAssets.Characters.FirstPerson.BaseFPSAgentController.getInteractableSimObjectFromId (System.String objectId, System.Boolean forceAction) [0x0007a] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at UnityStandardAssets.Characters.FirstPerson.PhysicsRemoteFPSAgentController.PickupObject (System.String objectId, System.Boolean forceAction, System.Boolean manualInteract) [0x00000] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at (wrapper managed-to-native) System.Reflection.MonoMethod.InternalInvoke(System.Reflection.MonoMethod,object,object[],System.Exception&)\n  at System.Reflection.MonoMethod.Invoke (System.Object obj, System.Reflection.BindingFlags invokeAttr, System.Reflection.Binder binder, System.Object[] parameters, System.Globalization.CultureInfo culture) [0x00032] in <695d1cc93cca45069c528c15c9fdd749>:0 ",
+        "after_error": "PickupObject failed for agent 0 on Knife|-01.70|+00.79|-00.22: NullReferenceException: Target object not found within the specified visibility.. trace:   at UnityStandardAssets.Characters.FirstPerson.BaseFPSAgentController.getInteractableSimObjectFromId (System.String objectId, System.Boolean forceAction) [0x0007a] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at UnityStandardAssets.Characters.FirstPerson.PhysicsRemoteFPSAgentController.PickupObject (System.String objectId, System.Boolean forceAction, System.Boolean manualInteract) [0x00000] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at (wrapper managed-to-native) System.Reflection.MonoMethod.InternalInvoke(System.Reflection.MonoMethod,object,object[],System.Exception&)\n  at System.Reflection.MonoMethod.Invoke (System.Object obj, System.Reflection.BindingFlags invokeAttr, System.Reflection.Binder binder, System.Object[] parameters, System.Globalization.CultureInfo culture) [0x00032] in <695d1cc93cca45069c528c15c9fdd749>:0 ; PickupObject interaction reposition failed for agent 0 on Knife|-01.70|+00.79|-00.22: NO_INTERACTION_POSE: interaction target is invisible from every candidate for agent 0 target 'Knife|-01.70|+00.79|-00.22'"
+      },
+      {
+        "action_key": "0:robot3:1",
+        "before": "succeeded",
+        "after": "succeeded",
+        "before_error": "",
+        "after_error": ""
+      }
+    ],
+    "action_changes": []
+  },
+  {
+    "task_id": "FloorPlan1_task_26",
+    "category": "navigation_failed",
+    "baseline": {
+      "pickup_succeeded": 1,
+      "pickup_total": 2,
+      "pickup_visibility_failed": 1,
+      "downstream_succeeded": 1,
+      "downstream_total": 5,
+      "all_actions_succeeded": 10,
+      "all_actions_total": 16,
+      "seconds": 54.97142452001572,
+      "timed_out": false,
+      "execution_status": "partial",
+      "process_status": "completed",
+      "pickup_reposition_successes": 0,
+      "navigation_teleports": 0
+    },
+    "updated": {
+      "pickup_succeeded": 1,
+      "pickup_total": 2,
+      "pickup_visibility_failed": 1,
+      "downstream_succeeded": 1,
+      "downstream_total": 5,
+      "all_actions_succeeded": 10,
+      "all_actions_total": 16,
+      "seconds": 82.48927891300991,
+      "timed_out": false,
+      "execution_status": "partial",
+      "process_status": "completed",
+      "pickup_reposition_successes": 0,
+      "navigation_teleports": 0
+    },
+    "pickup_transitions": [
+      {
+        "action_key": "0:robot2:1",
+        "before": "succeeded",
+        "after": "succeeded",
+        "before_error": "",
+        "after_error": ""
+      },
+      {
+        "action_key": "1:robot2:1",
+        "before": "failed",
+        "after": "failed",
+        "before_error": "PickupObject failed for agent 1 on Bread|-00.52|+01.17|-00.03: NullReferenceException: Target object not found within the specified visibility.. trace:   at UnityStandardAssets.Characters.FirstPerson.BaseFPSAgentController.getInteractableSimObjectFromId (System.String objectId, System.Boolean forceAction) [0x0007a] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at UnityStandardAssets.Characters.FirstPerson.PhysicsRemoteFPSAgentController.PickupObject (System.String objectId, System.Boolean forceAction, System.Boolean manualInteract) [0x00000] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at (wrapper managed-to-native) System.Reflection.MonoMethod.InternalInvoke(System.Reflection.MonoMethod,object,object[],System.Exception&)\n  at System.Reflection.MonoMethod.Invoke (System.Object obj, System.Reflection.BindingFlags invokeAttr, System.Reflection.Binder binder, System.Object[] parameters, System.Globalization.CultureInfo culture) [0x00032] in <695d1cc93cca45069c528c15c9fdd749>:0 ",
+        "after_error": "PickupObject failed for agent 1 on Bread|-00.52|+01.17|-00.03: NullReferenceException: Target object not found within the specified visibility.. trace:   at UnityStandardAssets.Characters.FirstPerson.BaseFPSAgentController.getInteractableSimObjectFromId (System.String objectId, System.Boolean forceAction) [0x0007a] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at UnityStandardAssets.Characters.FirstPerson.PhysicsRemoteFPSAgentController.PickupObject (System.String objectId, System.Boolean forceAction, System.Boolean manualInteract) [0x00000] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at (wrapper managed-to-native) System.Reflection.MonoMethod.InternalInvoke(System.Reflection.MonoMethod,object,object[],System.Exception&)\n  at System.Reflection.MonoMethod.Invoke (System.Object obj, System.Reflection.BindingFlags invokeAttr, System.Reflection.Binder binder, System.Object[] parameters, System.Globalization.CultureInfo culture) [0x00032] in <695d1cc93cca45069c528c15c9fdd749>:0 ; PickupObject interaction reposition failed for agent 1 on Bread|-00.52|+01.17|-00.03: NO_INTERACTION_POSE: interaction target is invisible from every candidate for agent 1 target 'Bread|-00.52|+01.17|-00.03'"
+      }
+    ],
+    "action_changes": []
+  },
+  {
+    "task_id": "FloorPlan2_task_8",
+    "category": "other_visibility",
+    "baseline": {
+      "pickup_succeeded": 1,
+      "pickup_total": 2,
+      "pickup_visibility_failed": 1,
+      "downstream_succeeded": 0,
+      "downstream_total": 2,
+      "all_actions_succeeded": 7,
+      "all_actions_total": 10,
+      "seconds": 15.05896979616955,
+      "timed_out": false,
+      "execution_status": "partial",
+      "process_status": "completed",
+      "pickup_reposition_successes": 0,
+      "navigation_teleports": 0
+    },
+    "updated": {
+      "pickup_succeeded": 1,
+      "pickup_total": 2,
+      "pickup_visibility_failed": 1,
+      "downstream_succeeded": 0,
+      "downstream_total": 2,
+      "all_actions_succeeded": 7,
+      "all_actions_total": 10,
+      "seconds": 29.07746354304254,
+      "timed_out": false,
+      "execution_status": "partial",
+      "process_status": "completed",
+      "pickup_reposition_successes": 0,
+      "navigation_teleports": 0
+    },
+    "pickup_transitions": [
+      {
+        "action_key": "0:robot1:1",
+        "before": "succeeded",
+        "after": "succeeded",
+        "before_error": "",
+        "after_error": ""
+      },
+      {
+        "action_key": "1:robot1:1",
+        "before": "failed",
+        "after": "failed",
+        "before_error": "PickupObject failed for agent 0 on Egg|+00.13|+00.95|-00.17: NullReferenceException: Target object not found within the specified visibility.. trace:   at UnityStandardAssets.Characters.FirstPerson.BaseFPSAgentController.getInteractableSimObjectFromId (System.String objectId, System.Boolean forceAction) [0x0007a] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at UnityStandardAssets.Characters.FirstPerson.PhysicsRemoteFPSAgentController.PickupObject (System.String objectId, System.Boolean forceAction, System.Boolean manualInteract) [0x00000] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at (wrapper managed-to-native) System.Reflection.MonoMethod.InternalInvoke(System.Reflection.MonoMethod,object,object[],System.Exception&)\n  at System.Reflection.MonoMethod.Invoke (System.Object obj, System.Reflection.BindingFlags invokeAttr, System.Reflection.Binder binder, System.Object[] parameters, System.Globalization.CultureInfo culture) [0x00032] in <695d1cc93cca45069c528c15c9fdd749>:0 ",
+        "after_error": "PickupObject failed for agent 0 on Egg|+00.13|+00.95|-00.17: NullReferenceException: Target object not found within the specified visibility.. trace:   at UnityStandardAssets.Characters.FirstPerson.BaseFPSAgentController.getInteractableSimObjectFromId (System.String objectId, System.Boolean forceAction) [0x0007a] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at UnityStandardAssets.Characters.FirstPerson.PhysicsRemoteFPSAgentController.PickupObject (System.String objectId, System.Boolean forceAction, System.Boolean manualInteract) [0x00000] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at (wrapper managed-to-native) System.Reflection.MonoMethod.InternalInvoke(System.Reflection.MonoMethod,object,object[],System.Exception&)\n  at System.Reflection.MonoMethod.Invoke (System.Object obj, System.Reflection.BindingFlags invokeAttr, System.Reflection.Binder binder, System.Object[] parameters, System.Globalization.CultureInfo culture) [0x00032] in <695d1cc93cca45069c528c15c9fdd749>:0 ; PickupObject interaction reposition failed for agent 0 on Egg|+00.13|+00.95|-00.17: NO_INTERACTION_POSE: interaction target is invisible from every candidate for agent 0 target 'Egg|+00.13|+00.95|-00.17'"
+      }
+    ],
+    "action_changes": []
+  },
+  {
+    "task_id": "FloorPlan2_task_27",
+    "category": "other_visibility",
+    "baseline": {
+      "pickup_succeeded": 2,
+      "pickup_total": 3,
+      "pickup_visibility_failed": 1,
+      "downstream_succeeded": 4,
+      "downstream_total": 5,
+      "all_actions_succeeded": 15,
+      "all_actions_total": 17,
+      "seconds": 28.84230830706656,
+      "timed_out": false,
+      "execution_status": "partial",
+      "process_status": "completed",
+      "pickup_reposition_successes": 0,
+      "navigation_teleports": 0
+    },
+    "updated": {
+      "pickup_succeeded": 2,
+      "pickup_total": 3,
+      "pickup_visibility_failed": 1,
+      "downstream_succeeded": 4,
+      "downstream_total": 5,
+      "all_actions_succeeded": 15,
+      "all_actions_total": 17,
+      "seconds": 45.96737947687507,
+      "timed_out": false,
+      "execution_status": "partial",
+      "process_status": "completed",
+      "pickup_reposition_successes": 0,
+      "navigation_teleports": 0
+    },
+    "pickup_transitions": [
+      {
+        "action_key": "0:robot2:1",
+        "before": "succeeded",
+        "after": "succeeded",
+        "before_error": "",
+        "after_error": ""
+      },
+      {
+        "action_key": "1:robot2:1",
+        "before": "succeeded",
+        "after": "succeeded",
+        "before_error": "",
+        "after_error": ""
+      },
+      {
+        "action_key": "2:robot2:1",
+        "before": "failed",
+        "after": "failed",
+        "before_error": "PickupObject failed for agent 1 on Tomato|+00.17|+00.97|-00.28: NullReferenceException: Target object not found within the specified visibility.. trace:   at UnityStandardAssets.Characters.FirstPerson.BaseFPSAgentController.getInteractableSimObjectFromId (System.String objectId, System.Boolean forceAction) [0x0007a] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at UnityStandardAssets.Characters.FirstPerson.PhysicsRemoteFPSAgentController.PickupObject (System.String objectId, System.Boolean forceAction, System.Boolean manualInteract) [0x00000] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at (wrapper managed-to-native) System.Reflection.MonoMethod.InternalInvoke(System.Reflection.MonoMethod,object,object[],System.Exception&)\n  at System.Reflection.MonoMethod.Invoke (System.Object obj, System.Reflection.BindingFlags invokeAttr, System.Reflection.Binder binder, System.Object[] parameters, System.Globalization.CultureInfo culture) [0x00032] in <695d1cc93cca45069c528c15c9fdd749>:0 ",
+        "after_error": "PickupObject failed for agent 1 on Tomato|+00.17|+00.97|-00.28: NullReferenceException: Target object not found within the specified visibility.. trace:   at UnityStandardAssets.Characters.FirstPerson.BaseFPSAgentController.getInteractableSimObjectFromId (System.String objectId, System.Boolean forceAction) [0x0007a] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at UnityStandardAssets.Characters.FirstPerson.PhysicsRemoteFPSAgentController.PickupObject (System.String objectId, System.Boolean forceAction, System.Boolean manualInteract) [0x00000] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at (wrapper managed-to-native) System.Reflection.MonoMethod.InternalInvoke(System.Reflection.MonoMethod,object,object[],System.Exception&)\n  at System.Reflection.MonoMethod.Invoke (System.Object obj, System.Reflection.BindingFlags invokeAttr, System.Reflection.Binder binder, System.Object[] parameters, System.Globalization.CultureInfo culture) [0x00032] in <695d1cc93cca45069c528c15c9fdd749>:0 ; PickupObject interaction reposition failed for agent 1 on Tomato|+00.17|+00.97|-00.28: NO_INTERACTION_POSE: interaction target is invisible from every candidate for agent 1 target 'Tomato|+00.17|+00.97|-00.28'"
+      }
+    ],
+    "action_changes": []
+  },
+  {
+    "task_id": "FloorPlan2_task_7",
+    "category": "other_visibility",
+    "baseline": {
+      "pickup_succeeded": 2,
+      "pickup_total": 4,
+      "pickup_visibility_failed": 2,
+      "downstream_succeeded": 2,
+      "downstream_total": 4,
+      "all_actions_succeeded": 11,
+      "all_actions_total": 17,
+      "seconds": 32.65446999203414,
+      "timed_out": false,
+      "execution_status": "partial",
+      "process_status": "completed",
+      "pickup_reposition_successes": 0,
+      "navigation_teleports": 0
+    },
+    "updated": {
+      "pickup_succeeded": 3,
+      "pickup_total": 4,
+      "pickup_visibility_failed": 1,
+      "downstream_succeeded": 1,
+      "downstream_total": 4,
+      "all_actions_succeeded": 11,
+      "all_actions_total": 17,
+      "seconds": 58.10892937192693,
+      "timed_out": false,
+      "execution_status": "partial",
+      "process_status": "completed",
+      "pickup_reposition_successes": 1,
+      "navigation_teleports": 0
+    },
+    "pickup_transitions": [
+      {
+        "action_key": "0:robot1:1",
+        "before": "succeeded",
+        "after": "succeeded",
+        "before_error": "",
+        "after_error": ""
+      },
+      {
+        "action_key": "0:robot1:4",
+        "before": "failed",
+        "after": "failed",
+        "before_error": "PickupObject failed for agent 0 on Bread|+00.26|+00.99|-00.08: NullReferenceException: Target object not found within the specified visibility.. trace:   at UnityStandardAssets.Characters.FirstPerson.BaseFPSAgentController.getInteractableSimObjectFromId (System.String objectId, System.Boolean forceAction) [0x0007a] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at UnityStandardAssets.Characters.FirstPerson.PhysicsRemoteFPSAgentController.PickupObject (System.String objectId, System.Boolean forceAction, System.Boolean manualInteract) [0x00000] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at (wrapper managed-to-native) System.Reflection.MonoMethod.InternalInvoke(System.Reflection.MonoMethod,object,object[],System.Exception&)\n  at System.Reflection.MonoMethod.Invoke (System.Object obj, System.Reflection.BindingFlags invokeAttr, System.Reflection.Binder binder, System.Object[] parameters, System.Globalization.CultureInfo culture) [0x00032] in <695d1cc93cca45069c528c15c9fdd749>:0 ",
+        "after_error": "PickupObject failed for agent 0 on Bread|+00.26|+00.99|-00.08: NullReferenceException: Target object not found within the specified visibility.. trace:   at UnityStandardAssets.Characters.FirstPerson.BaseFPSAgentController.getInteractableSimObjectFromId (System.String objectId, System.Boolean forceAction) [0x0007a] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at UnityStandardAssets.Characters.FirstPerson.PhysicsRemoteFPSAgentController.PickupObject (System.String objectId, System.Boolean forceAction, System.Boolean manualInteract) [0x00000] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at (wrapper managed-to-native) System.Reflection.MonoMethod.InternalInvoke(System.Reflection.MonoMethod,object,object[],System.Exception&)\n  at System.Reflection.MonoMethod.Invoke (System.Object obj, System.Reflection.BindingFlags invokeAttr, System.Reflection.Binder binder, System.Object[] parameters, System.Globalization.CultureInfo culture) [0x00032] in <695d1cc93cca45069c528c15c9fdd749>:0 ; PickupObject interaction reposition failed for agent 0 on Bread|+00.26|+00.99|-00.08: step navigation planning failed after full refresh with status NO_PLAN_FOUND; parking recovery found no safe joint plan"
+      },
+      {
+        "action_key": "0:robot2:1",
+        "before": "succeeded",
+        "after": "succeeded",
+        "before_error": "",
+        "after_error": ""
+      },
+      {
+        "action_key": "0:robot2:5",
+        "before": "failed",
+        "after": "succeeded",
+        "before_error": "PickupObject failed for agent 1 on Pan|-01.29|+00.90|-01.35: NullReferenceException: Target object not found within the specified visibility.. trace:   at UnityStandardAssets.Characters.FirstPerson.BaseFPSAgentController.getInteractableSimObjectFromId (System.String objectId, System.Boolean forceAction) [0x0007a] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at UnityStandardAssets.Characters.FirstPerson.PhysicsRemoteFPSAgentController.PickupObject (System.String objectId, System.Boolean forceAction, System.Boolean manualInteract) [0x00000] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at (wrapper managed-to-native) System.Reflection.MonoMethod.InternalInvoke(System.Reflection.MonoMethod,object,object[],System.Exception&)\n  at System.Reflection.MonoMethod.Invoke (System.Object obj, System.Reflection.BindingFlags invokeAttr, System.Reflection.Binder binder, System.Object[] parameters, System.Globalization.CultureInfo culture) [0x00032] in <695d1cc93cca45069c528c15c9fdd749>:0 ",
+        "after_error": ""
+      }
+    ],
+    "action_changes": [
+      {
+        "action_key": "0:robot1:5",
+        "action_type": "GoToObject",
+        "before": "succeeded",
+        "after": "failed",
+        "error": "step navigation planning failed after full refresh with status NO_PLAN_FOUND; parking recovery found no safe joint plan"
+      },
+      {
+        "action_key": "0:robot2:5",
+        "action_type": "PickupObject",
+        "before": "failed",
+        "after": "succeeded",
+        "error": ""
+      }
+    ]
+  },
+  {
+    "task_id": "FloorPlan401_task_1",
+    "category": "other_visibility",
+    "baseline": {
+      "pickup_succeeded": 1,
+      "pickup_total": 2,
+      "pickup_visibility_failed": 1,
+      "downstream_succeeded": 3,
+      "downstream_total": 5,
+      "all_actions_succeeded": 7,
+      "all_actions_total": 10,
+      "seconds": 12.314032647293061,
+      "timed_out": false,
+      "execution_status": "partial",
+      "process_status": "completed",
+      "pickup_reposition_successes": 0,
+      "navigation_teleports": 0
+    },
+    "updated": {
+      "pickup_succeeded": 1,
+      "pickup_total": 2,
+      "pickup_visibility_failed": 1,
+      "downstream_succeeded": 3,
+      "downstream_total": 5,
+      "all_actions_succeeded": 7,
+      "all_actions_total": 10,
+      "seconds": 18.58990245498717,
+      "timed_out": false,
+      "execution_status": "partial",
+      "process_status": "completed",
+      "pickup_reposition_successes": 0,
+      "navigation_teleports": 0
+    },
+    "pickup_transitions": [
+      {
+        "action_key": "0:robot1:1",
+        "before": "failed",
+        "after": "failed",
+        "before_error": "PickupObject failed for agent 0 on Cloth|-00.27|+00.04|+01.02: NullReferenceException: Target object not found within the specified visibility.. trace:   at UnityStandardAssets.Characters.FirstPerson.BaseFPSAgentController.getInteractableSimObjectFromId (System.String objectId, System.Boolean forceAction) [0x0007a] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at UnityStandardAssets.Characters.FirstPerson.PhysicsRemoteFPSAgentController.PickupObject (System.String objectId, System.Boolean forceAction, System.Boolean manualInteract) [0x00000] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at (wrapper managed-to-native) System.Reflection.MonoMethod.InternalInvoke(System.Reflection.MonoMethod,object,object[],System.Exception&)\n  at System.Reflection.MonoMethod.Invoke (System.Object obj, System.Reflection.BindingFlags invokeAttr, System.Reflection.Binder binder, System.Object[] parameters, System.Globalization.CultureInfo culture) [0x00032] in <695d1cc93cca45069c528c15c9fdd749>:0 ",
+        "after_error": "PickupObject failed for agent 0 on Cloth|-00.27|+00.04|+01.02: NullReferenceException: Target object not found within the specified visibility.. trace:   at UnityStandardAssets.Characters.FirstPerson.BaseFPSAgentController.getInteractableSimObjectFromId (System.String objectId, System.Boolean forceAction) [0x0007a] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at UnityStandardAssets.Characters.FirstPerson.PhysicsRemoteFPSAgentController.PickupObject (System.String objectId, System.Boolean forceAction, System.Boolean manualInteract) [0x00000] in <686694aeb00e4f03b2b15637c42c1442>:0 \n  at (wrapper managed-to-native) System.Reflection.MonoMethod.InternalInvoke(System.Reflection.MonoMethod,object,object[],System.Exception&)\n  at System.Reflection.MonoMethod.Invoke (System.Object obj, System.Reflection.BindingFlags invokeAttr, System.Reflection.Binder binder, System.Object[] parameters, System.Globalization.CultureInfo culture) [0x00032] in <695d1cc93cca45069c528c15c9fdd749>:0 ; PickupObject interaction reposition failed for agent 0 on Cloth|-00.27|+00.04|+01.02: failed transition budget 8 exhausted"
+      },
+      {
+        "action_key": "0:robot1:5",
+        "before": "succeeded",
+        "after": "succeeded",
+        "before_error": "",
+        "after_error": ""
+      }
+    ],
+    "action_changes": []
+  },
+  {
+    "task_id": "FloorPlan1_task_8",
+    "category": "control",
+    "baseline": {
+      "pickup_succeeded": 1,
+      "pickup_total": 1,
+      "pickup_visibility_failed": 0,
+      "downstream_succeeded": 0,
+      "downstream_total": 0,
+      "all_actions_succeeded": 9,
+      "all_actions_total": 9,
+      "seconds": 5.81168445199728,
+      "timed_out": false,
+      "execution_status": "completed",
+      "process_status": "completed",
+      "pickup_reposition_successes": 0,
+      "navigation_teleports": 0
+    },
+    "updated": {
+      "pickup_succeeded": 1,
+      "pickup_total": 1,
+      "pickup_visibility_failed": 0,
+      "downstream_succeeded": 0,
+      "downstream_total": 0,
+      "all_actions_succeeded": 9,
+      "all_actions_total": 9,
+      "seconds": 6.879997895099223,
+      "timed_out": false,
+      "execution_status": "completed",
+      "process_status": "completed",
+      "pickup_reposition_successes": 0,
+      "navigation_teleports": 0
+    },
+    "pickup_transitions": [
+      {
+        "action_key": "1:robot1:1",
+        "before": "succeeded",
+        "after": "succeeded",
+        "before_error": "",
+        "after_error": ""
+      }
+    ],
+    "action_changes": []
+  },
+  {
+    "task_id": "FloorPlan1_task_3",
+    "category": "control",
+    "baseline": {
+      "pickup_succeeded": 1,
+      "pickup_total": 1,
+      "pickup_visibility_failed": 0,
+      "downstream_succeeded": 0,
+      "downstream_total": 0,
+      "all_actions_succeeded": 7,
+      "all_actions_total": 7,
+      "seconds": 9.215895108412951,
+      "timed_out": false,
+      "execution_status": "completed",
+      "process_status": "completed",
+      "pickup_reposition_successes": 0,
+      "navigation_teleports": 0
+    },
+    "updated": {
+      "pickup_succeeded": 1,
+      "pickup_total": 1,
+      "pickup_visibility_failed": 0,
+      "downstream_succeeded": 0,
+      "downstream_total": 0,
+      "all_actions_succeeded": 7,
+      "all_actions_total": 7,
+      "seconds": 10.674011745024472,
+      "timed_out": false,
+      "execution_status": "completed",
+      "process_status": "completed",
+      "pickup_reposition_successes": 0,
+      "navigation_teleports": 0
+    },
+    "pickup_transitions": [
+      {
+        "action_key": "0:robot1:1",
+        "before": "succeeded",
+        "after": "succeeded",
+        "before_error": "",
+        "after_error": ""
+      }
+    ],
+    "action_changes": []
+  },
+  {
+    "task_id": "FloorPlan1_task_4",
+    "category": "control",
+    "baseline": {
+      "pickup_succeeded": 2,
+      "pickup_total": 2,
+      "pickup_visibility_failed": 0,
+      "downstream_succeeded": 0,
+      "downstream_total": 0,
+      "all_actions_succeeded": 10,
+      "all_actions_total": 10,
+      "seconds": 8.20007958309725,
+      "timed_out": false,
+      "execution_status": "completed",
+      "process_status": "completed",
+      "pickup_reposition_successes": 0,
+      "navigation_teleports": 0
+    },
+    "updated": {
+      "pickup_succeeded": 2,
+      "pickup_total": 2,
+      "pickup_visibility_failed": 0,
+      "downstream_succeeded": 0,
+      "downstream_total": 0,
+      "all_actions_succeeded": 10,
+      "all_actions_total": 10,
+      "seconds": 9.021470333915204,
+      "timed_out": false,
+      "execution_status": "completed",
+      "process_status": "completed",
+      "pickup_reposition_successes": 0,
+      "navigation_teleports": 0
+    },
+    "pickup_transitions": [
+      {
+        "action_key": "0:robot1:1",
+        "before": "succeeded",
+        "after": "succeeded",
+        "before_error": "",
+        "after_error": ""
+      },
+      {
+        "action_key": "0:robot1:5",
+        "before": "succeeded",
+        "after": "succeeded",
+        "before_error": "",
+        "after_error": ""
+      }
+    ],
+    "action_changes": []
+  }
+]

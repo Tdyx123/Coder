@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from baseline_converters import common, cot, kglamp, lammap, pddlrun, scale_plan, smart_llm
 from baseline_converters.generation_validation import GenerationValidationError, validate_generation_plan
+import resources.robots as robot_catalog
 
 
 def write_json(path, value):
@@ -83,15 +84,18 @@ class GenerationValidationIntegrationTests(unittest.TestCase):
                                          raw_run_dir=str(run), task_run_dir=run)
             invoke = lambda: backend.process_task_run(indexed, dry_run=dry_run, validate_code=False)
         else:
-            robot.update(symbol="robot1", source_id=5)
+            robot.update(symbol="robot1")
             write_json(run / "00_inputs/task_context.json", context)
             write_json(run / "02_plan/03_validation.json", {"valid": True})
             write_json(run / "02_plan/01_final_plan.json", {"plan": [
-                {"action": "PickupObject", "arguments": ["robot1", "mug"], "reasoning_step": 1}
+                {"action": "PickupObject", "arguments": ["robot5", "mug"], "reasoning_step": 1}
             ]})
             indexed = backend.SummaryRun(source_summary=root / "summary.json", floor_summary=root / "floor.json",
                                          parallel_run_root=root, metadata=manifest, raw_run_dir=str(run), task_run_dir=run)
-            invoke = lambda: backend.process_task_run(indexed, repo_root=root, dry_run=dry_run, validate_code=False)
+            def invoke():
+                # COT reads capabilities from the catalog, not task-context robots.
+                with patch.dict(robot_catalog.robots[4], skills=robot['skills'], mass_capacity=capacity):
+                    return backend.process_task_run(indexed, repo_root=root, dry_run=dry_run, validate_code=False)
         return invoke, executable
 
     def test_all_converters_reject_mass_skill_and_missing_data_without_compile_validation(self):
@@ -110,7 +114,7 @@ class GenerationValidationIntegrationTests(unittest.TestCase):
                         result = invoke()
                     self.assertEqual(result["status"], "failed", result)
                     self.assertEqual(result.get("failure_reason"), expected, result)
-                    self.assertEqual(result["validation_error"]["robot_id"], "robot1")
+                    self.assertEqual(result["validation_error"]["robot_id"], "robot5" if backend is cot else "robot1")
                     self.assertEqual(result["validation_error"]["action_type"], "PickupObject")
                     self.assertFalse(executable.exists())
                     if backend is smart_llm:
@@ -273,14 +277,14 @@ class GenerationValidationIntegrationTests(unittest.TestCase):
                 result = invoke()
             self.assertTrue(result["success"], result)
 
-    def test_cot_ambiguous_robot_symbols_fail_with_cleanup(self):
+    def test_cot_duplicate_dataset_robot_ids_fail_with_cleanup(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             invoke, executable = self.fixture(root, cot)
-            context_path = next((root / "logs").rglob("00_inputs/task_context.json"))
-            context = json.loads(context_path.read_text())
-            context["robots"].append(dict(context["robots"][0]))
-            write_json(context_path, context)
+            dataset_path = root / 'data/unit/FloorPlan1.jsonl'
+            record = json.loads(dataset_path.read_text())
+            record['robot list'] = [5, 5]
+            write_json(dataset_path, record)
             executable.parent.mkdir(parents=True)
             executable.write_text("# stale\n")
             result = invoke()
@@ -314,7 +318,7 @@ class GenerationValidationIntegrationTests(unittest.TestCase):
             invoke, _ = self.fixture(root, cot)
             plan_path = next((root / "logs").rglob("01_final_plan.json"))
             plan = json.loads(plan_path.read_text())
-            plan["plan"].append({"action": "BreakObject", "arguments": ["robot1", "mug"], "reasoning_step": 2})
+            plan["plan"].append({"action": "BreakObject", "arguments": ["robot5", "mug"], "reasoning_step": 2})
             write_json(plan_path, plan)
             self.assertEqual(invoke()["failure_reason"], "mass_exceeded")
 

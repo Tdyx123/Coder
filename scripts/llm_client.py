@@ -291,7 +291,7 @@ def complete_with_provider(
     model: str,
     prompt: MessageInput,
     provider: Dict[str, Any],
-    max_tokens: int,
+    max_completion_tokens: int,
     temperature: float,
     stop: Optional[List[str]] = None,
     frequency_penalty: Optional[float] = 0,
@@ -306,7 +306,6 @@ def complete_with_provider(
     model_key = model.lower()
     is_qwen37 = model_key == "qwen3.7-max" or model_key == "qwen3.7-plus"
     is_mimo_v25 = model_key == "mimo-v2.5"
-    uses_max_completion_tokens = model_key in {"qwen3.7-max", "mimo-v2.5"}
     disables_thinking = model_key in {
         "deepseek-v4-flash",
         "deepseek-v4-pro",
@@ -324,10 +323,7 @@ def complete_with_provider(
     }
     if stream_enabled:
         kwargs["stream_options"] = {"include_usage": True}
-    if uses_max_completion_tokens:
-        kwargs["max_completion_tokens"] = max_tokens
-    else:
-        kwargs["max_tokens"] = max_tokens
+    kwargs["max_completion_tokens"] = max_completion_tokens
     if frequency_penalty is not None:
         kwargs["frequency_penalty"] = frequency_penalty
     if stop:

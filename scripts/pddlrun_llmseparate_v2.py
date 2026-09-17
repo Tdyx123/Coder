@@ -28,6 +28,7 @@ from file_processor import FileProcessor, PDDLError
 from llm_handler import LLMError, LLMHandler
 from llm_logger import get_llm_logger
 from pddl_rag import PDDLRagError, PDDLRagRetriever, PDDLRagTimeoutError
+from pddl_object_selection import select_context_objects, merge_object_contexts
 from pddl_problem_repair import ProblemRepairResult, repair_problem_pddl
 from pddl_noop_audit import (
     audit_problem_initial_state,
@@ -1531,18 +1532,17 @@ class TaskManager:
                     "02_allocate/00_key_objects_by_subtask.json",
                 )
 
-                key_object_pddl_context = self._build_key_object_pddl_context(
-                    key_objects,
-                    domain_content,
+                key_object_pddl_context_by_subtask = {
+                    subtask_idx: self._build_key_object_pddl_context(
+                        subtask_key_objects, domain_content,
+                        task_text=subtasks[subtask_idx - 1],
+                    )
+                    for subtask_idx, subtask_key_objects in key_objects_by_subtask.items()
+                }
+                key_object_pddl_context = merge_object_contexts(
+                    list(key_object_pddl_context_by_subtask.values())
                 )
                 key_object_pddl_states = key_object_pddl_context["states"]
-                key_object_pddl_context_by_subtask = {
-                    subtask_id: self._build_key_object_pddl_context(
-                        subtask_key_objects,
-                        domain_content,
-                    )
-                    for subtask_id, subtask_key_objects in key_objects_by_subtask.items()
-                }
                 key_object_pddl_states_by_subtask = {
                     subtask_id: context["states"]
                     for subtask_id, context in key_object_pddl_context_by_subtask.items()
@@ -1697,7 +1697,7 @@ class TaskManager:
                     _, response_text = self.llm.query_model(
                         [{"role": "user", "content": prompt}],
                         self.model,
-                        max_tokens=call_config.get("max_tokens", 700),
+                        max_completion_tokens=call_config.get("max_completion_tokens", 700),
                         frequency_penalty=call_config.get("frequency_penalty", 0.0),
                     )
                     self._write_text_artifact(response_artifact, response_text)
@@ -2448,9 +2448,10 @@ class TaskManager:
         self,
         key_objects: List[Dict[str, Any]],
         domain_content: str,
+        task_text: str = "",
     ) -> Dict[str, List[Dict[str, Any]]]:
         """Convert key objects into PDDL states plus object-token bindings."""
-        if not key_objects:
+        if not key_objects and not task_text:
             return {"states": [], "object_id_bindings": [], "evidence": []}
 
         key_object_types = {
@@ -2459,7 +2460,7 @@ class TaskManager:
             if isinstance(obj, dict) and isinstance(obj.get("name"), str)
         }
         key_object_types.discard("")
-        if not key_object_types:
+        if not key_object_types and not task_text:
             return {"states": [], "object_id_bindings": [], "evidence": []}
 
         floor_objects = self._load_floor_ai2thor_metadata()
@@ -2502,14 +2503,18 @@ class TaskManager:
             if isinstance(roles, list) and role not in roles:
                 roles.append(role)
 
-        for item in floor_objects:
+        selected_objects, direct_ids = select_context_objects(
+            self, floor_objects, floor_object_numbering, key_object_types, task_text,
+        )
+        for item in selected_objects:
             object_type = item.get("objectType")
-            if not isinstance(object_type, str) or self._object_match_key(object_type) not in key_object_types:
+            if not isinstance(object_type, str):
                 continue
 
             object_entry = self._object_numbering_entry_for_metadata(item, floor_object_numbering)
             object_token = str(object_entry["object"])
-            record_binding(object_entry, "key_object")
+            role = "key_object" if (item.get("objectId") or id(item)) in direct_ids else "parentReceptacle"
+            record_binding(object_entry, role)
             parent_id = self._first_parent_receptacle(item)
             parent_entry = (
                 self._object_numbering_entry_for_ai2thor_object_id(parent_id, floor_object_numbering)
@@ -2653,7 +2658,7 @@ class TaskManager:
             _, text = self.llm.query_model(
                 messages,
                 self.model,
-                max_tokens=call_config.get("max_tokens", 1300),
+                max_completion_tokens=call_config.get("max_completion_tokens", 1300),
                 frequency_penalty=call_config.get("frequency_penalty", 0.0),
             )
 

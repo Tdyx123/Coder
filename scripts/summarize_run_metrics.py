@@ -287,10 +287,13 @@ def coderun_metric_columns(
     metrics_mode: str = "auto",
 ) -> List[str]:
     results = coderun_results(coderun_summary)
+    versions = {result.get("evaluation_version", "legacy_v1") for result in results}
+    if len(versions) > 1:
+        raise ValueError("Mixed evaluation versions: split the summary by evaluation_version before aggregating.")
     total_results = total_results_count(coderun_summary, results)
     is_v2 = any(
         result.get("metrics_schema_version") == 2
-        and result.get("evaluation_version") == "fixed_goals_v2"
+        and result.get("evaluation_version") in {"fixed_goals_v2", "atomic_goals_v3"}
         for result in results
     )
     if metrics_mode == "v2":

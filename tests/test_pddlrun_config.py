@@ -226,7 +226,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             manager.current_task_manifest = {"artifacts": {}, "task": "Open the drawer"}
             captured = {}
 
-            def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
+            def fake_query_model(messages, model, max_completion_tokens=None, frequency_penalty=0.0):
                 captured["prompt"] = messages[-1]["content"]
                 return {}, "#SubTask 1: Open the drawer"
 
@@ -2028,7 +2028,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             call_order = []
             captured = {}
 
-            def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
+            def fake_query_model(messages, model, max_completion_tokens=None, frequency_penalty=0.0):
                 call_order.append("validator")
                 captured["validator_prompt"] = messages[-1]["content"]
                 return {}, "\n".join([
@@ -2779,7 +2779,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             ]
             captured_prompts = []
 
-            def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
+            def fake_query_model(messages, model, max_completion_tokens=None, frequency_penalty=0.0):
                 captured_prompts.append(messages[-1]["content"])
                 return responses.pop(0)
 
@@ -2900,7 +2900,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             }
             captured = {}
 
-            def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
+            def fake_query_model(messages, model, max_completion_tokens=None, frequency_penalty=0.0):
                 captured["prompt"] = messages[-1]["content"]
                 return {}, "combined plan"
 
@@ -3415,7 +3415,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             captured = {}
 
             class FakeLLM:
-                def query_model(self, messages, model, max_tokens=None, frequency_penalty=0):
+                def query_model(self, messages, model, max_completion_tokens=None, frequency_penalty=0):
                     captured["prompt"] = messages[-1]["content"]
                     return {}, (
                         "(define (problem generated)\n"
@@ -3492,7 +3492,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             captured_prompts = []
 
             class FakeLLM:
-                def query_model(self, messages, model, max_tokens=None, frequency_penalty=0):
+                def query_model(self, messages, model, max_completion_tokens=None, frequency_penalty=0):
                     captured_prompts.append(messages[-1]["content"])
                     return {}, (
                         "(define (problem generated)\n"
@@ -3557,7 +3557,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             captured = {}
 
             class FakeLLM:
-                def query_model(self, messages, model, max_tokens=None, frequency_penalty=0):
+                def query_model(self, messages, model, max_completion_tokens=None, frequency_penalty=0):
                     captured["prompt"] = messages[-1]["content"]
                     return {}, (
                         "(define (problem generated)\n"
@@ -3617,7 +3617,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             manager.current_task_manifest = {"artifacts": {}, "task": "Fill the kettle"}
 
             class FakeLLM:
-                def query_model(self, messages, model, max_tokens=None, frequency_penalty=0):
+                def query_model(self, messages, model, max_completion_tokens=None, frequency_penalty=0):
                     return {}, (
                         "(define (problem generated)\n"
                         "  (:domain robot7)\n"
@@ -3676,7 +3676,7 @@ class PDDLRunConfigTests(unittest.TestCase):
                 def __init__(self):
                     self.calls = 0
 
-                def query_model(self, messages, model, max_tokens=None, frequency_penalty=0):
+                def query_model(self, messages, model, max_completion_tokens=None, frequency_penalty=0):
                     self.calls += 1
                     if self.calls == 1:
                         return {}, (
@@ -4066,7 +4066,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             manager.current_task_run_dir = str(root / "run")
             manager.current_task_manifest = {"artifacts": {}}
 
-            def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
+            def fake_query_model(messages, model, max_completion_tokens=None, frequency_penalty=0.0):
                 return {}, "# Sequence of Operations:\nSubtask 1: Robot 1;"
 
             decomposed_plan = (
@@ -4152,9 +4152,9 @@ class PDDLRunConfigTests(unittest.TestCase):
             manager.current_task_manifest = {"artifacts": {}, "task": "Open the fridge"}
             captured = {}
 
-            def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
+            def fake_query_model(messages, model, max_completion_tokens=None, frequency_penalty=0.0):
                 captured["prompt"] = messages[-1]["content"]
-                captured["max_tokens"] = max_tokens
+                captured["max_completion_tokens"] = max_completion_tokens
                 return {}, FRIDGE_DECOMPOSITION
 
             with patch.object(manager.llm, "query_model", side_effect=fake_query_model):
@@ -4174,7 +4174,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertNotIn("robot's skills meet", prompt)
             self.assertNotIn("mass_capacity must be strictly greater", prompt)
             self.assertIn("# decompose example", prompt)
-            self.assertEqual(1300, captured["max_tokens"])
+            self.assertEqual(1300, captured["max_completion_tokens"])
             self.assertIn(
                 "# decompose example",
                 (root / "run" / "01_decompose" / "01_decompose_prompt.txt").read_text(encoding="utf-8"),
@@ -4199,7 +4199,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             manager.current_task_manifest = {"artifacts": {}, "task": "Open the cabinet"}
             captured = {}
 
-            def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
+            def fake_query_model(messages, model, max_completion_tokens=None, frequency_penalty=0.0):
                 captured["prompt"] = messages[-1]["content"]
                 return {}, CABINET_DECOMPOSITION
 
@@ -4230,9 +4230,9 @@ class PDDLRunConfigTests(unittest.TestCase):
             manager.current_task_manifest = {"artifacts": {}, "task": "Open the fridge"}
             captured = {}
 
-            def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
+            def fake_query_model(messages, model, max_completion_tokens=None, frequency_penalty=0.0):
                 captured["prompt"] = messages[-1]["content"]
-                captured["max_tokens"] = max_tokens
+                captured["max_completion_tokens"] = max_completion_tokens
                 return {}, FRIDGE_DECOMPOSITION
 
             with patch.object(manager.llm, "query_model", side_effect=fake_query_model):
@@ -4246,7 +4246,7 @@ class PDDLRunConfigTests(unittest.TestCase):
 
             self.assertEqual(FRIDGE_DECOMPOSITION, result)
             self.assertIn("# decompose example", captured["prompt"])
-            self.assertEqual(1300, captured["max_tokens"])
+            self.assertEqual(1300, captured["max_completion_tokens"])
             self.assertFalse((root / "run" / "01_decompose" / "01_decompose_prompt.txt").exists())
             self.assertFalse((root / "run" / "01_decompose" / "02_decompose_output.txt").exists())
             self.assertEqual({}, manager.current_task_manifest["artifacts"])
@@ -4353,7 +4353,7 @@ class PDDLRunConfigTests(unittest.TestCase):
 
             manager.decompose_rag_retriever = EmptyRetriever()
 
-            def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
+            def fake_query_model(messages, model, max_completion_tokens=None, frequency_penalty=0.0):
                 captured["prompt"] = messages[-1]["content"]
                 return {}, FRIDGE_DECOMPOSITION
 
@@ -4399,7 +4399,7 @@ class PDDLRunConfigTests(unittest.TestCase):
 
             manager.decompose_rag_retriever = TimeoutRetriever()
 
-            def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
+            def fake_query_model(messages, model, max_completion_tokens=None, frequency_penalty=0.0):
                 captured["prompt"] = messages[-1]["content"]
                 return {}, FRIDGE_DECOMPOSITION
 
@@ -4448,9 +4448,9 @@ class PDDLRunConfigTests(unittest.TestCase):
             manager.current_task_manifest = {"artifacts": {}, "task": "Open the fridge"}
             captured = {}
 
-            def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
+            def fake_query_model(messages, model, max_completion_tokens=None, frequency_penalty=0.0):
                 captured["prompt"] = messages[-1]["content"]
-                captured["max_tokens"] = max_tokens
+                captured["max_completion_tokens"] = max_completion_tokens
                 return {}, FRIDGE_DECOMPOSITION
 
             with patch.object(manager.llm, "query_model", side_effect=fake_query_model):
@@ -4470,7 +4470,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             self.assertIn("# Historical decomposition for opening a fridge", prompt)
             self.assertNotIn("not (inaction", prompt.lower())
             self.assertNotIn("# static decompose example should be replaced", prompt)
-            self.assertEqual(1300, captured["max_tokens"])
+            self.assertEqual(1300, captured["max_completion_tokens"])
             self.assertEqual(
                 manager.current_task_manifest["decompose_rag"]["retrievals"]["decompose"]["examples"][0]["doc_id"],
                 "decompose:fridge",
@@ -4520,7 +4520,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             manager.current_task_run_dir = str(root / "run")
             manager.current_task_manifest = {"artifacts": {}, "task": "Heat the apple"}
 
-            def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
+            def fake_query_model(messages, model, max_completion_tokens=None, frequency_penalty=0.0):
                 return {}, "# Sequence of Operations:\nSubtask 1: Robot 1;"
 
             with patch.object(manager.llm, "query_model", side_effect=fake_query_model):
@@ -4563,7 +4563,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             manager.current_task_manifest = {"artifacts": {}, "task": "Open the drawer"}
             called_models = []
 
-            def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
+            def fake_query_model(messages, model, max_completion_tokens=None, frequency_penalty=0.0):
                 called_models.append(model)
                 return {}, "# Sequence of Operations:\nSubtask 1: Robot 1;"
 
@@ -4601,7 +4601,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             manager.current_task_manifest = {"artifacts": {}, "task": "Open the drawer"}
             called_models = []
 
-            def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
+            def fake_query_model(messages, model, max_completion_tokens=None, frequency_penalty=0.0):
                 called_models.append(model)
                 return {}, "# Sequence of Operations:\nSubtask 1: Robot 1;"
 
@@ -4637,7 +4637,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             manager.current_task_manifest = {"artifacts": {}, "task": "Open the drawer"}
             captured = {}
 
-            def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
+            def fake_query_model(messages, model, max_completion_tokens=None, frequency_penalty=0.0):
                 captured["prompt"] = messages[-1]["content"]
                 return {}, "# Sequence of Operations:\nSubtask 1: Robot 1;"
 
@@ -4692,7 +4692,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             manager.current_task_run_dir = str(root / "run")
             manager.current_task_manifest = {"artifacts": {}, "task": "Heat the apple"}
 
-            def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
+            def fake_query_model(messages, model, max_completion_tokens=None, frequency_penalty=0.0):
                 return {}, "# Sequence of Operations:\nSubtask 1: Robot 1;"
 
             with patch.object(manager.llm, "query_model", side_effect=fake_query_model):
@@ -4764,7 +4764,7 @@ class PDDLRunConfigTests(unittest.TestCase):
 
             manager.allocate_rag_retriever = EmptyRetriever()
 
-            def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
+            def fake_query_model(messages, model, max_completion_tokens=None, frequency_penalty=0.0):
                 return {}, "# Sequence of Operations:\nSubtask 1: Robot 1;"
 
             with patch.object(manager.llm, "query_model", side_effect=fake_query_model):
@@ -4808,7 +4808,7 @@ class PDDLRunConfigTests(unittest.TestCase):
 
             manager.allocate_rag_retriever = TimeoutRetriever()
 
-            def fake_query_model(messages, model, max_tokens=None, frequency_penalty=0.0):
+            def fake_query_model(messages, model, max_completion_tokens=None, frequency_penalty=0.0):
                 return {}, "# Sequence of Operations:\nSubtask 1: Robot 1;"
 
             with patch.object(manager.llm, "query_model", side_effect=fake_query_model):
@@ -4851,7 +4851,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             captured = {}
 
             class FakeLLM:
-                def query_model(self, messages, model, max_tokens=None, frequency_penalty=0.0):
+                def query_model(self, messages, model, max_completion_tokens=None, frequency_penalty=0.0):
                     captured["prompt"] = messages[-1]["content"]
                     return {}, (
                         "(define (problem open_drawer)\n"
@@ -4893,7 +4893,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             captured = {}
 
             class FakeLLM:
-                def query_model(self, messages, model, max_tokens=None, frequency_penalty=0.0):
+                def query_model(self, messages, model, max_completion_tokens=None, frequency_penalty=0.0):
                     captured["prompt"] = messages[-1]["content"]
                     return {}, (
                         "(define (problem open_drawer)\n"
@@ -4943,7 +4943,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             captured = {}
 
             class FakeLLM:
-                def query_model(self, messages, model, max_tokens=None, frequency_penalty=0.0):
+                def query_model(self, messages, model, max_completion_tokens=None, frequency_penalty=0.0):
                     captured["prompt"] = messages[-1]["content"]
                     return {}, (
                         "(define (problem open_drawer)\n"
@@ -5012,7 +5012,7 @@ class PDDLRunConfigTests(unittest.TestCase):
             captured = {}
 
             class FakeLLM:
-                def query_model(self, messages, model, max_tokens=None, frequency_penalty=0.0):
+                def query_model(self, messages, model, max_completion_tokens=None, frequency_penalty=0.0):
                     captured["prompt"] = messages[-1]["content"]
                     return {}, (
                         "(define (problem open_drawer)\n"
@@ -5075,7 +5075,7 @@ class PDDLRunConfigTests(unittest.TestCase):
                     return []
 
             class FakeLLM:
-                def query_model(self, messages, model, max_tokens=None, frequency_penalty=0.0):
+                def query_model(self, messages, model, max_completion_tokens=None, frequency_penalty=0.0):
                     captured["prompt"] = messages[-1]["content"]
                     return {}, (
                         "(define (problem open_drawer)\n"
@@ -5124,7 +5124,7 @@ class PDDLRunConfigTests(unittest.TestCase):
                     raise PDDLRagTimeoutError("RAG query exceeded 5s")
 
             class FakeLLM:
-                def query_model(self, messages, model, max_tokens=None, frequency_penalty=0.0):
+                def query_model(self, messages, model, max_completion_tokens=None, frequency_penalty=0.0):
                     captured["prompt"] = messages[-1]["content"]
                     return {}, (
                         "(define (problem open_drawer)\n"

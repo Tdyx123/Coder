@@ -60,7 +60,7 @@ def resolve_baseline_paths(args: argparse.Namespace) -> Tuple[Path, Path, Path, 
 
 def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Convert COT direct-planner JSON plans into executable bundles."
+        description="Convert COT parallel text or direct-planner JSON plans into executable bundles."
     )
     parser.add_argument(
         "--root",

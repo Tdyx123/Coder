@@ -160,7 +160,7 @@ def acceptance_failures(report):
                 reject('baseline_evaluation_invalid', **identity, actual=row.get('evaluation_status'))
             if execution_seconds(row) is None:
                 reject('baseline_execution_timing_invalid', **identity)
-        if tuple(row.get(f) for f in PROTOCOL_FIELDS) != (2, 'fixed_goals_v2', 2):
+        if tuple(row.get(f) for f in PROTOCOL_FIELDS) not in {(2, 'fixed_goals_v2', 2), (2, 'atomic_goals_v3', 2)}:
             reject('protocol_version', **identity, actual={f: row.get(f) for f in PROTOCOL_FIELDS})
         if row.get('missing_result'):
             reject('missing_result', **identity)
@@ -185,6 +185,9 @@ def acceptance_failures(report):
                 reject('baseline_timeout', **identity)
             continue
         full, event = pair['full'], pair['event']
+        if full.get('evaluation_version') != event.get('evaluation_version'):
+            reject('protocol_version', **identity, field='evaluation_version')
+            continue
         regression = []
         if full.get('evaluation_status') == 'valid' and event.get('evaluation_status') != 'valid': regression.append('evaluation')
         if not full.get('timed_out') and event.get('timed_out'): regression.append('timeout')

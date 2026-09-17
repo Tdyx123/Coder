@@ -84,7 +84,7 @@ class DecompositionRetryTests(unittest.TestCase):
         self.assertEqual(["user", "user"], [m["role"] for m in messages])
         self.assertEqual(self.calls[0][0][0], messages[0])
         self.assertIn("EMPTY_OUTPUT", messages[-1]["content"])
-        self.assertEqual(1300, kwargs["max_tokens"])
+        self.assertEqual(1300, kwargs["max_completion_tokens"])
         self.assertEqual("passed", self.manifest()["status"])
 
     def test_truncation_combines_all_errors_and_doubles_budget(self):
@@ -97,7 +97,7 @@ class DecompositionRetryTests(unittest.TestCase):
         for code in ("TRUNCATED_OUTPUT", "INCOMPLETE_EXPRESSION", "MISSING_SUBTASK_BODY"):
             self.assertIn(code, feedback)
         self.assertIn("SubTask 2", feedback)
-        self.assertEqual(2600, kwargs["max_tokens"])
+        self.assertEqual(2600, kwargs["max_completion_tokens"])
         self.assertEqual(2, len(self.manifest()["attempts"]))
 
     def test_token_cap_alone_does_not_retry_complete_output(self):
@@ -106,11 +106,11 @@ class DecompositionRetryTests(unittest.TestCase):
 
     def test_missing_finish_reason_with_capped_incomplete_tail_doubles_budget(self):
         self.generate([response(VALID[:-1], None, 1300), response(VALID)])
-        self.assertEqual(2600, self.calls[1][1]["max_tokens"])
+        self.assertEqual(2600, self.calls[1][1]["max_completion_tokens"])
 
     def test_length_reason_alone_triggers_one_retry(self):
         self.generate([response(VALID, "length", 1300), response(VALID)])
-        self.assertEqual(2600, self.calls[1][1]["max_tokens"])
+        self.assertEqual(2600, self.calls[1][1]["max_completion_tokens"])
 
     def test_interior_missing_field_identifies_action_occurrence(self):
         broken = VALID + "\n\n" + ACTION.replace("Effects: (object-open ?cabinet)", "Effects:") + "\n\n" + ACTION
@@ -119,7 +119,7 @@ class DecompositionRetryTests(unittest.TestCase):
         self.assertIn("ACTION_FIELDS", feedback)
         self.assertIn("action occurrence 2", feedback)
         self.assertIn("Effects", feedback)
-        self.assertEqual(1300, self.calls[1][1]["max_tokens"])
+        self.assertEqual(1300, self.calls[1][1]["max_completion_tokens"])
 
     def test_multiline_markdown_fields_and_none_preconditions_are_valid(self):
         valid = VALID.replace("Parameters:", "- **Parameters:**").replace(
@@ -203,7 +203,7 @@ class DecompositionRetryTests(unittest.TestCase):
         metadata = SimpleNamespace(choices=[SimpleNamespace(finish_reason="length")],
                                    usage=SimpleNamespace(prompt_tokens=200, completion_tokens=1300, total_tokens=1500))
         self.generate([(metadata, VALID), response(VALID)])
-        self.assertEqual(2600, self.calls[1][1]["max_tokens"])
+        self.assertEqual(2600, self.calls[1][1]["max_completion_tokens"])
 
     def test_numbered_action_without_colon_cannot_hide_empty_effects(self):
         broken = VALID.replace("Effects: (object-open ?cabinet)", "Effects:")
@@ -260,7 +260,7 @@ class DecompositionRetryTests(unittest.TestCase):
         self.addCleanup(logger.clear_context)
         with patch.object(self.manager.llm, "_get_provider_for_model", return_value=({}, "test-provider")), \
                 patch.object(llm_handler, "complete_with_provider", return_value=response(VALID, "length", 1300)[0]):
-            self.manager.llm.query_model("original request", "test-model", max_tokens=1300)
+            self.manager.llm.query_model("original request", "test-model", max_completion_tokens=1300)
         entry = json.loads(log_file.read_text())
         self.assertEqual("length", entry["finish_reason"])
         self.assertEqual(1300, entry["usage"]["completion_tokens"])

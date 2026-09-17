@@ -211,7 +211,7 @@ class CompressRecordAndFileTest(unittest.TestCase):
             record,
             stage="decompose",
             tokenizer=WhitespaceTokenizer(),
-            max_tokens=256,
+            max_completion_tokens=256,
         )
 
         self.assertEqual(compressed["id"], "sample")
@@ -231,7 +231,7 @@ class CompressRecordAndFileTest(unittest.TestCase):
                 record,
                 stage="decompose",
                 tokenizer=CharacterTokenizer(),
-                max_tokens=1,
+                max_completion_tokens=1,
             )
 
     def test_process_file_skips_bad_rows_and_preserves_valid_rows(self):
@@ -255,7 +255,7 @@ class CompressRecordAndFileTest(unittest.TestCase):
                 output_path=output_path,
                 stage="decompose",
                 tokenizer=WhitespaceTokenizer(),
-                max_tokens=256,
+                max_completion_tokens=256,
                 overwrite=False,
             )
 
@@ -290,7 +290,7 @@ class CompressRecordAndFileTest(unittest.TestCase):
                     output_path=output_path,
                     stage="decompose",
                     tokenizer=WhitespaceTokenizer(),
-                    max_tokens=256,
+                    max_completion_tokens=256,
                     overwrite=False,
                 )
 

@@ -52,6 +52,7 @@ class NavigationRequestTargetTests(unittest.TestCase):
         runtime = runtime_without_init()
         runtime.robot_agent_map = {"robot1": 0}
         runtime.physical_agent_count = 1
+        runtime.movement_config = MovementConfig.resolve("step", environ={})
         runtime.navigation_metrics = NavigationMetrics(MovementMode.STEP)
         runtime.refresh_reachable_positions = lambda _agent_id: None
         objects = {

@@ -640,8 +640,9 @@ class JointMovementWaveTest(unittest.TestCase):
             for agent_id, destination in enumerate(destinations)
         )
 
-        with self.assertRaisesRegex(StepNavigationError, "NO_PLAN_FOUND"):
-            coordinator.execute_batch(requests)
+        outcome = coordinator.execute_batch(requests)
+        self.assertEqual(set(outcome.failed_agent_errors), {r.agent_id for r in requests})
+        self.assertTrue(all("NO_PLAN_FOUND" in str(e) for e in outcome.failed_agent_errors.values()))
 
         self.assertEqual(metrics.to_dict()["serial_fallback_batches"], 0)
         self.assertEqual(metrics.to_dict()["deferred_requests"], 0)
@@ -709,11 +710,9 @@ class CompletedRobotParkingTest(unittest.TestCase):
     def test_unfinished_blocker_is_never_moved(self):
         runtime, request, strategy, _metrics = self.parking_case()
 
-        with self.assertRaises(StepNavigationError):
-            strategy.coordinator.execute_batch(
-                (request,),
-                completed_agent_ids=frozenset(),
-            )
+        outcome = strategy.coordinator.execute_batch(
+            (request,), completed_agent_ids=frozenset())
+        self.assertIsInstance(outcome.failed_agent_errors[request.agent_id], StepNavigationError)
 
         self.assertEqual(position_to_grid_key(runtime.positions[1]), (3, 0))
         self.assertEqual(runtime.actions, [])

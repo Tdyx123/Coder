@@ -338,13 +338,16 @@ def _aggregate_mode(mode: str, results: Sequence[Mapping[str, Any]]) -> Dict[str
         item
         for item in items
         if item.get("metrics_schema_version") == 2
-        and item.get("evaluation_version") == "fixed_goals_v2"
+        and item.get("evaluation_version") in {"fixed_goals_v2", "atomic_goals_v3"}
     ]
     metric_items = (
         [item for item in v2_items if item.get("evaluation_status") == "valid"]
         if v2_items and len(v2_items) == len(items)
         else items
     )
+    mixed_evaluation = len({item.get("evaluation_version", "legacy_v1") for item in items}) > 1
+    if mixed_evaluation:
+        metric_items = []
     gcr_values = [_number(item.get("gcr")) for item in metric_items]
     tc_values = [_number(item.get("tc")) for item in metric_items]
     sr_values = [_number(item.get("sr")) for item in metric_items]
@@ -367,9 +370,10 @@ def _aggregate_mode(mode: str, results: Sequence[Mapping[str, Any]]) -> Dict[str
         "cases_without_navigation_failure": successful_navigation_cases,
         "goto_navigation_teleports": navigation_teleports,
         "replans": replans,
-        "success_gcr": sum(gcr_values) / len(gcr_values) if gcr_values else 0.0,
-        "mean_tc": sum(tc_values) / len(tc_values) if tc_values else 0.0,
-        "mean_sr": sum(sr_values) / len(sr_values) if sr_values else 0.0,
+        "evaluation_versions": sorted({item.get("evaluation_version", "legacy_v1") for item in items}),
+        "success_gcr": None if mixed_evaluation else (sum(gcr_values) / len(gcr_values) if gcr_values else 0.0),
+        "mean_tc": None if mixed_evaluation else (sum(tc_values) / len(tc_values) if tc_values else 0.0),
+        "mean_sr": None if mixed_evaluation else (sum(sr_values) / len(sr_values) if sr_values else 0.0),
         "total_run_time_seconds": sum(
             _number(item.get("run_time_seconds")) for item in items
         ),
@@ -458,6 +462,10 @@ def acceptance_failures(report: Mapping[str, Any]) -> List[Dict[str, Any]]:
     def reject(code: str, actual: Any, expected: str) -> None:
         failures.append({"code": code, "actual": actual, "expected": expected})
 
+    versions = set(step.get("evaluation_versions", [])) | set(teleport.get("evaluation_versions", []))
+    if len(versions) > 1:
+        reject("mixed_evaluation_versions", sorted(versions), "one evaluation version per comparison")
+
     if _number(step.get("navigation_success_rate")) < 0.90:
         reject(
             "step_navigation_success_rate",
@@ -479,7 +487,7 @@ def acceptance_failures(report: Mapping[str, Any]) -> List[Dict[str, Any]]:
     gcr_gap = _number(teleport.get("success_gcr")) - _number(
         step.get("success_gcr")
     )
-    if gcr_gap > 0.05 + 1e-12:
+    if len(versions) <= 1 and gcr_gap > 0.05 + 1e-12:
         reject("success_gcr_gap", gcr_gap, "<= 0.05")
     if step.get("planner_fixture_p95_is_complete") is False:
         reject("planner_fixture_p95_incomplete", None, "complete planning duration evidence")

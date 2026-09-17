@@ -1,0 +1,963 @@
+"""Robot-level plan executor.
+
+Each Executor owns one robot's action queue.  Phase-level code may run several
+Executor instances concurrently; ThorRuntime remains responsible for serializing
+the actual controller.step boundary with its controller lock.
+"""
+
+import threading
+import queue
+import time
+from contextlib import nullcontext
+from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
+
+from .plan_types import (
+    ACTION_FAILED,
+    ACTION_SUCCESS,
+    FAILURE_SKIP_IF_EFFECT_ALREADY_TRUE,
+    Action,
+    ActionResult,
+    RobotExecutionState,
+    ROBOT_ACTION_FAILED,
+    ROBOT_ACTION_SUCCESS,
+    ROBOT_EXECUTING,
+    ROBOT_FINISHED_STAGE,
+    ROBOT_WAITING_CONDITION,
+)
+from .action_plan import (AI2ThorAdapter, ExecutionLogger, WorldState)
+from .execution_policy import (
+    ExecutionPolicy,
+    StageFailureDecisionError,
+    resolve_failure, evaluate_conditions, conditions_evidence, conditions_satisfied,
+    ConditionEvaluationError, PlanExecutionError,
+)
+from .goals import record_satisfied_temperature_goal_states
+from .movement import (
+    ActionWave,
+    MovementMode,
+    NavigationBatchAborted,
+    NavigationBatchResult,
+    NavigationDeferred,
+    NavigationRequest,
+    NavigationResult,
+)
+from .action_resources import action_resource_scope
+from .utils import log
+from .execution_control import ensure_control, raise_if_execution_aborted
+
+
+GOTO_CANDIDATE_WAIT_SECONDS = 0.1
+
+
+@dataclass
+class _ActionWaveState:
+    wave_id: int
+    announced: Dict[int, Tuple[str, int]] = field(default_factory=dict)
+    participant_agent_ids: Optional[Tuple[int, ...]] = None
+    navigation_agent_ids: Tuple[int, ...] = ()
+    completed_agent_ids: frozenset = frozenset()
+    requests: Dict[int, NavigationRequest] = field(default_factory=dict)
+    results: Dict[int, NavigationResult] = field(default_factory=dict)
+    failed_agent_errors: Dict[int, Exception] = field(default_factory=dict)
+    deferred_agent_ids: frozenset = frozenset()
+    fallback_status: Optional[str] = None
+    batch_started: bool = False
+    navigation_complete: bool = False
+    root_exception: Optional[BaseException] = None
+    root_agent_id: Optional[int] = None
+    departed_agent_ids: Set[int] = field(default_factory=set)
+
+
+class PhaseCoordinator:
+    """Shared state for robot executors running in the same phase."""
+
+    def __init__(
+        self,
+        runtime: Any,
+        active_agent_ids: Sequence[int],
+        *,
+        deadline: Optional[float] = None,
+        timeout_error_factory: Optional[Callable[[str], BaseException]] = None,
+        control: Optional[Any] = None,
+    ) -> None:
+        self.runtime = runtime
+        self.condition = threading.Condition()
+        self.active_agent_ids: Set[int] = {int(agent_id) for agent_id in active_agent_ids}
+        agent_count = max(
+            len(self.active_agent_ids),
+            int(getattr(runtime, "physical_agent_count", len(self.active_agent_ids)) or 0),
+        )
+        self.all_agent_ids: Set[int] = set(range(agent_count))
+        self.completed_agent_ids: Set[int] = set(self.all_agent_ids - self.active_agent_ids)
+        self.failed_agent_errors: Dict[int, BaseException] = {}
+        self.relocating_agent_ids: Set[int] = set()
+        self.control = control or ensure_control(runtime, deadline)
+        self.deadline = self.control.deadline
+        self.timeout_error_factory = timeout_error_factory
+        movement_config = getattr(runtime, "movement_config", None)
+        movement_mode = getattr(movement_config, "mode", None)
+        self.action_waves_enabled = movement_mode in {
+            MovementMode.STEP,
+            MovementMode.STEP.value,
+        }
+        self._action_wave = _ActionWaveState(wave_id=0)
+        self._admitted_waves = {}
+        self._next_admitted_wave = 1
+        self._registered_executors = {}
+        self._compat_running = False
+        self._compat_done = False
+        self._compat_error = None
+
+    def execute_registered(self, executor):
+        """Bridge concurrent legacy callers into one supervised stage scheduler."""
+        from .plan_types import (StagePlan, TaskPlan)
+        from .action_plan import (PlanValidator)
+        from .stage_scheduler import StageScheduler
+        from .run_results import ActionLedger
+        with self.condition:
+            self._registered_executors[self.runtime.physical_agent_id(executor.robot_id)] = executor
+            self.condition.notify_all()
+            while not self.active_agent_ids <= set(self._registered_executors):
+                self.control.check()
+                self.condition.wait(timeout=self._condition_wait_seconds())
+            leader = not self._compat_running
+            if leader:
+                self._compat_running = True
+                executors = {item.robot_id: item for agent, item in self._registered_executors.items()
+                             if agent in self.active_agent_ids}
+            else:
+                while not self._compat_done:
+                    self.condition.wait(timeout=.05)
+                if self._compat_error is not None:
+                    raise self._compat_error
+                return executor.world_state
+        try:
+            stage = StagePlan(executor.state.current_stage_id,
+                              {robot: item.state.action_queue for robot, item in executors.items()})
+            PlanValidator(self.runtime).validate(TaskPlan('standalone', [stage]))
+            stats = getattr(executor, 'stats', None)
+            keys = [f'{item.stage_index}:{robot}:{cursor}' for robot, item in executors.items()
+                    for cursor in range(len(item.state.action_queue))]
+            self.runtime.action_ledger = stats.action_ledger if stats is not None else ActionLedger(keys)
+            deadlines = [item.deadline for item in executors.values() if getattr(item, 'deadline', None) is not None]
+            scheduler = StageScheduler(self.runtime, stage,
+                control=self.control.child(deadline=min(deadlines) if deadlines else None),
+                policy=executor.execution_policy, stats=stats, logger=executor.logger,
+                stage_index=executor.stage_index, executors=executors, coordinator=self)
+            outcome = scheduler.run()
+            for item in executors.values():
+                item.world_state.snapshot = outcome.snapshot
+                item.world_state.tick = scheduler.world.tick
+            if outcome.status == 'failed' and executor.execution_policy is ExecutionPolicy.STRICT:
+                raise PlanExecutionError({'execution_status': 'failed', 'stages': [scheduler.report],
+                    'actions': scheduler.report['actions'], 'errors': list(outcome.errors)})
+            return executor.world_state
+        except BaseException as exc:
+            with self.condition:
+                self._compat_error = exc
+            raise
+        finally:
+            with self.condition:
+                for item in executors.values():
+                    item.scheduler = None
+                self._compat_done = True
+                self.condition.notify_all()
+
+    def admit_wave(self, actions) -> ActionWave:
+        """Freeze only scheduler-admitted actions, independent of older waves."""
+        with self.condition:
+            self.control.check()
+            wave_id = self._next_admitted_wave
+            self._next_admitted_wave += 1
+            participants = tuple(sorted(actions))
+            navigation = tuple(agent_id for agent_id in participants
+                               if actions[agent_id][0] == "GoToObject"
+                               and self.action_waves_enabled)
+            state = _ActionWaveState(
+                wave_id=wave_id, announced=dict(actions),
+                participant_agent_ids=participants, navigation_agent_ids=navigation,
+                completed_agent_ids=frozenset(self.completed_agent_ids),
+                navigation_complete=not navigation,
+            )
+            self._admitted_waves[wave_id] = state
+            return ActionWave(wave_id, navigation)
+
+    def wait_admitted_navigation(self, wave, agent_id):
+        with self.condition:
+            self.control.check()
+            state = self._admitted_waves[wave.wave_id]
+            while not state.navigation_complete:
+                self.control.check()
+                self.condition.wait(timeout=self._condition_wait_seconds())
+            self.control.check()
+            self._depart_action_wave_locked(state, agent_id)
+            if state.root_exception is not None:
+                raise NavigationBatchAborted(
+                    f"action wave {wave.wave_id} was aborted by navigation "
+                    f"agent {state.root_agent_id}: {state.root_exception}"
+                ) from state.root_exception
+
+    def _state_for_wave(self, wave):
+        return self._admitted_waves.get(wave.wave_id, self._action_wave)
+
+    def mark_agent_done(self, agent_id: int) -> None:
+        with self.condition:
+            self.completed_agent_ids.add(int(agent_id))
+            self._freeze_action_wave_if_ready_locked()
+            self.condition.notify_all()
+
+    def mark_agent_failed(self, agent_id: int, exc: BaseException) -> None:
+        with self.condition:
+            self.failed_agent_errors[int(agent_id)] = exc
+            self._freeze_action_wave_if_ready_locked()
+            self.condition.notify_all()
+
+    def notify_agent_position_changed(self, agent_id: int) -> None:
+        with self.condition:
+            self.condition.notify_all()
+
+    def before_action(
+        self,
+        agent_id: int,
+        action_type: str,
+        action_cursor: int,
+    ) -> Optional[ActionWave]:
+        """Join the deterministic action wave for one logical plan action."""
+
+        if not self.action_waves_enabled:
+            return None
+
+        current_agent_id = int(agent_id)
+        with self.condition:
+            self._raise_if_deadline_expired()
+            while current_agent_id in self._action_wave.announced:
+                self._raise_if_deadline_expired()
+                self.condition.wait(timeout=self._condition_wait_seconds())
+
+            state = self._action_wave
+            state.announced[current_agent_id] = (
+                str(action_type),
+                int(action_cursor),
+            )
+            self._freeze_action_wave_if_ready_locked()
+            self.condition.notify_all()
+
+            while state.participant_agent_ids is None:
+                self._raise_if_deadline_expired()
+                self.condition.wait(timeout=self._condition_wait_seconds())
+
+            wave = ActionWave(
+                wave_id=state.wave_id,
+                navigation_agent_ids=state.navigation_agent_ids,
+            )
+            if current_agent_id in state.navigation_agent_ids:
+                return wave
+
+            while not state.navigation_complete:
+                self._raise_if_deadline_expired()
+                self.condition.wait(timeout=self._condition_wait_seconds())
+
+            root_exception = state.root_exception
+            root_agent_id = state.root_agent_id
+            self._depart_action_wave_locked(state, current_agent_id)
+            if root_exception is not None:
+                raise NavigationBatchAborted(
+                    f"action wave {state.wave_id} was aborted by navigation "
+                    f"agent {root_agent_id}: {root_exception}"
+                ) from root_exception
+            return None
+
+    def submit_step_navigation(
+        self,
+        wave: ActionWave,
+        request: NavigationRequest,
+        execute_batch: Callable[
+            [Sequence[NavigationRequest], frozenset],
+            Any,
+        ],
+    ) -> NavigationResult:
+        """Collect a wave's GoTo requests and execute exactly one joint batch."""
+
+        agent_id = int(request.agent_id)
+        batch = None
+        completed_agent_ids = frozenset()
+        state: _ActionWaveState
+        with self.condition:
+            self.control.check()
+            state = self._state_for_wave(wave)
+            if state.wave_id != wave.wave_id:
+                raise RuntimeError(f"action wave {wave.wave_id} is no longer active")
+            if agent_id not in state.navigation_agent_ids:
+                raise RuntimeError(
+                    f"agent {agent_id} is not a navigator in action wave {wave.wave_id}"
+                )
+            state.requests[agent_id] = request
+            self.condition.notify_all()
+
+            while not state.navigation_complete:
+                self._raise_if_deadline_expired()
+                all_requests_ready = set(state.navigation_agent_ids) <= set(
+                    state.requests
+                )
+                is_batch_leader = agent_id == min(state.navigation_agent_ids)
+                if all_requests_ready and is_batch_leader and not state.batch_started:
+                    state.batch_started = True
+                    batch = tuple(
+                        state.requests[item]
+                        for item in state.navigation_agent_ids
+                    )
+                    completed_agent_ids = frozenset(self.completed_agent_ids)
+                    break
+                self.condition.wait(timeout=self._condition_wait_seconds())
+
+        if batch is not None:
+            try:
+                batch_results = execute_batch(batch, completed_agent_ids)
+                if isinstance(batch_results, NavigationBatchResult):
+                    result_map = dict(batch_results.results)
+                    failed_agent_errors = dict(batch_results.failed_agent_errors)
+                    deferred_agent_ids = frozenset(
+                        int(item) for item in batch_results.deferred_agent_ids
+                    )
+                    fallback_status = batch_results.fallback_status
+                else:
+                    result_map = dict(batch_results)
+                    failed_agent_errors = {}
+                    deferred_agent_ids = frozenset()
+                    fallback_status = None
+                result_agent_ids = set(result_map)
+                failed_agent_ids = set(failed_agent_errors)
+                overlap = (
+                    (result_agent_ids & failed_agent_ids)
+                    | (result_agent_ids & deferred_agent_ids)
+                    | (failed_agent_ids & deferred_agent_ids)
+                )
+                reported = result_agent_ids | failed_agent_ids | deferred_agent_ids
+                expected = set(state.navigation_agent_ids)
+                missing = expected - reported
+                unexpected = reported - expected
+                invalid_errors = {
+                    item
+                    for item, error in failed_agent_errors.items()
+                    if not isinstance(error, Exception)
+                    or isinstance(error, TimeoutError)
+                }
+                if missing or unexpected or overlap or invalid_errors:
+                    raise RuntimeError(
+                        "joint navigation batch result partition is invalid: "
+                        f"missing={sorted(missing)}, "
+                        f"unexpected={sorted(unexpected)}, "
+                        f"overlap={sorted(overlap)}, "
+                        f"invalid_errors={sorted(invalid_errors)}"
+                    )
+            except BaseException as exc:
+                with self.condition:
+                    state.root_exception = exc
+                    state.root_agent_id = agent_id
+                    state.navigation_complete = True
+                    self.condition.notify_all()
+            else:
+                with self.condition:
+                    state.results = result_map
+                    state.failed_agent_errors = failed_agent_errors
+                    state.deferred_agent_ids = deferred_agent_ids
+                    state.fallback_status = fallback_status
+                    state.navigation_complete = True
+                    self.condition.notify_all()
+
+        with self.condition:
+            while not state.navigation_complete:
+                self._raise_if_deadline_expired()
+                self.condition.wait(timeout=self._condition_wait_seconds())
+
+            root_exception = state.root_exception
+            root_agent_id = state.root_agent_id
+            result = state.results.get(agent_id)
+            request_error = state.failed_agent_errors.get(agent_id)
+            deferred = agent_id in state.deferred_agent_ids
+            fallback_status = state.fallback_status
+            self._depart_action_wave_locked(state, agent_id)
+            if root_exception is not None:
+                if agent_id == root_agent_id:
+                    raise root_exception
+                raise NavigationBatchAborted(
+                    f"action wave {state.wave_id} was aborted by navigation "
+                    f"agent {root_agent_id}: {root_exception}"
+                ) from root_exception
+            if request_error is not None:
+                raise request_error
+            if deferred:
+                raise NavigationDeferred(
+                    agent_id,
+                    fallback_status=fallback_status,
+                )
+            if result is None:
+                raise RuntimeError(
+                    f"action wave {state.wave_id} has no result for agent {agent_id}"
+                )
+            return result
+
+    def abort_action_wave(
+        self,
+        wave: ActionWave,
+        agent_id: int,
+        exc: BaseException,
+    ) -> None:
+        """Wake a joint wave when navigation fails before batch submission."""
+
+        with self.condition:
+            state = self._state_for_wave(wave)
+            current_agent_id = int(agent_id)
+            if (
+                state.wave_id != wave.wave_id
+                or current_agent_id in state.departed_agent_ids
+            ):
+                return
+            if not state.navigation_complete:
+                state.root_exception = exc
+                state.root_agent_id = current_agent_id
+                state.navigation_complete = True
+            self._depart_action_wave_locked(state, current_agent_id)
+
+    def _active_action_wave_agent_ids_locked(self) -> Set[int]:
+        return (
+            self.active_agent_ids
+            - self.completed_agent_ids
+            - set(self.failed_agent_errors)
+        )
+
+    def _freeze_action_wave_if_ready_locked(self) -> None:
+        state = self._action_wave
+        if state.participant_agent_ids is not None:
+            return
+        active_agent_ids = self._active_action_wave_agent_ids_locked()
+        if not active_agent_ids or not active_agent_ids <= set(state.announced):
+            return
+        state.participant_agent_ids = tuple(sorted(active_agent_ids))
+        state.navigation_agent_ids = tuple(
+            agent_id
+            for agent_id in state.participant_agent_ids
+            if state.announced[agent_id][0] == "GoToObject"
+        )
+        state.completed_agent_ids = frozenset(self.completed_agent_ids)
+        state.navigation_complete = not state.navigation_agent_ids
+
+    def _depart_action_wave_locked(
+        self,
+        state: _ActionWaveState,
+        agent_id: int,
+    ) -> None:
+        state.departed_agent_ids.add(int(agent_id))
+        participant_agent_ids = set(state.participant_agent_ids or ())
+        if participant_agent_ids <= state.departed_agent_ids:
+            if state.wave_id in self._admitted_waves:
+                del self._admitted_waves[state.wave_id]
+            else:
+                self._action_wave = _ActionWaveState(wave_id=state.wave_id + 1)
+        self.condition.notify_all()
+
+    def wait_until_goto_candidates_clear(
+        self,
+        agent_id: int,
+        candidate_positions: Sequence[dict],
+    ) -> bool:
+        protected_positions = [dict(position) for position in candidate_positions]
+        if not protected_positions:
+            return False
+
+        current_agent_id = int(agent_id)
+        waited_or_relocated = False
+        while True:
+            self._raise_if_deadline_expired()
+            blockers = self.runtime.agent_blocker_ids_for_positions(
+                protected_positions,
+                current_agent_id,
+            )
+            with self.condition:
+                self._raise_if_failed_locked()
+                self._raise_if_deadline_expired()
+                blockers = set(blockers)
+                if not blockers:
+                    return waited_or_relocated
+
+                completed_blockers = (
+                    blockers
+                    & self.completed_agent_ids
+                    - self.relocating_agent_ids
+                )
+                if completed_blockers:
+                    blocker_agent_id = min(completed_blockers)
+                    self.relocating_agent_ids.add(blocker_agent_id)
+                    waited_or_relocated = True
+                else:
+                    if current_agent_id == min(blockers | {current_agent_id}):
+                        return waited_or_relocated
+                    waited_or_relocated = True
+                    self.condition.wait(timeout=self._condition_wait_seconds())
+                    continue
+
+            try:
+                self.runtime.teleport_completed_agent_away_from_positions(
+                    blocker_agent_id,
+                    current_agent_id,
+                    protected_positions,
+                )
+            finally:
+                with self.condition:
+                    self.relocating_agent_ids.discard(blocker_agent_id)
+                    self.condition.notify_all()
+
+    def _condition_wait_seconds(self) -> float:
+        if self.deadline is None:
+            return GOTO_CANDIDATE_WAIT_SECONDS
+        remaining = max(0.0, self.deadline - time.monotonic())
+        return min(GOTO_CANDIDATE_WAIT_SECONDS, remaining)
+
+    def _raise_if_deadline_expired(self) -> None:
+        self.control.check()
+
+    def _raise_if_failed_locked(self) -> None:
+        if not self.failed_agent_errors:
+            return
+        agent_id = min(self.failed_agent_errors)
+        exc = self.failed_agent_errors[agent_id]
+        raise RuntimeError(f"blocking agent {agent_id} failed: {exc}") from exc
+
+
+class Executor:
+    """Execute one robot's plan queue sequentially."""
+
+    def __init__(
+        self,
+        runtime: Any,
+        robot_id: Optional[str] = None,
+        actions: Sequence[Action] = (),
+        *,
+        stage_id: str = "stage",
+        stage_index: int = 0,
+        logger: Optional[ExecutionLogger] = None,
+        phase_coordinator: Optional[PhaseCoordinator] = None,
+        execution_policy: Any = ExecutionPolicy.LEGACY,
+    ) -> None:
+        self.runtime = runtime
+        self.robot_id = str(robot_id) if robot_id is not None else ""
+        self.state = RobotExecutionState(
+            robot_id=self.robot_id,
+            current_stage_id=str(stage_id),
+            action_queue=[
+                Action.from_any(action).with_robot(self.robot_id)
+                for action in actions
+            ],
+        )
+        self.adapter = AI2ThorAdapter(runtime)
+        self.logger = logger or ExecutionLogger()
+        self.world_state = WorldState(runtime)
+        self.closed = False
+        self.active_agent_ids = set()
+        self.agent_phase_done = set()
+        self.phase_coordinator = phase_coordinator
+        self._provided_phase_coordinator = phase_coordinator
+        self.stage_index = int(stage_index)
+        self.execution_policy = ExecutionPolicy(execution_policy)
+        self.control = phase_coordinator.control if phase_coordinator else ensure_control(runtime)
+
+    def start(self) -> None:
+        """Compatibility hook for the removed central worker."""
+
+        self.closed = False
+
+    def stop(self) -> None:
+        """Compatibility hook for the removed central worker."""
+
+        self.closed = True
+
+    def set_active_agents(self, agent_ids: Any) -> None:
+        self.active_agent_ids = set(agent_ids or set())
+
+    def mark_agent_phase_done(self, agent_id: int) -> None:
+        self.agent_phase_done.add(agent_id)
+
+    def execute(self) -> WorldState:
+        if (getattr(self, 'scheduler', None) is not None
+                and getattr(self, '_execution_worker_ident', None) == threading.get_ident()):
+            return self._execute_queue()
+        if self._provided_phase_coordinator is not None:
+            return self._provided_phase_coordinator.execute_registered(self)
+        if not self.robot_id:
+            raise RuntimeError("Executor requires a robot_id to execute an action queue.")
+        from .plan_types import (StagePlan, TaskPlan)
+        from .action_plan import (PlanValidator)
+        from .stage_scheduler import StageScheduler
+        from .run_results import ActionLedger
+        stage = StagePlan(self.state.current_stage_id, {self.robot_id: self.state.action_queue})
+        PlanValidator(self.runtime).validate(TaskPlan('standalone', [stage]))
+        stats = getattr(self, 'stats', None)
+        self.runtime.action_ledger = (stats.action_ledger if stats is not None else ActionLedger([
+            f'{self.stage_index}:{self.robot_id}:{cursor}' for cursor in range(len(self.state.action_queue))]))
+        scheduler = StageScheduler(self.runtime, stage, control=self.control.child(),
+            policy=self.execution_policy, stats=stats, logger=self.logger,
+            stage_index=self.stage_index, executors={self.robot_id: self})
+        try:
+            outcome = scheduler.run()
+            self.world_state.snapshot = outcome.snapshot
+            self.world_state.tick = scheduler.world.tick
+            if outcome.status == 'failed' and self.execution_policy is ExecutionPolicy.STRICT:
+                raise PlanExecutionError({'execution_status': 'failed', 'stages': [scheduler.report],
+                                          'actions': scheduler.report['actions']})
+            return self.world_state
+        finally:
+            self.scheduler = None
+
+    def _execute_queue(self):
+        """One persistent thread per robot; state transitions belong to drive()."""
+        executor = self
+        scheduler = self.scheduler
+        mailbox = scheduler.mailboxes[self.robot_id]
+        while True:
+            self.control.check()
+            try:
+                job = mailbox.get(timeout=0.05)
+            except queue.Empty:
+                continue
+            if job is None:
+                return executor.world_state
+            if job is scheduler.IDLE_TICK:
+                self.control.check()
+                scope = getattr(self.runtime, 'action_deadline_scope', None)
+                with (scope(control=self.control) if callable(scope) else nullcontext()):
+                    event = self.runtime.step(
+                        {'action': 'Pass', 'agentId': self.runtime.physical_agent_id(executor.robot_id)},
+                        check_success=False, save_frame=False,
+                    )
+                self.control.check()
+                scheduler.results.put((None, event, None))
+                with scheduler.condition:
+                    scheduler.condition.notify_all()
+                continue
+            pending, wave, snapshot, progress_tick = job
+            self.control.check()
+            executor.world_state.snapshot = snapshot
+            executor.world_state.tick = progress_tick
+            agent_id = self.runtime.physical_agent_id(executor.robot_id)
+            event, error = None, None
+            self.last_effects_evidence = []
+            try:
+                action_wave = wave if agent_id in wave.navigation_agent_ids else None
+                if action_wave is None:
+                    scheduler.coordinator.wait_admitted_navigation(wave, agent_id)
+                with action_resource_scope(self.runtime, scheduler._ledger_key(pending),
+                                           scheduler.resource_requests[scheduler._ledger_key(pending)]):
+                    event = executor.execute_action(pending.action, action_wave=action_wave)
+                self.control.check()
+                executor.world_state.refresh([executor.state])
+                self.last_effects_evidence = conditions_evidence(pending.action.expected_effects, self.world_state)
+                if conditions_satisfied(self.last_effects_evidence) is not True:
+                    raise RuntimeError('expected_effects_not_satisfied')
+                executor.record_temperature_goal_progress()
+            except Exception as exc:
+                raise_if_execution_aborted(self.runtime, exc)
+                if isinstance(exc, ConditionEvaluationError):
+                    raise
+                self.control.check()
+                scheduler.coordinator.abort_action_wave(wave, agent_id, exc)
+                error = exc
+            except BaseException as exc:
+                scheduler.coordinator.abort_action_wave(wave, agent_id, exc)
+                raise
+            scheduler.results.put((pending, event, error))
+            with scheduler.condition:
+                scheduler.condition.notify_all()
+
+    def before_action(self, action: Action) -> Optional[ActionWave]:
+        if self.phase_coordinator is None:
+            return None
+        return self.phase_coordinator.before_action(
+            self.runtime.physical_agent_id(self.robot_id),
+            action.action_type,
+            self.state.action_cursor,
+        )
+
+    def execute_action(
+        self,
+        action: Action,
+        *,
+        action_wave: Optional[ActionWave] = None,
+    ) -> Any:
+        deadline = getattr(self, "deadline", None)
+        factory = getattr(self, "timeout_error_factory", None)
+        if self.phase_coordinator is not None:
+            phase_deadline = self.phase_coordinator.deadline
+            if phase_deadline is not None and (deadline is None or phase_deadline <= deadline):
+                deadline = phase_deadline
+                factory = self.phase_coordinator.timeout_error_factory
+        scope = getattr(self.runtime, "action_deadline_scope", None)
+        # Only propagate context here; locking before wave request collection
+        # would deadlock joint navigation waiting for its other participants.
+        with (
+            scope(deadline, factory, control=self.control)
+            if callable(scope)
+            else nullcontext()
+        ):
+            return self.adapter.execute(
+                self.robot_id,
+                action,
+                next_action=self.state.peek_after_current(),
+                world_state=self.world_state,
+                phase_coordinator=self.phase_coordinator,
+                action_wave=action_wave,
+            )
+
+    def record_temperature_goal_progress(self) -> None:
+        current_objects = getattr(self.runtime, "current_objects", None)
+        if not callable(current_objects):
+            return
+        try:
+            record_satisfied_temperature_goal_states(
+                self.runtime,
+                getattr(self.runtime, "evaluation_context", None),
+            )
+        except Exception as exc:
+            raise_if_execution_aborted(self.runtime, exc)
+            log(f"Skipping HOT/COLD ground-truth check: {exc}")
+
+    def handle_failure(self, action: Action, exc: BaseException, tick: int, *,
+                       finalizing=False, final_snapshot_current=False) -> bool:
+        if not finalizing:
+            raise_if_execution_aborted(self.runtime, exc)
+            self.control.check()
+        elif not getattr(self.runtime, 'execution_quiescent', True):
+            raise RuntimeError('cannot finalize outcomes before worker exit')
+        action_index = self.state.action_cursor
+        action_key = action.stable_id(self.robot_id, self.state.action_cursor)
+        ledger_key = f"{self.stage_index}:{self.robot_id}:{self.state.action_cursor}"
+        retries = self.state.retries_by_action.get(action_key, 0)
+        attempts = retries + 1
+        if finalizing and not final_snapshot_current:
+            # A timeout/cancellation may leave only the admission snapshot.
+            # It cannot prove current effects, even if they used to be true.
+            self.last_effects_evidence = []
+            effects_satisfied = None
+        else:
+            effects_satisfied = self.effects_satisfied_after_failure(action, refresh=not finalizing)
+        if (
+            action.on_failure == FAILURE_SKIP_IF_EFFECT_ALREADY_TRUE
+            and action.expected_effects
+            and effects_satisfied is True
+        ):
+            result = ActionResult(
+                self.robot_id,
+                action,
+                ACTION_SUCCESS,
+                error_message=str(exc),
+                attempts=attempts,
+                requested_failure_policy=action.on_failure,
+                failure_error_code="effects_already_satisfied",
+            )
+            self.state.last_action_result = result
+            self.state.action_cursor += 1
+            self.state.wait_ticks = 0
+            self.state.status = (
+                ROBOT_FINISHED_STAGE if self.state.finished() else ROBOT_ACTION_SUCCESS
+            )
+            self.logger.result(tick, result)
+            action_ledger = getattr(self.runtime, "action_ledger", None)
+            if action_ledger is not None:
+                action_ledger.record_terminal(
+                    ledger_key,
+                    "succeeded",
+                )
+            return True
+
+        decision = resolve_failure(
+            self.execution_policy,
+            action,
+            attempts=attempts,
+            effects_satisfied=effects_satisfied,
+        )
+        if finalizing and decision.kind in {'retry', 'wait_retry'}:
+            from .execution_policy import FailureDecision
+            decision = FailureDecision('fail_stage' if self.execution_policy is ExecutionPolicy.STRICT else 'skip',
+                                       'stage_stopped_before_retry', decision.retry_number)
+        result = ActionResult(
+            self.robot_id,
+            action,
+            ACTION_FAILED,
+            error_message=str(exc),
+            attempts=attempts,
+            requested_failure_policy=action.on_failure,
+            failure_decision=decision.kind,
+            failure_error_code=decision.error_code,
+        )
+
+        if decision.kind in {"retry", "wait_retry"}:
+            self.state.retries_by_action[action_key] = decision.retry_number
+            self.state.status = ROBOT_ACTION_FAILED
+            self.state.last_action_result = result
+            self.logger.result(tick, result)
+            if decision.kind == "wait_retry":
+                self.scheduler.retry_after[self.robot_id] = time.monotonic() + .05
+            return False
+
+        stats = getattr(self, 'stats', None)
+        if stats is not None:
+            stats.record_failure(self.state.current_stage_id, self.robot_id, action,
+                                 action_index, exc, decision=decision)
+        self.state.last_action_result = result
+        if decision.kind == "fail_robot":
+            self.state.action_cursor = len(self.state.action_queue)
+        else:
+            self.state.action_cursor += 1
+        self.state.wait_ticks = 0
+        self.state.status = ROBOT_ACTION_FAILED
+        self.logger.result(tick, result)
+        action_ledger = getattr(self.runtime, "action_ledger", None)
+        if action_ledger is not None:
+            action_ledger.record_terminal(
+                ledger_key,
+                "failed",
+                ignored_for_legacy=self.ignored_failure(action, exc),
+            )
+        if decision.kind == "fail_stage" and not finalizing:
+            raise StageFailureDecisionError(
+                f"Stage {self.state.current_stage_id} failed on {self.robot_id} "
+                f"{action.action_type}: {exc}"
+            ) from exc
+        return True
+
+    @staticmethod
+    def ignored_failure(action, exc):
+        from .parallel_runner import failure_ignored_for_ratio
+        return failure_ignored_for_ratio(action, exc)
+
+    def effects_satisfied_after_failure(self, action: Action, *, refresh=True) -> Optional[bool]:
+        if action.on_failure != FAILURE_SKIP_IF_EFFECT_ALREADY_TRUE or not action.expected_effects:
+            return None
+        if refresh:
+            self.world_state.refresh([self.state])
+        # The finalizing caller must first establish snapshot provenance. It
+        # cannot refresh through a cancelled stage or issue controller work.
+        self.last_effects_evidence = conditions_evidence(action.expected_effects, self.world_state)
+        return conditions_satisfied(self.last_effects_evidence)
+
+    def submit(
+        self,
+        payload: dict,
+        *,
+        check_success: bool,
+        save_frame: bool,
+        retry_on_failure: bool,
+        max_retries: int,
+    ) -> Any:
+        """Deprecated compatibility path for direct step submission."""
+
+        copied_payload = dict(payload)
+        copied_payload.pop("objectResources", None)
+        event = self.runtime._step_with_retries(
+            copied_payload,
+            check_success=check_success,
+            save_frame=save_frame,
+            retry_on_failure=retry_on_failure,
+            max_retries=max_retries,
+        )
+        return event
+
+    def submit_move_to_position(
+        self,
+        agent_id: int,
+        target_position: dict,
+        *,
+        chunk_steps: int,
+        max_requeues: int,
+        object_resource: Optional[str] = None,
+    ) -> None:
+        self.runtime.move_to_position_direct(
+            agent_id,
+            target_position,
+            chunk_steps=chunk_steps,
+            max_requeues=max_requeues,
+        )
+
+    def submit_teleport_to_position(
+        self,
+        agent_id: int,
+        target_position: Optional[dict] = None,
+        *,
+        candidate_positions: Optional[Sequence[dict]] = None,
+        search_center: Optional[dict] = None,
+        max_retries: int,
+        object_resource: Optional[str] = None,
+        excluded_grid_keys: Optional[set] = None,
+        restrict_to_candidate_positions: bool = False,
+    ) -> dict:
+        candidates = self._candidate_positions(target_position, candidate_positions)
+        return self.runtime.teleport_to_first_working_candidate(
+            agent_id,
+            candidates,
+            search_center=(
+                dict(search_center) if search_center is not None else candidates[0]
+            ),
+            max_retries=max_retries,
+            excluded_grid_keys=excluded_grid_keys,
+            restrict_to_candidate_positions=restrict_to_candidate_positions,
+        )
+
+    def submit_teleport_and_face_position(
+        self,
+        agent_id: int,
+        candidate_positions: Sequence[dict],
+        *,
+        face_target: dict,
+        search_center: Optional[dict] = None,
+        max_retries: int,
+        object_resource: Optional[str] = None,
+        excluded_grid_keys: Optional[set] = None,
+        restrict_to_candidate_positions: bool = False,
+    ) -> dict:
+        candidates = [dict(position) for position in candidate_positions]
+        if not candidates:
+            raise RuntimeError("TeleportAndFacePosition requires at least one target position.")
+        return self.runtime.teleport_and_face_first_working_candidate(
+            agent_id,
+            candidates,
+            face_target=face_target,
+            search_center=(
+                dict(search_center) if search_center is not None else candidates[0]
+            ),
+            max_retries=max_retries,
+            excluded_grid_keys=excluded_grid_keys,
+            restrict_to_candidate_positions=restrict_to_candidate_positions,
+        )
+
+    def agent_holds_object(self, agent_id: int, object_resource: str) -> bool:
+        return self.runtime.agent_holds_object(agent_id, object_resource)
+
+    def agent_held_objects_snapshot(self, agent_id: int) -> set:
+        return self.runtime.agent_held_objects_for(agent_id)
+
+    def agent_held_object_matching(self, agent_id: int, pattern: Any) -> Optional[str]:
+        return self.runtime.agent_held_object_matching(agent_id, pattern)
+
+    def _candidate_positions(
+        self,
+        target_position: Optional[dict],
+        candidate_positions: Optional[Sequence[dict]],
+    ) -> List[dict]:
+        if candidate_positions is None:
+            if target_position is None:
+                raise RuntimeError("TeleportToPosition requires at least one target position.")
+            candidate_positions = [target_position]
+        candidates = [dict(position) for position in candidate_positions]
+        if not candidates:
+            raise RuntimeError("TeleportToPosition requires at least one target position.")
+        return candidates
+
+CentralStepExecutor = Executor
+SynchronousExecutor = Executor
+
+__all__ = [
+    "Executor",
+    "PhaseCoordinator",
+    "CentralStepExecutor",
+    "SynchronousExecutor",
+]

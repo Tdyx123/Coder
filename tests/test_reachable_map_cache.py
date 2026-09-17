@@ -89,7 +89,10 @@ class ReachableMapCacheTest(unittest.TestCase):
             # the target changes before the real coordinator first plans.
             runtime.objects['Apple|1']['position'] = thor_position(.9)
             runtime.navigation_candidates_by_object['Apple|1'] = regenerated_candidates
-            return nav.execute_batch((request,))[0]
+            outcome = nav.execute_batch((request,))
+            if 0 in outcome.failed_agent_errors:
+                raise outcome.failed_agent_errors[0]
+            return outcome[0]
         runtime.movement_strategy = SimpleNamespace(navigate=navigate)
         ThorRuntime.navigate_to_object(
             runtime, 'robot1', 'Apple|1', allow_hand_preparation=False,
@@ -397,8 +400,8 @@ class ReachableMapCacheTest(unittest.TestCase):
         runtime, request = navigation_case(walkable=[(x, 0) for x in range(4)], candidates=[(3, 0)])
         runtime.objects['Apple|1']['visible'] = False
         nav = coordinator(runtime)
-        with self.assertRaises(StepNavigationError):
-            nav.execute_batch((request,))
+        outcome = nav.execute_batch((request,))
+        self.assertIsInstance(outcome.failed_agent_errors[0], StepNavigationError)
         self.assertIn(3, runtime.query_move_counts)
 
     def test_cached_refresh_still_checks_cancellation(self):

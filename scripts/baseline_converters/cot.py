@@ -22,8 +22,9 @@ from baseline_converters.common import (
     write_plan_to_code_summary,
 )
 from executor_system.pddlrun_adapter import ObjectNameResolver
+from executor_system.robot_team import build_real_robot_team
 from baseline_converters.generation_validation import (
-    GenerationValidationError, generation_failure_result, prepare_generation_robots,
+    GenerationValidationError, generation_failure_result,
     validate_generation_plan,
 )
 
@@ -362,32 +363,6 @@ def object_labels(task_context: Dict[str, Any]) -> List[str]:
     return labels
 
 
-def normalized_robots(task_context: Dict[str, Any]) -> List[Dict[str, Any]]:
-    raw_robots = task_context.get("robots")
-    if not isinstance(raw_robots, list) or not raw_robots:
-        raise GenerationValidationError(
-            "validation_data_missing", "00_inputs/task_context.json is missing a robot list.", {"field": "robots"},
-        )
-    robots: List[Dict[str, Any]] = []
-    seen = set()
-    for index, raw_robot in enumerate(raw_robots):
-        if not isinstance(raw_robot, dict):
-            raise GenerationValidationError(
-                "validation_data_missing", "COT robot entries must be JSON objects.", {"field": "robots"},
-            )
-        name = str(raw_robot.get("symbol") or raw_robot.get("name") or f"robot{index + 1}")
-        if not name or name in seen:
-            raise GenerationValidationError(
-                "validation_data_missing", f"Invalid or duplicate COT robot symbol: {name!r}",
-                {"field": "robots", "robot_id": name},
-            )
-        seen.add(name)
-        robot = dict(raw_robot)
-        robot["name"] = name
-        robots.append(robot)
-    return robots
-
-
 def parse_and_encode_plan(
     final_plan: Dict[str, Any],
     resolver: ObjectNameResolver,
@@ -467,6 +442,71 @@ def encoded_action_data(action: lammap.EncodedAction) -> Dict[str, Any]:
     }
 
 
+def parse_parallel_plan(text: str) -> Dict[str, Any]:
+    """Parse explicit stages and robot chains without inferring concurrency."""
+    entries: List[Dict[str, Any]] = []
+    stage: Optional[int] = None
+    robot: Optional[str] = None
+    stage_robots: set[str] = set()
+    queue_has_actions = False
+
+    def fail(line_number: int, message: str) -> None:
+        raise CotConversionError(f"04_parallel_plan.txt line {line_number}: {message}")
+
+    for line_number, raw_line in enumerate(text.splitlines(), start=1):
+        line = raw_line.strip()
+        if not line:
+            continue
+        stage_match = re.fullmatch(r"Stage ([1-9]\d*)(?: \(parallel robot chains; wait for all before the next stage\))?", line)
+        robot_match = re.fullmatch(r"(robot\d+) \(sequential\):", line)
+        if stage_match:
+            next_stage = int(stage_match.group(1))
+            if stage is not None and (not queue_has_actions or next_stage <= stage):
+                fail(line_number, "Stages must be non-empty and strictly increasing.")
+            stage, robot = next_stage, None
+            stage_robots = set()
+            queue_has_actions = False
+        elif robot_match:
+            next_robot = robot_match.group(1)
+            if stage is None:
+                fail(line_number, "Robot chain appears before a stage.")
+            if robot is not None and not queue_has_actions:
+                fail(line_number, "Robot chain is empty.")
+            if next_robot in stage_robots:
+                fail(line_number, f"Duplicate robot chain {next_robot} in Stage {stage}.")
+            robot = next_robot
+            stage_robots.add(robot)
+            queue_has_actions = False
+        elif re.fullmatch(r"\([^()]+\)", line):
+            if stage is None or robot is None:
+                fail(line_number, "Action appears outside a stage/robot chain.")
+            tokens = line[1:-1].split()
+            if len(tokens) < 2 or tokens[1] != robot:
+                fail(line_number, f"Action robot must match chain {robot}.")
+            entries.append({"action": tokens[0], "arguments": tokens[1:], "reasoning_step": stage})
+            queue_has_actions = True
+        else:
+            fail(line_number, f"Unrecognized plan structure: {line!r}")
+    if not entries or not queue_has_actions:
+        raise CotConversionError("04_parallel_plan.txt has an empty plan, stage, or robot chain.")
+    return {"plan": entries}
+
+
+def build_parallel_task_plan_data(
+    task_id: str,
+    entries: Sequence[Dict[str, Any]],
+    encoded_actions: Sequence[lammap.EncodedAction],
+) -> Dict[str, Any]:
+    stages: List[Dict[str, Any]] = []
+    for entry, action in zip(entries, encoded_actions):
+        stage_id = f"Stage {entry['reasoning_step']}"
+        if not stages or stages[-1]["stage_id"] != stage_id:
+            stages.append({"stage_id": stage_id, "robot_action_queues": {}})
+        queues = stages[-1]["robot_action_queues"]
+        queues.setdefault(action.robot_id, []).append(encoded_action_data(action))
+    return {"task_id": task_id, "stages": stages}
+
+
 def build_task_plan_data(
     task_id: str,
     entries: Sequence[Dict[str, Any]],
@@ -535,13 +575,19 @@ def process_task_run(
     repo_root: Path,
     dry_run: bool = False,
     validate_code: bool = True,
+    parallel_plan: bool = False,
 ) -> Dict[str, Any]:
     started_at = time.time()
     metadata = summary_run.metadata
     task_run_dir = summary_run.task_run_dir
     output_dir = task_run_dir / "plan_to_code"
     executable_path = output_dir / "executable_plan.py"
+    plan_path = task_run_dir / "02_plan" / (
+        "04_parallel_plan.txt" if parallel_plan else "01_final_plan.json"
+    )
     result: Dict[str, Any] = {
+        "plan_mode": "parallel" if parallel_plan else "json",
+        "plan_source": str(plan_path),
         "task": metadata.get("task"),
         "task_run_dir": str(task_run_dir),
         "raw_run_dir": summary_run.raw_run_dir,
@@ -608,24 +654,23 @@ def process_task_run(
         gcr = task_record.get("object_states")
         if not isinstance(gcr, list):
             raise CotConversionError("Dataset task record is missing list object_states.")
-        robots = normalized_robots({
-            "robots": prepare_generation_robots(task_context.get("robots"), task_record),
-        })
-        dataset_robot_ids = task_record.get("robot list")
-        context_robot_ids = [robot.get("source_id") for robot in robots]
-        if not isinstance(dataset_robot_ids, list) or dataset_robot_ids != context_robot_ids:
+        try:
+            robots = build_real_robot_team(task_record.get("robot list"))
+        except RuntimeError as exc:
             raise GenerationValidationError(
-                "validation_data_missing",
-                "Dataset robot list does not match 00_inputs/task_context.json source_id order.",
-                {"field": "robots"},
-            )
+                "validation_data_missing", str(exc), {"field": "robots"},
+            ) from exc
         object_names = load_object_names(repo_root, floor_plan, task_context)
         object_names.extend(object_labels(task_context))
         resolver = ObjectNameResolver(dict.fromkeys(object_names).keys())
-        final_plan = read_json_dict(task_run_dir / "02_plan" / "01_final_plan.json")
+        final_plan = (
+            parse_parallel_plan(plan_path.read_text(encoding="utf-8"))
+            if parallel_plan else read_json_dict(plan_path)
+        )
         entries, encoded_actions = parse_and_encode_plan(final_plan, resolver, robots)
         task_id = f"cot_{normalize_floor_plan(floor_plan)}_{task_index}"
-        task_plan_data = build_task_plan_data(task_id, entries, encoded_actions)
+        builder = build_parallel_task_plan_data if parallel_plan else build_task_plan_data
+        task_plan_data = builder(task_id, entries, encoded_actions)
         validate_generation_plan(
             task_plan_data, robots=robots, task_record=task_record, task_context=task_context,
             repo_root=repo_root, floor_plan=floor_plan, object_mappings=resolver.mappings,
@@ -638,6 +683,7 @@ def process_task_run(
             object_mappings=dict(resolver.mappings),
             object_mapping_warnings=list(resolver.warnings),
         )
+        bundle_data["robot_id_mode"] = "real"
         executable_plan = render_executable_plan(
             bundle_data=bundle_data,
             task_file=task_file,
@@ -675,11 +721,17 @@ def process_task_run(
     except (
         CotConversionError,
         OSError,
+        UnicodeError,
         SyntaxError,
         json.JSONDecodeError,
         py_compile.PyCompileError,
     ) as exc:
         result.update({"status": "failed", "success": False, "error": str(exc)})
+        if not dry_run:
+            try:
+                executable_path.unlink(missing_ok=True)
+            except OSError as cleanup_exc:
+                result["cleanup_error"] = str(cleanup_exc)
         return result
     finally:
         result["generation_time"] = time.time() - started_at
@@ -723,6 +775,10 @@ def convert(
     if limit is not None:
         summary_runs = summary_runs[:limit]
 
+    parallel_plan = any(
+        (run.task_run_dir / "02_plan" / "04_parallel_plan.txt").exists()
+        for run in summary_runs
+    )
     results: List[Dict[str, Any]] = []
     for index, summary_run in enumerate(summary_runs, start=1):
         result = process_task_run(
@@ -730,6 +786,7 @@ def convert(
             repo_root=repo_root,
             dry_run=dry_run,
             validate_code=validate_code,
+            parallel_plan=parallel_plan,
         )
         results.append(result)
         status = str(result.get("status") or "failed")
@@ -744,6 +801,7 @@ def convert(
         dry_run=dry_run,
         include_dry_run=True,
         extra={
+            "plan_mode": "parallel" if parallel_plan else "json",
             "source_summaries": [str(path) for path in source_summaries],
             "skipped_generations": skipped_count,
             "error_generations": error_count,

@@ -1,0 +1,114 @@
+{
+  "baseline_source": "coderun_results/0908_02.json",
+  "replay_source": "/home/dwb/thor/Coder/reports/step_recovery_20260908/replay/0908_03.json",
+  "run_id": "3a4ca64d0ad842f29e4b9cacb803359a",
+  "retry_sources": [
+    "reports/step_recovery_20260908/retry/0908_01.json"
+  ],
+  "settings": {
+    "movement_mode": "step",
+    "execution_policy": "legacy",
+    "reachable_refresh_mode": "full",
+    "timeout_seconds": 120
+  },
+  "tasks": [
+    {
+      "task_id": "FloorPlan1_task_0",
+      "baseline_failures": 4,
+      "replay_failures": 4,
+      "baseline_seconds": 21.708124017342925,
+      "replay_seconds": 58.15141900489107,
+      "baseline_timeout": false,
+      "replay_timeout": false,
+      "visibility_recoveries": 0,
+      "candidate_expansions": 4,
+      "navigation_teleports": 0,
+      "baseline_peer_aborts": 0,
+      "replay_peer_aborts": 0,
+      "execution_status": "partial"
+    },
+    {
+      "task_id": "FloorPlan1_task_3",
+      "baseline_failures": 0,
+      "replay_failures": 0,
+      "baseline_seconds": 12.221134371124208,
+      "replay_seconds": 9.396894885227084,
+      "baseline_timeout": false,
+      "replay_timeout": false,
+      "visibility_recoveries": 0,
+      "candidate_expansions": 0,
+      "navigation_teleports": 0,
+      "baseline_peer_aborts": 0,
+      "replay_peer_aborts": 0,
+      "execution_status": "completed"
+    },
+    {
+      "task_id": "FloorPlan1_task_5",
+      "baseline_failures": 0,
+      "replay_failures": 0,
+      "baseline_seconds": 12.007771376054734,
+      "replay_seconds": 9.424907326698303,
+      "baseline_timeout": false,
+      "replay_timeout": false,
+      "visibility_recoveries": 0,
+      "candidate_expansions": 0,
+      "navigation_teleports": 0,
+      "baseline_peer_aborts": 0,
+      "replay_peer_aborts": 0,
+      "execution_status": "partial"
+    },
+    {
+      "task_id": "FloorPlan1_task_8",
+      "baseline_failures": 0,
+      "replay_failures": 0,
+      "baseline_seconds": 8.857896621339023,
+      "replay_seconds": 6.008072942961007,
+      "baseline_timeout": false,
+      "replay_timeout": false,
+      "visibility_recoveries": 0,
+      "candidate_expansions": 0,
+      "navigation_teleports": 0,
+      "baseline_peer_aborts": 0,
+      "replay_peer_aborts": 0,
+      "execution_status": "completed"
+    },
+    {
+      "task_id": "FloorPlan1_task_17",
+      "baseline_failures": 4,
+      "replay_failures": 3,
+      "baseline_seconds": 25.371168819256127,
+      "replay_seconds": 102.27019797405228,
+      "baseline_timeout": false,
+      "replay_timeout": false,
+      "visibility_recoveries": 2,
+      "candidate_expansions": 3,
+      "navigation_teleports": 0,
+      "baseline_peer_aborts": 1,
+      "replay_peer_aborts": 0,
+      "execution_status": "partial"
+    },
+    {
+      "task_id": "FloorPlan1_task_26",
+      "baseline_failures": 1,
+      "replay_failures": 1,
+      "baseline_seconds": 24.48223343072459,
+      "replay_seconds": 62.8868015720509,
+      "baseline_timeout": false,
+      "replay_timeout": false,
+      "visibility_recoveries": 1,
+      "candidate_expansions": 1,
+      "navigation_teleports": 0,
+      "baseline_peer_aborts": 0,
+      "replay_peer_aborts": 0,
+      "execution_status": "partial"
+    }
+  ],
+  "source_sha256": {
+    "movement.py": "3212115da4bc986a215a34806901973ccfe84f233802d1558e2c1d293b47b459",
+    "movement_coordinator.py": "c20c9229384a2ea012de41ac0f8df9c9f3875a7fcd4223d720923225eeab25f9",
+    "runtime.py": "9a00c283a355d95d55e2fd8db83cc72afa53607b2a26beb9c8865f9a23d9b8bf",
+    "step_movement.py": "a72360ac449d3386c4e792cb2ea18a3598dbff619f5e7b39bd553c381f00b36c",
+    "object_interactor.py": "c5ae21b778e88fcd6de6e7d24b4a0fdbca486ad6986568a4329f1b17bbbb68e6",
+    "parallel_runner.py": "3c8cc5c2fb11f3a651850951ab059a989adc2dc6d8d711d7f1cff0c5884713c8"
+  }
+}

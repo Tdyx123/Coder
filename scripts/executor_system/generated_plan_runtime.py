@@ -33,6 +33,7 @@ from executor_system.parallel_runner import (
 )
 from executor_system.run_results import task_key_for_executable
 from executor_system.runtime import ThorRuntime
+from executor_system.robot_team import build_real_robot_team
 from executor_system import config as runtime_config
 from executor_system.runtime_metrics import metrics_for, runtime_metadata, file_hash, content_hash
 from executor_system.task_plan import run_action_plan
@@ -69,7 +70,13 @@ def floor_plan_from_task_file(task_file: str) -> str:
     return match.group(1)
 
 
-def build_robot_team(robot_ids: Sequence[Any]) -> List[Dict[str, Any]]:
+def build_robot_team(
+    robot_ids: Sequence[Any], *, robot_id_mode: str = "local",
+) -> List[Dict[str, Any]]:
+    if robot_id_mode == "real":
+        return build_real_robot_team(robot_ids)
+    if robot_id_mode != "local":
+        raise RuntimeError(f"Unknown robot_id_mode: {robot_id_mode!r}")
     team: List[Dict[str, Any]] = []
     for index, raw_robot_id in enumerate(robot_ids):
         robot_id = int(raw_robot_id)
@@ -139,7 +146,7 @@ def parse_arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "--timeout-seconds",
         type=finite_positive_seconds,
         default=None,
-        help="Runner timeout; defaults to 30s for teleport and 120s for step.",
+        help="Runner timeout; defaults to 30s for teleport and 60s for step.",
     )
     parser.add_argument(
         "--movement-mode",
@@ -180,13 +187,15 @@ def build_runner_result(status: str, start_time: float) -> Dict[str, Any]:
         "failure_action_ratio": 0.0,
         "robot_failures": [],
         "metrics_schema_version": 2,
-        "evaluation_version": "fixed_goals_v2",
+        "evaluation_version": "atomic_goals_v3",
         "execution_policy": "legacy",
         "process_status": "failed",
         "execution_status": "failed",
         "evaluation_status": "incomplete",
         "task_success": None,
         "original_goal_count": None,
+        "atomic_goal_count": None,
+        "subgoal_results": [],
         "satisfied_goal_count": None,
         "worker_errors": [],
         "cleanup_errors": [],
@@ -243,6 +252,7 @@ def finalize_runner_result(runtime, result, start_time, metrics_path):
             context = getattr(runtime, 'evaluation_context', None)
             if context is not None:
                 result['original_goal_count'] = len(context.goals)
+                result['atomic_goal_count'] = len(context.subgoals)
             try:
                 result['movement_mode'] = runtime.movement_config.mode.value
                 result['navigation_metrics'] = runtime.navigation_metrics.to_dict()
@@ -278,6 +288,7 @@ def close_standalone_runtime(runtime, start_time, script_file, task_index, *, id
         context = getattr(runtime, 'evaluation_context', None)
         if context is not None:
             result['original_goal_count'] = len(context.goals)
+            result['atomic_goal_count'] = len(context.subgoals)
         write_result_json(runner_metrics_path('', script_file), result)
         raise failure
 
@@ -338,9 +349,16 @@ def _runtime_inputs(
 ) -> tuple[Dict[str, Any], str, List[Dict[str, Any]], List[Dict[str, Any]], types.SimpleNamespace]:
     task_record = load_task_record(task_file, task_index)
     floor_no = floor_plan_from_task_file(task_file)
-    robots = build_robot_team(task_record.get("robot list") or [])
+    robots = build_robot_team(
+        task_record.get("robot list") or [],
+        robot_id_mode=bundle_data.get("robot_id_mode", "local"),
+    )
     bundle = build_hardcoded_bundle(bundle_data)
-    ground_truth = list(bundle.gcr)
+    source_goals = task_record.get("object_states")
+    if not isinstance(source_goals, list):
+        raise RuntimeError("Task record is missing list object_states for evaluation.")
+    bundle.gcr = copy.deepcopy(source_goals)
+    ground_truth = copy.deepcopy(source_goals)
     return task_record, floor_no, robots, ground_truth, bundle
 
 
@@ -384,6 +402,7 @@ def run_standalone(
     )
     runtime.evaluation_context = EvaluationContext.from_goals(
         bundle.gcr,
+        object_id_bindings=bundle.object_id_bindings,
         allow_empty=bool(bundle.noop_subtasks) and not bundle.task_plan.stages,
     )
     runtime.register_object_id_bindings(bundle.object_id_bindings)
@@ -496,6 +515,7 @@ def run_runner_mode(
         )
         runtime.evaluation_context = EvaluationContext.from_goals(
             bundle.gcr,
+            object_id_bindings=bundle.object_id_bindings,
             allow_empty=bool(bundle.noop_subtasks) and not bundle.task_plan.stages,
         )
         result["movement_mode"] = runtime.movement_config.mode.value
@@ -569,6 +589,8 @@ def run_runner_mode(
                 "evaluation_version": metrics["evaluation_version"],
                 "evaluation_status": metrics["evaluation_status"],
                 "original_goal_count": metrics["original_goal_count"],
+                "atomic_goal_count": metrics["atomic_goal_count"],
+                "subgoal_results": metrics["subgoal_results"],
                 "satisfied_goal_count": (
                     metrics["satisfied_goal_count"] if evaluation_valid else None
                 ),

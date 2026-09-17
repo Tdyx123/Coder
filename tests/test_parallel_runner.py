@@ -707,9 +707,9 @@ class ParallelRunnerCliTest(unittest.TestCase):
 
     def test_movement_mode_defaults_choose_mode_specific_timeout(self):
         with patch.dict(os.environ, {}, clear=True):
-            self.assertEqual(effective_timeout_seconds(None, None), 120.0)
+            self.assertEqual(effective_timeout_seconds(None, None), 60.0)
         self.assertEqual(effective_timeout_seconds("teleport", None), 30.0)
-        self.assertEqual(effective_timeout_seconds("step", None), 120.0)
+        self.assertEqual(effective_timeout_seconds("step", None), 60.0)
         self.assertEqual(effective_timeout_seconds("step", 45.0), 45.0)
         self.assertEqual(effective_timeout_seconds("teleport", 45.0), 45.0)
 
@@ -918,8 +918,8 @@ class ParallelRunnerCliTest(unittest.TestCase):
         summary = build_summary([], time.monotonic())
 
         self.assertEqual(summary["movement_mode"], "step")
-        self.assertEqual(summary["effective_timeout_seconds"], 120.0)
-        self.assertEqual(summary["timeout_retry_policy"]["timeout_seconds"], 120.0)
+        self.assertEqual(summary["effective_timeout_seconds"], 60.0)
+        self.assertEqual(summary["timeout_retry_policy"]["timeout_seconds"], 60.0)
 
     def test_summary_groups_v2_results_and_keeps_goal_and_task_success_distinct(self):
         summary = build_summary(

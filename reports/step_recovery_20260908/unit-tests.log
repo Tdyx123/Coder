@@ -1,0 +1,99 @@
+..........................Going to CounterTop CounterTop|1 at reachable position {'x': 0.75, 'y': 0.0, 'z': 0.0}.
+.Going to CounterTop CounterTop|1 at reachable position {'x': 0.75, 'y': 0.0, 'z': 0.0}.
+.Going to Apple Apple|second at reachable position {'x': 1.25, 'y': 0.0, 'z': 0.0}.
+......................................Tick 0: robot1 failed GoToObject: failed transition budget 0 exhausted
+Reached: Target|1
+Tick 2: robot2 completed GoToObject.
+....Reached: Tomato|0
+Reached: Tomato|1
+.Reached: Tomato|1
+.Reached: Tomato|0
+.Reached: Tomato|0
+Reached: Tomato|1
+.SliceObject interaction reposition failed for agent 0: injected failure
+Reached: Tomato|1
+Reached: Tomato|0
+Reached: Tomato|1
+.Reached: Tomato|0
+Reached: Tomato|1
+...BreakObject Egg -> Egg Egg|+00.00|+00.90|+01.00
+Operated object name: EggCracked
+Operated object name: Egg
+.BreakObject Vase -> Vase Vase|+00.00|+00.90|+01.00
+.BreakObject Window -> Window Window|+00.00|+01.50|+01.00
+BreakObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+BreakObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+BreakObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+BreakObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+BreakObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+BreakObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+.BreakObject Window -> Window Window|+00.00|+01.50|+01.00
+Operated object name: Window
+.CloseObject Cabinet -> Cabinet Cabinet|+00.00|+01.00|+00.00
+Operated object name: Cabinet
+.CloseObject Cabinet -> Cabinet Cabinet|+00.00|+01.00|+00.00
+Operated object name: Cabinet
+.DirtyObject Plate -> Plate Plate|+00.00|+01.00|+00.00
+Operated object name: Plate
+.DirtyObject Plate -> Plate Plate|+00.00|+01.00|+00.00
+Operated object name: Plate
+.EmptyLiquidFromObject Mug -> Mug Mug|+00.00|+01.00|+00.00
+Operated object name: Mug
+.EmptyLiquidFromObject Mug -> Mug Mug|+00.00|+01.00|+00.00
+Operated object name: Mug
+...........RotateLeft was blocked by a held item for agent 0; trying equivalent RotateRight rotation.
+.Tick 1: robot1 completed GoToObject.
+..CloseObject Blinds -> Blinds Blinds|-00.40|+02.16|-01.92
+Operated object name: Blinds
+.Tick 0: robot1 failed MoveAhead: MoveAhead failed
+..OpenObject Cabinet -> Cabinet Cabinet|-00.40|+02.16|-01.92
+OpenObject openness: Cabinet|-00.40|+02.16|-01.92 openness=1.0
+Operated object name: Cabinet
+.OpenObject Blinds -> Blinds Blinds|-00.40|+02.16|-01.92
+OpenObject openness: Blinds|-00.40|+02.16|-01.92 openness=1.0
+Operated object name: Blinds
+.Operated object name: Drawer
+.PickupObject name: Apple
+PickupObject Apple -> Apple Apple|+00.00|+00.90|+01.00
+Operated object name: Apple
+.PickupObject name: Apple
+PickupObject Apple -> Apple Apple|+00.00|+00.90|+01.00
+PickupObject still clipped after moving agent 0 back by 0.25; trying another distance.
+PickupObject clip backoff teleport failed for agent 0 by 0.5: teleport blocked
+Operated object name: Apple
+.PickupObject name: Apple
+PickupObject Apple -> Apple Apple|+00.00|+00.90|+01.00
+.PickupObject name: Apple
+PickupObject Apple -> Apple Apple|+00.00|+00.90|+01.00
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+.PickupObject name: Apple
+PickupObject Apple -> Apple Apple|+00.00|+00.90|+01.00
+Operated object name: Apple
+.PutObject names: Apple, Table
+Operated object name: Table
+.PutObject names: Apple, Table
+PutObject Table -> Table Table|+01.00|+00.80|+00.00
+Operated object name: Table
+.PutObject names: Apple, Table
+PutObject Table -> Table Table|+01.00|+00.80|+00.00
+Operated object name: Table
+.....ToggleObjectOff DeskLamp -> DeskLamp DeskLamp|+00.00|+01.00|+00.00
+Operated object name: DeskLamp
+.ToggleObjectOff DeskLamp -> DeskLamp DeskLamp|+00.00|+01.00|+00.00
+Operated object name: DeskLamp
+.ToggleObjectOn DeskLamp -> DeskLamp DeskLamp|+00.00|+01.00|+00.00
+Operated object name: DeskLamp
+.ToggleObjectOn DeskLamp -> DeskLamp DeskLamp|+00.00|+01.00|+00.00
+Operated object name: DeskLamp
+...........................Reached: Apple|1
+Reached: Apple|1
+.........
+----------------------------------------------------------------------
+Ran 158 tests in 0.659s
+
+OK

@@ -164,7 +164,7 @@ def main() -> int:
         RENDER_IMAGE,
         output_root=runtime_output_root(None, identity),
     )
-    runtime.evaluation_context = EvaluationContext.from_goals(ground_truth)
+    runtime.evaluation_context = EvaluationContext.from_goals(ground_truth, object_id_bindings=bundle.object_id_bindings)
     runtime.register_object_id_bindings(bundle.object_id_bindings)
     start_time = time.monotonic()
     failure_result = None

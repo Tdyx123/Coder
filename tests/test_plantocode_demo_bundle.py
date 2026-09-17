@@ -738,7 +738,7 @@ class PlanToCodeDemoBundleTest(unittest.TestCase):
             )
             self.assertEqual(bundle_data["object_mapping_warnings"], [])
 
-    def test_plantocode_gcr_uses_plan_multi_instance_tokens_and_defaults_first(self):
+    def test_plantocode_gcr_preserves_source_types_despite_plan_instance_choices(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             task_run_dir = root / "logs" / "intermediate_runs" / "sample___6" / "task" / "20260526_002"
@@ -903,8 +903,8 @@ class PlanToCodeDemoBundleTest(unittest.TestCase):
             self.assertEqual(
                 bundle_data["gcr"],
                 [
-                    {"name": "Drawer_2", "contains": ["CreditCard_2"], "states": ["OPENED"]},
-                    {"name": "Box_1", "contains": ["Watch_1"], "states": []},
+                    {"name": "Drawer", "contains": ["CreditCard"], "states": ["OPENED"]},
+                    {"name": "Box", "contains": ["Watch"], "states": []},
                 ],
             )
 

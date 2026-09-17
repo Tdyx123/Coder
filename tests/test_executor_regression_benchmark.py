@@ -162,9 +162,10 @@ result = generated.build_runner_result('success', time.monotonic())
 result.update(generated.runner_identity(__file__, 0))
 result.update(ActionLedger().freeze())
 result['execution_quiescent'] = True
+result['subgoal_results'] = [dict(subgoal_index=0, original_goal_index=0, status='satisfied')]
 result['scheduler_version'] = 2
 result.update(process_status='completed', execution_status='completed', evaluation_status='valid',
-              gcr=1.0, tc=1.0, sr=1.0, ru=1.0, task_success=True, original_goal_count=1, satisfied_goal_count=1,
+              gcr=1.0, tc=1.0, sr=1.0, ru=1.0, task_success=True, original_goal_count=1, atomic_goal_count=1, satisfied_goal_count=1,
               movement_mode=args.movement_mode, execution_policy=args.execution_policy,
               reachable_refresh_mode=args.reachable_refresh_mode, navigation_metrics={},
               runtime_metrics={'counters': {}}, phase_durations_seconds={'startup': 0, 'execution': 1, 'evaluation': 0, 'cleanup': 0})

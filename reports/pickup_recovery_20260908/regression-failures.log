@@ -1,0 +1,679 @@
+## pickup-red.log
+PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+FPickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject still clipped after moving agent 0 back by 0.25; trying another distance.
+PickupObject still clipped after moving agent 0 back by 0.5; trying another distance.
+PickupObject still clipped after moving agent 0 back by 0.75; trying another distance.
+PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject still clipped after moving agent 0 back by 0.25; trying another distance.
+PickupObject still clipped after moving agent 0 back by 0.5; trying another distance.
+PickupObject still clipped after moving agent 0 back by 0.75; trying another distance.
+PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+FPickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+Operated object name: Apple
+.PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+FPickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+.PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+FPickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+FPickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+FPickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+.PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+FPickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+EPickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+
+======================================================================
+ERROR: test_clip_recovery_uses_step_and_shared_budget (tests.test_pickup_visibility_recovery.PickupVisibilityRecoveryTests) (first='Picking up object would cause it to collide and clip into something!', final='')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/dwb/thor/Coder/tests/test_pickup_visibility_recovery.py", line 101, in test_clip_recovery_uses_step_and_shared_budget
+    self.pickup(runtime)
+  File "/home/dwb/thor/Coder/tests/test_pickup_visibility_recovery.py", line 47, in pickup
+    return runtime.object_action('PickupObject', 'robot1', TARGET)
+  File "/home/dwb/thor/Coder/scripts/executor_system/runtime.py", line 2468, in object_action
+    return self._get_object_interactor().object_action(action, robot, obj_name, force_action=force_action, extra_object_resources=extra_object_resources, action_parameters=action_parameters)
+  File "/home/dwb/thor/Coder/scripts/executor_system/object_interactor.py", line 574, in object_action
+    return runtime.object_action_by_object(
+  File "/home/dwb/thor/Coder/scripts/executor_system/runtime.py", line 2542, in object_action_by_object
+    return self._get_object_interactor().object_action_by_object(action, agent_id, obj, force_action=force_action, extra_object_resources=extra_object_resources, action_parameters=action_parameters, goal_object_name=goal_object_name)
+  File "/home/dwb/thor/Coder/scripts/executor_system/object_interactor.py", line 1095, in object_action_by_object
+    raise RuntimeError(
+RuntimeError: PickupObject failed for agent 0 on Apple|0: Picking up object would cause it to collide and clip into something!
+
+======================================================================
+ERROR: test_timeout_during_reposition_propagates_and_releases_budget (tests.test_pickup_visibility_recovery.PickupVisibilityRecoveryTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/dwb/thor/Coder/tests/test_pickup_visibility_recovery.py", line 198, in test_timeout_during_reposition_propagates_and_releases_budget
+    self.pickup(runtime)
+  File "/home/dwb/thor/Coder/tests/test_pickup_visibility_recovery.py", line 47, in pickup
+    return runtime.object_action('PickupObject', 'robot1', TARGET)
+  File "/home/dwb/thor/Coder/scripts/executor_system/runtime.py", line 2468, in object_action
+    return self._get_object_interactor().object_action(action, robot, obj_name, force_action=force_action, extra_object_resources=extra_object_resources, action_parameters=action_parameters)
+  File "/home/dwb/thor/Coder/scripts/executor_system/object_interactor.py", line 574, in object_action
+    return runtime.object_action_by_object(
+  File "/home/dwb/thor/Coder/scripts/executor_system/runtime.py", line 2542, in object_action_by_object
+    return self._get_object_interactor().object_action_by_object(action, agent_id, obj, force_action=force_action, extra_object_resources=extra_object_resources, action_parameters=action_parameters, goal_object_name=goal_object_name)
+  File "/home/dwb/thor/Coder/scripts/executor_system/object_interactor.py", line 1095, in object_action_by_object
+    raise RuntimeError(
+RuntimeError: PickupObject failed for agent 0 on Apple|0: Target object not found within the specified visibility
+
+======================================================================
+FAIL: test_budget_resets_for_next_planned_pickup (tests.test_pickup_visibility_recovery.PickupVisibilityRecoveryTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/dwb/thor/Coder/tests/test_pickup_visibility_recovery.py", line 130, in test_budget_resets_for_next_planned_pickup
+    self.assertEqual(len(navigation), 2)
+AssertionError: 0 != 2
+
+======================================================================
+FAIL: test_clip_recovery_uses_step_and_shared_budget (tests.test_pickup_visibility_recovery.PickupVisibilityRecoveryTests) (first='Picking up object would cause it to collide and clip into something!', final='Target object not found within the specified visibility')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/dwb/thor/Coder/tests/test_pickup_visibility_recovery.py", line 102, in test_clip_recovery_uses_step_and_shared_budget
+    self.assertFalse(any(c['action'].startswith('Teleport') for c in calls))
+AssertionError: True is not false
+
+======================================================================
+FAIL: test_clip_recovery_uses_step_and_shared_budget (tests.test_pickup_visibility_recovery.PickupVisibilityRecoveryTests) (first='Target object not found within the specified visibility', final='Picking up object would cause it to collide and clip into something!')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/dwb/thor/Coder/tests/test_pickup_visibility_recovery.py", line 103, in test_clip_recovery_uses_step_and_shared_budget
+    self.assertEqual(len(navigation), 1)
+AssertionError: 0 != 1
+
+======================================================================
+FAIL: test_failed_reposition_preserves_original_error_and_reason (tests.test_pickup_visibility_recovery.PickupVisibilityRecoveryTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/dwb/thor/Coder/tests/test_pickup_visibility_recovery.py", line 114, in test_failed_reposition_preserves_original_error_and_reason
+    self.assertIn('no candidate away from current pose', str(caught.exception))
+AssertionError: 'no candidate away from current pose' not found in 'PickupObject failed for agent 0 on Apple|0: Target object not found within the specified visibility'
+
+======================================================================
+FAIL: test_missing_camera_horizon_still_repositions (tests.test_pickup_visibility_recovery.PickupVisibilityRecoveryTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/dwb/thor/Coder/tests/test_pickup_visibility_recovery.py", line 75, in test_missing_camera_horizon_still_repositions
+    self.pickup(runtime)
+  File "/home/dwb/thor/Coder/tests/test_pickup_visibility_recovery.py", line 47, in pickup
+    return runtime.object_action('PickupObject', 'robot1', TARGET)
+  File "/home/dwb/thor/Coder/scripts/executor_system/runtime.py", line 2468, in object_action
+    return self._get_object_interactor().object_action(action, robot, obj_name, force_action=force_action, extra_object_resources=extra_object_resources, action_parameters=action_parameters)
+  File "/home/dwb/thor/Coder/scripts/executor_system/object_interactor.py", line 574, in object_action
+    return runtime.object_action_by_object(
+  File "/home/dwb/thor/Coder/scripts/executor_system/runtime.py", line 2542, in object_action_by_object
+    return self._get_object_interactor().object_action_by_object(action, agent_id, obj, force_action=force_action, extra_object_resources=extra_object_resources, action_parameters=action_parameters, goal_object_name=goal_object_name)
+  File "/home/dwb/thor/Coder/scripts/executor_system/object_interactor.py", line 1095, in object_action_by_object
+    raise RuntimeError(
+RuntimeError: PickupObject failed for agent 0 on Apple|0: Target object not found within the specified visibility
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/dwb/thor/Coder/tests/test_pickup_visibility_recovery.py", line 77, in test_missing_camera_horizon_still_repositions
+    self.fail(f'Missing camera metadata prevented pose recovery: {exc}')
+AssertionError: Missing camera metadata prevented pose recovery: PickupObject failed for agent 0 on Apple|0: Target object not found within the specified visibility
+
+======================================================================
+FAIL: test_remaining_visibility_failure_stops_after_one_reposition (tests.test_pickup_visibility_recovery.PickupVisibilityRecoveryTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/dwb/thor/Coder/tests/test_pickup_visibility_recovery.py", line 121, in test_remaining_visibility_failure_stops_after_one_reposition
+    self.assertEqual(len(navigation), 1)
+AssertionError: 0 != 1
+
+======================================================================
+FAIL: test_reposition_and_final_pickup_share_execution_scope (tests.test_pickup_visibility_recovery.PickupVisibilityRecoveryTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/dwb/thor/Coder/tests/test_pickup_visibility_recovery.py", line 174, in test_reposition_and_final_pickup_share_execution_scope
+    self.pickup(runtime)
+  File "/home/dwb/thor/Coder/tests/test_pickup_visibility_recovery.py", line 47, in pickup
+    return runtime.object_action('PickupObject', 'robot1', TARGET)
+  File "/home/dwb/thor/Coder/scripts/executor_system/runtime.py", line 2468, in object_action
+    return self._get_object_interactor().object_action(action, robot, obj_name, force_action=force_action, extra_object_resources=extra_object_resources, action_parameters=action_parameters)
+  File "/home/dwb/thor/Coder/scripts/executor_system/object_interactor.py", line 574, in object_action
+    return runtime.object_action_by_object(
+  File "/home/dwb/thor/Coder/scripts/executor_system/runtime.py", line 2542, in object_action_by_object
+    return self._get_object_interactor().object_action_by_object(action, agent_id, obj, force_action=force_action, extra_object_resources=extra_object_resources, action_parameters=action_parameters, goal_object_name=goal_object_name)
+  File "/home/dwb/thor/Coder/scripts/executor_system/object_interactor.py", line 1095, in object_action_by_object
+    raise RuntimeError(
+RuntimeError: PickupObject failed for agent 0 on Apple|0: Target object not found within the specified visibility
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/dwb/thor/Coder/tests/test_pickup_visibility_recovery.py", line 176, in test_reposition_and_final_pickup_share_execution_scope
+    self.fail(str(exc))
+AssertionError: PickupObject failed for agent 0 on Apple|0: Target object not found within the specified visibility
+
+======================================================================
+FAIL: test_reposition_requires_navigation_capability (tests.test_pickup_visibility_recovery.PickupVisibilityRecoveryTests)
+----------------------------------------------------------------------
+RuntimeError: PickupObject failed for agent 0 on Apple|0: Target object not found within the specified visibility
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/dwb/thor/Coder/tests/test_pickup_visibility_recovery.py", line 150, in test_reposition_requires_navigation_capability
+    self.pickup(runtime)
+AssertionError: "missing_skill" does not match "PickupObject failed for agent 0 on Apple|0: Target object not found within the specified visibility"
+
+======================================================================
+FAIL: test_timeout_during_look_exits_without_restore_or_reposition (tests.test_pickup_visibility_recovery.PickupVisibilityRecoveryTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/dwb/thor/Coder/tests/test_pickup_visibility_recovery.py", line 188, in test_timeout_during_look_exits_without_restore_or_reposition
+    self.assertEqual(len(looks), 1)
+AssertionError: 2 != 1
+
+======================================================================
+FAIL: test_visibility_failure_repositions_same_target_and_counts_one_action (tests.test_pickup_visibility_recovery.PickupVisibilityRecoveryTests) (throws=False)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/dwb/thor/Coder/tests/test_pickup_visibility_recovery.py", line 54, in test_visibility_failure_repositions_same_target_and_counts_one_action
+    event = self.pickup(runtime)
+  File "/home/dwb/thor/Coder/tests/test_pickup_visibility_recovery.py", line 47, in pickup
+    return runtime.object_action('PickupObject', 'robot1', TARGET)
+  File "/home/dwb/thor/Coder/scripts/executor_system/runtime.py", line 2468, in object_action
+    return self._get_object_interactor().object_action(action, robot, obj_name, force_action=force_action, extra_object_resources=extra_object_resources, action_parameters=action_parameters)
+  File "/home/dwb/thor/Coder/scripts/executor_system/object_interactor.py", line 574, in object_action
+    return runtime.object_action_by_object(
+  File "/home/dwb/thor/Coder/scripts/executor_system/runtime.py", line 2542, in object_action_by_object
+    return self._get_object_interactor().object_action_by_object(action, agent_id, obj, force_action=force_action, extra_object_resources=extra_object_resources, action_parameters=action_parameters, goal_object_name=goal_object_name)
+  File "/home/dwb/thor/Coder/scripts/executor_system/object_interactor.py", line 1095, in object_action_by_object
+    raise RuntimeError(
+RuntimeError: PickupObject failed for agent 0 on Apple|0: Target object not found within the specified visibility
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/dwb/thor/Coder/tests/test_pickup_visibility_recovery.py", line 56, in test_visibility_failure_repositions_same_target_and_counts_one_action
+    self.fail(f'Pickup did not recover by changing pose: {exc}')
+AssertionError: Pickup did not recover by changing pose: PickupObject failed for agent 0 on Apple|0: Target object not found within the specified visibility
+
+======================================================================
+FAIL: test_visibility_failure_repositions_same_target_and_counts_one_action (tests.test_pickup_visibility_recovery.PickupVisibilityRecoveryTests) (throws=True)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/dwb/thor/Coder/tests/test_pickup_visibility_recovery.py", line 54, in test_visibility_failure_repositions_same_target_and_counts_one_action
+    event = self.pickup(runtime)
+  File "/home/dwb/thor/Coder/tests/test_pickup_visibility_recovery.py", line 47, in pickup
+    return runtime.object_action('PickupObject', 'robot1', TARGET)
+  File "/home/dwb/thor/Coder/scripts/executor_system/runtime.py", line 2468, in object_action
+    return self._get_object_interactor().object_action(action, robot, obj_name, force_action=force_action, extra_object_resources=extra_object_resources, action_parameters=action_parameters)
+  File "/home/dwb/thor/Coder/scripts/executor_system/object_interactor.py", line 574, in object_action
+    return runtime.object_action_by_object(
+  File "/home/dwb/thor/Coder/scripts/executor_system/runtime.py", line 2542, in object_action_by_object
+    return self._get_object_interactor().object_action_by_object(action, agent_id, obj, force_action=force_action, extra_object_resources=extra_object_resources, action_parameters=action_parameters, goal_object_name=goal_object_name)
+  File "/home/dwb/thor/Coder/scripts/executor_system/object_interactor.py", line 1025, in object_action_by_object
+    event = runtime.step(
+  File "/home/dwb/thor/Coder/tests/test_pickup_visibility_recovery.py", line 35, in step
+    raise RuntimeError(error)
+RuntimeError: Target object not found within the specified visibility
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/dwb/thor/Coder/tests/test_pickup_visibility_recovery.py", line 56, in test_visibility_failure_repositions_same_target_and_counts_one_action
+    self.fail(f'Pickup did not recover by changing pose: {exc}')
+AssertionError: Pickup did not recover by changing pose: Target object not found within the specified visibility
+
+----------------------------------------------------------------------
+Ran 13 tests in 0.019s
+
+FAILED (failures=11, errors=2)
+
+
+## pickup-extra-red.log
+PickupObject interaction reposition starting for agent 0 on Tomato|0 from {'x': 0.0, 'y': 0.0, 'z': 0}
+PickupObject interaction reposition starting for agent 1 on Tomato|1 from {'x': 0.0, 'y': 0.0, 'z': 1}
+Reached: Tomato|1
+PickupObject interaction reposition reached for agent 1 on Tomato|1 at {'x': 0.5, 'y': 0.0, 'z': 1}
+PickupObject interaction reposition final action for agent 1 on Tomato|1: succeeded
+.PickupObject interaction reposition starting for agent 0 on Tomato|0 from {'x': -0.5, 'y': 0.0, 'z': 0.0}
+Reached: Tomato|0
+PickupObject interaction reposition reached for agent 0 on Tomato|0 at {'x': 0.5, 'y': 0.0, 'z': 0.0}
+PickupObject interaction reposition final action for agent 0 on Tomato|0: succeeded
+PickupObject interaction reposition starting for agent 1 on Tomato|1 from {'x': 0.0, 'y': 0.0, 'z': -0.5}
+Reached: Tomato|1
+PickupObject interaction reposition reached for agent 1 on Tomato|1 at {'x': 0.0, 'y': 0.0, 'z': 0.5}
+PickupObject interaction reposition final action for agent 1 on Tomato|1: succeeded
+.Reached: Tomato|0
+PickupObject interaction reposition starting for agent 1 on Tomato|1 from {'x': 0.0, 'y': 0.0, 'z': 1}
+Reached: Tomato|1
+PickupObject interaction reposition reached for agent 1 on Tomato|1 at {'x': 0.5, 'y': 0.0, 'z': 1}
+PickupObject interaction reposition final action for agent 1 on Tomato|1: succeeded
+.PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.0, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition reached for agent 0 on Apple|0 at {'x': 0.25, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition failed for agent 0 on Apple|0: Target object not found within the specified visibility
+PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.25, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition reached for agent 0 on Apple|0 at {'x': 0.25, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition failed for agent 0 on Apple|0: Target object not found within the specified visibility
+.PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+.PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.0, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition failed for agent 0 on Apple|0: no alternate pose
+PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.0, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition failed for agent 0 on Apple|0: no alternate pose
+PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.0, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition reached for agent 0 on Apple|0 at {'x': 0.25, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition final action for agent 0 on Apple|0: succeeded
+Operated object name: Apple
+PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.0, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition reached for agent 0 on Apple|0 at {'x': 0.25, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition failed for agent 0 on Apple|0: Target object not found within the specified visibility
+PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.0, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition reached for agent 0 on Apple|0 at {'x': 0.25, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition failed for agent 0 on Apple|0: Picking up object would cause it to collide and clip into something!
+.PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.0, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition failed for agent 0 on Apple|0: no candidate away from current pose
+.PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.0, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition reached for agent 0 on Apple|0 at {'x': 0.25, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition failed for agent 0 on Apple|0: pickup timed out
+PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.0, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition reached for agent 0 on Apple|0 at {'x': 0.25, 'y': 0.9, 'z': 0.0}
+PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+Operated object name: Apple
+.PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.0, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition reached for agent 0 on Apple|0 at {'x': 0.25, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition final action for agent 0 on Apple|0: succeeded
+Operated object name: Apple
+.PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+.PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.0, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition reached for agent 0 on Apple|0 at {'x': 0.25, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition failed for agent 0 on Apple|0: Target object not found within the specified visibility
+.PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.0, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition reached for agent 0 on Apple|0 at {'x': 0.25, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition final action for agent 0 on Apple|0: succeeded
+Operated object name: Apple
+.PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+.PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+.PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+.PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.0, 'y': 0.9, 'z': 0.0}
+PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.0, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition reached for agent 0 on Apple|0 at {'x': 0.25, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition final action for agent 0 on Apple|0: succeeded
+Operated object name: Apple
+.PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.0, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition reached for agent 0 on Apple|0 at {'x': 0.25, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition final action for agent 0 on Apple|0: succeeded
+Operated object name: Apple
+PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.0, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition reached for agent 0 on Apple|0 at {'x': 0.25, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition final action for agent 0 on Apple|0: succeeded
+Operated object name: Apple
+.
+======================================================================
+ERROR: test_final_pickup_timeout_and_cancellation_propagate_unchanged (tests.test_pickup_visibility_recovery.PickupVisibilityRecoveryTests) (error='TimeoutError')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/dwb/thor/Coder/scripts/executor_system/object_interactor.py", line 961, in retry_object_action_after_interaction_reposition
+    event = runtime.step(
+  File "/home/dwb/thor/Coder/tests/test_pickup_visibility_recovery.py", line 212, in fail
+    raise error
+TimeoutError: pickup timed out
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/dwb/thor/Coder/tests/test_pickup_visibility_recovery.py", line 216, in test_final_pickup_timeout_and_cancellation_propagate_unchanged
+    self.pickup(runtime)
+  File "/home/dwb/thor/Coder/tests/test_pickup_visibility_recovery.py", line 49, in pickup
+    return runtime.object_action('PickupObject', 'robot1', TARGET)
+  File "/home/dwb/thor/Coder/scripts/executor_system/runtime.py", line 2468, in object_action
+    return self._get_object_interactor().object_action(action, robot, obj_name, force_action=force_action, extra_object_resources=extra_object_resources, action_parameters=action_parameters)
+  File "/home/dwb/thor/Coder/scripts/executor_system/object_interactor.py", line 575, in object_action
+    return runtime.object_action_by_object(
+  File "/home/dwb/thor/Coder/scripts/executor_system/runtime.py", line 2542, in object_action_by_object
+    return self._get_object_interactor().object_action_by_object(action, agent_id, obj, force_action=force_action, extra_object_resources=extra_object_resources, action_parameters=action_parameters, goal_object_name=goal_object_name)
+  File "/home/dwb/thor/Coder/scripts/executor_system/object_interactor.py", line 1131, in object_action_by_object
+    event = runtime.retry_object_action_after_target_visibility_error(
+  File "/home/dwb/thor/Coder/scripts/executor_system/runtime.py", line 171, in guarded
+    return method(self, *args, **kwargs)
+  File "/home/dwb/thor/Coder/scripts/executor_system/runtime.py", line 2513, in retry_object_action_after_target_visibility_error
+    return self._get_object_interactor().retry_object_action_after_target_visibility_error(action, agent_id, payload, initial_event)
+  File "/home/dwb/thor/Coder/scripts/executor_system/runtime_metrics.py", line 94, in wrapped
+    return function(self, *args, **kwargs)
+  File "/home/dwb/thor/Coder/scripts/executor_system/object_interactor.py", line 861, in retry_object_action_after_target_visibility_error
+    return self.retry_object_action_after_interaction_reposition(
+  File "/home/dwb/thor/Coder/scripts/executor_system/runtime_metrics.py", line 94, in wrapped
+    return function(self, *args, **kwargs)
+  File "/home/dwb/thor/Coder/scripts/executor_system/object_interactor.py", line 969, in retry_object_action_after_interaction_reposition
+    return failed(exc)
+  File "/home/dwb/thor/Coder/scripts/executor_system/object_interactor.py", line 927, in failed
+    raise RuntimeError(f"{action} failed for agent {agent_id} on {target}: "
+RuntimeError: PickupObject failed for agent 0 on Apple|0: Target object not found within the specified visibility; PickupObject interaction reposition failed for agent 0 on Apple|0: pickup timed out
+
+======================================================================
+FAIL: test_clip_during_look_retains_initial_visibility_error (tests.test_pickup_visibility_recovery.PickupVisibilityRecoveryTests) (throws=False)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/dwb/thor/Coder/tests/test_pickup_visibility_recovery.py", line 253, in test_clip_during_look_retains_initial_visibility_error
+    self.assertIn(VISIBILITY, str(caught.exception))
+AssertionError: 'Target object not found within the specified visibility' not found in 'PickupObject failed for agent 0 on Apple|0: Picking up object would cause it to collide and clip into something!; PickupObject interaction reposition failed for agent 0 on Apple|0: no alternate pose'
+
+======================================================================
+FAIL: test_clip_during_look_retains_initial_visibility_error (tests.test_pickup_visibility_recovery.PickupVisibilityRecoveryTests) (throws=True)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/dwb/thor/Coder/tests/test_pickup_visibility_recovery.py", line 253, in test_clip_during_look_retains_initial_visibility_error
+    self.assertIn(VISIBILITY, str(caught.exception))
+AssertionError: 'Target object not found within the specified visibility' not found in 'PickupObject failed for agent 0 on Apple|0: interaction failed; PickupObject interaction reposition failed for agent 0 on Apple|0: no alternate pose'
+
+----------------------------------------------------------------------
+Ran 19 tests in 0.240s
+
+FAILED (failures=2, errors=1)
+
+
+## pickup-review-red.log
+PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject still clipped after moving agent 0 back by 0.25; trying another distance.
+PickupObject still clipped after moving agent 0 back by 0.5; trying another distance.
+PickupObject still clipped after moving agent 0 back by 0.75; trying another distance.
+PickupObject still clipped after moving agent 0 back by 0.25; trying another distance.
+PickupObject still clipped after moving agent 0 back by 0.5; trying another distance.
+PickupObject still clipped after moving agent 0 back by 0.75; trying another distance.
+F.
+======================================================================
+FAIL: test_teleport_clip_exception_exhaustion_keeps_original_retry_limit (tests.test_pickup_visibility_recovery.PickupVisibilityRecoveryTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/dwb/thor/Coder/tests/test_pickup_visibility_recovery.py", line 153, in test_teleport_clip_exception_exhaustion_keeps_original_retry_limit
+    self.assertEqual(sum(c['action'] == 'Teleport' for c in calls), 3)
+AssertionError: 6 != 3
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.012s
+
+FAILED (failures=1)
+
+
+## pickup-context-red.log
+PickupObject name: Apple
+PickupObject Apple|0 -> Apple Apple|0
+PickupObject target still outside visibility for agent 0 after camera offset -10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset -30; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 10; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 20; trying another angle.
+PickupObject target still outside visibility for agent 0 after camera offset 30; trying another angle.
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0.0, 'y': 0.9, 'z': 0.0}
+PickupObject interaction reposition failed for agent 0 on Apple|0: no alternate pose
+F
+======================================================================
+FAIL: test_original_failure_context_survives_camera_retries (tests.test_pickup_visibility_recovery.PickupVisibilityRecoveryTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/dwb/thor/Coder/tests/test_pickup_visibility_recovery.py", line 139, in test_original_failure_context_survives_camera_retries
+    self.assertIn('[original context]', str(caught.exception))
+AssertionError: '[original context]' not found in 'PickupObject failed for agent 0 on Apple|0: Target object not found within the specified visibility [last retry context]; PickupObject interaction reposition failed for agent 0 on Apple|0: no alternate pose'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.011s
+
+FAILED (failures=1)
+
+
+## pickup-metadata-red.log
+PickupObject interaction reposition starting for agent 0 on Apple|0 from {'x': 0, 'y': 0.9, 'z': 0}
+PickupObject interaction reposition reached for agent 0 on Apple|0 at {'x': 0, 'y': 0.9, 'z': 0}
+F
+======================================================================
+FAIL: test_camera_metadata_timeout_does_not_start_reposition (tests.test_pickup_visibility_recovery.PickupVisibilityRecoveryTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/dwb/thor/Coder/tests/test_pickup_visibility_recovery.py", line 186, in test_camera_metadata_timeout_does_not_start_reposition
+    self.assertEqual(navigation, [])
+AssertionError: Lists differ: [('robot1', 'Apple|0', {'allow_hand_prepar[115 chars]ue})] != []
+
+First list contains 1 additional elements.
+First extra element 0:
+('robot1', 'Apple|0', {'allow_hand_preparation': False, 'next_action': PlannedAction(name='PickupObject', args=('Apple|0',)), 'exclude_current_position': True})
+
++ []
+- [('robot1',
+-   'Apple|0',
+-   {'allow_hand_preparation': False,
+-    'exclude_current_position': True,
+-    'next_action': PlannedAction(name='PickupObject', args=('Apple|0',))})]
+
+----------------------------------------------------------------------
+Ran 1 test in 0.011s
+
+FAILED (failures=1)
+
+
+## pickup-camera-red.log
+
+======================================================================
+FAIL: test_ordinary_retry_error_restores_camera_for_existing_modes (tests.test_pickup_visibility_recovery.PickupVisibilityRecoveryTests) (mode='teleport', action='PickupObject')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/dwb/thor/Coder/tests/test_pickup_visibility_recovery.py", line 294, in test_ordinary_retry_error_restores_camera_for_existing_modes
+    self.assertEqual(runtime._test_state['horizon'], 35)
+AssertionError: 25.0 != 35
+
+======================================================================
+FAIL: test_ordinary_retry_error_restores_camera_for_existing_modes (tests.test_pickup_visibility_recovery.PickupVisibilityRecoveryTests) (mode='step', action='SliceObject')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/dwb/thor/Coder/tests/test_pickup_visibility_recovery.py", line 294, in test_ordinary_retry_error_restores_camera_for_existing_modes
+    self.assertEqual(runtime._test_state['horizon'], 35)
+AssertionError: 25.0 != 35
+
+----------------------------------------------------------------------
+Ran 1 test in 0.011s
+
+FAILED (failures=2)

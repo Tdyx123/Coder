@@ -69,7 +69,7 @@ class EvaluationContractTest(unittest.TestCase):
 
         result = context.evaluate(runtime)
 
-        self.assertEqual(result["evaluation_version"], "fixed_goals_v2")
+        self.assertEqual(result["evaluation_version"], "atomic_goals_v3")
         self.assertEqual(result["evaluation_status"], "valid")
         self.assertEqual(result["gcr"], 0.0)
         self.assertEqual(result["satisfied_goal_count"], 0)
@@ -133,7 +133,7 @@ class EvaluationContractTest(unittest.TestCase):
         self.assertEqual(result["evaluation_status"], "valid")
         self.assertEqual(result["gcr"], 0.0)
 
-    def test_one_instance_must_satisfy_every_state(self):
+    def test_independent_states_can_use_different_instances(self):
         context = EvaluationContext.from_goals(
             [{"name": "Mug", "states": ["HOT", "CLEANED"], "contains": []}]
         )
@@ -157,7 +157,7 @@ class EvaluationContractTest(unittest.TestCase):
         result = context.evaluate(runtime)
 
         self.assertEqual(result["evaluation_status"], "valid")
-        self.assertEqual(result["gcr"], 0.0)
+        self.assertEqual(result["gcr"], 1.0)
 
     def test_later_caller_mutation_does_not_change_goals(self):
         goals = [{"name": "Mug", "states": ["HOT"], "contains": []}]
@@ -177,7 +177,8 @@ class EvaluationContractTest(unittest.TestCase):
 
     def test_bound_contains_alias_requires_exact_object_id(self):
         context = EvaluationContext.from_goals(
-            [{"name": "Bowl", "states": [], "contains": ["Cup_1"]}]
+            [{"name": "Bowl", "states": [], "contains": ["Cup_1"]}],
+            object_id_bindings=[{"object": "Cup_1", "object_id": "Cup|1"}],
         )
         runtime = FakeRuntime(
             [
@@ -218,7 +219,7 @@ class EvaluationContractTest(unittest.TestCase):
 
         result = ThorRuntime.evaluate(runtime, copy.deepcopy(goals))
 
-        self.assertEqual(result["evaluation_version"], "fixed_goals_v2")
+        self.assertEqual(result["evaluation_version"], "atomic_goals_v3")
         self.assertEqual(result["gcr"], 1.0)
         with self.assertRaises(ValueError):
             ThorRuntime.evaluate(
@@ -264,7 +265,7 @@ class EvaluationContractTest(unittest.TestCase):
 
     def test_temperature_scan_resolves_bound_alias_to_one_instance(self):
         goals = [{"name": "Mug_1", "states": ["HOT"], "contains": []}]
-        context = EvaluationContext.from_goals(goals)
+        context = EvaluationContext.from_goals(goals, object_id_bindings=[{"object": "Mug_1", "object_id": "Mug|1"}])
         runtime = FakeRuntime(
             [
                 {"objectId": "Mug|1", "objectType": "Mug", "temperature": "Cold"},
